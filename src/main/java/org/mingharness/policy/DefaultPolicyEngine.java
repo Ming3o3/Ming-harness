@@ -21,6 +21,12 @@ public class DefaultPolicyEngine implements PolicyEngine {
                     "缺少工具所需权限: " + missingPermission);
         }
 
+        if ("ALLOW_EXTERNAL".equalsIgnoreCase(tool.networkPolicy())
+                && !granted.contains("network.external")) {
+            return new PolicyDecision(PolicyDecisionType.DENY,
+                    "工具访问外部网络需要 network.external 权限");
+        }
+
         String risk = tool.riskLevel() == null ? "LOW" : tool.riskLevel().toUpperCase();
         boolean highRisk = "HIGH".equals(risk) || "CRITICAL".equals(risk);
         if (tool.requiresApproval() || highRisk) {

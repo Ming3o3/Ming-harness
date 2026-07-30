@@ -21,6 +21,7 @@ import org.mingharness.dashboard.RunDashboardSummary;
 import org.mingharness.tool.HarnessTool;
 import org.mingharness.tool.ToolDefinition;
 import org.mingharness.tool.ToolInputValidator;
+import org.mingharness.tool.ToolOutputValidator;
 import org.mingharness.tool.ToolRegistry;
 import org.mingharness.policy.PolicyContext;
 import org.mingharness.policy.PolicyDecision;
@@ -56,6 +57,7 @@ public class RunService {
     private final BoundedExecutor boundedExecutor;
     private final ContextBuilder contextBuilder;
     private final TenantRateLimiter tenantRateLimiter;
+    private final ToolOutputValidator toolOutputValidator;
 
     public RunService(RunRepository runRepository,
                       AuditEventRepository auditEventRepository,
@@ -69,7 +71,8 @@ public class RunService {
                       ToolInputValidator toolInputValidator,
                       BoundedExecutor boundedExecutor,
                       ContextBuilder contextBuilder,
-                      TenantRateLimiter tenantRateLimiter) {
+                      TenantRateLimiter tenantRateLimiter,
+                      ToolOutputValidator toolOutputValidator) {
         this.runRepository = runRepository;
         this.auditEventRepository = auditEventRepository;
         this.toolRegistry = toolRegistry;
@@ -83,6 +86,7 @@ public class RunService {
         this.boundedExecutor = boundedExecutor;
         this.contextBuilder = contextBuilder;
         this.tenantRateLimiter = tenantRateLimiter;
+        this.toolOutputValidator = toolOutputValidator;
     }
 
     @Transactional
@@ -292,6 +296,7 @@ public class RunService {
                 HarnessTool tool = toolRegistry.get(step.getName());
                 String output = boundedExecutor.execute("工具 " + step.getName(), tool.definition().timeoutMs(),
                         () -> tool.execute(step.getInput()));
+                toolOutputValidator.validate(tool.definition(), output);
                 step.succeed(output);
             }
             record(run.getId(), step.getId(), "STEP_SUCCEEDED", "步骤执行成功");
