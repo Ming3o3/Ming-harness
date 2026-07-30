@@ -98,6 +98,18 @@ public class Run {
         touch();
     }
 
+    public void waitApproval() {
+        requireStatus(RunStatus.RUNNING);
+        this.status = RunStatus.WAITING_APPROVAL;
+        touch();
+    }
+
+    public void resumeAfterApproval() {
+        requireStatus(RunStatus.WAITING_APPROVAL);
+        this.status = RunStatus.RUNNING;
+        touch();
+    }
+
     public void addStep(Step step) {
         step.attachTo(this);
         this.steps.add(step);

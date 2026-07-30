@@ -48,14 +48,14 @@ class RunServiceTests {
         assertEquals(RunStatus.QUEUED, created.status());
         assertEquals(2, created.stepCount());
 
-        RunDetail firstResult = runService.start(created.id());
+        RunDetail firstResult = runService.start(created.id(), "tenant-demo");
         assertEquals(RunStatus.SUCCEEDED, firstResult.run().status(), firstResult.run().error() + " / " + firstResult.steps());
         assertEquals("检查订单状态", firstResult.run().output());
         assertEquals(StepStatus.SUCCEEDED, firstResult.steps().get(0).status());
         assertEquals(StepStatus.SUCCEEDED, firstResult.steps().get(1).status());
         assertEquals(1, firstResult.steps().get(1).attempt());
 
-        RunDetail secondResult = runService.start(created.id());
+        RunDetail secondResult = runService.start(created.id(), "tenant-demo");
         assertEquals(1, secondResult.steps().get(1).attempt());
         long successEvents = auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
                 .filter(event -> "STEP_SUCCEEDED".equals(event.getEventType()))
@@ -66,7 +66,7 @@ class RunServiceTests {
     @Test
     void shouldPersistFailureStateAndAuditEvent() {
         RunSummary created = runService.create(request("test.failure", "触发失败"));
-        RunDetail result = runService.start(created.id());
+        RunDetail result = runService.start(created.id(), "tenant-demo");
 
         assertEquals(RunStatus.FAILED, result.run().status());
         assertEquals(StepStatus.SUCCEEDED, result.steps().get(0).status());
@@ -85,6 +85,45 @@ class RunServiceTests {
                 () -> runService.create(request("missing.tool", "无效工具"))
         );
         assertEquals("TOOL_NOT_FOUND", exception.getCode());
+    }
+
+    @Test
+    void shouldPauseForApprovalAndResumeAfterApproval() {
+        RunSummary created = runService.create(request("demo.approval", "执行高风险演示操作"));
+
+        RunDetail waiting = runService.start(created.id(), "tenant-demo");
+        assertEquals(RunStatus.WAITING_APPROVAL, waiting.run().status());
+        assertEquals(StepStatus.WAITING_APPROVAL, waiting.steps().get(1).status());
+
+        RunDetail completed = runService.approve(created.id(), "tenant-demo");
+        assertEquals(RunStatus.SUCCEEDED, completed.run().status());
+        assertEquals(StepStatus.SUCCEEDED, completed.steps().get(1).status());
+        assertEquals(1, completed.steps().get(1).attempt());
+        assertEquals(1, auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
+                .filter(event -> "APPROVAL_APPROVED".equals(event.getEventType()))
+                .count());
+    }
+
+    @Test
+    void shouldBlockCrossTenantAccess() {
+        RunSummary created = runService.create(request("demo.echo", "跨租户访问"));
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> runService.start(created.id(), "another-tenant")
+        );
+        assertEquals("TENANT_ACCESS_DENIED", exception.getCode());
+    }
+
+    @Test
+    void shouldRejectApprovalAsFailure() {
+        RunSummary created = runService.create(request("demo.approval", "拒绝高风险操作"));
+        runService.start(created.id(), "tenant-demo");
+
+        RunDetail rejected = runService.reject(created.id(), "tenant-demo", "风险未确认");
+        assertEquals(RunStatus.FAILED, rejected.run().status());
+        assertEquals(StepStatus.FAILED, rejected.steps().get(1).status());
+        assertEquals("风险未确认", rejected.run().error());
     }
 
     private CreateRunRequest request(String toolName, String input) {
@@ -109,7 +148,7 @@ class RunServiceTests {
             return new HarnessTool() {
                 @Override
                 public ToolDefinition definition() {
-                    return new ToolDefinition("test.failure", "测试失败工具", true, "LOW", Map.of());
+                    return new ToolDefinition("test.failure", "测试失败工具", true, "LOW", false, Map.of());
                 }
 
                 @Override

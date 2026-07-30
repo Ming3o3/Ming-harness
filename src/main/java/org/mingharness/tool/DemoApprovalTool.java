@@ -5,16 +5,16 @@ import org.springframework.stereotype.Component;
 import java.util.Map;
 
 @Component
-public class DemoEchoTool implements HarnessTool {
+public class DemoApprovalTool implements HarnessTool {
 
     @Override
     public ToolDefinition definition() {
         return new ToolDefinition(
-                "demo.echo",
-                "返回输入内容，用于验证工具注册和执行链路",
-                true,
-                "LOW",
+                "demo.approval",
+                "需要人工审批后才会执行的高风险演示工具",
                 false,
+                "HIGH",
+                true,
                 Map.of(
                         "type", "object",
                         "properties", Map.of("message", Map.of("type", "string")),
@@ -25,6 +25,6 @@ public class DemoEchoTool implements HarnessTool {
 
     @Override
     public String execute(String input) {
-        return input == null || input.isBlank() ? "" : input;
+        return "高风险演示操作已获批并执行: " + input;
     }
 }

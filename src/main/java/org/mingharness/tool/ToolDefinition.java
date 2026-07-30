@@ -7,6 +7,7 @@ public record ToolDefinition(
         String description,
         boolean readOnly,
         String riskLevel,
+        boolean requiresApproval,
         Map<String, Object> inputSchema
 ) {
 }

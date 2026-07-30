@@ -4,6 +4,7 @@ async function request(path, options = {}) {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     headers: {
       'Content-Type': 'application/json',
+      'X-Tenant-Id': localStorage.getItem('harnessTenantId') || 'tenant-demo',
       ...(options.headers || {}),
     },
     ...options,
@@ -22,9 +23,15 @@ async function request(path, options = {}) {
 
 export const api = {
   listRuns: () => request('/runs'),
+  dashboardSummary: () => request('/dashboard/summary'),
   getRun: (runId) => request(`/runs/${runId}`),
   createRun: (payload) => request('/runs', { method: 'POST', body: JSON.stringify(payload) }),
   startRun: (runId) => request(`/runs/${runId}/start`, { method: 'POST' }),
+  approveRun: (runId) => request(`/runs/${runId}/approve`, { method: 'POST' }),
+  rejectRun: (runId, reason) => request(`/runs/${runId}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  }),
   cancelRun: (runId) => request(`/runs/${runId}`, { method: 'DELETE' }),
   listTools: () => request('/tools'),
   listAuditEvents: (runId) => request(`/runs/${runId}/audit-events`),

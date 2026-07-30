@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -25,13 +26,14 @@ public class RunController {
     }
 
     @GetMapping
-    public List<RunSummary> list() {
-        return runService.list();
+    public List<RunSummary> list(@RequestHeader(name = "X-Tenant-Id", defaultValue = "tenant-demo") String tenantId) {
+        return runService.list(tenantId);
     }
 
     @GetMapping("/{runId}")
-    public RunDetail detail(@PathVariable String runId) {
-        return runService.getDetail(runId);
+    public RunDetail detail(@PathVariable String runId,
+                            @RequestHeader(name = "X-Tenant-Id", defaultValue = "tenant-demo") String tenantId) {
+        return runService.getDetail(runId, tenantId);
     }
 
     @PostMapping
@@ -41,13 +43,28 @@ public class RunController {
     }
 
     @PostMapping("/{runId}/start")
-    public RunDetail start(@PathVariable String runId) {
-        return runService.start(runId);
+    public RunDetail start(@PathVariable String runId,
+                           @RequestHeader(name = "X-Tenant-Id", defaultValue = "tenant-demo") String tenantId) {
+        return runService.start(runId, tenantId);
+    }
+
+    @PostMapping("/{runId}/approve")
+    public RunDetail approve(@PathVariable String runId,
+                             @RequestHeader(name = "X-Tenant-Id", defaultValue = "tenant-demo") String tenantId) {
+        return runService.approve(runId, tenantId);
+    }
+
+    @PostMapping("/{runId}/reject")
+    public RunDetail reject(@PathVariable String runId,
+                            @RequestHeader(name = "X-Tenant-Id", defaultValue = "tenant-demo") String tenantId,
+                            @RequestBody(required = false) ApprovalDecisionRequest request) {
+        return runService.reject(runId, tenantId, request == null ? null : request.reason());
     }
 
     @DeleteMapping("/{runId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void cancel(@PathVariable String runId) {
-        runService.cancel(runId);
+    public void cancel(@PathVariable String runId,
+                       @RequestHeader(name = "X-Tenant-Id", defaultValue = "tenant-demo") String tenantId) {
+        runService.cancel(runId, tenantId);
     }
 }

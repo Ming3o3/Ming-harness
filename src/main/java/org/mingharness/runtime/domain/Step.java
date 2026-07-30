@@ -41,6 +41,7 @@ public class Step {
     private int attempt;
     private int inputTokens;
     private int outputTokens;
+    private boolean approvalGranted;
     private Instant startedAt;
     private Instant finishedAt;
 
@@ -90,6 +91,21 @@ public class Step {
         this.finishedAt = Instant.now();
     }
 
+    public void requestApproval() {
+        if (status != StepStatus.QUEUED) {
+            throw new IllegalStateException("只有排队中的步骤可以申请审批: " + status);
+        }
+        this.status = StepStatus.WAITING_APPROVAL;
+    }
+
+    public void approve() {
+        if (status != StepStatus.WAITING_APPROVAL) {
+            throw new IllegalStateException("步骤当前不在等待审批状态: " + status);
+        }
+        this.status = StepStatus.QUEUED;
+        this.approvalGranted = true;
+    }
+
     public String getId() { return id; }
     public Run getRun() { return run; }
     public int getSequence() { return sequence; }
@@ -102,6 +118,7 @@ public class Step {
     public int getAttempt() { return attempt; }
     public int getInputTokens() { return inputTokens; }
     public int getOutputTokens() { return outputTokens; }
+    public boolean isApprovalGranted() { return approvalGranted; }
     public Instant getStartedAt() { return startedAt; }
     public Instant getFinishedAt() { return finishedAt; }
 }

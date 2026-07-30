@@ -4,6 +4,7 @@ import { api } from './api'
 
 const runs = ref([])
 const tools = ref([])
+const summary = ref(null)
 const selectedRun = ref(null)
 const auditEvents = ref([])
 const loading = ref(false)
@@ -25,16 +26,17 @@ const form = reactive({
 })
 
 const stats = computed(() => ({
-  total: runs.value.length,
-  queued: runs.value.filter((run) => run.status === 'QUEUED').length,
-  running: runs.value.filter((run) => run.status === 'RUNNING').length,
-  succeeded: runs.value.filter((run) => run.status === 'SUCCEEDED').length,
-  failed: runs.value.filter((run) => run.status === 'FAILED').length,
+  total: summary.value?.total ?? runs.value.length,
+  queued: summary.value?.queued ?? runs.value.filter((run) => run.status === 'QUEUED').length,
+  running: summary.value?.running ?? runs.value.filter((run) => run.status === 'RUNNING').length,
+  succeeded: summary.value?.succeeded ?? runs.value.filter((run) => run.status === 'SUCCEEDED').length,
+  failed: summary.value?.failed ?? runs.value.filter((run) => run.status === 'FAILED').length,
 }))
 
 const selectedStatus = computed(() => selectedRun.value?.run?.status || 'NONE')
 const canStart = computed(() => selectedStatus.value === 'QUEUED')
 const canCancel = computed(() => ['QUEUED', 'RUNNING'].includes(selectedStatus.value))
+const canApprove = computed(() => selectedStatus.value === 'WAITING_APPROVAL')
 
 function statusLabel(status) {
   const labels = {
@@ -76,9 +78,14 @@ function clearMessages() {
 async function loadDashboard() {
   clearMessages()
   try {
-    const [runData, toolData] = await Promise.all([api.listRuns(), api.listTools()])
+    const [runData, toolData, summaryData] = await Promise.all([
+      api.listRuns(),
+      api.listTools(),
+      api.dashboardSummary(),
+    ])
     runs.value = runData
     tools.value = toolData
+    summary.value = summaryData
     if (selectedRun.value) {
       await selectRun(selectedRun.value.run.id, false)
     } else if (runs.value.length) {
@@ -107,16 +114,49 @@ async function createAndStartRun() {
   clearMessages()
   loading.value = true
   try {
+    localStorage.setItem('harnessTenantId', form.tenantId)
     const created = await api.createRun({
       ...form,
       budget: Number(form.budget),
       modelName: form.modelName || null,
     })
-    await api.startRun(created.id)
-    noticeMessage.value = 'Run 已创建并完成执行'
+    const started = await api.startRun(created.id)
+    noticeMessage.value = started.run.status === 'WAITING_APPROVAL'
+      ? 'Run 已创建，等待人工审批'
+      : 'Run 已创建并完成执行'
     showCreateForm.value = false
     await loadDashboard()
     await selectRun(created.id, false)
+  } catch (error) {
+    errorMessage.value = error.message
+  } finally {
+    loading.value = false
+  }
+}
+
+async function approveSelectedRun() {
+  if (!selectedRun.value) return
+  clearMessages()
+  loading.value = true
+  try {
+    await api.approveRun(selectedRun.value.run.id)
+    noticeMessage.value = '审批已通过，Run 已继续执行'
+    await loadDashboard()
+  } catch (error) {
+    errorMessage.value = error.message
+  } finally {
+    loading.value = false
+  }
+}
+
+async function rejectSelectedRun() {
+  if (!selectedRun.value) return
+  clearMessages()
+  loading.value = true
+  try {
+    await api.rejectRun(selectedRun.value.run.id, '控制台人工拒绝')
+    noticeMessage.value = '审批已拒绝，Run 已结束'
+    await loadDashboard()
   } catch (error) {
     errorMessage.value = error.message
   } finally {
@@ -316,6 +356,8 @@ onMounted(loadDashboard)
               <div class="detail-actions">
                 <span class="status-pill" :class="statusClass(selectedStatus)"><i></i>{{ statusLabel(selectedStatus) }}</span>
                 <button v-if="canStart" class="secondary-button" type="button" :disabled="loading" @click="startSelectedRun">启动</button>
+                <button v-if="canApprove" class="secondary-button" type="button" :disabled="loading" @click="approveSelectedRun">审批通过</button>
+                <button v-if="canApprove" class="danger-button" type="button" :disabled="loading" @click="rejectSelectedRun">拒绝</button>
                 <button v-if="canCancel" class="danger-button" type="button" :disabled="loading" @click="cancelSelectedRun">取消</button>
               </div>
             </div>
@@ -364,7 +406,7 @@ onMounted(loadDashboard)
             <div class="tool-card-top"><span class="tool-symbol">⌁</span><span class="risk-badge" :class="`risk-${tool.riskLevel.toLowerCase()}`">{{ tool.riskLevel }}</span></div>
             <strong>{{ tool.name }}</strong>
             <p>{{ tool.description }}</p>
-            <small>{{ tool.readOnly ? '只读工具' : '有副作用' }} · Schema 已注册</small>
+            <small>{{ tool.readOnly ? '只读工具' : '有副作用' }} · {{ tool.requiresApproval ? '需要人工审批' : '可直接执行' }}</small>
           </div>
         </div>
       </section>
