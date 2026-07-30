@@ -176,6 +176,22 @@ public class RunService {
         return toDetail(run);
     }
 
+    @Transactional
+    public RunDetail retry(String runId, String tenantId) {
+        Run run = getRun(runId);
+        assertTenant(run, tenantId);
+        if (run.getStatus() != RunStatus.FAILED && run.getStatus() != RunStatus.TIMED_OUT) {
+            throw new BusinessException(HttpStatus.CONFLICT, "RUN_NOT_RETRYABLE", "只有失败或超时任务可以重试");
+        }
+        run.getSteps().forEach(Step::retry);
+        run.retry();
+        runRepository.save(run);
+        record(run.getId(), null, "RUN_RETRY_QUEUED", "任务进入重试队列");
+        run.start();
+        record(run.getId(), null, "RUN_STARTED", "开始执行重试任务");
+        return executePending(run);
+    }
+
     public void assertTenant(String runId, String tenantId) {
         assertTenant(getRun(runId), tenantId);
     }

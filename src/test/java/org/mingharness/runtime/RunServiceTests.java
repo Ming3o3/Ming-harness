@@ -21,6 +21,7 @@ import org.springframework.context.annotation.Import;
 
 import java.math.BigDecimal;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -126,6 +127,17 @@ class RunServiceTests {
         assertEquals("风险未确认", rejected.run().error());
     }
 
+    @Test
+    void shouldRetryTransientFailure() {
+        RunSummary created = runService.create(request("test.flaky", "重试瞬态错误"));
+        RunDetail firstResult = runService.start(created.id(), "tenant-demo");
+        assertEquals(RunStatus.FAILED, firstResult.run().status());
+
+        RunDetail retried = runService.retry(created.id(), "tenant-demo");
+        assertEquals(RunStatus.SUCCEEDED, retried.run().status());
+        assertEquals(2, retried.steps().get(1).attempt());
+    }
+
     private CreateRunRequest request(String toolName, String input) {
         return new CreateRunRequest(
                 "tenant-demo",
@@ -154,6 +166,25 @@ class RunServiceTests {
                 @Override
                 public String execute(String input) {
                     throw new IllegalStateException("测试工具执行失败");
+                }
+            };
+        }
+
+        @Bean
+        HarnessTool flakyTool() {
+            AtomicInteger attempts = new AtomicInteger();
+            return new HarnessTool() {
+                @Override
+                public ToolDefinition definition() {
+                    return new ToolDefinition("test.flaky", "测试瞬态失败工具", true, "LOW", false, Map.of());
+                }
+
+                @Override
+                public String execute(String input) {
+                    if (attempts.getAndIncrement() == 0) {
+                        throw new IllegalStateException("瞬态工具错误");
+                    }
+                    return "重试成功: " + input;
                 }
             };
         }

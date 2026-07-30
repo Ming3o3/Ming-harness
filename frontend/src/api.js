@@ -32,6 +32,7 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ reason }),
   }),
+  retryRun: (runId) => request(`/runs/${runId}/retry`, { method: 'POST' }),
   cancelRun: (runId) => request(`/runs/${runId}`, { method: 'DELETE' }),
   listTools: () => request('/tools'),
   listAuditEvents: (runId) => request(`/runs/${runId}/audit-events`),

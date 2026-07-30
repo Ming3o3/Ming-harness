@@ -110,6 +110,16 @@ public class Run {
         touch();
     }
 
+    public void retry() {
+        if (status != RunStatus.FAILED && status != RunStatus.TIMED_OUT) {
+            throw new IllegalStateException("只有失败或超时任务可以重试: " + status);
+        }
+        this.status = RunStatus.QUEUED;
+        this.error = null;
+        this.output = null;
+        touch();
+    }
+
     public void addStep(Step step) {
         step.attachTo(this);
         this.steps.add(step);

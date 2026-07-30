@@ -37,6 +37,7 @@ const selectedStatus = computed(() => selectedRun.value?.run?.status || 'NONE')
 const canStart = computed(() => selectedStatus.value === 'QUEUED')
 const canCancel = computed(() => ['QUEUED', 'RUNNING'].includes(selectedStatus.value))
 const canApprove = computed(() => selectedStatus.value === 'WAITING_APPROVAL')
+const canRetry = computed(() => ['FAILED', 'TIMED_OUT'].includes(selectedStatus.value))
 
 function statusLabel(status) {
   const labels = {
@@ -156,6 +157,23 @@ async function rejectSelectedRun() {
   try {
     await api.rejectRun(selectedRun.value.run.id, '控制台人工拒绝')
     noticeMessage.value = '审批已拒绝，Run 已结束'
+    await loadDashboard()
+  } catch (error) {
+    errorMessage.value = error.message
+  } finally {
+    loading.value = false
+  }
+}
+
+async function retrySelectedRun() {
+  if (!selectedRun.value) return
+  clearMessages()
+  loading.value = true
+  try {
+    const retried = await api.retryRun(selectedRun.value.run.id)
+    noticeMessage.value = retried.run.status === 'WAITING_APPROVAL'
+      ? '重试已进入人工审批'
+      : '重试已完成'
     await loadDashboard()
   } catch (error) {
     errorMessage.value = error.message
@@ -358,6 +376,7 @@ onMounted(loadDashboard)
                 <button v-if="canStart" class="secondary-button" type="button" :disabled="loading" @click="startSelectedRun">启动</button>
                 <button v-if="canApprove" class="secondary-button" type="button" :disabled="loading" @click="approveSelectedRun">审批通过</button>
                 <button v-if="canApprove" class="danger-button" type="button" :disabled="loading" @click="rejectSelectedRun">拒绝</button>
+                <button v-if="canRetry" class="secondary-button" type="button" :disabled="loading" @click="retrySelectedRun">重试</button>
                 <button v-if="canCancel" class="danger-button" type="button" :disabled="loading" @click="cancelSelectedRun">取消</button>
               </div>
             </div>

@@ -1,6 +1,7 @@
 package org.mingharness.runtime.api;
 
 import jakarta.validation.Valid;
+import org.mingharness.common.BusinessException;
 import org.mingharness.runtime.application.RunService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -38,7 +39,11 @@ public class RunController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public RunSummary create(@Valid @RequestBody CreateRunRequest request) {
+    public RunSummary create(@Valid @RequestBody CreateRunRequest request,
+                             @RequestHeader(name = "X-Tenant-Id", defaultValue = "tenant-demo") String tenantId) {
+        if (!tenantId.equals(request.tenantId())) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_ACCESS_DENIED", "请求租户与当前租户不一致");
+        }
         return runService.create(request);
     }
 
@@ -59,6 +64,12 @@ public class RunController {
                             @RequestHeader(name = "X-Tenant-Id", defaultValue = "tenant-demo") String tenantId,
                             @RequestBody(required = false) ApprovalDecisionRequest request) {
         return runService.reject(runId, tenantId, request == null ? null : request.reason());
+    }
+
+    @PostMapping("/{runId}/retry")
+    public RunDetail retry(@PathVariable String runId,
+                           @RequestHeader(name = "X-Tenant-Id", defaultValue = "tenant-demo") String tenantId) {
+        return runService.retry(runId, tenantId);
     }
 
     @DeleteMapping("/{runId}")

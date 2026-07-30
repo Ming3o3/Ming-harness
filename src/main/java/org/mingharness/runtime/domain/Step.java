@@ -106,6 +106,17 @@ public class Step {
         this.approvalGranted = true;
     }
 
+    public void retry() {
+        if (status != StepStatus.FAILED && status != StepStatus.TIMED_OUT) {
+            return;
+        }
+        this.status = StepStatus.QUEUED;
+        this.error = null;
+        this.startedAt = null;
+        this.finishedAt = null;
+        this.approvalGranted = false;
+    }
+
     public String getId() { return id; }
     public Run getRun() { return run; }
     public int getSequence() { return sequence; }
