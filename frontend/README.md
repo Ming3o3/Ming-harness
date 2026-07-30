@@ -1,6 +1,6 @@
 # Ming Harness 控制台
 
-这是基于 Vue 3 和 Vite 的 Harness 管理控制台。
+这是基于 Vue 3 和 Vite 的 Harness 管理控制台，覆盖运行操作、审批审计、上下文文档和快速回归评测。
 
 ## 本地运行
 

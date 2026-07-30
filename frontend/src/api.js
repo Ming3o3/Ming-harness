@@ -5,6 +5,7 @@ async function request(path, options = {}) {
     headers: {
       'Content-Type': 'application/json',
       'X-Tenant-Id': localStorage.getItem('harnessTenantId') || 'tenant-demo',
+      'X-User-Id': localStorage.getItem('harnessUserId') || 'operator',
       ...(options.headers || {}),
     },
     ...options,
@@ -36,4 +37,12 @@ export const api = {
   cancelRun: (runId) => request(`/runs/${runId}`, { method: 'DELETE' }),
   listTools: () => request('/tools'),
   listAuditEvents: (runId) => request(`/runs/${runId}/audit-events`),
+  listDocuments: () => request('/context/documents'),
+  createDocument: (payload) => request('/context/documents', { method: 'POST', body: JSON.stringify(payload) }),
+  deleteDocument: (documentId) => request(`/context/documents/${documentId}`, { method: 'DELETE' }),
+  previewContext: (query) => request(`/context/preview?query=${encodeURIComponent(query)}`),
+  listMemories: () => request('/context/memories'),
+  createMemory: (payload) => request('/context/memories', { method: 'POST', body: JSON.stringify(payload) }),
+  listEvaluations: () => request('/evaluations'),
+  runEvaluation: (payload) => request('/evaluations', { method: 'POST', body: JSON.stringify(payload) }),
 }

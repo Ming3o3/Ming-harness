@@ -7,11 +7,14 @@ const tools = ref([])
 const summary = ref(null)
 const selectedRun = ref(null)
 const auditEvents = ref([])
+const documents = ref([])
+const evaluations = ref([])
 const loading = ref(false)
 const detailLoading = ref(false)
 const errorMessage = ref('')
 const noticeMessage = ref('')
 const showCreateForm = ref(true)
+const showGovernance = ref(false)
 
 const form = reactive({
   tenantId: 'tenant-demo',
@@ -23,6 +26,21 @@ const form = reactive({
   promptVersion: 'prompt-v1',
   policyVersion: 'policy-v1',
   budget: 1,
+  idempotencyKey: '',
+  permissions: '',
+})
+
+const documentForm = reactive({
+  title: '订单处理规则',
+  content: '订单状态变更必须经过审核，并保留操作来源。',
+  sensitivity: 'INTERNAL',
+  allowedUsers: '',
+})
+
+const evaluationForm = reactive({
+  name: '控制台快速回归',
+  input: '请分析订单状态',
+  expectedContains: '请分析订单状态',
 })
 
 const stats = computed(() => ({
@@ -79,14 +97,18 @@ function clearMessages() {
 async function loadDashboard() {
   clearMessages()
   try {
-    const [runData, toolData, summaryData] = await Promise.all([
+    const [runData, toolData, summaryData, documentData, evaluationData] = await Promise.all([
       api.listRuns(),
       api.listTools(),
       api.dashboardSummary(),
+      api.listDocuments(),
+      api.listEvaluations(),
     ])
     runs.value = runData
     tools.value = toolData
     summary.value = summaryData
+    documents.value = documentData
+    evaluations.value = evaluationData
     if (selectedRun.value) {
       await selectRun(selectedRun.value.run.id, false)
     } else if (runs.value.length) {
@@ -94,6 +116,46 @@ async function loadDashboard() {
     }
   } catch (error) {
     errorMessage.value = error.message
+  }
+}
+
+async function createDocument() {
+  clearMessages()
+  loading.value = true
+  try {
+    await api.createDocument({ ...documentForm })
+    noticeMessage.value = '知识文档已保存，后续模型步骤会按租户和用户权限检索'
+    await loadDashboard()
+  } catch (error) {
+    errorMessage.value = error.message
+  } finally {
+    loading.value = false
+  }
+}
+
+async function runQuickEvaluation() {
+  clearMessages()
+  loading.value = true
+  try {
+    await api.runEvaluation({
+      name: evaluationForm.name,
+      modelName: form.modelName || null,
+      promptVersion: form.promptVersion,
+      policyVersion: form.policyVersion,
+      cases: [{
+        name: '控制台用例',
+        input: evaluationForm.input,
+        toolName: 'demo.echo',
+        expectedContains: evaluationForm.expectedContains,
+        budget: 1,
+      }],
+    })
+    noticeMessage.value = '评测完成，报告已记录'
+    await loadDashboard()
+  } catch (error) {
+    errorMessage.value = error.message
+  } finally {
+    loading.value = false
   }
 }
 
@@ -116,6 +178,7 @@ async function createAndStartRun() {
   loading.value = true
   try {
     localStorage.setItem('harnessTenantId', form.tenantId)
+    localStorage.setItem('harnessUserId', form.userId)
     const created = await api.createRun({
       ...form,
       budget: Number(form.budget),
@@ -321,6 +384,14 @@ onMounted(loadDashboard)
             <span>策略版本</span>
             <input v-model="form.policyVersion" required />
           </label>
+          <label class="field">
+            <span>幂等键（可选）</span>
+            <input v-model="form.idempotencyKey" maxlength="128" placeholder="例如：order-123" />
+          </label>
+          <label class="field">
+            <span>权限快照（可选）</span>
+            <input v-model="form.permissions" maxlength="1000" placeholder="例如：orders.read,orders.write" />
+          </label>
           <div class="form-actions field-wide">
             <span class="form-hint">创建后会依次执行模型步骤和工具步骤，并记录完整审计链。</span>
             <button class="primary-button" type="submit" :disabled="loading">{{ loading ? '执行中…' : '创建并执行' }}</button>
@@ -385,7 +456,7 @@ onMounted(loadDashboard)
               <div><span>租户 / 用户</span><strong>{{ selectedRun.run.tenantId }} / {{ selectedRun.run.userId }}</strong></div>
               <div><span>模型</span><strong>{{ selectedRun.run.modelName }}</strong></div>
               <div><span>Prompt / 策略</span><strong>{{ selectedRun.run.promptVersion }} · {{ selectedRun.run.policyVersion }}</strong></div>
-              <div><span>创建时间</span><strong>{{ formatDate(selectedRun.run.createdAt) }}</strong></div>
+              <div><span>Trace / 耗时</span><strong>{{ selectedRun.run.traceId?.slice(0, 12) || '—' }} · {{ selectedRun.run.durationMs || 0 }} ms</strong></div>
             </div>
 
             <div class="input-preview"><span>任务输入</span><p>{{ selectedRun.run.input }}</p></div>
@@ -399,7 +470,7 @@ onMounted(loadDashboard)
                     <div class="step-title-row"><div><span class="step-type">{{ stepLabel(step.type) }}</span><strong>{{ step.name }}</strong></div><span class="step-status" :class="statusClass(step.status)">{{ statusLabel(step.status) }}</span></div>
                     <p v-if="step.output" class="step-output">{{ step.output }}</p>
                     <p v-if="step.error" class="step-error">{{ step.error }}</p>
-                    <small>尝试 {{ step.attempt }} 次 · {{ formatDate(step.finishedAt || step.startedAt) }}<span v-if="step.inputTokens"> · {{ step.inputTokens + step.outputTokens }} tokens</span></small>
+                    <small>尝试 {{ step.attempt }} 次 · {{ formatDate(step.finishedAt || step.startedAt) }} · {{ step.durationMs || 0 }} ms<span v-if="step.inputTokens"> · {{ step.inputTokens + step.outputTokens }} tokens</span><span v-if="step.cost"> · ${{ step.cost }}</span></small>
                   </div>
                 </div>
               </div>
@@ -409,7 +480,7 @@ onMounted(loadDashboard)
               <div class="subsection-title"><h3>审计事件</h3><span>{{ auditEvents.length }} events</span></div>
               <div class="audit-list">
                 <div v-for="event in auditEvents" :key="event.id" class="audit-row">
-                  <span class="audit-time">{{ formatDate(event.createdAt) }}</span><strong>{{ event.eventType }}</strong><span>{{ event.message }}</span>
+                  <span class="audit-time">{{ formatDate(event.createdAt) }}</span><strong>{{ event.eventType }}</strong><span>{{ event.message }}</span><small v-if="event.actorId">{{ event.actorId }} · {{ event.traceId?.slice(0, 10) }}</small>
                 </div>
                 <div v-if="!auditEvents.length" class="muted-line">暂无审计事件</div>
               </div>
@@ -425,7 +496,38 @@ onMounted(loadDashboard)
             <div class="tool-card-top"><span class="tool-symbol">⌁</span><span class="risk-badge" :class="`risk-${tool.riskLevel.toLowerCase()}`">{{ tool.riskLevel }}</span></div>
             <strong>{{ tool.name }}</strong>
             <p>{{ tool.description }}</p>
-            <small>{{ tool.readOnly ? '只读工具' : '有副作用' }} · {{ tool.requiresApproval ? '需要人工审批' : '可直接执行' }}</small>
+            <small>{{ tool.readOnly ? '只读工具' : '有副作用' }} · {{ tool.requiresApproval ? '需要人工审批' : '可直接执行' }} · 超时 {{ tool.timeoutMs }}ms</small>
+            <small v-if="tool.requiredPermissions?.length">权限：{{ tool.requiredPermissions.join('、') }}</small>
+          </div>
+        </div>
+      </section>
+
+      <section class="governance-section panel" id="governance">
+        <div class="panel-heading">
+          <div><p class="eyebrow">CONTEXT / EVALUATION</p><h2>上下文与评测治理</h2></div>
+          <button class="secondary-button" type="button" @click="showGovernance = !showGovernance">{{ showGovernance ? '收起' : '展开治理面板' }}</button>
+        </div>
+        <div v-if="showGovernance" class="governance-grid">
+          <form class="governance-card" @submit.prevent="createDocument">
+            <h3>添加授权知识文档</h3>
+            <label class="field"><span>标题</span><input v-model="documentForm.title" required /></label>
+            <label class="field"><span>内容</span><textarea v-model="documentForm.content" required rows="3"></textarea></label>
+            <label class="field"><span>可见用户（逗号分隔，可留空）</span><input v-model="documentForm.allowedUsers" /></label>
+            <button class="secondary-button" type="submit" :disabled="loading">保存文档</button>
+            <small class="form-hint">当前 {{ documents.length }} 篇文档；模型检索前会先执行租户和用户过滤。</small>
+          </form>
+          <form class="governance-card" @submit.prevent="runQuickEvaluation">
+            <h3>运行快速回归评测</h3>
+            <label class="field"><span>报告名称</span><input v-model="evaluationForm.name" required /></label>
+            <label class="field"><span>测试输入</span><textarea v-model="evaluationForm.input" required rows="2"></textarea></label>
+            <label class="field"><span>期望包含</span><input v-model="evaluationForm.expectedContains" /></label>
+            <button class="secondary-button" type="submit" :disabled="loading">执行评测</button>
+            <small class="form-hint">历史报告 {{ evaluations.length }} 份；每份报告绑定模型、Prompt 和策略版本。</small>
+          </form>
+        </div>
+        <div v-if="showGovernance && evaluations.length" class="evaluation-list">
+          <div v-for="report in evaluations.slice(0, 5)" :key="report.id" class="evaluation-row">
+            <strong>{{ report.name }}</strong><span>{{ report.passedCases }}/{{ report.totalCases }} 通过</span><small>{{ report.promptVersion }} · {{ formatDate(report.createdAt) }}</small>
           </div>
         </div>
       </section>

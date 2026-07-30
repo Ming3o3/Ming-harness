@@ -156,6 +156,7 @@ h3 { margin: 0; font-size: 13px; }
 .audit-list { display: grid; gap: 9px; }
 .audit-row { display: grid; grid-template-columns: 74px 110px 1fr; gap: 9px; align-items: baseline; color: var(--muted); font-size: 10px; }
 .audit-row strong { color: var(--soft); font: 10px "DM Mono", monospace; }
+.audit-row small { color: var(--muted); font: 9px "DM Mono", monospace; }
 .audit-time { color: #5c6a87; font: 9px "DM Mono", monospace; }
 .muted-line { color: var(--muted); font-size: 10px; }
 
@@ -171,6 +172,14 @@ h3 { margin: 0; font-size: 13px; }
 .tool-card > strong { color: #e9edfb; font: 11px "DM Mono", monospace; }
 .tool-card p { min-height: 32px; margin: 8px 0 11px; color: var(--muted); font-size: 10px; line-height: 1.55; }
 .tool-card small { color: #596780; font-size: 9px; }
+.governance-section { margin-top: 18px; }
+.governance-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.governance-card { display: grid; gap: 11px; border: 1px solid var(--line); border-radius: 9px; background: rgba(6,11,23,.28); padding: 15px; }
+.governance-card h3 { margin-bottom: 2px; }
+.evaluation-list { display: grid; gap: 5px; margin-top: 14px; border-top: 1px solid var(--line); padding-top: 13px; }
+.evaluation-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 12px; border-bottom: 1px solid rgba(153,174,218,.08); padding: 9px 0; color: var(--soft); font-size: 11px; }
+.evaluation-row span { color: var(--green); font: 10px "DM Mono", monospace; }
+.evaluation-row small { color: var(--muted); font: 9px "DM Mono", monospace; }
 .footer { padding: 28px 0 0; color: #4d5b75; font: 9px "DM Mono", monospace; letter-spacing: .04em; }
 
 @media (max-width: 1300px) {
