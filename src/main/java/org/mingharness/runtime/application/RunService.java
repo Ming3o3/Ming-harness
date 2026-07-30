@@ -26,6 +26,8 @@ import org.mingharness.policy.PolicyContext;
 import org.mingharness.policy.PolicyDecision;
 import org.mingharness.policy.PolicyDecisionType;
 import org.mingharness.policy.PolicyEngine;
+import org.mingharness.context.ContextBuilder;
+import org.mingharness.context.api.ContextResult;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,6 +54,7 @@ public class RunService {
     private final PolicyEngine policyEngine;
     private final ToolInputValidator toolInputValidator;
     private final BoundedExecutor boundedExecutor;
+    private final ContextBuilder contextBuilder;
 
     public RunService(RunRepository runRepository,
                       AuditEventRepository auditEventRepository,
@@ -63,7 +66,8 @@ public class RunService {
                       RuntimeLimits runtimeLimits,
                       PolicyEngine policyEngine,
                       ToolInputValidator toolInputValidator,
-                      BoundedExecutor boundedExecutor) {
+                      BoundedExecutor boundedExecutor,
+                      ContextBuilder contextBuilder) {
         this.runRepository = runRepository;
         this.auditEventRepository = auditEventRepository;
         this.toolRegistry = toolRegistry;
@@ -75,6 +79,7 @@ public class RunService {
         this.policyEngine = policyEngine;
         this.toolInputValidator = toolInputValidator;
         this.boundedExecutor = boundedExecutor;
+        this.contextBuilder = contextBuilder;
     }
 
     @Transactional
@@ -252,9 +257,18 @@ public class RunService {
         record(run.getId(), step.getId(), "STEP_STARTED", "开始执行步骤: " + step.getName());
         try {
             if (step.getType() == StepType.MODEL) {
+                ContextResult context = contextBuilder.build(run.getTenantId(), run.getUserId(),
+                        step.getInput(), runtimeLimits.maxContextChars());
+                if (!context.isEmpty()) {
+                    record(run.getId(), step.getId(), "CONTEXT_RETRIEVED",
+                            "检索到 " + context.evidences().size() + " 条授权来源");
+                }
+                String modelInput = context.isEmpty()
+                        ? step.getInput()
+                        : step.getInput() + "\n\n参考资料（请保留来源标记）:\n" + context.text();
                 ModelResponse response = boundedExecutor.execute("模型调用", runtimeLimits.modelTimeoutMs(),
                         () -> modelGateway.complete(new ModelRequest(
-                                step.getInput(), run.getModelName(), run.getPromptVersion())));
+                                modelInput, run.getModelName(), run.getPromptVersion())));
                 step.succeed(response.content(), response.inputTokens(), response.outputTokens(), response.cost());
             } else {
                 HarnessTool tool = toolRegistry.get(step.getName());

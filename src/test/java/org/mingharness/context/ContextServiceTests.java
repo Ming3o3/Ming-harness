@@ -1,0 +1,65 @@
+package org.mingharness.context;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mingharness.common.BusinessException;
+import org.mingharness.context.api.CreateDocumentRequest;
+import org.mingharness.context.api.CreateMemoryRequest;
+import org.mingharness.context.api.ContextResult;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+
+import java.time.Instant;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+@SpringBootTest
+class ContextServiceTests {
+
+    @Autowired
+    private ContextService contextService;
+    @Autowired
+    private ContextBuilder contextBuilder;
+    @Autowired
+    private KnowledgeDocumentRepository documentRepository;
+    @Autowired
+    private MemoryEntryRepository memoryRepository;
+
+    @BeforeEach
+    void cleanDatabase() {
+        memoryRepository.deleteAll();
+        documentRepository.deleteAll();
+    }
+
+    @Test
+    void shouldFilterDocumentsByTenantAndUserBeforeRetrieval() {
+        contextService.createDocument("tenant-a", "owner", new CreateDocumentRequest(
+                "订单规则", "订单状态必须经过审核", "INTERNAL", "operator"));
+        contextService.createDocument("tenant-a", "owner", new CreateDocumentRequest(
+                "私有规则", "只有 other 可以看到的订单规则", "INTERNAL", "other"));
+        contextService.createDocument("tenant-b", "owner", new CreateDocumentRequest(
+                "其他租户", "订单规则不能跨租户读取", "INTERNAL", "operator"));
+
+        ContextResult result = contextBuilder.build("tenant-a", "operator", "订单规则", 4_000);
+
+        assertEquals(1, result.evidences().size());
+        assertEquals("订单规则", result.evidences().get(0).title());
+    }
+
+    @Test
+    void shouldRejectSensitiveLongTermMemory() {
+        assertThrows(BusinessException.class, () -> contextService.createMemory("tenant-a", "operator",
+                new CreateMemoryRequest("profile", "api_key=do-not-store", null, null)));
+    }
+
+    @Test
+    void shouldExpireAndDeleteUserMemory() {
+        MemoryEntry memory = contextService.createMemory("tenant-a", "operator",
+                new CreateMemoryRequest("preference", "偏好中文回答", "run-1", Instant.now().plusSeconds(60)));
+
+        assertEquals(1, contextService.listMemories("tenant-a", "operator").size());
+        contextService.deleteMemory("tenant-a", "operator", memory.getId());
+        assertEquals(0, contextService.listMemories("tenant-a", "operator").size());
+    }
+}

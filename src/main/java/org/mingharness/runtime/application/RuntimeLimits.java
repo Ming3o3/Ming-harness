@@ -9,7 +9,8 @@ public record RuntimeLimits(
         int maxStepsPerRun,
         int maxInputLength,
         java.math.BigDecimal maxBudget,
-        int modelTimeoutMs
+        int modelTimeoutMs,
+        int maxContextChars
 ) {
 
     public RuntimeLimits {
@@ -27,6 +28,9 @@ public record RuntimeLimits(
         }
         if (modelTimeoutMs < 1) {
             modelTimeoutMs = 30_000;
+        }
+        if (maxContextChars < 1) {
+            maxContextChars = 4_000;
         }
     }
 }
