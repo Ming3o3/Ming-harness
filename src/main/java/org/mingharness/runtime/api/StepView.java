@@ -15,6 +15,8 @@ public record StepView(
         String output,
         String error,
         int attempt,
+        int inputTokens,
+        int outputTokens,
         Instant startedAt,
         Instant finishedAt
 ) {

@@ -11,6 +11,9 @@ public record CreateRunRequest(
         @NotBlank(message = "任务名称不能为空") String title,
         @NotBlank(message = "任务输入不能为空") String input,
         String toolName,
+        String modelName,
+        String promptVersion,
+        String policyVersion,
         @DecimalMin(value = "0.0", inclusive = false, message = "预算必须大于 0") BigDecimal budget
 ) {
 }

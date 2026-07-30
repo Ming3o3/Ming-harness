@@ -39,6 +39,8 @@ public class Step {
     @Lob
     private String error;
     private int attempt;
+    private int inputTokens;
+    private int outputTokens;
     private Instant startedAt;
     private Instant finishedAt;
 
@@ -68,10 +70,16 @@ public class Step {
     }
 
     public void succeed(String output) {
+        succeed(output, 0, 0);
+    }
+
+    public void succeed(String output, int inputTokens, int outputTokens) {
         if (status != StepStatus.RUNNING) {
             throw new IllegalStateException("Step 不在执行中: " + status);
         }
         this.output = output;
+        this.inputTokens = inputTokens;
+        this.outputTokens = outputTokens;
         this.status = StepStatus.SUCCEEDED;
         this.finishedAt = Instant.now();
     }
@@ -92,6 +100,8 @@ public class Step {
     public String getOutput() { return output; }
     public String getError() { return error; }
     public int getAttempt() { return attempt; }
+    public int getInputTokens() { return inputTokens; }
+    public int getOutputTokens() { return outputTokens; }
     public Instant getStartedAt() { return startedAt; }
     public Instant getFinishedAt() { return finishedAt; }
 }

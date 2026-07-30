@@ -27,6 +27,9 @@ public class Run {
     private String tenantId;
     private String userId;
     private String title;
+    private String modelName;
+    private String promptVersion;
+    private String policyVersion;
     @Lob
     @Column(name = "input_data")
     private String input;
@@ -49,13 +52,17 @@ public class Run {
     protected Run() {
     }
 
-    public Run(String tenantId, String userId, String title, String input, BigDecimal budget) {
+    public Run(String tenantId, String userId, String title, String input, BigDecimal budget,
+               String modelName, String promptVersion, String policyVersion) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = tenantId;
         this.userId = userId;
         this.title = title;
         this.input = input;
         this.budget = budget;
+        this.modelName = modelName;
+        this.promptVersion = promptVersion;
+        this.policyVersion = policyVersion;
         this.status = RunStatus.QUEUED;
         this.createdAt = Instant.now();
         this.updatedAt = this.createdAt;
@@ -111,6 +118,9 @@ public class Run {
     public String getTenantId() { return tenantId; }
     public String getUserId() { return userId; }
     public String getTitle() { return title; }
+    public String getModelName() { return modelName; }
+    public String getPromptVersion() { return promptVersion; }
+    public String getPolicyVersion() { return policyVersion; }
     public String getInput() { return input; }
     public String getOutput() { return output; }
     public String getError() { return error; }

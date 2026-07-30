@@ -46,20 +46,21 @@ class RunServiceTests {
     void shouldCreateAndExecuteRunIdempotently() {
         RunSummary created = runService.create(request("demo.echo", "检查订单状态"));
         assertEquals(RunStatus.QUEUED, created.status());
-        assertEquals(1, created.stepCount());
+        assertEquals(2, created.stepCount());
 
         RunDetail firstResult = runService.start(created.id());
-        assertEquals(RunStatus.SUCCEEDED, firstResult.run().status());
+        assertEquals(RunStatus.SUCCEEDED, firstResult.run().status(), firstResult.run().error() + " / " + firstResult.steps());
         assertEquals("检查订单状态", firstResult.run().output());
         assertEquals(StepStatus.SUCCEEDED, firstResult.steps().get(0).status());
-        assertEquals(1, firstResult.steps().get(0).attempt());
+        assertEquals(StepStatus.SUCCEEDED, firstResult.steps().get(1).status());
+        assertEquals(1, firstResult.steps().get(1).attempt());
 
         RunDetail secondResult = runService.start(created.id());
-        assertEquals(1, secondResult.steps().get(0).attempt());
+        assertEquals(1, secondResult.steps().get(1).attempt());
         long successEvents = auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
                 .filter(event -> "STEP_SUCCEEDED".equals(event.getEventType()))
                 .count();
-        assertEquals(1, successEvents);
+        assertEquals(2, successEvents);
     }
 
     @Test
@@ -68,7 +69,8 @@ class RunServiceTests {
         RunDetail result = runService.start(created.id());
 
         assertEquals(RunStatus.FAILED, result.run().status());
-        assertEquals(StepStatus.FAILED, result.steps().get(0).status());
+        assertEquals(StepStatus.SUCCEEDED, result.steps().get(0).status());
+        assertEquals(StepStatus.FAILED, result.steps().get(1).status());
         assertEquals("测试工具执行失败", result.run().error());
         long failureEvents = auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
                 .filter(event -> "RUN_FAILED".equals(event.getEventType()))
@@ -92,6 +94,9 @@ class RunServiceTests {
                 "测试任务",
                 input,
                 toolName,
+                null,
+                null,
+                null,
                 BigDecimal.TEN
         );
     }

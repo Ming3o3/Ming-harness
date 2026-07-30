@@ -12,6 +12,10 @@ import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.runtime.domain.Step;
 import org.mingharness.runtime.domain.StepStatus;
 import org.mingharness.runtime.domain.StepType;
+import org.mingharness.model.ModelGateway;
+import org.mingharness.model.ModelRequest;
+import org.mingharness.model.ModelResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.mingharness.runtime.repository.RunRepository;
 import org.mingharness.tool.HarnessTool;
 import org.mingharness.tool.ToolRegistry;
@@ -28,13 +32,25 @@ public class RunService {
     private final RunRepository runRepository;
     private final AuditEventRepository auditEventRepository;
     private final ToolRegistry toolRegistry;
+    private final ModelGateway modelGateway;
+    private final String defaultModel;
+    private final String defaultPromptVersion;
+    private final String defaultPolicyVersion;
 
     public RunService(RunRepository runRepository,
                       AuditEventRepository auditEventRepository,
-                      ToolRegistry toolRegistry) {
+                      ToolRegistry toolRegistry,
+                      ModelGateway modelGateway,
+                      @Value("${harness.model.name:demo-model}") String defaultModel,
+                      @Value("${harness.prompt.version:prompt-v1}") String defaultPromptVersion,
+                      @Value("${harness.policy.version:policy-v1}") String defaultPolicyVersion) {
         this.runRepository = runRepository;
         this.auditEventRepository = auditEventRepository;
         this.toolRegistry = toolRegistry;
+        this.modelGateway = modelGateway;
+        this.defaultModel = defaultModel;
+        this.defaultPromptVersion = defaultPromptVersion;
+        this.defaultPolicyVersion = defaultPolicyVersion;
     }
 
     @Transactional
@@ -48,9 +64,13 @@ public class RunService {
                 request.userId(),
                 request.title(),
                 request.input(),
-                request.budget() == null ? BigDecimal.ONE : request.budget()
+                request.budget() == null ? BigDecimal.ONE : request.budget(),
+                valueOrDefault(request.modelName(), defaultModel),
+                valueOrDefault(request.promptVersion(), defaultPromptVersion),
+                valueOrDefault(request.policyVersion(), defaultPolicyVersion)
         );
-        run.addStep(new Step(1, StepType.TOOL, toolName, request.input()));
+        run.addStep(new Step(1, StepType.MODEL, "model.complete", request.input()));
+        run.addStep(new Step(2, StepType.TOOL, toolName, request.input()));
         Run saved = runRepository.save(run);
         record(saved.getId(), null, "RUN_CREATED", "创建执行任务");
         return toSummary(saved);
@@ -71,7 +91,7 @@ public class RunService {
         record(run.getId(), null, "RUN_STARTED", "开始执行任务");
 
         try {
-            for (Step step : run.getSteps()) {
+            for (Step step : List.copyOf(run.getSteps())) {
                 executeStep(run, step);
             }
             String output = run.getSteps().stream()
@@ -82,7 +102,7 @@ public class RunService {
             run.succeed(output);
             record(run.getId(), null, "RUN_SUCCEEDED", "任务执行成功");
         } catch (RuntimeException exception) {
-            run.fail(exception.getMessage() == null ? "执行失败" : exception.getMessage());
+            run.fail(exception.getMessage() == null ? exception.toString() : exception.getMessage());
             runRepository.save(run);
             record(run.getId(), null, "RUN_FAILED", run.getError());
         }
@@ -121,9 +141,16 @@ public class RunService {
         runRepository.save(run);
         record(run.getId(), step.getId(), "STEP_STARTED", "开始执行步骤: " + step.getName());
         try {
-            HarnessTool tool = toolRegistry.get(step.getName());
-            String output = tool.execute(step.getInput());
-            step.succeed(output);
+            if (step.getType() == StepType.MODEL) {
+                ModelResponse response = modelGateway.complete(new ModelRequest(
+                        step.getInput(), run.getModelName(), run.getPromptVersion()
+                ));
+                step.succeed(response.content(), response.inputTokens(), response.outputTokens());
+            } else {
+                HarnessTool tool = toolRegistry.get(step.getName());
+                String output = tool.execute(step.getInput());
+                step.succeed(output);
+            }
             record(run.getId(), step.getId(), "STEP_SUCCEEDED", "步骤执行成功");
         } catch (Exception exception) {
             step.fail(exception.getMessage() == null ? "步骤执行失败" : exception.getMessage());
@@ -147,6 +174,7 @@ public class RunService {
                 run.getSteps().stream().map(step -> new StepView(
                         step.getId(), step.getSequence(), step.getType(), step.getStatus(), step.getName(),
                         step.getInput(), step.getOutput(), step.getError(), step.getAttempt(),
+                        step.getInputTokens(), step.getOutputTokens(),
                         step.getStartedAt(), step.getFinishedAt()
                 )).toList()
         );
@@ -154,9 +182,14 @@ public class RunService {
 
     private RunSummary toSummary(Run run) {
         return new RunSummary(
-                run.getId(), run.getTenantId(), run.getUserId(), run.getTitle(), run.getInput(),
+                run.getId(), run.getTenantId(), run.getUserId(), run.getTitle(), run.getModelName(),
+                run.getPromptVersion(), run.getPolicyVersion(), run.getInput(),
                 run.getOutput(), run.getError(), run.getStatus(), run.getBudget(), run.getCreatedAt(),
                 run.getUpdatedAt(), run.getSteps().size()
         );
+    }
+
+    private String valueOrDefault(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 }
