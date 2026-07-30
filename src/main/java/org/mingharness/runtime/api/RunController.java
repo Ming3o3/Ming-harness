@@ -40,11 +40,14 @@ public class RunController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public RunSummary create(@Valid @RequestBody CreateRunRequest request,
-                             @RequestHeader(name = "X-Tenant-Id", defaultValue = "tenant-demo") String tenantId) {
+                             @RequestHeader(name = "X-Tenant-Id", defaultValue = "tenant-demo") String tenantId,
+                             @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey) {
         if (!tenantId.equals(request.tenantId())) {
             throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_ACCESS_DENIED", "请求租户与当前租户不一致");
         }
-        return runService.create(request);
+        String effectiveKey = idempotencyKey == null || idempotencyKey.isBlank()
+                ? request.idempotencyKey() : idempotencyKey;
+        return runService.create(request.withIdempotencyKey(effectiveKey));
     }
 
     @PostMapping("/{runId}/start")

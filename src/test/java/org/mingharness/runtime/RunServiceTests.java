@@ -89,6 +89,30 @@ class RunServiceTests {
     }
 
     @Test
+    void shouldReturnSameRunForRepeatedIdempotencyKey() {
+        CreateRunRequest request = request("demo.echo", "幂等执行")
+                .withIdempotencyKey("request-123");
+
+        RunSummary first = runService.create(request);
+        RunSummary second = runService.create(request);
+
+        assertEquals(first.id(), second.id());
+        assertEquals("request-123", second.idempotencyKey());
+    }
+
+    @Test
+    void shouldRejectReusingIdempotencyKeyForDifferentRequest() {
+        runService.create(request("demo.echo", "原始输入").withIdempotencyKey("request-456"));
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> runService.create(request("demo.echo", "变更输入").withIdempotencyKey("request-456"))
+        );
+
+        assertEquals("IDEMPOTENCY_KEY_REUSED", exception.getCode());
+    }
+
+    @Test
     void shouldPauseForApprovalAndResumeAfterApproval() {
         RunSummary created = runService.create(request("demo.approval", "执行高风险演示操作"));
 

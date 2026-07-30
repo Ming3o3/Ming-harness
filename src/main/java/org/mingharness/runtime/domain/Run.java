@@ -11,6 +11,7 @@ import jakarta.persistence.Lob;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
+import jakarta.persistence.UniqueConstraint;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -19,7 +20,10 @@ import java.util.List;
 import java.util.UUID;
 
 @Entity
-@Table(name = "harness_runs")
+@Table(name = "harness_runs", uniqueConstraints = @UniqueConstraint(
+        name = "uk_harness_run_tenant_idempotency",
+        columnNames = {"tenant_id", "idempotency_key"}
+))
 public class Run {
 
     @Id
@@ -30,6 +34,8 @@ public class Run {
     private String modelName;
     private String promptVersion;
     private String policyVersion;
+    @Column(name = "idempotency_key", length = 128)
+    private String idempotencyKey;
     @Lob
     @Column(name = "input_data")
     private String input;
@@ -54,6 +60,11 @@ public class Run {
 
     public Run(String tenantId, String userId, String title, String input, BigDecimal budget,
                String modelName, String promptVersion, String policyVersion) {
+        this(tenantId, userId, title, input, budget, modelName, promptVersion, policyVersion, null);
+    }
+
+    public Run(String tenantId, String userId, String title, String input, BigDecimal budget,
+               String modelName, String promptVersion, String policyVersion, String idempotencyKey) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = tenantId;
         this.userId = userId;
@@ -63,6 +74,7 @@ public class Run {
         this.modelName = modelName;
         this.promptVersion = promptVersion;
         this.policyVersion = policyVersion;
+        this.idempotencyKey = idempotencyKey;
         this.status = RunStatus.QUEUED;
         this.createdAt = Instant.now();
         this.updatedAt = this.createdAt;
@@ -143,6 +155,7 @@ public class Run {
     public String getModelName() { return modelName; }
     public String getPromptVersion() { return promptVersion; }
     public String getPolicyVersion() { return policyVersion; }
+    public String getIdempotencyKey() { return idempotencyKey; }
     public String getInput() { return input; }
     public String getOutput() { return output; }
     public String getError() { return error; }

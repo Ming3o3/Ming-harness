@@ -20,6 +20,7 @@ public record RunSummary(
         BigDecimal budget,
         Instant createdAt,
         Instant updatedAt,
-        int stepCount
+        int stepCount,
+        String idempotencyKey
 ) {
 }

@@ -26,6 +26,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 
 @Service
 public class RunService {
@@ -37,6 +39,7 @@ public class RunService {
     private final String defaultModel;
     private final String defaultPromptVersion;
     private final String defaultPolicyVersion;
+    private final RuntimeLimits runtimeLimits;
 
     public RunService(RunRepository runRepository,
                       AuditEventRepository auditEventRepository,
@@ -44,7 +47,8 @@ public class RunService {
                       ModelGateway modelGateway,
                       @Value("${harness.model.name:demo-model}") String defaultModel,
                       @Value("${harness.prompt.version:prompt-v1}") String defaultPromptVersion,
-                      @Value("${harness.policy.version:policy-v1}") String defaultPolicyVersion) {
+                      @Value("${harness.policy.version:policy-v1}") String defaultPolicyVersion,
+                      RuntimeLimits runtimeLimits) {
         this.runRepository = runRepository;
         this.auditEventRepository = auditEventRepository;
         this.toolRegistry = toolRegistry;
@@ -52,6 +56,7 @@ public class RunService {
         this.defaultModel = defaultModel;
         this.defaultPromptVersion = defaultPromptVersion;
         this.defaultPolicyVersion = defaultPolicyVersion;
+        this.runtimeLimits = runtimeLimits;
     }
 
     @Transactional
@@ -59,6 +64,19 @@ public class RunService {
         String toolName = request.toolName() == null || request.toolName().isBlank()
                 ? "demo.echo" : request.toolName();
         toolRegistry.get(toolName);
+
+        String idempotencyKey = normalizeIdempotencyKey(request.idempotencyKey());
+        if (idempotencyKey != null) {
+            Optional<Run> existing = runRepository.findByTenantIdAndIdempotencyKey(request.tenantId(), idempotencyKey);
+            if (existing.isPresent()) {
+                if (!sameCreateRequest(existing.get(), request, toolName)) {
+                    throw new BusinessException(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED",
+                            "幂等键已经用于其他任务");
+                }
+                return toSummary(existing.get());
+            }
+        }
+        validateRuntimeLimits(request);
 
         Run run = new Run(
                 request.tenantId(),
@@ -68,10 +86,15 @@ public class RunService {
                 request.budget() == null ? BigDecimal.ONE : request.budget(),
                 valueOrDefault(request.modelName(), defaultModel),
                 valueOrDefault(request.promptVersion(), defaultPromptVersion),
-                valueOrDefault(request.policyVersion(), defaultPolicyVersion)
+                valueOrDefault(request.policyVersion(), defaultPolicyVersion),
+                idempotencyKey
         );
         run.addStep(new Step(1, StepType.MODEL, "model.complete", request.input()));
         run.addStep(new Step(2, StepType.TOOL, toolName, request.input()));
+        if (run.getSteps().size() > runtimeLimits.maxStepsPerRun()) {
+            throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "STEP_LIMIT_EXCEEDED",
+                    "任务步骤数超过租户运行上限");
+        }
         Run saved = runRepository.save(run);
         record(saved.getId(), null, "RUN_CREATED", "创建执行任务");
         return toSummary(saved);
@@ -287,8 +310,47 @@ public class RunService {
                 run.getId(), run.getTenantId(), run.getUserId(), run.getTitle(), run.getModelName(),
                 run.getPromptVersion(), run.getPolicyVersion(), run.getInput(),
                 run.getOutput(), run.getError(), run.getStatus(), run.getBudget(), run.getCreatedAt(),
-                run.getUpdatedAt(), run.getSteps().size()
+                run.getUpdatedAt(), run.getSteps().size(), run.getIdempotencyKey()
         );
+    }
+
+    private void validateRuntimeLimits(CreateRunRequest request) {
+        if (request.input() != null && request.input().length() > runtimeLimits.maxInputLength()) {
+            throw new BusinessException(HttpStatus.PAYLOAD_TOO_LARGE, "INPUT_TOO_LARGE",
+                    "任务输入超过允许的最大长度");
+        }
+        BigDecimal budget = request.budget() == null ? BigDecimal.ONE : request.budget();
+        if (budget.compareTo(runtimeLimits.maxBudget()) > 0) {
+            throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "BUDGET_EXCEEDED",
+                    "任务预算超过运行上限");
+        }
+        long activeRuns = runRepository.countByTenantIdAndStatusIn(
+                request.tenantId(), List.of(RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.WAITING_APPROVAL));
+        if (activeRuns >= runtimeLimits.maxActiveRunsPerTenant()) {
+            throw new BusinessException(HttpStatus.TOO_MANY_REQUESTS, "TENANT_RUN_QUOTA_EXCEEDED",
+                    "租户当前运行数已达到上限");
+        }
+    }
+
+    private String normalizeIdempotencyKey(String idempotencyKey) {
+        if (idempotencyKey == null || idempotencyKey.isBlank()) {
+            return null;
+        }
+        return idempotencyKey.trim();
+    }
+
+    private boolean sameCreateRequest(Run run, CreateRunRequest request, String toolName) {
+        String modelName = valueOrDefault(request.modelName(), defaultModel);
+        String promptVersion = valueOrDefault(request.promptVersion(), defaultPromptVersion);
+        String policyVersion = valueOrDefault(request.policyVersion(), defaultPolicyVersion);
+        return Objects.equals(run.getUserId(), request.userId())
+                && Objects.equals(run.getTitle(), request.title())
+                && Objects.equals(run.getInput(), request.input())
+                && Objects.equals(run.getModelName(), modelName)
+                && Objects.equals(run.getPromptVersion(), promptVersion)
+                && Objects.equals(run.getPolicyVersion(), policyVersion)
+                && run.getBudget().compareTo(request.budget() == null ? BigDecimal.ONE : request.budget()) == 0
+                && run.getSteps().stream().anyMatch(step -> Objects.equals(step.getName(), toolName));
     }
 
     private String valueOrDefault(String value, String fallback) {
