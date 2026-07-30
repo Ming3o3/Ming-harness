@@ -35,7 +35,7 @@ npm run dev
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `SERVER_PORT` | `8080` | 后端端口 |
-| `DB_URL` | `jdbc:h2:file:./data/ming-harness` | 数据库连接，生产环境建议替换为 PostgreSQL/MySQL |
+| `DB_URL` | `jdbc:h2:file:./data/ming-harness;DB_CLOSE_ON_EXIT=FALSE` | 数据库连接，生产环境建议替换为 PostgreSQL/MySQL |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 前端来源白名单 |
 | `MODEL_ENABLED` | `false` | 是否启用 OpenAI 兼容模型网关 |
 | `MODEL_BASE_URL` | `https://api.openai.com/v1` | 模型服务地址 |
