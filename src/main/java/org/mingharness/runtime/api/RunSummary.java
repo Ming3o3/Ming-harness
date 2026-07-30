@@ -26,4 +26,14 @@ public record RunSummary(
         long durationMs,
         BigDecimal totalCost
 ) {
+
+    /** 兼容早期只返回幂等键的调用方。 */
+    public RunSummary(String id, String tenantId, String userId, String title, String modelName,
+                      String promptVersion, String policyVersion, String input, String output,
+                      String error, RunStatus status, BigDecimal budget, Instant createdAt,
+                      Instant updatedAt, int stepCount, String idempotencyKey) {
+        this(id, tenantId, userId, title, modelName, promptVersion, policyVersion, input, output,
+                error, status, budget, createdAt, updatedAt, stepCount, idempotencyKey,
+                null, 0, BigDecimal.ZERO);
+    }
 }

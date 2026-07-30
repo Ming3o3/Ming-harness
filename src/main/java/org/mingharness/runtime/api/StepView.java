@@ -24,4 +24,12 @@ public record StepView(
         long durationMs,
         BigDecimal cost
 ) {
+
+    /** 兼容早期没有 Span、耗时和成本字段的接口调用方。 */
+    public StepView(String id, int sequence, StepType type, StepStatus status, String name,
+                    String input, String output, String error, int attempt, int inputTokens,
+                    int outputTokens, Instant startedAt, Instant finishedAt) {
+        this(id, sequence, type, status, name, input, output, error, attempt, inputTokens,
+                outputTokens, startedAt, finishedAt, null, 0, BigDecimal.ZERO);
+    }
 }
