@@ -37,6 +37,9 @@ public class Run {
     @Column(name = "idempotency_key", length = 128)
     private String idempotencyKey;
     @Lob
+    @Column(name = "permissions_snapshot")
+    private String permissionsSnapshot;
+    @Lob
     @Column(name = "input_data")
     private String input;
     @Lob
@@ -65,6 +68,13 @@ public class Run {
 
     public Run(String tenantId, String userId, String title, String input, BigDecimal budget,
                String modelName, String promptVersion, String policyVersion, String idempotencyKey) {
+        this(tenantId, userId, title, input, budget, modelName, promptVersion, policyVersion,
+                idempotencyKey, null);
+    }
+
+    public Run(String tenantId, String userId, String title, String input, BigDecimal budget,
+               String modelName, String promptVersion, String policyVersion, String idempotencyKey,
+               String permissionsSnapshot) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = tenantId;
         this.userId = userId;
@@ -75,6 +85,7 @@ public class Run {
         this.promptVersion = promptVersion;
         this.policyVersion = policyVersion;
         this.idempotencyKey = idempotencyKey;
+        this.permissionsSnapshot = permissionsSnapshot;
         this.status = RunStatus.QUEUED;
         this.createdAt = Instant.now();
         this.updatedAt = this.createdAt;
@@ -99,6 +110,15 @@ public class Run {
         }
         this.error = error;
         this.status = RunStatus.FAILED;
+        touch();
+    }
+
+    public void timeout(String error) {
+        if (status == RunStatus.SUCCEEDED || status == RunStatus.CANCELLED) {
+            return;
+        }
+        this.error = error;
+        this.status = RunStatus.TIMED_OUT;
         touch();
     }
 
@@ -156,6 +176,7 @@ public class Run {
     public String getPromptVersion() { return promptVersion; }
     public String getPolicyVersion() { return policyVersion; }
     public String getIdempotencyKey() { return idempotencyKey; }
+    public String getPermissionsSnapshot() { return permissionsSnapshot; }
     public String getInput() { return input; }
     public String getOutput() { return output; }
     public String getError() { return error; }

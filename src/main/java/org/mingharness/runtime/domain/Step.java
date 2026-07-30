@@ -91,6 +91,12 @@ public class Step {
         this.finishedAt = Instant.now();
     }
 
+    public void timeout(String error) {
+        this.error = error;
+        this.status = StepStatus.TIMED_OUT;
+        this.finishedAt = Instant.now();
+    }
+
     public void requestApproval() {
         if (status != StepStatus.QUEUED) {
             throw new IllegalStateException("只有排队中的步骤可以申请审批: " + status);

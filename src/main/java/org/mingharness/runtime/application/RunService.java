@@ -19,7 +19,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.mingharness.runtime.repository.RunRepository;
 import org.mingharness.dashboard.RunDashboardSummary;
 import org.mingharness.tool.HarnessTool;
+import org.mingharness.tool.ToolDefinition;
+import org.mingharness.tool.ToolInputValidator;
 import org.mingharness.tool.ToolRegistry;
+import org.mingharness.policy.PolicyContext;
+import org.mingharness.policy.PolicyDecision;
+import org.mingharness.policy.PolicyDecisionType;
+import org.mingharness.policy.PolicyEngine;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +34,9 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Arrays;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class RunService {
@@ -40,6 +49,9 @@ public class RunService {
     private final String defaultPromptVersion;
     private final String defaultPolicyVersion;
     private final RuntimeLimits runtimeLimits;
+    private final PolicyEngine policyEngine;
+    private final ToolInputValidator toolInputValidator;
+    private final BoundedExecutor boundedExecutor;
 
     public RunService(RunRepository runRepository,
                       AuditEventRepository auditEventRepository,
@@ -48,7 +60,10 @@ public class RunService {
                       @Value("${harness.model.name:demo-model}") String defaultModel,
                       @Value("${harness.prompt.version:prompt-v1}") String defaultPromptVersion,
                       @Value("${harness.policy.version:policy-v1}") String defaultPolicyVersion,
-                      RuntimeLimits runtimeLimits) {
+                      RuntimeLimits runtimeLimits,
+                      PolicyEngine policyEngine,
+                      ToolInputValidator toolInputValidator,
+                      BoundedExecutor boundedExecutor) {
         this.runRepository = runRepository;
         this.auditEventRepository = auditEventRepository;
         this.toolRegistry = toolRegistry;
@@ -57,13 +72,17 @@ public class RunService {
         this.defaultPromptVersion = defaultPromptVersion;
         this.defaultPolicyVersion = defaultPolicyVersion;
         this.runtimeLimits = runtimeLimits;
+        this.policyEngine = policyEngine;
+        this.toolInputValidator = toolInputValidator;
+        this.boundedExecutor = boundedExecutor;
     }
 
     @Transactional
     public RunSummary create(CreateRunRequest request) {
         String toolName = request.toolName() == null || request.toolName().isBlank()
                 ? "demo.echo" : request.toolName();
-        toolRegistry.get(toolName);
+        HarnessTool selectedTool = toolRegistry.get(toolName);
+        toolInputValidator.validate(selectedTool.definition(), request.input());
 
         String idempotencyKey = normalizeIdempotencyKey(request.idempotencyKey());
         if (idempotencyKey != null) {
@@ -87,7 +106,8 @@ public class RunService {
                 valueOrDefault(request.modelName(), defaultModel),
                 valueOrDefault(request.promptVersion(), defaultPromptVersion),
                 valueOrDefault(request.policyVersion(), defaultPolicyVersion),
-                idempotencyKey
+                idempotencyKey,
+                normalizePermissions(request.permissions())
         );
         run.addStep(new Step(1, StepType.MODEL, "model.complete", request.input()));
         run.addStep(new Step(2, StepType.TOOL, toolName, request.input()));
@@ -228,16 +248,21 @@ public class RunService {
         record(run.getId(), step.getId(), "STEP_STARTED", "开始执行步骤: " + step.getName());
         try {
             if (step.getType() == StepType.MODEL) {
-                ModelResponse response = modelGateway.complete(new ModelRequest(
-                        step.getInput(), run.getModelName(), run.getPromptVersion()
-                ));
+                ModelResponse response = boundedExecutor.execute("模型调用", runtimeLimits.modelTimeoutMs(),
+                        () -> modelGateway.complete(new ModelRequest(
+                                step.getInput(), run.getModelName(), run.getPromptVersion())));
                 step.succeed(response.content(), response.inputTokens(), response.outputTokens());
             } else {
                 HarnessTool tool = toolRegistry.get(step.getName());
-                String output = tool.execute(step.getInput());
+                String output = boundedExecutor.execute("工具 " + step.getName(), tool.definition().timeoutMs(),
+                        () -> tool.execute(step.getInput()));
                 step.succeed(output);
             }
             record(run.getId(), step.getId(), "STEP_SUCCEEDED", "步骤执行成功");
+        } catch (ExecutionTimeoutException exception) {
+            step.timeout(exception.getMessage());
+            record(run.getId(), step.getId(), "STEP_TIMED_OUT", step.getError());
+            throw exception;
         } catch (Exception exception) {
             step.fail(exception.getMessage() == null ? "步骤执行失败" : exception.getMessage());
             record(run.getId(), step.getId(), "STEP_FAILED", step.getError());
@@ -253,11 +278,19 @@ public class RunService {
                 }
                 if (step.getType() == StepType.TOOL) {
                     HarnessTool tool = toolRegistry.get(step.getName());
-                    if (tool.definition().requiresApproval() && !step.isApprovalGranted()) {
+                    ToolDefinition definition = tool.definition();
+                    PolicyDecision decision = policyEngine.evaluate(
+                            new PolicyContext(run.getTenantId(), run.getUserId(), permissions(run), step.isApprovalGranted()),
+                            definition);
+                    if (decision.type() == PolicyDecisionType.DENY) {
+                        record(run.getId(), step.getId(), "POLICY_DENIED", decision.reason());
+                        throw new BusinessException(HttpStatus.FORBIDDEN, "POLICY_DENIED", decision.reason());
+                    }
+                    if (decision.requiresApproval()) {
                         step.requestApproval();
                         run.waitApproval();
                         runRepository.save(run);
-                        record(run.getId(), step.getId(), "APPROVAL_REQUESTED", "高风险工具等待人工审批");
+                        record(run.getId(), step.getId(), "APPROVAL_REQUESTED", decision.reason());
                         return toDetail(run);
                     }
                 }
@@ -270,6 +303,10 @@ public class RunService {
                     .orElse("");
             run.succeed(output);
             record(run.getId(), null, "RUN_SUCCEEDED", "任务执行成功");
+        } catch (ExecutionTimeoutException exception) {
+            run.timeout(exception.getMessage() == null ? "步骤执行超时" : exception.getMessage());
+            runRepository.save(run);
+            record(run.getId(), null, "RUN_TIMED_OUT", run.getError());
         } catch (RuntimeException exception) {
             run.fail(exception.getMessage() == null ? exception.toString() : exception.getMessage());
             runRepository.save(run);
@@ -337,6 +374,28 @@ public class RunService {
             return null;
         }
         return idempotencyKey.trim();
+    }
+
+    private String normalizePermissions(String permissions) {
+        if (permissions == null || permissions.isBlank()) {
+            return "";
+        }
+        return Arrays.stream(permissions.split(","))
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .sorted()
+                .collect(Collectors.joining(","));
+    }
+
+    private Set<String> permissions(Run run) {
+        if (run.getPermissionsSnapshot() == null || run.getPermissionsSnapshot().isBlank()) {
+            return Set.of();
+        }
+        return Arrays.stream(run.getPermissionsSnapshot().split(","))
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     private boolean sameCreateRequest(Run run, CreateRunRequest request, String toolName) {

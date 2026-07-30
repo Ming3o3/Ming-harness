@@ -8,7 +8,8 @@ public record RuntimeLimits(
         int maxActiveRunsPerTenant,
         int maxStepsPerRun,
         int maxInputLength,
-        java.math.BigDecimal maxBudget
+        java.math.BigDecimal maxBudget,
+        int modelTimeoutMs
 ) {
 
     public RuntimeLimits {
@@ -23,6 +24,9 @@ public record RuntimeLimits(
         }
         if (maxBudget == null || maxBudget.signum() <= 0) {
             maxBudget = java.math.BigDecimal.valueOf(1_000);
+        }
+        if (modelTimeoutMs < 1) {
+            modelTimeoutMs = 30_000;
         }
     }
 }

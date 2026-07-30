@@ -21,6 +21,7 @@ import org.springframework.context.annotation.Import;
 
 import java.math.BigDecimal;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -162,6 +163,37 @@ class RunServiceTests {
         assertEquals(2, retried.steps().get(1).attempt());
     }
 
+    @Test
+    void shouldDenyToolWhenPermissionIsMissing() {
+        RunSummary created = runService.create(request("test.secured", "读取订单"));
+
+        RunDetail result = runService.start(created.id(), "tenant-demo");
+
+        assertEquals(RunStatus.FAILED, result.run().status());
+        assertEquals("缺少工具所需权限: orders.read", result.run().error());
+    }
+
+    @Test
+    void shouldAllowToolWhenPermissionIsSnapshotted() {
+        RunSummary created = runService.create(request("test.secured", "读取订单")
+                .withPermissions("orders.read"));
+
+        RunDetail result = runService.start(created.id(), "tenant-demo");
+
+        assertEquals(RunStatus.SUCCEEDED, result.run().status());
+        assertEquals("已读取订单: 读取订单", result.run().output());
+    }
+
+    @Test
+    void shouldTimeoutSlowTool() {
+        RunSummary created = runService.create(request("test.slow", "慢任务"));
+
+        RunDetail result = runService.start(created.id(), "tenant-demo");
+
+        assertEquals(RunStatus.TIMED_OUT, result.run().status());
+        assertEquals(StepStatus.TIMED_OUT, result.steps().get(1).status());
+    }
+
     private CreateRunRequest request(String toolName, String input) {
         return new CreateRunRequest(
                 "tenant-demo",
@@ -209,6 +241,44 @@ class RunServiceTests {
                         throw new IllegalStateException("瞬态工具错误");
                     }
                     return "重试成功: " + input;
+                }
+            };
+        }
+
+        @Bean
+        HarnessTool securedTool() {
+            return new HarnessTool() {
+                @Override
+                public ToolDefinition definition() {
+                    return new ToolDefinition("test.secured", "需要订单读取权限的测试工具", true, "LOW", false,
+                            Map.of("type", "object"), Set.of("orders.read"), 1_000, 1,
+                            "DENY_EXTERNAL", Map.of());
+                }
+
+                @Override
+                public String execute(String input) {
+                    return "已读取订单: " + input;
+                }
+            };
+        }
+
+        @Bean
+        HarnessTool slowTool() {
+            return new HarnessTool() {
+                @Override
+                public ToolDefinition definition() {
+                    return new ToolDefinition("test.slow", "用于验证超时边界的工具", true, "LOW", false,
+                            Map.of(), Set.of(), 20, 1, "DENY_EXTERNAL", Map.of());
+                }
+
+                @Override
+                public String execute(String input) {
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                    }
+                    return input;
                 }
             };
         }
