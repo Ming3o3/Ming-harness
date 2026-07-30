@@ -11,6 +11,7 @@ import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -20,6 +21,7 @@ public class Step {
 
     @Id
     private String id;
+    private String spanId;
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "run_id", nullable = false)
     private Run run;
@@ -44,12 +46,15 @@ public class Step {
     private boolean approvalGranted;
     private Instant startedAt;
     private Instant finishedAt;
+    private long durationMs;
+    private BigDecimal cost = BigDecimal.ZERO;
 
     protected Step() {
     }
 
     public Step(int sequence, StepType type, String name, String input) {
         this.id = UUID.randomUUID().toString();
+        this.spanId = UUID.randomUUID().toString();
         this.sequence = sequence;
         this.type = type;
         this.name = name;
@@ -75,26 +80,34 @@ public class Step {
     }
 
     public void succeed(String output, int inputTokens, int outputTokens) {
+        succeed(output, inputTokens, outputTokens, BigDecimal.ZERO);
+    }
+
+    public void succeed(String output, int inputTokens, int outputTokens, BigDecimal cost) {
         if (status != StepStatus.RUNNING) {
             throw new IllegalStateException("Step 不在执行中: " + status);
         }
         this.output = output;
         this.inputTokens = inputTokens;
         this.outputTokens = outputTokens;
+        this.cost = cost == null ? BigDecimal.ZERO : cost;
         this.status = StepStatus.SUCCEEDED;
         this.finishedAt = Instant.now();
+        this.durationMs = elapsedMs();
     }
 
     public void fail(String error) {
         this.error = error;
         this.status = StepStatus.FAILED;
         this.finishedAt = Instant.now();
+        this.durationMs = elapsedMs();
     }
 
     public void timeout(String error) {
         this.error = error;
         this.status = StepStatus.TIMED_OUT;
         this.finishedAt = Instant.now();
+        this.durationMs = elapsedMs();
     }
 
     public void requestApproval() {
@@ -124,6 +137,7 @@ public class Step {
     }
 
     public String getId() { return id; }
+    public String getSpanId() { return spanId; }
     public Run getRun() { return run; }
     public int getSequence() { return sequence; }
     public StepType getType() { return type; }
@@ -138,4 +152,11 @@ public class Step {
     public boolean isApprovalGranted() { return approvalGranted; }
     public Instant getStartedAt() { return startedAt; }
     public Instant getFinishedAt() { return finishedAt; }
+    public long getDurationMs() { return durationMs; }
+    public BigDecimal getCost() { return cost; }
+
+    private long elapsedMs() {
+        return startedAt == null || finishedAt == null
+                ? 0 : java.time.Duration.between(startedAt, finishedAt).toMillis();
+    }
 }

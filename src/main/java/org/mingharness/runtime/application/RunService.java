@@ -162,7 +162,11 @@ public class RunService {
                 countStatus(runs, RunStatus.FAILED),
                 countStatus(runs, RunStatus.CANCELLED),
                 runs.stream().flatMap(run -> run.getSteps().stream()).mapToLong(Step::getInputTokens).sum(),
-                runs.stream().flatMap(run -> run.getSteps().stream()).mapToLong(Step::getOutputTokens).sum()
+                runs.stream().flatMap(run -> run.getSteps().stream()).mapToLong(Step::getOutputTokens).sum(),
+                runs.stream().mapToLong(Run::getDurationMs).sum(),
+                runs.stream().flatMap(run -> run.getSteps().stream())
+                        .map(Step::getCost)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add)
         );
     }
 
@@ -251,7 +255,7 @@ public class RunService {
                 ModelResponse response = boundedExecutor.execute("模型调用", runtimeLimits.modelTimeoutMs(),
                         () -> modelGateway.complete(new ModelRequest(
                                 step.getInput(), run.getModelName(), run.getPromptVersion())));
-                step.succeed(response.content(), response.inputTokens(), response.outputTokens());
+                step.succeed(response.content(), response.inputTokens(), response.outputTokens(), response.cost());
             } else {
                 HarnessTool tool = toolRegistry.get(step.getName());
                 String output = boundedExecutor.execute("工具 " + step.getName(), tool.definition().timeoutMs(),
@@ -327,7 +331,14 @@ public class RunService {
     }
 
     private void record(String runId, String stepId, String eventType, String message) {
-        auditEventRepository.save(new AuditEvent(runId, stepId, eventType, message));
+        Run run = runRepository.findById(runId).orElse(null);
+        auditEventRepository.save(new AuditEvent(
+                run == null ? null : run.getTenantId(),
+                run == null ? null : run.getUserId(),
+                run == null ? null : run.getTraceId(),
+                runId, stepId, eventType, message,
+                run == null ? null : "{\"status\":\"" + run.getStatus() + "\"}"
+        ));
     }
 
     private RunDetail toDetail(Run run) {
@@ -337,7 +348,8 @@ public class RunService {
                         step.getId(), step.getSequence(), step.getType(), step.getStatus(), step.getName(),
                         step.getInput(), step.getOutput(), step.getError(), step.getAttempt(),
                         step.getInputTokens(), step.getOutputTokens(),
-                        step.getStartedAt(), step.getFinishedAt()
+                        step.getStartedAt(), step.getFinishedAt(), step.getSpanId(),
+                        step.getDurationMs(), step.getCost()
                 )).toList()
         );
     }
@@ -347,7 +359,9 @@ public class RunService {
                 run.getId(), run.getTenantId(), run.getUserId(), run.getTitle(), run.getModelName(),
                 run.getPromptVersion(), run.getPolicyVersion(), run.getInput(),
                 run.getOutput(), run.getError(), run.getStatus(), run.getBudget(), run.getCreatedAt(),
-                run.getUpdatedAt(), run.getSteps().size(), run.getIdempotencyKey()
+                run.getUpdatedAt(), run.getSteps().size(), run.getIdempotencyKey(), run.getTraceId(),
+                run.getDurationMs(), run.getSteps().stream().map(Step::getCost)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add)
         );
     }
 

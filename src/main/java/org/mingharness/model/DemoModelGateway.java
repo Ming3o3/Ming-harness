@@ -3,6 +3,8 @@ package org.mingharness.model;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+
 @Component
 @ConditionalOnProperty(prefix = "harness.model", name = "enabled", havingValue = "false", matchIfMissing = true)
 public class DemoModelGateway implements ModelGateway {
@@ -18,7 +20,9 @@ public class DemoModelGateway implements ModelGateway {
                 request.model() == null || request.model().isBlank() ? "demo-model" : request.model(),
                 request.promptVersion() == null || request.promptVersion().isBlank() ? "prompt-v1" : request.promptVersion(),
                 estimateTokens(input),
-                estimateTokens(content)
+                estimateTokens(content),
+                BigDecimal.valueOf(estimateTokens(input) + estimateTokens(content))
+                        .multiply(BigDecimal.valueOf(0.000001))
         );
     }
 

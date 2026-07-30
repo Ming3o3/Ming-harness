@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @SpringBootTest
 @Import(RunServiceTests.FailureToolConfiguration.class)
@@ -63,6 +64,10 @@ class RunServiceTests {
                 .filter(event -> "STEP_SUCCEEDED".equals(event.getEventType()))
                 .count();
         assertEquals(2, successEvents);
+        var traceEvent = auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).get(0);
+        assertNotNull(firstResult.run().traceId());
+        assertEquals(firstResult.run().traceId(), traceEvent.getTraceId());
+        assertEquals("tenant-demo", traceEvent.getTenantId());
     }
 
     @Test

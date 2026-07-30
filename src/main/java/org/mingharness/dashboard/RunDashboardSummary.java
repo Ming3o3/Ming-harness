@@ -1,5 +1,7 @@
 package org.mingharness.dashboard;
 
+import java.math.BigDecimal;
+
 public record RunDashboardSummary(
         long total,
         long queued,
@@ -9,6 +11,8 @@ public record RunDashboardSummary(
         long failed,
         long cancelled,
         long inputTokens,
-        long outputTokens
+        long outputTokens,
+        long totalDurationMs,
+        BigDecimal totalCost
 ) {
 }

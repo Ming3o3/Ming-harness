@@ -21,6 +21,9 @@ public record RunSummary(
         Instant createdAt,
         Instant updatedAt,
         int stepCount,
-        String idempotencyKey
+        String idempotencyKey,
+        String traceId,
+        long durationMs,
+        BigDecimal totalCost
 ) {
 }

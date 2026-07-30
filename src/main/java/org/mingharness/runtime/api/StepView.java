@@ -3,6 +3,7 @@ package org.mingharness.runtime.api;
 import org.mingharness.runtime.domain.StepStatus;
 import org.mingharness.runtime.domain.StepType;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 public record StepView(
@@ -18,6 +19,9 @@ public record StepView(
         int inputTokens,
         int outputTokens,
         Instant startedAt,
-        Instant finishedAt
+        Instant finishedAt,
+        String spanId,
+        long durationMs,
+        BigDecimal cost
 ) {
 }

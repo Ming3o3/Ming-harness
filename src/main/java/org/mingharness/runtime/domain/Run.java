@@ -39,6 +39,7 @@ public class Run {
     @Lob
     @Column(name = "permissions_snapshot")
     private String permissionsSnapshot;
+    private String traceId;
     @Lob
     @Column(name = "input_data")
     private String input;
@@ -52,6 +53,8 @@ public class Run {
     private BigDecimal budget;
     private Instant createdAt;
     private Instant updatedAt;
+    private Instant startedAt;
+    private Instant finishedAt;
     @Version
     private long version;
 
@@ -86,6 +89,7 @@ public class Run {
         this.policyVersion = policyVersion;
         this.idempotencyKey = idempotencyKey;
         this.permissionsSnapshot = permissionsSnapshot;
+        this.traceId = UUID.randomUUID().toString();
         this.status = RunStatus.QUEUED;
         this.createdAt = Instant.now();
         this.updatedAt = this.createdAt;
@@ -94,6 +98,8 @@ public class Run {
     public void start() {
         requireStatus(RunStatus.QUEUED);
         this.status = RunStatus.RUNNING;
+        this.startedAt = Instant.now();
+        this.finishedAt = null;
         touch();
     }
 
@@ -101,6 +107,7 @@ public class Run {
         requireStatus(RunStatus.RUNNING);
         this.output = output;
         this.status = RunStatus.SUCCEEDED;
+        this.finishedAt = Instant.now();
         touch();
     }
 
@@ -110,6 +117,7 @@ public class Run {
         }
         this.error = error;
         this.status = RunStatus.FAILED;
+        this.finishedAt = Instant.now();
         touch();
     }
 
@@ -119,6 +127,7 @@ public class Run {
         }
         this.error = error;
         this.status = RunStatus.TIMED_OUT;
+        this.finishedAt = Instant.now();
         touch();
     }
 
@@ -127,6 +136,7 @@ public class Run {
             return;
         }
         this.status = RunStatus.CANCELLED;
+        this.finishedAt = Instant.now();
         touch();
     }
 
@@ -177,6 +187,7 @@ public class Run {
     public String getPolicyVersion() { return policyVersion; }
     public String getIdempotencyKey() { return idempotencyKey; }
     public String getPermissionsSnapshot() { return permissionsSnapshot; }
+    public String getTraceId() { return traceId; }
     public String getInput() { return input; }
     public String getOutput() { return output; }
     public String getError() { return error; }
@@ -184,6 +195,15 @@ public class Run {
     public BigDecimal getBudget() { return budget; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public Instant getStartedAt() { return startedAt; }
+    public Instant getFinishedAt() { return finishedAt; }
+    public long getDurationMs() {
+        if (startedAt == null) {
+            return 0;
+        }
+        Instant end = finishedAt == null ? Instant.now() : finishedAt;
+        return java.time.Duration.between(startedAt, end).toMillis();
+    }
     public long getVersion() { return version; }
     public List<Step> getSteps() { return steps; }
 }
