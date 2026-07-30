@@ -55,6 +55,7 @@ public class RunService {
     private final ToolInputValidator toolInputValidator;
     private final BoundedExecutor boundedExecutor;
     private final ContextBuilder contextBuilder;
+    private final TenantRateLimiter tenantRateLimiter;
 
     public RunService(RunRepository runRepository,
                       AuditEventRepository auditEventRepository,
@@ -67,7 +68,8 @@ public class RunService {
                       PolicyEngine policyEngine,
                       ToolInputValidator toolInputValidator,
                       BoundedExecutor boundedExecutor,
-                      ContextBuilder contextBuilder) {
+                      ContextBuilder contextBuilder,
+                      TenantRateLimiter tenantRateLimiter) {
         this.runRepository = runRepository;
         this.auditEventRepository = auditEventRepository;
         this.toolRegistry = toolRegistry;
@@ -80,6 +82,7 @@ public class RunService {
         this.toolInputValidator = toolInputValidator;
         this.boundedExecutor = boundedExecutor;
         this.contextBuilder = contextBuilder;
+        this.tenantRateLimiter = tenantRateLimiter;
     }
 
     @Transactional
@@ -100,6 +103,7 @@ public class RunService {
                 return toSummary(existing.get());
             }
         }
+        tenantRateLimiter.acquire(request.tenantId());
         validateRuntimeLimits(request);
 
         Run run = new Run(

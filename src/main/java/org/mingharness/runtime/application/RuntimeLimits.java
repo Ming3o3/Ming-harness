@@ -10,7 +10,8 @@ public record RuntimeLimits(
         int maxInputLength,
         java.math.BigDecimal maxBudget,
         int modelTimeoutMs,
-        int maxContextChars
+        int maxContextChars,
+        int maxCreatesPerMinute
 ) {
 
     public RuntimeLimits {
@@ -31,6 +32,9 @@ public record RuntimeLimits(
         }
         if (maxContextChars < 1) {
             maxContextChars = 4_000;
+        }
+        if (maxCreatesPerMinute < 1) {
+            maxCreatesPerMinute = 60;
         }
     }
 }
