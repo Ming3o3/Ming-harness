@@ -61,15 +61,17 @@ public class RunController {
 
     @PostMapping("/{runId}/approve")
     public RunDetail approve(@PathVariable String runId,
-                             @RequestHeader(name = "X-Tenant-Id", defaultValue = "tenant-demo") String tenantId) {
-        return runService.approve(runId, tenantId);
+                             @RequestHeader(name = "X-Tenant-Id", defaultValue = "tenant-demo") String tenantId,
+                             @RequestHeader(name = "X-User-Id", defaultValue = "operator") String approverId) {
+        return runService.approve(runId, tenantId, approverId);
     }
 
     @PostMapping("/{runId}/reject")
     public RunDetail reject(@PathVariable String runId,
                             @RequestHeader(name = "X-Tenant-Id", defaultValue = "tenant-demo") String tenantId,
+                            @RequestHeader(name = "X-User-Id", defaultValue = "operator") String approverId,
                             @RequestBody(required = false) ApprovalDecisionRequest request) {
-        return runService.reject(runId, tenantId, request == null ? null : request.reason());
+        return runService.reject(runId, tenantId, request == null ? null : request.reason(), approverId);
     }
 
     @PostMapping("/{runId}/retry")

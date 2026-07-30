@@ -126,13 +126,18 @@ class RunServiceTests {
         assertEquals(RunStatus.WAITING_APPROVAL, waiting.run().status());
         assertEquals(StepStatus.WAITING_APPROVAL, waiting.steps().get(1).status());
 
-        RunDetail completed = runService.approve(created.id(), "tenant-demo");
+        RunDetail completed = runService.approve(created.id(), "tenant-demo", "approver-1");
         assertEquals(RunStatus.SUCCEEDED, completed.run().status());
         assertEquals(StepStatus.SUCCEEDED, completed.steps().get(1).status());
         assertEquals(1, completed.steps().get(1).attempt());
         assertEquals(1, auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
                 .filter(event -> "APPROVAL_APPROVED".equals(event.getEventType()))
                 .count());
+        var approvalEvent = auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
+                .filter(event -> "APPROVAL_APPROVED".equals(event.getEventType()))
+                .findFirst().orElseThrow();
+        assertEquals("approver-1", approvalEvent.getActorId());
+        org.junit.jupiter.api.Assertions.assertTrue(approvalEvent.getMetadata().contains("demo.approval"));
     }
 
     @Test

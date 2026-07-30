@@ -196,6 +196,11 @@ public class RunService {
 
     @Transactional
     public RunDetail approve(String runId, String tenantId) {
+        return approve(runId, tenantId, null);
+    }
+
+    @Transactional
+    public RunDetail approve(String runId, String tenantId, String approverId) {
         Run run = getRun(runId);
         assertTenant(run, tenantId);
         if (run.getStatus() != RunStatus.WAITING_APPROVAL) {
@@ -208,12 +213,19 @@ public class RunService {
         step.approve();
         run.resumeAfterApproval();
         runRepository.save(run);
-        record(run.getId(), step.getId(), "APPROVAL_APPROVED", "人工审批通过");
+        String actorId = approverId == null || approverId.isBlank() ? run.getUserId() : approverId;
+        record(run.getId(), step.getId(), "APPROVAL_APPROVED", "人工审批通过", actorId,
+                approvalSnapshot(step));
         return executePending(run);
     }
 
     @Transactional
     public RunDetail reject(String runId, String tenantId, String reason) {
+        return reject(runId, tenantId, reason, null);
+    }
+
+    @Transactional
+    public RunDetail reject(String runId, String tenantId, String reason, String approverId) {
         Run run = getRun(runId);
         assertTenant(run, tenantId);
         if (run.getStatus() != RunStatus.WAITING_APPROVAL) {
@@ -227,7 +239,9 @@ public class RunService {
         step.fail(rejectReason);
         run.fail(rejectReason);
         runRepository.save(run);
-        record(run.getId(), step.getId(), "APPROVAL_REJECTED", rejectReason);
+        String actorId = approverId == null || approverId.isBlank() ? run.getUserId() : approverId;
+        record(run.getId(), step.getId(), "APPROVAL_REJECTED", rejectReason, actorId,
+                approvalSnapshot(step));
         record(run.getId(), null, "RUN_FAILED", rejectReason);
         return toDetail(run);
     }
@@ -350,13 +364,26 @@ public class RunService {
 
     private void record(String runId, String stepId, String eventType, String message) {
         Run run = runRepository.findById(runId).orElse(null);
+        record(runId, stepId, eventType, message,
+                run == null ? null : run.getUserId(), null);
+    }
+
+    private void record(String runId, String stepId, String eventType, String message,
+                        String actorId, String metadata) {
+        Run run = runRepository.findById(runId).orElse(null);
         auditEventRepository.save(new AuditEvent(
                 run == null ? null : run.getTenantId(),
-                run == null ? null : run.getUserId(),
+                actorId,
                 run == null ? null : run.getTraceId(),
                 runId, stepId, eventType, message,
-                run == null ? null : "{\"status\":\"" + run.getStatus() + "\"}"
+                metadata == null
+                        ? run == null ? null : "{\"status\":\"" + run.getStatus() + "\"}"
+                        : metadata
         ));
+    }
+
+    private String approvalSnapshot(Step step) {
+        return "tool=" + step.getName() + ";input=" + step.getInput();
     }
 
     private RunDetail toDetail(Run run) {
