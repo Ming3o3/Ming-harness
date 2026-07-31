@@ -87,6 +87,8 @@ npm run dev
 | `SPRING_PROFILES_ACTIVE` | `local` | `local`、`local-infra`，可组合 `oidc` |
 | `HARNESS_EXECUTION_MODE` | `sync` | `sync` 或 `rabbit` |
 | `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | Redis 连接参数 |
+| `REDIS_LOCK_TTL_MS` | `30000` | Run 执行锁和租户配额锁租约时长，不能低于 1000 毫秒 |
+| `REDIS_QUOTA_LOCK_WAIT_MS` | `1000` | 活动 Run 配额锁等待时长；Redis 不可用时快速失败 |
 | `RABBITMQ_HOST` / `RABBITMQ_PORT` | `localhost` / `5672` | RabbitMQ 连接参数 |
 | `OUTBOX_CLAIM_LEASE_MS` | `30000` | Outbox Relay 发布租约时长；实例中断后过期租约可被其他实例接管 |
 

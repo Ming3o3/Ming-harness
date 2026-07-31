@@ -6,9 +6,12 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "harness.redis")
 public record RedisProperties(
         boolean enabled,
-        long lockTtlMs
+        long lockTtlMs,
+        long quotaLockWaitMs
 ) {
     public RedisProperties {
-        lockTtlMs = lockTtlMs < 1 ? 30_000 : lockTtlMs;
+        // 执行锁和配额锁都必须覆盖一次数据库事务，过短租约会重新引入并发竞态。
+        lockTtlMs = lockTtlMs < 1_000 ? 30_000 : lockTtlMs;
+        quotaLockWaitMs = quotaLockWaitMs < 1 ? 1_000 : Math.min(quotaLockWaitMs, 30_000);
     }
 }

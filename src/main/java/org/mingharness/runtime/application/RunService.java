@@ -70,6 +70,7 @@ public class RunService {
     private final ToolOutputValidator toolOutputValidator;
     private final OutboxService outboxService;
     private final RunExecutionLock executionLock;
+    private final TenantRunQuotaGuard tenantRunQuotaGuard;
     private final RedisProperties redisProperties;
     private final String executionMode;
     private final String workerId = "worker-" + UUID.randomUUID();
@@ -92,6 +93,7 @@ public class RunService {
                       ToolOutputValidator toolOutputValidator,
                       OutboxService outboxService,
                       RunExecutionLock executionLock,
+                      TenantRunQuotaGuard tenantRunQuotaGuard,
                       RedisProperties redisProperties,
                       @Value("${harness.execution.mode:sync}") String executionMode,
                       HarnessMetrics metrics,
@@ -112,6 +114,7 @@ public class RunService {
         this.toolOutputValidator = toolOutputValidator;
         this.outboxService = outboxService;
         this.executionLock = executionLock;
+        this.tenantRunQuotaGuard = tenantRunQuotaGuard;
         this.redisProperties = redisProperties;
         this.executionMode = executionMode;
         this.metrics = metrics;
@@ -132,41 +135,45 @@ public class RunService {
                     "幂等键不能包含疑似密钥或凭证");
         }
         String idempotencyKey = normalizeIdempotencyKey(request.idempotencyKey());
-        if (idempotencyKey != null) {
-            Optional<Run> existing = runRepository.findByTenantIdAndIdempotencyKey(request.tenantId(), idempotencyKey);
-            if (existing.isPresent()) {
-                if (!sameCreateRequest(existing.get(), request, toolName, sanitizedTitle, sanitizedInput)) {
-                    throw new BusinessException(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED",
-                            "幂等键已经用于其他任务");
+        return tenantRunQuotaGuard.withLock(request.tenantId(), () -> {
+            // 幂等查询必须与配额计数处于同一个租户互斥区，避免并发重复创建或误占用配额。
+            if (idempotencyKey != null) {
+                Optional<Run> existing = runRepository.findByTenantIdAndIdempotencyKey(
+                        request.tenantId(), idempotencyKey);
+                if (existing.isPresent()) {
+                    if (!sameCreateRequest(existing.get(), request, toolName, sanitizedTitle, sanitizedInput)) {
+                        throw new BusinessException(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED",
+                                "幂等键已经用于其他任务");
+                    }
+                    return toSummary(existing.get());
                 }
-                return toSummary(existing.get());
             }
-        }
-        tenantRateLimiter.acquire(request.tenantId());
-        validateRuntimeLimits(request);
+            tenantRateLimiter.acquire(request.tenantId());
+            validateRuntimeLimits(request);
 
-        Run run = new Run(
-                request.tenantId(),
-                request.userId(),
-                sanitizedTitle,
-                sanitizedInput,
-                request.budget() == null ? BigDecimal.ONE : request.budget(),
-                sanitizer.sanitize(valueOrDefault(request.modelName(), defaultModel)),
-                sanitizer.sanitize(valueOrDefault(request.promptVersion(), defaultPromptVersion)),
-                sanitizer.sanitize(valueOrDefault(request.policyVersion(), defaultPolicyVersion)),
-                idempotencyKey,
-                normalizePermissions(request.permissions())
-        );
-        run.addStep(new Step(1, StepType.MODEL, "model.complete", sanitizedInput));
-        run.addStep(new Step(2, StepType.TOOL, toolName, sanitizedInput));
-        if (run.getSteps().size() > runtimeLimits.maxStepsPerRun()) {
-            throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "STEP_LIMIT_EXCEEDED",
-                    "任务步骤数超过租户运行上限");
-        }
-        Run saved = runRepository.save(run);
-        metrics.runCreated();
-        record(saved.getId(), null, "RUN_CREATED", "创建执行任务");
-        return toSummary(saved);
+            Run run = new Run(
+                    request.tenantId(),
+                    request.userId(),
+                    sanitizedTitle,
+                    sanitizedInput,
+                    request.budget() == null ? BigDecimal.ONE : request.budget(),
+                    sanitizer.sanitize(valueOrDefault(request.modelName(), defaultModel)),
+                    sanitizer.sanitize(valueOrDefault(request.promptVersion(), defaultPromptVersion)),
+                    sanitizer.sanitize(valueOrDefault(request.policyVersion(), defaultPolicyVersion)),
+                    idempotencyKey,
+                    normalizePermissions(request.permissions())
+            );
+            run.addStep(new Step(1, StepType.MODEL, "model.complete", sanitizedInput));
+            run.addStep(new Step(2, StepType.TOOL, toolName, sanitizedInput));
+            if (run.getSteps().size() > runtimeLimits.maxStepsPerRun()) {
+                throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "STEP_LIMIT_EXCEEDED",
+                        "任务步骤数超过租户运行上限");
+            }
+            Run saved = runRepository.save(run);
+            metrics.runCreated();
+            record(saved.getId(), null, "RUN_CREATED", "创建执行任务");
+            return toSummary(saved);
+        });
     }
 
     @Transactional

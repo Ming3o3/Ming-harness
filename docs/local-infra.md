@@ -146,6 +146,7 @@ brew services stop postgresql@17
 ```
 
 Redis 只保存限流计数和短期执行锁；业务数据、审计数据和幂等事实始终以 PostgreSQL 为准。
+活动 Run 配额检查还会使用 `harness:tenant:{tenantId}:run-quota-lock` 短期互斥键，锁在数据库事务提交或回滚后释放；Redis 不可用时不会退回不安全的单实例配额判断。
 
 ## 7. 数据保留和敏感信息治理
 
