@@ -180,6 +180,7 @@ class RunServiceTests {
         RunDetail result = runService.start(created.id(), "tenant-demo");
 
         assertEquals(RunStatus.FAILED, result.run().status());
+        assertEquals(StepStatus.FAILED, result.steps().get(1).status());
         assertEquals("缺少工具所需权限: orders.read", result.run().error());
     }
 

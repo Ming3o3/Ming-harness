@@ -324,6 +324,7 @@ public class RunService {
                             new PolicyContext(run.getTenantId(), run.getUserId(), permissions(run), step.isApprovalGranted()),
                             definition);
                     if (decision.type() == PolicyDecisionType.DENY) {
+                        step.fail(decision.reason());
                         record(run.getId(), step.getId(), "POLICY_DENIED", decision.reason());
                         throw new BusinessException(HttpStatus.FORBIDDEN, "POLICY_DENIED", decision.reason());
                     }
