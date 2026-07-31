@@ -4,6 +4,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.mingharness.common.BusinessException;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -18,7 +22,7 @@ import java.util.regex.Pattern;
 
 /**
  * 解析本地身份或 API Key，并为 /api/** 端点执行路径级权限校验。
- * local 模式只用于本地演示；生产部署应切换到 api-key 或下一阶段的 OIDC 适配器。
+ * local 模式只用于本地演示；生产部署应切换到 api-key 或 OIDC 认证。
  */
 @Component
 public class HarnessIdentityInterceptor implements HandlerInterceptor {
@@ -31,8 +35,9 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
         this.properties = properties;
         this.credentials = parseCredentials(properties.getApiKeys());
         if (!"local".equalsIgnoreCase(properties.getMode())
-                && !"api-key".equalsIgnoreCase(properties.getMode())) {
-            throw new IllegalArgumentException("harness.auth.mode 只支持 local 或 api-key");
+                && !"api-key".equalsIgnoreCase(properties.getMode())
+                && !"oidc".equalsIgnoreCase(properties.getMode())) {
+            throw new IllegalArgumentException("harness.auth.mode 只支持 local、api-key 或 oidc");
         }
     }
 
@@ -45,7 +50,7 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
 
         HarnessIdentity identity = resolveIdentity(request);
         String requiredPermission = requiredPermission(request.getMethod(), request.getRequestURI());
-        if ("api-key".equalsIgnoreCase(properties.getMode()) && requiredPermission != null
+        if (protectedAuthenticationMode() && requiredPermission != null
                 && !identity.hasPermission(requiredPermission)) {
             throw new BusinessException(HttpStatus.FORBIDDEN, "PERMISSION_DENIED",
                     "当前身份缺少接口权限: " + requiredPermission);
@@ -63,6 +68,9 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
     }
 
     private HarnessIdentity resolveIdentity(HttpServletRequest request) {
+        if ("oidc".equalsIgnoreCase(properties.getMode())) {
+            return resolveOidcIdentity();
+        }
         if ("api-key".equalsIgnoreCase(properties.getMode())) {
             String token = apiKey(request);
             if (token == null) {
@@ -84,6 +92,58 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
                 parsePermissions(request.getHeader("X-Permissions")),
                 "local"
         );
+    }
+
+    /** API Key 和 OIDC 都需要执行接口级 RBAC；local 保留请求头演示兼容性。 */
+    private boolean protectedAuthenticationMode() {
+        return "api-key".equalsIgnoreCase(properties.getMode())
+                || "oidc".equalsIgnoreCase(properties.getMode());
+    }
+
+    private HarnessIdentity resolveOidcIdentity() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (!(authentication instanceof JwtAuthenticationToken jwtAuthentication)
+                || !authentication.isAuthenticated()) {
+            throw new BusinessException(HttpStatus.UNAUTHORIZED, "AUTHENTICATION_REQUIRED",
+                    "OIDC JWT 身份认证失败");
+        }
+        Jwt jwt = jwtAuthentication.getToken();
+        String tenantId = firstClaim(jwt, "tenant_id", "tenant");
+        String userId = jwt.getSubject();
+        if (tenantId == null || tenantId.isBlank() || userId == null || userId.isBlank()) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "IDENTITY_CLAIMS_MISSING",
+                    "OIDC Token 缺少 tenant_id 或 sub 声明");
+        }
+        return new HarnessIdentity(tenantId, userId, jwtPermissions(jwt), "oidc");
+    }
+
+    private String firstClaim(Jwt jwt, String... names) {
+        for (String name : names) {
+            Object value = jwt.getClaims().get(name);
+            if (value != null && !value.toString().isBlank()) {
+                return value.toString();
+            }
+        }
+        return null;
+    }
+
+    private Set<String> jwtPermissions(Jwt jwt) {
+        Object raw = jwt.getClaims().get("permissions");
+        if (raw == null) raw = jwt.getClaims().get("scope");
+        if (raw == null) raw = jwt.getClaims().get("scp");
+        if (raw instanceof String value) {
+            return Arrays.stream(value.split("[ ,]"))
+                    .map(String::trim)
+                    .filter(item -> !item.isBlank())
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        }
+        if (raw instanceof java.util.Collection<?> values) {
+            return values.stream()
+                    .map(String::valueOf)
+                    .filter(item -> !item.isBlank())
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        }
+        return Set.of();
     }
 
     private String apiKey(HttpServletRequest request) {

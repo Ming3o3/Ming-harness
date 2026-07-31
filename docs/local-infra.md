@@ -56,6 +56,16 @@ export HARNESS_API_KEYS='demo-key|tenant-demo|operator|run.read,run.create,run.e
 
 调用时使用 `Authorization: Bearer demo-key`。API Key 绑定的租户和用户会覆盖请求头，Run 创建请求中的 `tenantId/userId` 必须与认证身份一致。默认 `local` 模式仍兼容 `X-Tenant-Id`、`X-User-Id` 和 `X-Permissions`，仅适合本地演示。
 
+企业 OIDC/JWT：
+
+```bash
+export SPRING_PROFILES_ACTIVE=local-infra,oidc
+export OIDC_ISSUER_URI=https://login.example.com/realms/harness
+./mvnw spring-boot:run
+```
+
+JWT 必须包含 `sub` 和 `tenant_id`（或 `tenant`），权限可放在 `permissions`、`scope` 或 `scp` 声明中。Spring Security Resource Server 负责 JWT 验签，Harness 负责租户绑定和接口 RBAC。
+
 健康检查：
 
 ```bash

@@ -5,7 +5,11 @@ import org.junit.jupiter.api.Test;
 import org.mingharness.common.BusinessException;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.oauth2.jwt.Jwt;
 
+import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -16,6 +20,7 @@ class HarnessIdentityInterceptorTests {
     @AfterEach
     void clearIdentity() {
         HarnessIdentityContext.clear();
+        SecurityContextHolder.clearContext();
     }
 
     @Test
@@ -68,6 +73,52 @@ class HarnessIdentityInterceptorTests {
         BusinessException insufficient = assertThrows(BusinessException.class,
                 () -> interceptor.preHandle(insufficientRequest, new MockHttpServletResponse(), null));
         assertEquals("PERMISSION_DENIED", insufficient.getCode());
+    }
+
+    @Test
+    void oidcShouldMapJwtClaimsToIdentity() throws Exception {
+        HarnessAuthProperties properties = new HarnessAuthProperties();
+        properties.setMode("oidc");
+        HarnessIdentityInterceptor interceptor = new HarnessIdentityInterceptor(properties);
+        Jwt jwt = Jwt.withTokenValue("test-token")
+                .header("alg", "RS256")
+                .claim("sub", "oidc-user")
+                .claim("tenant_id", "tenant-oidc")
+                .claim("permissions", List.of("run.read", "run.create"))
+                .build();
+        JwtAuthenticationToken authentication = new JwtAuthenticationToken(jwt);
+        authentication.setAuthenticated(true);
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        MockHttpServletRequest request = request("GET", "/api/runs");
+
+        interceptor.preHandle(request, new MockHttpServletResponse(), null);
+
+        assertEquals("tenant-oidc", HarnessIdentityContext.require().tenantId());
+        assertEquals("oidc-user", HarnessIdentityContext.require().userId());
+        assertTrue(HarnessIdentityContext.require().hasPermission("run.read"));
+        interceptor.afterCompletion(request, new MockHttpServletResponse(), null, null);
+    }
+
+    @Test
+    void oidcShouldRejectMissingPermission() {
+        HarnessAuthProperties properties = new HarnessAuthProperties();
+        properties.setMode("oidc");
+        HarnessIdentityInterceptor interceptor = new HarnessIdentityInterceptor(properties);
+        Jwt jwt = Jwt.withTokenValue("test-token")
+                .header("alg", "RS256")
+                .claim("sub", "oidc-user")
+                .claim("tenant_id", "tenant-oidc")
+                .claim("scope", "context.read")
+                .build();
+        JwtAuthenticationToken authentication = new JwtAuthenticationToken(jwt);
+        authentication.setAuthenticated(true);
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> interceptor.preHandle(request("GET", "/api/runs"),
+                        new MockHttpServletResponse(), null));
+
+        assertEquals("PERMISSION_DENIED", exception.getCode());
     }
 
     private MockHttpServletRequest request(String method, String uri) {

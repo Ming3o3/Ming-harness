@@ -10,7 +10,7 @@ Ming Harness 是一个面向企业 Agent 的可运行 Harness：后端使用 Spr
 - 工具注册表与确定性策略：权限、风险、审批、网络策略、超时和输入校验
 - 审计与观测：Run `traceId`、Step `spanId`、Token、耗时、成本和租户/操作者快照
 - 租户隔离：读写 Run、Step、审计事件都需要 `X-Tenant-Id`
-- 可插拔认证与 RBAC：`local` 兼容演示请求头，`api-key` 支持租户、用户和接口权限快照
+- 可插拔认证与 RBAC：`local` 兼容演示请求头，`api-key` 和 `oidc` 支持租户、用户和接口权限快照
 - 失败重试：失败步骤会保留 attempt 次数；有副作用的工具重试前会重新走审批
 - 上下文与记忆：授权文档检索、引用来源、过期记忆、删除和敏感凭证拦截
 - 离线评测：固定用例回放并保存模型/Prompt/策略版本报告
@@ -47,8 +47,9 @@ npm run dev
 | `SERVER_PORT` | `8080` | 后端端口 |
 | `DB_URL` | `jdbc:h2:file:./data/ming-harness;DB_CLOSE_ON_EXIT=FALSE` | 数据库连接，生产环境建议替换为 PostgreSQL/MySQL |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 前端来源白名单 |
-| `HARNESS_AUTH_MODE` | `local` | `local` 或 `api-key` |
+| `HARNESS_AUTH_MODE` | `local` | `local`、`api-key` 或 `oidc`（OIDC 推荐使用 `oidc` Profile） |
 | `HARNESS_API_KEYS` | 空 | `key|tenant|user|permission1,permission2;...`，生产环境通过密钥系统注入 |
+| `OIDC_ISSUER_URI` | 空 | `oidc` Profile 使用的 OIDC Issuer 地址 |
 | `MODEL_ENABLED` | `false` | 是否启用 OpenAI 兼容模型网关 |
 | `MODEL_BASE_URL` | `https://api.openai.com/v1` | 模型服务地址 |
 | `MODEL_API_KEY` | 空 | 模型服务密钥，仅通过环境变量注入 |
@@ -60,7 +61,7 @@ npm run dev
 | `MODEL_TIMEOUT_MS` | `30000` | 模型调用超时 |
 | `MAX_CONTEXT_CHARS` | `4000` | 注入模型的上下文最大字符数 |
 | `RECOVERY_TIMEOUT_MS` | `120000` | Worker 中断后将 RUNNING 任务转为超时的阈值 |
-| `SPRING_PROFILES_ACTIVE` | `local` | `local` 或 `local-infra` |
+| `SPRING_PROFILES_ACTIVE` | `local` | `local`、`local-infra`，可组合 `oidc` |
 | `HARNESS_EXECUTION_MODE` | `sync` | `sync` 或 `rabbit` |
 | `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | Redis 连接参数 |
 | `RABBITMQ_HOST` / `RABBITMQ_PORT` | `localhost` / `5672` | RabbitMQ 连接参数 |
@@ -69,9 +70,11 @@ npm run dev
 
 前端共享环境可通过 `VITE_HARNESS_API_KEY` 使用 API Key；同时设置 `VITE_HARNESS_TENANT_ID` 和 `VITE_HARNESS_USER_ID`，让创建 Run 表单与 API Key 绑定的身份保持一致。
 
-### API Key 认证
+### API Key / OIDC 认证
 
 生产或共享环境建议设置 `HARNESS_AUTH_MODE=api-key`。调用方使用 `Authorization: Bearer <key>` 或 `X-Api-Key`，服务端根据配置将请求绑定到固定租户和用户，并按接口校验权限，例如 `run.read`、`run.create`、`run.execute`、`run.approve`、`context.read`、`context.write`、`audit.read`、`evaluation.run` 和 `tool.read`。API Key 只在启动配置中出现，应用内部仅保存 SHA-256 摘要。
+
+企业环境接入 OIDC/JWT 时使用 `SPRING_PROFILES_ACTIVE=local-infra,oidc`，并设置 `OIDC_ISSUER_URI`。Spring Security Resource Server 负责验签和校验 issuer/audience 基础身份，Harness 从 JWT 的 `sub`、`tenant_id`（兼容 `tenant`）以及 `permissions`/`scope`/`scp` 声明映射用户、租户和 RBAC 权限。
 
 ## API 示例
 
@@ -97,4 +100,4 @@ curl -X POST http://localhost:8080/api/runs \
 
 ## 设计约束
 
-模型只能提出行动，工具注册表和策略代码才可以授权执行。所有执行结果、错误、审批和版本信息都会持久化，便于恢复、重放和审计。`local-infra` 已提供 PostgreSQL、Redis 共享限流/执行锁、RabbitMQ 异步 Worker 和 API Key RBAC 基线；正式环境仍需将 API Key 适配器替换为企业 OIDC/JWT、接入密钥托管、告警和密钥轮换。
+模型只能提出行动，工具注册表和策略代码才可以授权执行。所有执行结果、错误、审批和版本信息都会持久化，便于恢复、重放和审计。`local-infra` 已提供 PostgreSQL、Redis 共享限流/执行锁、RabbitMQ 异步 Worker、API Key 和 OIDC/JWT RBAC 基线；正式环境仍需接入密钥托管、告警和密钥轮换。
