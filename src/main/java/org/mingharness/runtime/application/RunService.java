@@ -6,6 +6,7 @@ import org.mingharness.common.BusinessException;
 import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.runtime.api.CreateRunRequest;
 import org.mingharness.runtime.api.RunDetail;
+import org.mingharness.runtime.api.RunPage;
 import org.mingharness.runtime.api.RunSummary;
 import org.mingharness.runtime.api.StepView;
 import org.mingharness.runtime.domain.Run;
@@ -39,6 +40,9 @@ import org.mingharness.observability.HarnessMetrics;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -204,6 +208,29 @@ public class RunService {
     @Transactional(readOnly = true)
     public List<RunSummary> list(String tenantId) {
         return runRepository.findTop50ByTenantIdOrderByCreatedAtDesc(tenantId).stream().map(this::toSummary).toList();
+    }
+
+    /**
+     * 按租户分页查询 Run，供历史控制台和外部调用方避免一次加载全部记录。
+     *
+     * <p>保留旧的 {@link #list(String)} 接口用于兼容已有控制台；分页接口使用
+     * createdAt 和 id 的稳定倒序排序，避免同一创建时间的记录在翻页时抖动。</p>
+     */
+    @Transactional(readOnly = true)
+    public RunPage listPage(String tenantId, int page, int size, RunStatus status) {
+        if (page < 0) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "INVALID_PAGE", "页码不能小于 0");
+        }
+        if (size < 1 || size > 100) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "INVALID_PAGE_SIZE", "每页数量必须在 1 到 100 之间");
+        }
+        PageRequest request = PageRequest.of(page, size,
+                Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id")));
+        Page<Run> result = status == null
+                ? runRepository.findByTenantId(tenantId, request)
+                : runRepository.findByTenantIdAndStatus(tenantId, status, request);
+        return new RunPage(result.getContent().stream().map(this::toSummary).toList(),
+                result.getNumber(), result.getSize(), result.getTotalElements(), result.getTotalPages(), result.hasNext());
     }
 
     @Transactional(readOnly = true)

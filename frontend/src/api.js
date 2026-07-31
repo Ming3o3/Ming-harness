@@ -34,6 +34,12 @@ export const api = {
   // 控制台使用受 ops.read 保护的摘要接口，避免直接暴露 Actuator 组件详情。
   health: () => request('/health'),
   listRuns: () => request('/runs'),
+  // 分页接口不改变旧的数组接口，供历史列表按需增量加载。
+  listRunsPage: ({ page = 0, size = 20, status } = {}) => {
+    const params = new URLSearchParams({ page: String(page), size: String(size) })
+    if (status) params.set('status', status)
+    return request(`/runs/page?${params.toString()}`)
+  },
   dashboardSummary: () => request('/dashboard/summary'),
   getRun: (runId) => request(`/runs/${runId}`),
   createRun: (payload) => request('/runs', { method: 'POST', body: JSON.stringify(payload) }),

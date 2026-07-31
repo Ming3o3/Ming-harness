@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Optional;
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 public interface RunRepository extends JpaRepository<Run, String> {
@@ -21,6 +22,8 @@ public interface RunRepository extends JpaRepository<Run, String> {
     Optional<Run> findByIdForAuditUpdate(@Param("runId") String runId);
     List<Run> findTop50ByOrderByCreatedAtDesc();
     List<Run> findTop50ByTenantIdOrderByCreatedAtDesc(String tenantId);
+    Page<Run> findByTenantId(String tenantId, Pageable pageable);
+    Page<Run> findByTenantIdAndStatus(String tenantId, RunStatus status, Pageable pageable);
     Optional<Run> findByTenantIdAndIdempotencyKey(String tenantId, String idempotencyKey);
     long countByTenantIdAndStatusIn(String tenantId, List<RunStatus> statuses);
     List<Run> findTop100ByStatusAndUpdatedAtBefore(RunStatus status, Instant updatedAt);

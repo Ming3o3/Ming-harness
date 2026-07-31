@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.mingharness.common.BusinessException;
 import org.mingharness.runtime.application.RunService;
+import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.security.HarnessIdentity;
 import org.mingharness.security.HarnessIdentityContext;
 import org.springframework.http.HttpStatus;
@@ -13,10 +14,12 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Locale;
 
 @RestController
 @RequestMapping("/api/runs")
@@ -31,6 +34,14 @@ public class RunController {
     @GetMapping
     public List<RunSummary> list() {
         return runService.list(identity().tenantId());
+    }
+
+    /** 新增分页接口，不改变原有 GET /api/runs 的数组返回结构。 */
+    @GetMapping("/page")
+    public RunPage page(@RequestParam(defaultValue = "0") int page,
+                        @RequestParam(defaultValue = "20") int size,
+                        @RequestParam(required = false) String status) {
+        return runService.listPage(identity().tenantId(), page, size, parseStatus(status));
     }
 
     @GetMapping("/{runId}")
@@ -92,5 +103,16 @@ public class RunController {
 
     private HarnessIdentity identity() {
         return HarnessIdentityContext.require();
+    }
+
+    private RunStatus parseStatus(String rawStatus) {
+        if (rawStatus == null || rawStatus.isBlank()) {
+            return null;
+        }
+        try {
+            return RunStatus.valueOf(rawStatus.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException exception) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "INVALID_RUN_STATUS", "不支持的 Run 状态: " + rawStatus);
+        }
     }
 }

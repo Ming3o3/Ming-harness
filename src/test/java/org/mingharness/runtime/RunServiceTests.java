@@ -6,6 +6,7 @@ import org.mingharness.audit.AuditEventRepository;
 import org.mingharness.common.BusinessException;
 import org.mingharness.runtime.api.CreateRunRequest;
 import org.mingharness.runtime.api.RunDetail;
+import org.mingharness.runtime.api.RunPage;
 import org.mingharness.runtime.api.RunSummary;
 import org.mingharness.runtime.application.RunService;
 import org.mingharness.runtime.domain.RunStatus;
@@ -107,6 +108,30 @@ class RunServiceTests {
 
         assertEquals(first.id(), second.id());
         assertEquals("request-123", second.idempotencyKey());
+    }
+
+    @Test
+    void shouldPageRunsAndFilterByStatusWithoutLoadingAllRows() {
+        runService.create(request("demo.echo", "分页任务一"));
+        runService.create(request("demo.echo", "分页任务二"));
+
+        RunPage firstPage = runService.listPage("tenant-demo", 0, 1, null);
+        assertEquals(1, firstPage.items().size());
+        assertEquals(2, firstPage.totalElements());
+        assertEquals(2, firstPage.totalPages());
+        assertTrue(firstPage.hasNext());
+
+        RunPage queuedPage = runService.listPage("tenant-demo", 0, 20, RunStatus.QUEUED);
+        assertEquals(2, queuedPage.totalElements());
+        assertTrue(queuedPage.items().stream().allMatch(item -> item.status() == RunStatus.QUEUED));
+    }
+
+    @Test
+    void shouldRejectInvalidPageSize() {
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> runService.listPage("tenant-demo", 0, 101, null));
+
+        assertEquals("INVALID_PAGE_SIZE", exception.getCode());
     }
 
     @Test

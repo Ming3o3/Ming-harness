@@ -55,6 +55,20 @@ class HarnessAuthWebTests {
     }
 
     @Test
+    void shouldExposeTenantScopedRunPageWithoutBreakingLegacyList() throws Exception {
+        HttpResponse<String> response = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/runs/page?page=0&size=1"))
+                        .header("Authorization", "Bearer web-test-key")
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"items\""));
+        assertTrue(response.body().contains("\"totalElements\""));
+    }
+
+    @Test
     void shouldExposeOnlyOverallHealthToAnonymousProbe() throws Exception {
         HttpResponse<String> response = httpClient.send(
                 HttpRequest.newBuilder(URI.create(baseUrl() + "/actuator/health")).GET().build(),

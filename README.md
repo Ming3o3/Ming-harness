@@ -161,6 +161,7 @@ curl -X POST http://localhost:8080/api/runs \
 
 上下文与评测接口：
 
+- `GET /api/runs/page?page=0&size=20&status=RUNNING`：按租户分页查询 Run，`status` 可选，单页最多 100 条；原 `GET /api/runs` 继续返回最近 50 条数组
 - `POST/GET/DELETE /api/context/documents`：管理租户隔离的知识文档
 - `POST/GET/DELETE /api/context/memories`：管理用户范围的长期记忆
 - `GET /api/context/preview?query=...`：预览授权来源和引用
