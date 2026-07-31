@@ -98,6 +98,19 @@ class HarnessIdentityInterceptorTests {
     }
 
     @Test
+    void apiKeyShouldKeepWildcardPermissionCompatibility() throws Exception {
+        HarnessAuthProperties properties = new HarnessAuthProperties();
+        properties.setMode("api-key");
+        properties.setApiKeys("secret-key|tenant-a|alice|ops.*");
+        HarnessIdentityInterceptor interceptor = interceptor(properties);
+        MockHttpServletRequest request = request("GET", "/api/health");
+        request.addHeader("X-Api-Key", "secret-key");
+
+        assertTrue(interceptor.preHandle(request, new MockHttpServletResponse(), null));
+        assertTrue(HarnessIdentityContext.require().hasPermission("ops.read"));
+    }
+
+    @Test
     void oidcShouldMapJwtClaimsToIdentity() throws Exception {
         HarnessAuthProperties properties = new HarnessAuthProperties();
         properties.setMode("oidc");

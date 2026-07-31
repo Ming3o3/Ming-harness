@@ -31,9 +31,13 @@ public class ApiKeyCredentialService {
 
     private static final int TOKEN_BYTES = 32;
     private static final int MAX_LIST_SIZE = 100;
-    /** API 权限是稳定的机器标识，禁止空格和通配符，避免权限匹配出现歧义。 */
+    /**
+     * API 权限是稳定的机器标识，只允许精确权限、一级域通配（例如 {@code ops.*}）和全局通配
+     * {@code *}。该规则必须与 {@link HarnessIdentity#hasPermission(String)} 保持一致，避免
+     * 凭证创建成功但运行时无法按预期授权，或反过来出现未声明的多级通配。
+     */
     private static final Pattern PERMISSION_PATTERN = Pattern.compile(
-            "[a-z][a-z0-9]*(?:[._:-][a-z0-9]+)*");
+            "(?:\\*|[a-z][a-z0-9-]*\\.\\*|[a-z][a-z0-9]*(?:[._:-][a-z0-9]+)*)");
     private static final int MAX_PERMISSION_COUNT = 64;
     private static final int MAX_PERMISSION_LENGTH = 128;
     private static final int MAX_PERMISSIONS_CSV_LENGTH = 2_000;
