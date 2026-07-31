@@ -29,9 +29,13 @@ public class InMemoryRunExecutionLock implements RunExecutionLock {
 
     @Override
     public boolean renew(LockToken token, Duration lease) {
-        return locks.computeIfPresent(token.key(), (ignored, current) ->
-                current.value().equals(token.value())
-                        ? new LockState(token.value(), Instant.now().plus(lease)) : current) != null;
+        LockState current = locks.get(token.key());
+        if (current == null || !current.value().equals(token.value())
+                || current.expiresAt().isBefore(Instant.now())) {
+            return false;
+        }
+        return locks.replace(token.key(), current,
+                new LockState(token.value(), Instant.now().plus(lease)));
     }
 
     @Override

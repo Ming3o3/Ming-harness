@@ -3,7 +3,6 @@ package org.mingharness.context;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
@@ -21,8 +20,7 @@ public class MemoryEntry {
     private String userId;
     @Column(nullable = false)
     private String memoryType;
-    @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "text")
     private String content;
     private String sourceRunId;
     private Instant expiresAt;

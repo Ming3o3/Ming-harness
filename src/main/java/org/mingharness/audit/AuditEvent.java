@@ -1,8 +1,8 @@
 package org.mingharness.audit;
 
 import jakarta.persistence.Entity;
+import jakarta.persistence.Column;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
@@ -20,9 +20,9 @@ public class AuditEvent {
     private String actorId;
     private String traceId;
     private String eventType;
-    @Lob
+    @Column(columnDefinition = "text")
     private String message;
-    @Lob
+    @Column(columnDefinition = "text")
     private String metadata;
     private Instant createdAt;
 

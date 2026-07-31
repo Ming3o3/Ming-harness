@@ -3,7 +3,6 @@ package org.mingharness.evaluation;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
@@ -27,7 +26,7 @@ public class EvaluationReport {
     private int passedCases;
     private int failedCases;
     private BigDecimal successRate;
-    @Lob
+    @Column(columnDefinition = "text")
     private String details;
     private Instant createdAt;
 

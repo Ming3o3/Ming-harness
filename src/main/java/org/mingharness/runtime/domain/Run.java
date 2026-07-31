@@ -7,7 +7,6 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
@@ -36,17 +35,14 @@ public class Run {
     private String policyVersion;
     @Column(name = "idempotency_key", length = 128)
     private String idempotencyKey;
-    @Lob
-    @Column(name = "permissions_snapshot")
+    @Column(name = "permissions_snapshot", columnDefinition = "text")
     private String permissionsSnapshot;
     private String traceId;
-    @Lob
-    @Column(name = "input_data")
+    @Column(name = "input_data", columnDefinition = "text")
     private String input;
-    @Lob
-    @Column(name = "output_data")
+    @Column(name = "output_data", columnDefinition = "text")
     private String output;
-    @Lob
+    @Column(columnDefinition = "text")
     private String error;
     @Enumerated(EnumType.STRING)
     private RunStatus status;

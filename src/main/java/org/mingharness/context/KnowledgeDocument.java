@@ -3,7 +3,6 @@ package org.mingharness.context;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
@@ -22,8 +21,7 @@ public class KnowledgeDocument {
     private String ownerUserId;
     @Column(nullable = false)
     private String title;
-    @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "text")
     private String content;
     @Column(nullable = false)
     private String sensitivity;

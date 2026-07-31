@@ -5,7 +5,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
@@ -25,8 +24,7 @@ public class OutboxEvent {
     private String traceId;
     @Column(nullable = false)
     private String command;
-    @Lob
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "text")
     private String payload;
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -36,7 +34,7 @@ public class OutboxEvent {
     private Instant nextAttemptAt;
     private Instant createdAt;
     private Instant publishedAt;
-    @Lob
+    @Column(columnDefinition = "text")
     private String lastError;
 
     protected OutboxEvent() {

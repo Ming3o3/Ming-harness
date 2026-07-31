@@ -8,7 +8,6 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
@@ -32,13 +31,11 @@ public class Step {
     @Enumerated(EnumType.STRING)
     private StepStatus status;
     private String name;
-    @Lob
-    @Column(name = "input_data")
+    @Column(name = "input_data", columnDefinition = "text")
     private String input;
-    @Lob
-    @Column(name = "output_data")
+    @Column(name = "output_data", columnDefinition = "text")
     private String output;
-    @Lob
+    @Column(columnDefinition = "text")
     private String error;
     private int attempt;
     private int inputTokens;
