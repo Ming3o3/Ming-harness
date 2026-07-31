@@ -110,6 +110,21 @@ npm run dev
 
 工具只有抛出 `RetryableToolException` 才会进入自动重试；Runtime 仅对 `readOnly=true` 的工具使用 `maxAttempts`，并受 `MAX_TOOL_ATTEMPTS` 全局上限约束。副作用工具即使声明更高次数也只执行一次，失败后通过 Run 重试接口重新经过策略和审批。模型步骤完成后会校验实际成本，超过 Run 预算的任务会以 `RUN_BUDGET_EXCEEDED` 失败并写入审计事件。
 
+工具的 `inputSchema` 和 `outputSchema` 现在按结构化 JSON Schema 校验，不再通过字符串包含字段名来判断数据是否合格。当前支持对象、数组、字符串、数字、整数、布尔值和 null 类型，以及 `required`、`properties`、`additionalProperties`、`items`、`enum`、`const`、`allOf`、`anyOf`、`oneOf`、`not`、长度/数量/数值边界、`pattern`、`uniqueItems` 和常用 `format`（`email`、`uuid`、`date-time`、`uri`）。校验器会拒绝重复 JSON 字段和尾随的第二个 JSON 文档，避免解析差异造成输入绕过。校验失败会以 `TOOL_INPUT_INVALID` 或 `TOOL_OUTPUT_INVALID` 终止当前 Run，并保留脱敏后的错误原因。
+
+旧版纯文本工具必须在 schema 中显式声明 `"x-harness-legacy-text": true`，普通文本会先转换成 JSON 字符串节点再执行其余约束；结构化对象工具不会静默降级为纯文本。新工具建议始终传入 JSON，例如：
+
+```json
+{
+  "type": "object",
+  "required": ["query"],
+  "additionalProperties": false,
+  "properties": {
+    "query": { "type": "string", "minLength": 1 }
+  }
+}
+```
+
 模型网关只对网络错误、408、425、429 和 5xx 等临时故障重试；结构化响应错误和其他 4xx 不会盲目重试。主供应商达到熔断阈值后，配置了 `MODEL_FALLBACK_BASE_URL` 才会切换备用供应商。供应商返回的 `usage.prompt_tokens`/`completion_tokens`（也兼容 `input_tokens`/`output_tokens`）会写入 Step，并按每千 Token 单价计算实际成本；未返回 usage 时成本为 0，不会伪造计费数据。
 
 Rabbit Worker 仅在抛出临时基础设施异常时由队列重试；业务、策略和工具错误会持久化为 Run 的 `FAILED` 状态并确认消息。可通过 `harness.rabbit.retries`、`harness.rabbit.dead_letters` 和 `harness.worker.infrastructure_failed` 指标观察重试、死信和执行锁/租约基础设施故障。

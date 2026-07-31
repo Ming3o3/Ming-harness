@@ -230,7 +230,7 @@ class RunServiceTests {
 
     @Test
     void shouldDenyToolWhenPermissionIsMissing() {
-        RunSummary created = runService.create(request("test.secured", "读取订单"));
+        RunSummary created = runService.create(request("test.secured", "{\"query\":\"读取订单\"}"));
 
         RunDetail result = runService.start(created.id(), "tenant-demo");
 
@@ -241,13 +241,13 @@ class RunServiceTests {
 
     @Test
     void shouldAllowToolWhenPermissionIsSnapshotted() {
-        RunSummary created = runService.create(request("test.secured", "读取订单")
+        RunSummary created = runService.create(request("test.secured", "{\"query\":\"读取订单\"}")
                 .withPermissions("orders.read"));
 
         RunDetail result = runService.start(created.id(), "tenant-demo");
 
         assertEquals(RunStatus.SUCCEEDED, result.run().status());
-        assertEquals("已读取订单: 读取订单", result.run().output());
+        assertEquals("已读取订单: {\"query\":\"读取订单\"}", result.run().output());
     }
 
     @Test
