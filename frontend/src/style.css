@@ -119,6 +119,10 @@ h3 { margin: 0; font-size: 13px; }
 .workspace-grid { display: grid; grid-template-columns: minmax(330px, .72fr) minmax(600px, 1.55fr); gap: 18px; align-items: start; }
 .panel { border-radius: 13px; padding: 22px 23px; }
 .panel-heading { margin-bottom: 18px; }
+.run-panel-heading { gap: 12px; }
+.run-panel-tools { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
+.run-filter { max-width: 118px; border: 1px solid var(--line); border-radius: 7px; outline: 0; background: var(--input-bg); color: var(--text); padding: 7px 9px; font-size: 10px; }
+.run-filter:focus { border-color: rgba(141,124,255,.75); box-shadow: 0 0 0 3px rgba(141,124,255,.1); }
 .refresh-button { width: 29px; height: 29px; font-size: 16px; }
 .runs-panel { min-height: 534px; }
 .run-list { display: grid; gap: 5px; }
@@ -139,6 +143,12 @@ h3 { margin: 0; font-size: 13px; }
 .run-row-meta em.status-failed { color: var(--red); }
 .run-row-meta em.status-running { color: var(--cyan); }
 .run-row-meta em.status-queued { color: var(--orange); }
+.run-list-loading { color: var(--muted); font: 9px "DM Mono", monospace; white-space: nowrap; }
+.run-list-loading-state { min-height: 350px; }
+.run-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; color: var(--muted); font: 9px "DM Mono", monospace; }
+.run-pagination-controls { display: flex; gap: 6px; }
+.page-button { border: 1px solid var(--line); border-radius: 6px; background: var(--hover-bg); color: var(--soft); padding: 6px 9px; font-size: 10px; transition: .2s ease; }
+.page-button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-light); }
 .empty-state, .loading-state { display: grid; min-height: 350px; place-items: center; align-content: center; gap: 9px; color: var(--muted); text-align: center; font-size: 11px; }
 .empty-state strong { color: var(--soft); font-size: 12px; }
 .empty-orb { display: grid; width: 48px; height: 48px; margin-bottom: 4px; place-items: center; border: 1px solid rgba(141,124,255,.25); border-radius: 50%; color: var(--accent-light); background: rgba(141,124,255,.08); font-size: 18px; }

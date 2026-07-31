@@ -16,6 +16,17 @@ const noticeMessage = ref('')
 const showCreateForm = ref(true)
 const showGovernance = ref(false)
 const health = ref(null)
+const runStatusFilter = ref('')
+const runsLoading = ref(false)
+const runPage = reactive({
+  page: 0,
+  size: 20,
+  totalElements: 0,
+  totalPages: 0,
+  hasNext: false,
+})
+const runStatusOptions = ['QUEUED', 'RUNNING', 'WAITING_APPROVAL', 'SUCCEEDED', 'FAILED', 'CANCELLED', 'TIMED_OUT']
+let runPageRequest
 // 主题设置会保存在浏览器中，刷新页面后继续使用上次选择。
 const THEME_STORAGE_KEY = 'harnessTheme'
 const theme = ref(readTheme())
@@ -104,6 +115,12 @@ const infraLabel = computed(() => {
   if (health.value.error) return health.value.error
   return infraOnline.value ? '基础设施在线' : '基础设施异常'
 })
+const runPageLabel = computed(() => {
+  if (!runPage.totalElements) return '0 条记录'
+  return `第 ${runPage.page + 1} / ${runPage.totalPages} 页 · 共 ${runPage.totalElements} 条`
+})
+const canPreviousRunPage = computed(() => runPage.page > 0)
+const canNextRunPage = computed(() => runPage.hasNext)
 
 function isTerminal(status) {
   return ['SUCCEEDED', 'FAILED', 'CANCELLED', 'TIMED_OUT'].includes(status)
@@ -164,14 +181,13 @@ function errorText(error) {
 async function loadDashboard() {
   clearMessages()
   try {
-    const [runData, toolData, summaryData, documentData, evaluationData] = await Promise.all([
-      api.listRuns(),
+    const [, toolData, summaryData, documentData, evaluationData] = await Promise.all([
+      loadRunsPage(),
       api.listTools(),
       api.dashboardSummary(),
       api.listDocuments(),
       api.listEvaluations(),
     ])
-    runs.value = runData
     tools.value = toolData
     summary.value = summaryData
     documents.value = documentData
@@ -181,6 +197,72 @@ async function loadDashboard() {
     } else if (runs.value.length) {
       await selectRun(runs.value[0].id, false)
     }
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  }
+}
+
+/** 加载当前分页，避免控制台一次性拉取全部 Run。 */
+async function loadRunsPage() {
+  if (runPageRequest) return runPageRequest
+
+  runsLoading.value = true
+  runPageRequest = (async () => {
+    const requestPage = (page) => api.listRunsPage({
+      page,
+      size: runPage.size,
+      status: runStatusFilter.value || undefined,
+    })
+
+    let pageData = await requestPage(runPage.page)
+    // 删除最后一页数据或筛选条件变化后，自动回退到仍然存在的最后一页。
+    if (pageData.totalPages === 0 && runPage.page !== 0) {
+      runPage.page = 0
+      pageData = await requestPage(0)
+    } else if (pageData.totalPages > 0 && runPage.page >= pageData.totalPages) {
+      runPage.page = pageData.totalPages - 1
+      pageData = await requestPage(runPage.page)
+    }
+
+    runs.value = pageData.items || []
+    runPage.page = pageData.page
+    runPage.size = pageData.size
+    runPage.totalElements = pageData.totalElements
+    runPage.totalPages = pageData.totalPages
+    runPage.hasNext = pageData.hasNext
+    return pageData
+  })()
+
+  try {
+    return await runPageRequest
+  } finally {
+    runPageRequest = undefined
+    runsLoading.value = false
+  }
+}
+
+async function changeRunStatusFilter() {
+  clearMessages()
+  runPage.page = 0
+  try {
+    await loadRunsPage()
+    if (!selectedRun.value && runs.value.length) {
+      await selectRun(runs.value[0].id, false)
+    }
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  }
+}
+
+async function goToRunPage(delta) {
+  if (runsLoading.value || !delta) return
+  const nextPage = runPage.page + delta
+  if (nextPage < 0 || (delta > 0 && !runPage.hasNext)) return
+
+  clearMessages()
+  runPage.page = nextPage
+  try {
+    await loadRunsPage()
   } catch (error) {
     errorMessage.value = errorText(error)
   }
@@ -254,10 +336,14 @@ async function selectRun(runId, announce = true, showLoading = true) {
 
 async function pollSelectedRun() {
   if (!selectedRun.value || isTerminal(selectedStatus.value)) return
-  await selectRun(selectedRun.value.run.id, false, false)
-  const [runData, summaryData] = await Promise.all([api.listRuns(), api.dashboardSummary()])
-  runs.value = runData
-  summary.value = summaryData
+  if (runsLoading.value) return
+  try {
+    await selectRun(selectedRun.value.run.id, false, false)
+    const [, summaryData] = await Promise.all([loadRunsPage(), api.dashboardSummary()])
+    summary.value = summaryData
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  }
 }
 
 async function createAndStartRun() {
@@ -278,6 +364,8 @@ async function createAndStartRun() {
         ? 'Run 已提交，Worker 正在异步执行'
         : 'Run 已创建并完成执行'
     showCreateForm.value = false
+    runStatusFilter.value = ''
+    runPage.page = 0
     await loadDashboard()
     await selectRun(created.id, false)
   } catch (error) {
@@ -519,14 +607,28 @@ onBeforeUnmount(() => {
 
       <section class="workspace-grid">
         <div class="runs-panel panel">
-          <div class="panel-heading">
+          <div class="panel-heading run-panel-heading">
             <div><p class="eyebrow">RECENT RUNS</p><h2>最近执行</h2></div>
-            <button class="refresh-button" type="button" @click="loadDashboard" aria-label="刷新列表">⟳</button>
+            <div class="run-panel-tools">
+              <select
+                v-model="runStatusFilter"
+                class="run-filter"
+                aria-label="按状态筛选 Run"
+                :disabled="runsLoading"
+                @change="changeRunStatusFilter"
+              >
+                <option value="">全部状态</option>
+                <option v-for="status in runStatusOptions" :key="status" :value="status">{{ statusLabel(status) }}</option>
+              </select>
+              <span v-if="runsLoading" class="run-list-loading">加载中…</span>
+              <button class="refresh-button" type="button" :disabled="runsLoading" @click="loadDashboard" aria-label="刷新列表">⟳</button>
+            </div>
           </div>
-          <div v-if="!runs.length" class="empty-state">
+          <div v-if="runsLoading && !runs.length" class="loading-state run-list-loading-state">正在加载 Run 列表…</div>
+          <div v-else-if="!runs.length" class="empty-state">
             <div class="empty-orb">◈</div>
-            <strong>还没有执行记录</strong>
-            <span>创建第一个 Run，开始观察执行链。</span>
+            <strong>{{ runStatusFilter ? '没有匹配的 Run' : '还没有执行记录' }}</strong>
+            <span>{{ runStatusFilter ? '可以切换状态筛选，或创建一个新的 Run。' : '创建第一个 Run，开始观察执行链。' }}</span>
           </div>
           <div v-else class="run-list">
             <button
@@ -544,6 +646,13 @@ onBeforeUnmount(() => {
               </span>
               <span class="run-row-meta"><em :class="statusClass(run.status)">{{ statusLabel(run.status) }}</em><small>{{ run.stepCount }} steps</small></span>
             </button>
+          </div>
+          <div v-if="runPage.totalElements || runStatusFilter" class="run-pagination" aria-label="Run 列表分页">
+            <span>{{ runPageLabel }}</span>
+            <div class="run-pagination-controls">
+              <button class="page-button" type="button" :disabled="runsLoading || !canPreviousRunPage" @click="goToRunPage(-1)">上一页</button>
+              <button class="page-button" type="button" :disabled="runsLoading || !canNextRunPage" @click="goToRunPage(1)">下一页</button>
+            </div>
           </div>
         </div>
 
