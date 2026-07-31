@@ -94,10 +94,21 @@ export MODEL_FALLBACK_NAME=backup-model
 
 ```bash
 export HARNESS_AUTH_MODE=api-key
-export HARNESS_API_KEYS='demo-key|tenant-demo|operator|run.read,run.create,run.execute,run.approve,run.cancel,audit.read,context.read,context.write,evaluation.read,evaluation.run,tool.read,ops.read,tenant.policy.read,tenant.policy.write'
+export HARNESS_API_KEYS='demo-key|tenant-demo|operator|run.read,run.create,run.execute,run.approve,run.cancel,audit.read,context.read,context.write,evaluation.read,evaluation.run,tool.read,ops.read,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage'
 ```
 
 调用时使用 `Authorization: Bearer demo-key`。API Key 绑定的租户和用户会覆盖请求头，Run 创建请求中的 `tenantId/userId` 必须与认证身份一致。默认 `local` 模式仍兼容 `X-Tenant-Id`、`X-User-Id` 和 `X-Permissions`，仅适合本地演示。
+
+`HARNESS_API_KEYS` 适合作为初始运维密钥；它们来自启动配置，撤销需要替换密钥系统配置并重启。共享环境应使用该初始密钥（或具备 `auth.key.manage` 的 OIDC 服务账号）创建可即时撤销的数据库 Key，明文仅在响应中显示一次：
+
+```bash
+curl -X POST http://localhost:8080/api/admin/api-keys \
+  -H 'Authorization: Bearer demo-key' \
+  -H 'Content-Type: application/json' \
+  -d '{"tenantId":"tenant-demo","userId":"analyst","permissions":["run.read","run.create","run.execute"],"expiresAt":"2027-01-01T00:00:00Z"}'
+```
+
+保存响应中的 `secret` 后，可用 `GET /api/admin/api-keys` 查看前缀、状态和过期时间；使用 `DELETE /api/admin/api-keys/{keyId}` 会使该 Key 立即失效。创建响应之外，API、数据库、日志和审计均不会返回完整 Key 或摘要。查询需要 `auth.key.read`，创建/撤销需要 `auth.key.manage`，跨租户操作另需 `auth.key.cross-tenant`。
 
 ### 租户级资源治理
 

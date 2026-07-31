@@ -17,6 +17,8 @@ import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.domain.TenantPolicyAudit;
 import org.mingharness.runtime.repository.RunRepository;
 import org.mingharness.runtime.repository.TenantPolicyAuditRepository;
+import org.mingharness.security.ApiKeyAudit;
+import org.mingharness.security.ApiKeyAuditRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -52,6 +54,8 @@ class DataRetentionServiceTests {
     @Autowired
     private TenantPolicyAuditRepository tenantPolicyAuditRepository;
     @Autowired
+    private ApiKeyAuditRepository apiKeyAuditRepository;
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @BeforeEach
@@ -63,6 +67,7 @@ class DataRetentionServiceTests {
         documentRepository.deleteAll();
         evaluationReportRepository.deleteAll();
         tenantPolicyAuditRepository.deleteAll();
+        apiKeyAuditRepository.deleteAll();
     }
 
     @Test
@@ -95,6 +100,11 @@ class DataRetentionServiceTests {
                 "tenant-retention", "operator", "TENANT_POLICY_UPDATED", "old policy"));
         jdbcTemplate.update("UPDATE harness_tenant_policy_audits SET created_at = ? WHERE id = ?",
                 Timestamp.from(old), policyAudit.getId());
+
+        ApiKeyAudit apiKeyAudit = apiKeyAuditRepository.save(new ApiKeyAudit(
+                "key-retention", "tenant-retention", "operator", "API_KEY_REVOKED", "old key"));
+        jdbcTemplate.update("UPDATE harness_api_key_audits SET created_at = ? WHERE id = ?",
+                Timestamp.from(old), apiKeyAudit.getId());
 
         Run oldRun = runRepository.save(new Run("tenant-retention", "operator", "旧 Run", "输入",
                 BigDecimal.ONE, "demo-model", "prompt-v1", "policy-v1"));
@@ -135,11 +145,13 @@ class DataRetentionServiceTests {
         assertEquals(1, result.evaluationReportsDeleted());
         assertEquals(1, result.outboxEventsDeleted());
         assertEquals(1, result.tenantPolicyAuditsDeleted());
+        assertEquals(1, result.apiKeyAuditsDeleted());
         assertFalse(runRepository.findById(oldRun.getId()).isPresent());
         assertTrue(runRepository.findById(activeRun.getId()).isPresent());
         assertFalse(auditEventRepository.findById(auditEvent.getId()).isPresent());
         assertTrue(outboxEventRepository.findById(pendingOutbox.getId()).isPresent());
         assertTrue(outboxEventRepository.findById(publishingOutbox.getId()).isPresent());
         assertFalse(memoryEntryRepository.findById(expiredMemory.getId()).isPresent());
+        assertFalse(apiKeyAuditRepository.findById(apiKeyAudit.getId()).isPresent());
     }
 }

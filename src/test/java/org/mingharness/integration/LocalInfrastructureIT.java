@@ -10,6 +10,10 @@ import org.mingharness.runtime.application.RunService;
 import org.mingharness.runtime.application.TenantPolicyService;
 import org.mingharness.runtime.api.TenantPolicyRequest;
 import org.mingharness.runtime.api.TenantPolicyView;
+import org.mingharness.security.ApiKeyCredentialService;
+import org.mingharness.security.ApiKeyView;
+import org.mingharness.security.CreateApiKeyRequest;
+import org.mingharness.security.HarnessIdentity;
 import org.mingharness.runtime.domain.RunStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -52,6 +56,9 @@ class LocalInfrastructureIT {
     @Autowired
     private TenantPolicyService tenantPolicyService;
 
+    @Autowired
+    private ApiKeyCredentialService apiKeyCredentialService;
+
     @Test
     void shouldReadRabbitQueueDepthForBackpressure() {
         assertTrue(queueDepthMonitor.availableCapacity().isPresent());
@@ -68,6 +75,25 @@ class LocalInfrastructureIT {
         assertEquals(15, tenantPolicyService.get(tenantId).maxCreatesPerMinute());
         assertEquals(1, tenantPolicyService.auditTrail(tenantId).size());
         tenantPolicyService.reset(tenantId, "integration-user");
+    }
+
+    @Test
+    void shouldPersistRotateAndRevokeDatabaseApiKey() {
+        String tenantId = "tenant-key-" + UUID.randomUUID();
+        ApiKeyView created = apiKeyCredentialService.create(new CreateApiKeyRequest(
+                tenantId, "integration-user", java.util.Set.of("tool.read"),
+                Instant.now().plus(Duration.ofHours(1))), "integration-admin");
+
+        HarnessIdentity identity = apiKeyCredentialService.authenticate(created.secret());
+        assertEquals(tenantId, identity.tenantId());
+        assertEquals("integration-user", identity.userId());
+        assertTrue(apiKeyCredentialService.auditTrail(tenantId).size() >= 1);
+
+        apiKeyCredentialService.revoke(created.id(), "integration-admin");
+        org.mingharness.common.BusinessException exception = org.junit.jupiter.api.Assertions.assertThrows(
+                org.mingharness.common.BusinessException.class,
+                () -> apiKeyCredentialService.authenticate(created.secret()));
+        assertEquals("INVALID_API_KEY", exception.getCode());
     }
 
     @Test

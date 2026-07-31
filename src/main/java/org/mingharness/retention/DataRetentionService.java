@@ -12,6 +12,7 @@ import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.runtime.repository.RunRepository;
 import org.mingharness.runtime.repository.TenantPolicyAuditRepository;
+import org.mingharness.security.ApiKeyAuditRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -41,6 +42,7 @@ public class DataRetentionService {
     private final KnowledgeDocumentRepository documentRepository;
     private final EvaluationReportRepository evaluationReportRepository;
     private final TenantPolicyAuditRepository tenantPolicyAuditRepository;
+    private final ApiKeyAuditRepository apiKeyAuditRepository;
     private final HarnessMetrics metrics;
 
     public DataRetentionService(DataRetentionProperties properties,
@@ -51,6 +53,7 @@ public class DataRetentionService {
                                 KnowledgeDocumentRepository documentRepository,
                                 EvaluationReportRepository evaluationReportRepository,
                                 TenantPolicyAuditRepository tenantPolicyAuditRepository,
+                                ApiKeyAuditRepository apiKeyAuditRepository,
                                 HarnessMetrics metrics) {
         this.properties = properties;
         this.runRepository = runRepository;
@@ -60,6 +63,7 @@ public class DataRetentionService {
         this.documentRepository = documentRepository;
         this.evaluationReportRepository = evaluationReportRepository;
         this.tenantPolicyAuditRepository = tenantPolicyAuditRepository;
+        this.apiKeyAuditRepository = apiKeyAuditRepository;
         this.metrics = metrics;
     }
 
@@ -113,10 +117,12 @@ public class DataRetentionService {
                 now.minus(properties.outboxDays(), ChronoUnit.DAYS)));
         int tenantPolicyAuditsDeleted = Math.toIntExact(tenantPolicyAuditRepository.deleteByCreatedAtBefore(
                 now.minus(properties.tenantPolicyAuditDays(), ChronoUnit.DAYS)));
+        int apiKeyAuditsDeleted = Math.toIntExact(apiKeyAuditRepository.deleteByCreatedAtBefore(
+                now.minus(properties.apiKeyAuditDays(), ChronoUnit.DAYS)));
 
         RetentionCleanupResult result = new RetentionCleanupResult(
                 runsDeleted, auditEventsDeleted, stepsDeleted, memoriesDeleted, documentsDeleted,
-                evaluationReportsDeleted, outboxEventsDeleted, tenantPolicyAuditsDeleted);
+                evaluationReportsDeleted, outboxEventsDeleted, tenantPolicyAuditsDeleted, apiKeyAuditsDeleted);
         metrics.retentionDeleted(result.totalDeleted());
         return result;
     }

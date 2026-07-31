@@ -221,6 +221,28 @@ h3 { margin: 0; font-size: 13px; }
 .policy-actions { display: flex; flex-wrap: wrap; gap: 7px; }
 .policy-actions button { padding: 8px 10px; font-size: 10px; }
 .policy-error { margin: 0; border-radius: 6px; background: rgba(255,114,123,.08); color: var(--red); padding: 8px 10px; font-size: 10px; }
+.api-key-card { grid-column: 1 / -1; }
+.api-key-create-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; }
+.api-key-permissions-field { grid-column: span 2; }
+.api-key-secret-banner { display: grid; gap: 10px; margin-top: 15px; border: 1px solid rgba(255,182,95,.35); border-radius: 8px; background: rgba(255,182,95,.08); padding: 13px; }
+.api-key-secret-banner .subsection-title { margin-bottom: 0; }
+.api-key-secret-banner strong { color: var(--orange); font-size: 11px; }
+.api-key-secret-banner code { overflow-wrap: anywhere; border: 1px solid rgba(255,182,95,.2); border-radius: 6px; background: var(--input-bg); color: var(--text); padding: 10px; font: 11px "DM Mono", monospace; }
+.api-key-list, .api-key-audits { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 15px; }
+.api-key-row { display: grid; grid-template-columns: minmax(150px, .8fr) auto minmax(280px, 2fr) auto; align-items: center; gap: 13px; border-bottom: 1px solid rgba(153,174,218,.08); padding: 11px 0; }
+.api-key-row-main { min-width: 0; }
+.api-key-row-main strong { display: block; color: var(--soft); font: 11px "DM Mono", monospace; }
+.api-key-row-main small, .api-key-row-meta small { display: block; margin-top: 5px; color: var(--muted); font: 9px "DM Mono", monospace; }
+.api-key-row-meta { text-align: right; white-space: nowrap; }
+.api-key-status { display: inline-flex; border-radius: 12px; padding: 4px 7px; font: 9px "DM Mono", monospace; }
+.api-key-status-active { background: rgba(85,214,138,.1); color: var(--green); }
+.api-key-status-revoked { background: rgba(255,114,123,.1); color: var(--red); }
+.api-key-row-permissions { overflow: hidden; color: var(--muted); font-size: 10px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+.api-key-row .danger-button { padding: 8px 10px; font-size: 10px; white-space: nowrap; }
+.api-key-audit-row { display: grid; grid-template-columns: 78px 145px 1fr; gap: 10px; align-items: baseline; border-bottom: 1px solid rgba(153,174,218,.08); padding: 8px 0; color: var(--muted); font-size: 10px; }
+.api-key-audit-row > span, .api-key-audit-row > strong { font: 9px "DM Mono", monospace; }
+.api-key-audit-row > strong { color: var(--soft); }
+.api-key-audit-row small { color: var(--muted); font: 9px "DM Mono", monospace; overflow-wrap: anywhere; }
 .evaluation-list { display: grid; gap: 5px; margin-top: 14px; border-top: 1px solid var(--line); padding-top: 13px; }
 .evaluation-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 12px; border-bottom: 1px solid rgba(153,174,218,.08); padding: 9px 0; color: var(--soft); font-size: 11px; }
 .evaluation-row span { color: var(--green); font: 10px "DM Mono", monospace; }

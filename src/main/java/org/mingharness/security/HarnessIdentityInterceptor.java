@@ -11,12 +11,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -29,11 +24,12 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
 
     private static final Pattern SAFE_VALUE = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}");
     private final HarnessAuthProperties properties;
-    private final List<ApiKeyCredential> credentials;
+    private final ApiKeyCredentialService apiKeyCredentialService;
 
-    public HarnessIdentityInterceptor(HarnessAuthProperties properties) {
+    public HarnessIdentityInterceptor(HarnessAuthProperties properties,
+                                      ApiKeyCredentialService apiKeyCredentialService) {
         this.properties = properties;
-        this.credentials = parseCredentials(properties.getApiKeys());
+        this.apiKeyCredentialService = apiKeyCredentialService;
         if (!"local".equalsIgnoreCase(properties.getMode())
                 && !"api-key".equalsIgnoreCase(properties.getMode())
                 && !"oidc".equalsIgnoreCase(properties.getMode())) {
@@ -99,13 +95,7 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
 
     /** 供管理端点 Security Filter 复用同一套 API Key 校验规则。 */
     HarnessIdentity authenticateApiKeyToken(String token) {
-        byte[] digest = digest(token);
-        return credentials.stream()
-                .filter(item -> MessageDigest.isEqual(item.digest(), digest))
-                .map(ApiKeyCredential::identity)
-                .findFirst()
-                .orElseThrow(() -> new BusinessException(HttpStatus.UNAUTHORIZED, "INVALID_API_KEY",
-                        "API Key 无效或已失效"));
+        return apiKeyCredentialService.authenticate(token);
     }
 
     /** API Key 和 OIDC 都需要执行接口级 RBAC；local 保留请求头演示兼容性。 */
@@ -187,39 +177,17 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
-    private List<ApiKeyCredential> parseCredentials(String value) {
-        if (value == null || value.isBlank()) {
-            return List.of();
-        }
-        List<ApiKeyCredential> result = new ArrayList<>();
-        for (String item : value.split(";")) {
-            String[] parts = item.split("\\|", -1);
-            if (parts.length != 4 || parts[0].isBlank() || parts[1].isBlank() || parts[2].isBlank()) {
-                throw new IllegalArgumentException(
-                        "harness.auth.api-keys 格式错误，应为 key|tenant|user|permission1,permission2");
-            }
-            result.add(new ApiKeyCredential(
-                    digest(parts[0].trim()),
-                    new HarnessIdentity(parts[1].trim(), parts[2].trim(), parsePermissions(parts[3]), "api-key")
-            ));
-        }
-        return List.copyOf(result);
-    }
-
-    private byte[] digest(String token) {
-        try {
-            return MessageDigest.getInstance("SHA-256")
-                    .digest(token.getBytes(StandardCharsets.UTF_8));
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("JVM 不支持 SHA-256", exception);
-        }
-    }
-
     private String requiredPermission(String method, String path) {
         if (path.startsWith("/actuator/")) {
             return "ops.read";
         }
         if (path.equals("/api/health")) return "ops.read";
+        if (path.matches("/api/admin/api-keys(?:/audits)?")) {
+            return "GET".equalsIgnoreCase(method) ? "auth.key.read" : "auth.key.manage";
+        }
+        if (path.matches("/api/admin/api-keys/[^/]+")) {
+            return "GET".equalsIgnoreCase(method) ? "auth.key.read" : "auth.key.manage";
+        }
         if (path.matches("/api/admin/tenants/[^/]+/policy(?:/audits)?")) {
             return "GET".equalsIgnoreCase(method) ? "tenant.policy.read" : "tenant.policy.write";
         }
@@ -247,6 +215,4 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
         return null;
     }
 
-    private record ApiKeyCredential(byte[] digest, HarnessIdentity identity) {
-    }
 }

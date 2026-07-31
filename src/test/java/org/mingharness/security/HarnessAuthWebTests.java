@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(properties = {
         "harness.auth.mode=api-key",
-        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,ops.read,tenant.policy.read,tenant.policy.write",
+        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,ops.read,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage",
         "management.endpoint.health.show-details=when_authorized",
         "management.endpoint.health.show-components=when_authorized"
 })
@@ -140,6 +140,59 @@ class HarnessAuthWebTests {
 
         assertEquals(403, response.statusCode());
         assertTrue(response.body().contains("TENANT_POLICY_SCOPE_DENIED"));
+    }
+
+    @Test
+    void shouldCreateUseAndRevokeDatabaseApiKeyWithoutReturningSecretAgain() throws Exception {
+        HttpResponse<String> created = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/admin/api-keys"))
+                        .header("Authorization", "Bearer web-test-key")
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(
+                                "{\"tenantId\":\"tenant-web\",\"userId\":\"generated-user\","
+                                        + "\"permissions\":[\"tool.read\"]}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(200, created.statusCode(), created.body());
+        assertTrue(created.body().contains("\"secret\":\"mh_"));
+        assertTrue(created.body().contains("\"status\":\"ACTIVE\""));
+        String secret = created.body().replaceFirst(".*\\\"secret\\\":\\\"(mh_[^\\\"]+).*", "$1");
+        String keyId = created.body().replaceFirst(".*\\\"id\\\":\\\"([^\\\"]+).*", "$1");
+
+        HttpResponse<String> tools = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/tools"))
+                        .header("Authorization", "Bearer " + secret).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, tools.statusCode(), tools.body());
+
+        HttpResponse<String> listed = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/admin/api-keys"))
+                        .header("Authorization", "Bearer web-test-key").GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, listed.statusCode());
+        assertTrue(listed.body().contains(keyId));
+        assertTrue(!listed.body().contains(secret));
+
+        HttpResponse<String> audits = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/admin/api-keys/audits"))
+                        .header("Authorization", "Bearer web-test-key").GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, audits.statusCode(), audits.body());
+        assertTrue(audits.body().contains("API_KEY_CREATED"));
+
+        HttpResponse<String> revoked = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/admin/api-keys/" + keyId))
+                        .header("Authorization", "Bearer web-test-key").DELETE().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, revoked.statusCode(), revoked.body());
+        assertTrue(revoked.body().contains("\"status\":\"REVOKED\""));
+
+        HttpResponse<String> rejected = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/tools"))
+                        .header("Authorization", "Bearer " + secret).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(401, rejected.statusCode());
     }
 
     private String baseUrl() {

@@ -12,6 +12,10 @@ const evaluations = ref([])
 const tenantPolicy = ref(null)
 const tenantPolicyAudits = ref([])
 const tenantPolicyError = ref('')
+const apiKeys = ref([])
+const apiKeyAudits = ref([])
+const apiKeyError = ref('')
+const createdApiKeySecret = ref('')
 const loading = ref(false)
 const detailLoading = ref(false)
 const errorMessage = ref('')
@@ -108,6 +112,14 @@ const tenantPolicyForm = reactive({
   allowedTools: '',
 })
 
+// 创建表单只保存过期时间和权限，生成的明文密钥不会写入浏览器存储。
+const apiKeyForm = reactive({
+  tenantId: form.tenantId,
+  userId: form.userId,
+  permissions: 'run.read, run.create, run.execute, run.approve, run.cancel, audit.read, context.read, context.write, evaluation.read, evaluation.run, tool.read, ops.read, tenant.policy.read, tenant.policy.write, auth.key.read, auth.key.manage',
+  expiresAt: '',
+})
+
 const stats = computed(() => ({
   total: summary.value?.total ?? runs.value.length,
   queued: summary.value?.queued ?? runs.value.filter((run) => run.status === 'QUEUED').length,
@@ -194,6 +206,17 @@ function statusLabel(status) {
 
 function statusClass(status) {
   return `status-${String(status || 'none').toLowerCase()}`
+}
+
+function apiKeyStatusLabel(status) {
+  return {
+    ACTIVE: '有效',
+    REVOKED: '已撤销',
+  }[status] || status || '未知'
+}
+
+function apiKeyStatusClass(status) {
+  return `api-key-status-${String(status || 'unknown').toLowerCase()}`
 }
 
 function stepLabel(type) {
@@ -394,6 +417,84 @@ async function resetTenantPolicy() {
   }
 }
 
+/** 加载 API Key 元数据和生命周期审计，明文 secret 不会由列表接口返回。 */
+async function loadApiKeys() {
+  apiKeyError.value = ''
+  const tenantId = apiKeyForm.tenantId.trim() || form.tenantId
+  try {
+    const [keys, audits] = await Promise.all([
+      api.listApiKeys(tenantId),
+      api.listApiKeyAudits(tenantId),
+    ])
+    apiKeys.value = keys || []
+    apiKeyAudits.value = audits || []
+  } catch (error) {
+    apiKeys.value = []
+    apiKeyAudits.value = []
+    apiKeyError.value = error.code === 'PERMISSION_DENIED'
+      ? '当前身份缺少 auth.key.read 或 auth.key.manage 权限'
+      : errorText(error)
+  }
+}
+
+function parseApiKeyPermissions() {
+  return String(apiKeyForm.permissions || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+async function createManagedApiKey() {
+  clearMessages()
+  loading.value = true
+  createdApiKeySecret.value = ''
+  try {
+    const created = await api.createApiKey({
+      tenantId: apiKeyForm.tenantId.trim(),
+      userId: apiKeyForm.userId.trim(),
+      permissions: parseApiKeyPermissions(),
+      expiresAt: apiKeyForm.expiresAt ? new Date(apiKeyForm.expiresAt).toISOString() : null,
+    })
+    createdApiKeySecret.value = created.secret || ''
+    noticeMessage.value = 'API Key 已创建；请立即复制明文，关闭提示后将无法再次查看'
+    await loadApiKeys()
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    loading.value = false
+  }
+}
+
+async function revokeManagedApiKey(key) {
+  if (!key || key.status !== 'ACTIVE') return
+  if (typeof window !== 'undefined' && !window.confirm(`确认立即撤销 ${key.keyPrefix}… 的 API Key 吗？`)) return
+  clearMessages()
+  loading.value = true
+  try {
+    await api.revokeApiKey(key.id)
+    noticeMessage.value = `${key.keyPrefix}… 已立即撤销`
+    await loadApiKeys()
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    loading.value = false
+  }
+}
+
+async function copyApiKeySecret() {
+  if (!createdApiKeySecret.value) return
+  try {
+    await navigator.clipboard.writeText(createdApiKeySecret.value)
+    noticeMessage.value = 'API Key 明文已复制到剪贴板'
+  } catch {
+    errorMessage.value = '浏览器拒绝访问剪贴板，请手动复制明文'
+  }
+}
+
+function closeApiKeySecret() {
+  createdApiKeySecret.value = ''
+}
+
 async function createDocument() {
   clearMessages()
   loading.value = true
@@ -567,7 +668,7 @@ async function cancelSelectedRun() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadDashboard(), loadHealth(), loadTenantPolicy()])
+  await Promise.all([loadDashboard(), loadHealth(), loadTenantPolicy(), loadApiKeys()])
   runPollTimer = window.setInterval(pollSelectedRun, 1500)
   healthPollTimer = window.setInterval(loadHealth, 10000)
 })
@@ -883,6 +984,43 @@ onBeforeUnmount(() => {
             <label class="field"><span>工具白名单（逗号分隔，留空表示全部）</span><input v-model="tenantPolicyForm.allowedTools" placeholder="例如：demo.echo" /></label>
             <div class="policy-actions"><button class="secondary-button" type="button" :disabled="loading" @click="loadTenantPolicy">读取策略</button><button class="secondary-button" type="submit" :disabled="loading">保存策略</button><button class="danger-button" type="button" :disabled="loading" @click="resetTenantPolicy">恢复默认</button></div>
             <small class="form-hint">策略只能收紧平台硬上限；最近 {{ tenantPolicyAudits.length }} 条变更已留痕。</small>
+          </form>
+          <form class="governance-card api-key-card" @submit.prevent="createManagedApiKey">
+            <div class="subsection-title">
+              <div><h3>API Key 生命周期</h3><span>数据库凭证</span></div>
+              <button class="refresh-button" type="button" :disabled="loading" aria-label="刷新 API Key" @click="loadApiKeys">⟳</button>
+            </div>
+            <p v-if="apiKeyError" class="policy-error">{{ apiKeyError }}</p>
+            <div class="api-key-create-grid">
+              <label class="field"><span>租户 ID</span><input v-model="apiKeyForm.tenantId" required maxlength="128" /></label>
+              <label class="field"><span>用户 ID</span><input v-model="apiKeyForm.userId" required maxlength="128" /></label>
+              <label class="field api-key-expiry-field"><span>过期时间（可选）</span><input v-model="apiKeyForm.expiresAt" type="datetime-local" /></label>
+              <label class="field api-key-permissions-field"><span>权限（逗号分隔）</span><input v-model="apiKeyForm.permissions" maxlength="2000" placeholder="例如：run.read, run.create" /></label>
+            </div>
+            <div class="policy-actions">
+              <button class="secondary-button" type="submit" :disabled="loading">{{ loading ? '生成中…' : '生成数据库 API Key' }}</button>
+              <button class="secondary-button" type="button" :disabled="loading" @click="loadApiKeys">刷新列表</button>
+            </div>
+            <div v-if="createdApiKeySecret" class="api-key-secret-banner">
+              <div class="subsection-title"><strong>仅显示一次的明文密钥</strong><button class="icon-button" type="button" aria-label="关闭明文提示" @click="closeApiKeySecret">×</button></div>
+              <code>{{ createdApiKeySecret }}</code>
+              <div class="policy-actions"><button class="secondary-button" type="button" @click="copyApiKeySecret">复制明文</button><small>请保存到密码管理器；关闭后服务端不会再次返回。</small></div>
+            </div>
+            <div class="api-key-list">
+              <div class="subsection-title"><h3>当前租户密钥</h3><span>{{ apiKeys.length }} keys</span></div>
+              <div v-if="!apiKeys.length" class="muted-line">暂无数据库 API Key，或当前身份没有读取权限。</div>
+              <div v-for="key in apiKeys" :key="key.id" class="api-key-row">
+                <div class="api-key-row-main"><strong>{{ key.keyPrefix }}…</strong><small>{{ key.userId }} · 创建于 {{ formatDate(key.createdAt) }}</small></div>
+                <div class="api-key-row-meta"><span class="api-key-status" :class="apiKeyStatusClass(key.status)">{{ apiKeyStatusLabel(key.status) }}</span><small>{{ key.expiresAt ? `到期 ${formatDate(key.expiresAt)}` : '永不过期' }}</small></div>
+                <div class="api-key-row-permissions">{{ key.permissions?.length ? key.permissions.join('、') : '未授予接口权限' }}</div>
+                <button class="danger-button" type="button" :disabled="loading || key.status !== 'ACTIVE'" @click="revokeManagedApiKey(key)">{{ key.status === 'ACTIVE' ? '立即撤销' : '已撤销' }}</button>
+              </div>
+            </div>
+            <div class="api-key-audits">
+              <div class="subsection-title"><h3>生命周期审计</h3><span>最近 {{ apiKeyAudits.length }} 条</span></div>
+              <div v-if="!apiKeyAudits.length" class="muted-line">暂无 API Key 生命周期事件</div>
+              <div v-for="audit in apiKeyAudits.slice(0, 8)" :key="audit.id" class="api-key-audit-row"><span>{{ formatDate(audit.createdAt) }}</span><strong>{{ audit.eventType }}</strong><small>{{ audit.actorId }} · {{ audit.details }}</small></div>
+            </div>
           </form>
         </div>
         <div v-if="showGovernance && evaluations.length" class="evaluation-list">

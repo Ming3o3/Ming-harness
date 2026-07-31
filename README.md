@@ -51,7 +51,7 @@ npm run dev
 | `DB_URL` | `jdbc:h2:file:./data/ming-harness;DB_CLOSE_ON_EXIT=FALSE` | 数据库连接，生产环境建议替换为 PostgreSQL/MySQL |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 前端来源白名单 |
 | `HARNESS_AUTH_MODE` | `local` | `local`、`api-key` 或 `oidc`（OIDC 推荐使用 `oidc` Profile） |
-| `HARNESS_API_KEYS` | 空 | `key|tenant|user|permission1,permission2;...`，生产环境通过密钥系统注入 |
+| `HARNESS_API_KEYS` | 空 | 静态引导 Key：`key|tenant|user|permission1,permission2;...`；生产环境优先使用数据库生命周期 API，并通过密钥系统注入引导 Key |
 | `OIDC_ISSUER_URI` | 空 | `oidc` Profile 使用的 OIDC Issuer 地址 |
 | `OIDC_AUDIENCE` | 空 | OIDC Token 必须包含的受众，多个值使用逗号分隔；生产 OIDC 必填 |
 | `AUDIT_INTEGRITY_KEY` | 本地演示默认值 | 审计 HMAC 密钥，生产环境必须从密钥系统注入 |
@@ -85,6 +85,7 @@ npm run dev
 | `EVALUATION_RETENTION_DAYS` | `90` | 评测报告保留天数 |
 | `OUTBOX_RETENTION_DAYS` | `14` | 已发布/最终失败 Outbox 保留天数，`PENDING` 永不自动清理 |
 | `TENANT_POLICY_AUDIT_RETENTION_DAYS` | `365` | 租户资源策略变更审计保留天数 |
+| `API_KEY_AUDIT_RETENTION_DAYS` | `365` | 数据库 API Key 生命周期审计保留天数 |
 | `RETENTION_BATCH_SIZE` | `100` | 每轮最多清理的终态 Run 数量 |
 | `SPRING_PROFILES_ACTIVE` | `local` | `local`、`local-infra`，可组合 `oidc` |
 | `HARNESS_EXECUTION_MODE` | `sync` | `sync` 或 `rabbit` |
@@ -107,7 +108,9 @@ npm run dev
 
 ### API Key / OIDC 认证
 
-生产或共享环境建议设置 `HARNESS_AUTH_MODE=api-key`。调用方使用 `Authorization: Bearer <key>` 或 `X-Api-Key`，服务端根据配置将请求绑定到固定租户和用户，并按接口校验权限，例如 `run.read`、`run.create`、`run.execute`、`run.approve`、`context.read`、`context.write`、`audit.read`、`evaluation.run`、`tool.read` 和 `ops.read`。`ops.read` 用于读取 `/api/health`、Actuator 指标、Prometheus 和应用信息。API Key 只在启动配置中出现，应用内部仅保存 SHA-256 摘要。
+生产或共享环境建议设置 `HARNESS_AUTH_MODE=api-key`。调用方使用 `Authorization: Bearer <key>` 或 `X-Api-Key`，服务端根据配置或数据库凭证将请求绑定到固定租户和用户，并按接口校验权限，例如 `run.read`、`run.create`、`run.execute`、`run.approve`、`context.read`、`context.write`、`audit.read`、`evaluation.run`、`tool.read` 和 `ops.read`。`ops.read` 用于读取 `/api/health`、Actuator 指标、Prometheus 和应用信息。
+
+通过具有 `auth.key.manage` 权限的引导 Key 或 OIDC 服务账号，可调用 `POST /api/admin/api-keys` 创建数据库 API Key；明文 `secret` 仅在创建响应中出现一次，数据库只保存 SHA-256 摘要。`GET /api/admin/api-keys` 只返回前缀和元数据，`DELETE /api/admin/api-keys/{keyId}` 可即时撤销，`GET /api/admin/api-keys/audits` 可查看生命周期审计。读取接口需要 `auth.key.read`，跨租户管理还需 `auth.key.cross-tenant`。环境变量 `HARNESS_API_KEYS` 保留为紧急引导兼容方案，变更或撤销需要重启；正式环境应逐步迁移至数据库生命周期 Key。
 
 企业环境接入 OIDC/JWT 时使用 `SPRING_PROFILES_ACTIVE=local-infra,oidc`，并设置 `OIDC_ISSUER_URI` 与 `OIDC_AUDIENCE`。Spring Security Resource Server 负责验签和明确校验 issuer/audience，Harness 从 JWT 的 `sub`、`tenant_id`（兼容 `tenant`）以及 `permissions`/`scope`/`scp` 声明映射用户、租户和 RBAC 权限。
 
