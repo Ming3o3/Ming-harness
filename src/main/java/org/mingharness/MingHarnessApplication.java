@@ -6,10 +6,11 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.mingharness.model.ModelConfig;
 import org.mingharness.config.RedisProperties;
+import org.mingharness.config.MessagingProperties;
 import org.mingharness.runtime.application.RuntimeLimits;
 
 @SpringBootApplication
-@EnableConfigurationProperties({ModelConfig.class, RuntimeLimits.class, RedisProperties.class})
+@EnableConfigurationProperties({ModelConfig.class, RuntimeLimits.class, RedisProperties.class, MessagingProperties.class})
 @EnableScheduling
 public class MingHarnessApplication {
 

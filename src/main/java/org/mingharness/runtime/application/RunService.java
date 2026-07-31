@@ -29,16 +29,23 @@ import org.mingharness.policy.PolicyDecisionType;
 import org.mingharness.policy.PolicyEngine;
 import org.mingharness.context.ContextBuilder;
 import org.mingharness.context.api.ContextResult;
+import org.mingharness.config.RedisProperties;
+import org.mingharness.messaging.OutboxService;
+import org.mingharness.messaging.RunExecutionMessage;
+import org.mingharness.tool.ToolExecutionContext;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Arrays;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -58,6 +65,11 @@ public class RunService {
     private final ContextBuilder contextBuilder;
     private final TenantRateLimiter tenantRateLimiter;
     private final ToolOutputValidator toolOutputValidator;
+    private final OutboxService outboxService;
+    private final RunExecutionLock executionLock;
+    private final RedisProperties redisProperties;
+    private final String executionMode;
+    private final String workerId = "worker-" + UUID.randomUUID();
 
     public RunService(RunRepository runRepository,
                       AuditEventRepository auditEventRepository,
@@ -72,7 +84,11 @@ public class RunService {
                       BoundedExecutor boundedExecutor,
                       ContextBuilder contextBuilder,
                       TenantRateLimiter tenantRateLimiter,
-                      ToolOutputValidator toolOutputValidator) {
+                      ToolOutputValidator toolOutputValidator,
+                      OutboxService outboxService,
+                      RunExecutionLock executionLock,
+                      RedisProperties redisProperties,
+                      @Value("${harness.execution.mode:sync}") String executionMode) {
         this.runRepository = runRepository;
         this.auditEventRepository = auditEventRepository;
         this.toolRegistry = toolRegistry;
@@ -87,6 +103,10 @@ public class RunService {
         this.contextBuilder = contextBuilder;
         this.tenantRateLimiter = tenantRateLimiter;
         this.toolOutputValidator = toolOutputValidator;
+        this.outboxService = outboxService;
+        this.executionLock = executionLock;
+        this.redisProperties = redisProperties;
+        this.executionMode = executionMode;
     }
 
     @Transactional
@@ -148,7 +168,7 @@ public class RunService {
         runRepository.save(run);
         record(run.getId(), null, "RUN_STARTED", "开始执行任务");
 
-        return executePending(run);
+        return dispatch(run, "START");
     }
 
     @Transactional(readOnly = true)
@@ -220,7 +240,7 @@ public class RunService {
         String actorId = approverId == null || approverId.isBlank() ? run.getUserId() : approverId;
         record(run.getId(), step.getId(), "APPROVAL_APPROVED", "人工审批通过", actorId,
                 approvalSnapshot(step));
-        return executePending(run);
+        return dispatch(run, "APPROVE");
     }
 
     @Transactional
@@ -263,17 +283,45 @@ public class RunService {
         record(run.getId(), null, "RUN_RETRY_QUEUED", "任务进入重试队列");
         run.start();
         record(run.getId(), null, "RUN_STARTED", "开始执行重试任务");
-        return executePending(run);
+        return dispatch(run, "RETRY");
     }
 
     public void assertTenant(String runId, String tenantId) {
         assertTenant(getRun(runId), tenantId);
     }
 
-    private void executeStep(Run run, Step step) {
+    /** Rabbit Worker 调用的入口，重复消息会被执行锁安全丢弃。 */
+    @Transactional
+    public void executeFromWorker(RunExecutionMessage message) {
+        if (message == null || message.runId() == null || message.tenantId() == null) {
+            throw new IllegalArgumentException("Run 执行消息缺少必要字段");
+        }
+        Run run = getRun(message.runId());
+        assertTenant(run, message.tenantId());
+        if (run.getStatus() != RunStatus.RUNNING) {
+            return;
+        }
+        Duration lease = Duration.ofMillis(redisProperties.lockTtlMs());
+        Optional<RunExecutionLock.LockToken> lock = executionLock.tryAcquire(run.getId(), lease);
+        if (lock.isEmpty()) {
+            return;
+        }
+        RunExecutionLock.LockToken token = lock.get();
+        try {
+            run.claim(workerId, Instant.now().plus(lease));
+            runRepository.save(run);
+            record(run.getId(), null, "WORKER_CLAIMED", "Worker 已获取执行租约");
+            executePending(run, token);
+        } finally {
+            executionLock.release(token);
+        }
+    }
+
+    private void executeStep(Run run, Step step, RunExecutionLock.LockToken lockToken) {
         if (step.getStatus() == StepStatus.SUCCEEDED) {
             return;
         }
+        refreshLease(run, lockToken);
         step.start();
         runRepository.save(run);
         record(run.getId(), step.getId(), "STEP_STARTED", "开始执行步骤: " + step.getName());
@@ -294,8 +342,11 @@ public class RunService {
                 step.succeed(response.content(), response.inputTokens(), response.outputTokens(), response.cost());
             } else {
                 HarnessTool tool = toolRegistry.get(step.getName());
+                ToolExecutionContext executionContext = new ToolExecutionContext(
+                        run.getId(), step.getId(), run.getTenantId(),
+                        run.getId() + ":" + step.getId() + ":" + step.getName());
                 String output = boundedExecutor.execute("工具 " + step.getName(), tool.definition().timeoutMs(),
-                        () -> tool.execute(step.getInput()));
+                        () -> tool.execute(step.getInput(), executionContext));
                 toolOutputValidator.validate(tool.definition(), output);
                 step.succeed(output);
             }
@@ -312,11 +363,20 @@ public class RunService {
     }
 
     private RunDetail executePending(Run run) {
+        return executePending(run, null);
+    }
+
+    private RunDetail executePending(Run run, RunExecutionLock.LockToken lockToken) {
         try {
             for (Step step : List.copyOf(run.getSteps())) {
+                if (run.getStatus() == RunStatus.CANCELLED) {
+                    run.clearLease();
+                    return toDetail(runRepository.save(run));
+                }
                 if (step.getStatus() == StepStatus.SUCCEEDED) {
                     continue;
                 }
+                refreshLease(run, lockToken);
                 if (step.getType() == StepType.TOOL) {
                     HarnessTool tool = toolRegistry.get(step.getName());
                     ToolDefinition definition = tool.definition();
@@ -331,12 +391,13 @@ public class RunService {
                     if (decision.requiresApproval()) {
                         step.requestApproval();
                         run.waitApproval();
+                        run.clearLease();
                         runRepository.save(run);
                         record(run.getId(), step.getId(), "APPROVAL_REQUESTED", decision.reason());
                         return toDetail(run);
                     }
                 }
-                executeStep(run, step);
+                executeStep(run, step, lockToken);
             }
             String output = run.getSteps().stream()
                     .filter(step -> step.getStatus() == StepStatus.SUCCEEDED)
@@ -354,7 +415,30 @@ public class RunService {
             runRepository.save(run);
             record(run.getId(), null, "RUN_FAILED", run.getError());
         }
+        if (lockToken != null) {
+            run.clearLease();
+        }
         return toDetail(runRepository.save(run));
+    }
+
+    private RunDetail dispatch(Run run, String command) {
+        if ("rabbit".equalsIgnoreCase(executionMode)) {
+            outboxService.enqueue(run, command);
+            return toDetail(runRepository.save(run));
+        }
+        return executePending(run);
+    }
+
+    private void refreshLease(Run run, RunExecutionLock.LockToken lockToken) {
+        if (lockToken == null) {
+            return;
+        }
+        Duration lease = Duration.ofMillis(redisProperties.lockTtlMs());
+        if (!executionLock.renew(lockToken, lease)) {
+            throw new IllegalStateException("Run 执行锁已丢失，任务将等待恢复处理");
+        }
+        run.heartbeat(workerId, Instant.now().plus(lease));
+        runRepository.save(run);
     }
 
     private Run getRun(String runId) {

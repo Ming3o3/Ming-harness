@@ -55,6 +55,9 @@ public class Run {
     private Instant updatedAt;
     private Instant startedAt;
     private Instant finishedAt;
+    private String workerId;
+    private Instant leaseUntil;
+    private Instant heartbeatAt;
     @Version
     private long version;
 
@@ -103,11 +106,44 @@ public class Run {
         touch();
     }
 
+    /** Worker 成功获取执行锁后建立租约。 */
+    public void claim(String workerId, Instant leaseUntil) {
+        if (status != RunStatus.RUNNING) {
+            throw new IllegalStateException("只有执行中的 Run 可以建立 Worker 租约: " + status);
+        }
+        this.workerId = workerId;
+        this.leaseUntil = leaseUntil;
+        this.heartbeatAt = Instant.now();
+        touch();
+    }
+
+    /** Worker 在步骤边界刷新租约，避免长任务被恢复器误判。 */
+    public void heartbeat(String workerId, Instant leaseUntil) {
+        if (status != RunStatus.RUNNING || !java.util.Objects.equals(this.workerId, workerId)) {
+            return;
+        }
+        this.leaseUntil = leaseUntil;
+        this.heartbeatAt = Instant.now();
+        touch();
+    }
+
+    public void clearLease() {
+        clearLeaseFields();
+        touch();
+    }
+
+    private void clearLeaseFields() {
+        this.workerId = null;
+        this.leaseUntil = null;
+        this.heartbeatAt = null;
+    }
+
     public void succeed(String output) {
         requireStatus(RunStatus.RUNNING);
         this.output = output;
         this.status = RunStatus.SUCCEEDED;
         this.finishedAt = Instant.now();
+        clearLeaseFields();
         touch();
     }
 
@@ -118,6 +154,7 @@ public class Run {
         this.error = error;
         this.status = RunStatus.FAILED;
         this.finishedAt = Instant.now();
+        clearLeaseFields();
         touch();
     }
 
@@ -128,6 +165,7 @@ public class Run {
         this.error = error;
         this.status = RunStatus.TIMED_OUT;
         this.finishedAt = Instant.now();
+        clearLeaseFields();
         touch();
     }
 
@@ -137,6 +175,7 @@ public class Run {
         }
         this.status = RunStatus.CANCELLED;
         this.finishedAt = Instant.now();
+        clearLeaseFields();
         touch();
     }
 
@@ -197,6 +236,9 @@ public class Run {
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getStartedAt() { return startedAt; }
     public Instant getFinishedAt() { return finishedAt; }
+    public String getWorkerId() { return workerId; }
+    public Instant getLeaseUntil() { return leaseUntil; }
+    public Instant getHeartbeatAt() { return heartbeatAt; }
     public long getDurationMs() {
         if (startedAt == null) {
             return 0;

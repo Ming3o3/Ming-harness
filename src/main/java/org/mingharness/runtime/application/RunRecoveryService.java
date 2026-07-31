@@ -34,8 +34,14 @@ public class RunRecoveryService {
     @Transactional
     public void recoverStaleRuns() {
         Instant threshold = Instant.now().minusMillis(runtimeLimits.recoveryTimeoutMs());
-        for (Run run : runRepository.findTop100ByStatusAndUpdatedAtBefore(RunStatus.RUNNING, threshold)) {
+        java.util.LinkedHashMap<String, Run> staleRuns = new java.util.LinkedHashMap<>();
+        runRepository.findTop100ByStatusAndLeaseUntilBefore(RunStatus.RUNNING, Instant.now())
+                .forEach(run -> staleRuns.put(run.getId(), run));
+        runRepository.findTop100ByStatusAndLeaseUntilIsNullAndUpdatedAtBefore(RunStatus.RUNNING, threshold)
+                .forEach(run -> staleRuns.put(run.getId(), run));
+        for (Run run : staleRuns.values()) {
             run.timeout("Worker 执行中断，任务已转为超时状态，请人工重试");
+            run.clearLease();
             runRepository.save(run);
             auditEventRepository.save(new AuditEvent(
                     run.getTenantId(), run.getUserId(), run.getTraceId(), run.getId(), null,
