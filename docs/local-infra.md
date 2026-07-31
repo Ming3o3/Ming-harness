@@ -58,6 +58,8 @@ export RABBITMQ_MAX_QUEUE_DEPTH=1000
 export RABBITMQ_QUEUE_METRICS_POLL_MS=5000
 ```
 
+取消 RUNNING 任务时，应用会先写入带租户范围、自动过期的 Redis 协作信号；Worker 会在每个步骤边界检查该信号，再检查 PostgreSQL 中的最终 Run 状态。这样即使 Worker 长事务暂时占用 Run 行，取消请求也能先让 Worker 停止后续步骤并释放锁。已开始的外部工具调用不能被安全地强制中断，因此仍应为工具配置超时、幂等键和可取消协议；Redis 不可用时取消接口会明确返回基础设施错误，不会静默降级。
+
 如果使用真实模型服务，建议同时设置供应商可靠性和成本参数：
 
 ```bash

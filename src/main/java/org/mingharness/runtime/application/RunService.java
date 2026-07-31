@@ -43,6 +43,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -74,12 +76,16 @@ public class RunService {
     private final ToolOutputValidator toolOutputValidator;
     private final OutboxService outboxService;
     private final RunExecutionLock executionLock;
+    private final RunCancellationSignal cancellationSignal;
+    private final RunCancellationChecker cancellationChecker;
     private final TenantRunQuotaGuard tenantRunQuotaGuard;
     private final RedisProperties redisProperties;
     private final String executionMode;
     private final String workerId = "worker-" + UUID.randomUUID();
     private final HarnessMetrics metrics;
     private final SensitiveDataSanitizer sanitizer;
+    @PersistenceContext
+    private EntityManager entityManager;
 
     public RunService(RunRepository runRepository,
                       AuditTrailService auditTrailService,
@@ -97,6 +103,8 @@ public class RunService {
                       ToolOutputValidator toolOutputValidator,
                       OutboxService outboxService,
                       RunExecutionLock executionLock,
+                      RunCancellationSignal cancellationSignal,
+                      RunCancellationChecker cancellationChecker,
                       TenantRunQuotaGuard tenantRunQuotaGuard,
                       RedisProperties redisProperties,
                       @Value("${harness.execution.mode:sync}") String executionMode,
@@ -118,6 +126,8 @@ public class RunService {
         this.toolOutputValidator = toolOutputValidator;
         this.outboxService = outboxService;
         this.executionLock = executionLock;
+        this.cancellationSignal = cancellationSignal;
+        this.cancellationChecker = cancellationChecker;
         this.tenantRunQuotaGuard = tenantRunQuotaGuard;
         this.redisProperties = redisProperties;
         this.executionMode = executionMode;
@@ -255,12 +265,18 @@ public class RunService {
 
     @Transactional
     public void cancel(String runId, String tenantId) {
-        Run run = getRun(runId);
+        // 先写入租户绑定的短期信号；即使数据库行正被 Worker 锁定，也能让它在步骤边界停止。
+        cancellationSignal.request(runId, tenantId, Duration.ofMillis(runtimeLimits.recoveryTimeoutMs()));
+        // 悲观锁查询会在 Worker 释放行锁后读取最新 version，避免取消与步骤完成发生乐观锁竞态。
+        Run run = runRepository.findByIdForCancelUpdate(runId).orElseThrow(() ->
+                new BusinessException(HttpStatus.NOT_FOUND, "RUN_NOT_FOUND", "执行任务不存在: " + runId));
         assertTenant(run, tenantId);
         if (run.getStatus() == RunStatus.CANCELLED) {
             return;
         }
-        if (run.getStatus() == RunStatus.SUCCEEDED || run.getStatus() == RunStatus.FAILED) {
+        if (run.getStatus() == RunStatus.SUCCEEDED
+                || run.getStatus() == RunStatus.FAILED
+                || run.getStatus() == RunStatus.TIMED_OUT) {
             throw new BusinessException(HttpStatus.CONFLICT, "RUN_NOT_CANCELLABLE", "已结束的任务不能取消");
         }
         run.cancel();
@@ -378,6 +394,7 @@ public class RunService {
     }
 
     private void executeStep(Run run, Step step, RunExecutionLock.LockToken lockToken) {
+        ensureNotCancelled(run);
         if (step.getStatus() == StepStatus.SUCCEEDED) {
             return;
         }
@@ -487,6 +504,7 @@ public class RunService {
                     run.clearLease();
                     return toDetail(runRepository.save(run));
                 }
+                ensureNotCancelled(run);
                 if (step.getStatus() == StepStatus.SUCCEEDED) {
                     continue;
                 }
@@ -518,8 +536,13 @@ public class RunService {
                     .reduce((left, right) -> right)
                     .map(Step::getOutput)
                     .orElse("");
+            ensureNotCancelled(run);
             run.succeed(output);
             record(run.getId(), null, "RUN_SUCCEEDED", "任务执行成功");
+        } catch (RunCancellationRequestedException exception) {
+            // 丢弃当前事务中缓存的旧 Run，避免在取消事务提交后又把 RUNNING 写回数据库。
+            entityManager.clear();
+            return toDetail(runRepository.findById(run.getId()).orElseThrow());
         } catch (ExecutionTimeoutException exception) {
             run.timeout(safeError(exception, "步骤执行超时"));
             metrics.runTimedOut();
@@ -567,6 +590,14 @@ public class RunService {
         }
         run.heartbeat(workerId, Instant.now().plus(lease));
         runRepository.save(run);
+    }
+
+    /** 在每个步骤边界同时检查跨实例信号和数据库最终状态。 */
+    private void ensureNotCancelled(Run run) {
+        if (cancellationSignal.isRequested(run.getId(), run.getTenantId())
+                || cancellationChecker.isCancelled(run.getId())) {
+            throw new RunCancellationRequestedException(run.getId());
+        }
     }
 
     private Run getRun(String runId) {

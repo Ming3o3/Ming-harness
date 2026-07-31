@@ -24,6 +24,12 @@ public interface RunRepository extends JpaRepository<Run, String> {
     List<Run> findTop50ByTenantIdOrderByCreatedAtDesc(String tenantId);
     Page<Run> findByTenantId(String tenantId, Pageable pageable);
     Page<Run> findByTenantIdAndStatus(String tenantId, RunStatus status, Pageable pageable);
+    @Query("select run.status from Run run where run.id = :runId")
+    Optional<RunStatus> findStatusById(@Param("runId") String runId);
+    /** 取消操作需要等待 Worker 释放行锁后读取最新版本，避免用旧实体覆盖执行结果。 */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select run from Run run where run.id = :runId")
+    Optional<Run> findByIdForCancelUpdate(@Param("runId") String runId);
     Optional<Run> findByTenantIdAndIdempotencyKey(String tenantId, String idempotencyKey);
     long countByTenantIdAndStatusIn(String tenantId, List<RunStatus> statuses);
     List<Run> findTop100ByStatusAndUpdatedAtBefore(RunStatus status, Instant updatedAt);
