@@ -17,7 +17,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(properties = {
         "harness.auth.mode=api-key",
-        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read"
+        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,ops.read",
+        "management.endpoint.health.show-details=when_authorized",
+        "management.endpoint.health.show-components=when_authorized"
 })
 class HarnessAuthWebTests {
 
@@ -50,6 +52,43 @@ class HarnessAuthWebTests {
 
         assertEquals(200, response.statusCode());
         assertTrue(response.headers().firstValue("X-Trace-Id").isPresent());
+    }
+
+    @Test
+    void shouldExposeOnlyOverallHealthToAnonymousProbe() throws Exception {
+        HttpResponse<String> response = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/actuator/health")).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(200, response.statusCode());
+        assertTrue(response.body().contains("\"status\""));
+        assertTrue(!response.body().contains("\"components\""));
+    }
+
+    @Test
+    void shouldProtectActuatorMetricsAndReturnSafeHealthSummary() throws Exception {
+        HttpResponse<String> unauthorized = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/actuator/metrics/harness.runs.created"))
+                        .GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, unauthorized.statusCode());
+
+        HttpResponse<String> health = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/health"))
+                        .header("Authorization", "Bearer web-test-key")
+                        .GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, health.statusCode());
+        assertTrue(health.body().contains("\"status\""));
+        assertTrue(health.body().contains("\"db\""));
+        assertTrue(!health.body().contains("jdbc:h2"));
+
+        HttpResponse<String> metrics = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/actuator/metrics/harness.runs.created"))
+                        .header("Authorization", "Bearer web-test-key")
+                        .GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, metrics.statusCode(), metrics.body());
     }
 
     private String baseUrl() {

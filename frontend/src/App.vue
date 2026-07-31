@@ -99,14 +99,19 @@ const canCancel = computed(() => ['QUEUED', 'RUNNING'].includes(selectedStatus.v
 const canApprove = computed(() => selectedStatus.value === 'WAITING_APPROVAL')
 const canRetry = computed(() => ['FAILED', 'TIMED_OUT'].includes(selectedStatus.value))
 const infraOnline = computed(() => health.value?.status === 'UP')
-const infraLabel = computed(() => health.value ? (infraOnline.value ? '基础设施在线' : '基础设施异常') : '检查基础设施')
+const infraLabel = computed(() => {
+  if (!health.value) return '检查基础设施'
+  if (health.value.error) return health.value.error
+  return infraOnline.value ? '基础设施在线' : '基础设施异常'
+})
 
 function isTerminal(status) {
   return ['SUCCEEDED', 'FAILED', 'CANCELLED', 'TIMED_OUT'].includes(status)
 }
 
 function healthStatus(name) {
-  return health.value?.components?.[name]?.status || '—'
+  const component = health.value?.components?.[name]
+  return typeof component === 'string' ? component : component?.status || '—'
 }
 
 function healthClass(name) {
@@ -184,8 +189,12 @@ async function loadDashboard() {
 async function loadHealth() {
   try {
     health.value = await api.health()
-  } catch {
-    health.value = { status: 'DOWN', components: {} }
+  } catch (error) {
+    health.value = {
+      status: 'UNKNOWN',
+      components: {},
+      error: error.code === 'PERMISSION_DENIED' ? '健康状态需要 ops.read 权限' : '健康检查暂不可用',
+    }
   }
 }
 

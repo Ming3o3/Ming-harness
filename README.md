@@ -17,7 +17,7 @@ Ming Harness 是一个面向企业 Agent 的可运行 Harness：后端使用 Spr
 - 数据保留策略：终态 Run 与审计链原子清理，过期记忆/文档/评测和已完成 Outbox 定时删除，待投递消息不自动删除
 - 离线评测：固定用例回放并保存模型/Prompt/策略版本报告
 - 本地基础设施 Profile：PostgreSQL + Flyway、Redis 共享治理、RabbitMQ Outbox Worker
-- 健康检查与运行指标：`/actuator/health`、`/actuator/metrics`
+- 健康检查与运行指标：公开存活探针、受 `ops.read` 保护的 `/api/health` 和 Actuator 指标
 - 请求关联追踪：自动生成并回传 `X-Request-Id`、`X-Trace-Id`，错误响应包含 `traceId`
 - Vue 3 控制台：Run 创建、执行、取消、审批、重试、工具注册、上下文和快速评测
 
@@ -98,7 +98,7 @@ npm run dev
 
 ### API Key / OIDC 认证
 
-生产或共享环境建议设置 `HARNESS_AUTH_MODE=api-key`。调用方使用 `Authorization: Bearer <key>` 或 `X-Api-Key`，服务端根据配置将请求绑定到固定租户和用户，并按接口校验权限，例如 `run.read`、`run.create`、`run.execute`、`run.approve`、`context.read`、`context.write`、`audit.read`、`evaluation.run` 和 `tool.read`。API Key 只在启动配置中出现，应用内部仅保存 SHA-256 摘要。
+生产或共享环境建议设置 `HARNESS_AUTH_MODE=api-key`。调用方使用 `Authorization: Bearer <key>` 或 `X-Api-Key`，服务端根据配置将请求绑定到固定租户和用户，并按接口校验权限，例如 `run.read`、`run.create`、`run.execute`、`run.approve`、`context.read`、`context.write`、`audit.read`、`evaluation.run`、`tool.read` 和 `ops.read`。`ops.read` 用于读取 `/api/health`、Actuator 指标、Prometheus 和应用信息。API Key 只在启动配置中出现，应用内部仅保存 SHA-256 摘要。
 
 企业环境接入 OIDC/JWT 时使用 `SPRING_PROFILES_ACTIVE=local-infra,oidc`，并设置 `OIDC_ISSUER_URI` 与 `OIDC_AUDIENCE`。Spring Security Resource Server 负责验签和明确校验 issuer/audience，Harness 从 JWT 的 `sub`、`tenant_id`（兼容 `tenant`）以及 `permissions`/`scope`/`scp` 声明映射用户、租户和 RBAC 权限。
 
@@ -134,6 +134,10 @@ Rabbit Worker 仅在抛出临时基础设施异常时由队列重试；业务、
 Harness 会在写入 Run/Step、审计、上下文、评测和 Outbox 错误前，统一替换常见的 API Key、Bearer Token、JWT、连接串密码、PEM 私钥和厂商 Token 为 `[REDACTED]`。模型调用前也会再次执行脱敏；长期记忆发现疑似凭证时直接拒绝写入。该规则是安全基线，不替代生产环境的密钥托管、DLP 和权限控制。
 
 `local` 默认关闭自动清理，避免演示数据被删除；`local-infra` 默认开启。Run 与其 Step、审计链会作为一个完整单元清理，`RUN_RETENTION_DAYS` 会自动提升到不小于 `AUDIT_RETENTION_DAYS`，从而不会留下可查询但无法校验的半截审计链。正式环境应按合规要求设置保留天数，并在发布前评估删除不可逆性。
+
+### 管理端点安全
+
+`/actuator/health`、`/actuator/health/liveness` 和 `/actuator/health/readiness` 仅公开整体存活状态，不返回数据库地址、Redis 配置或异常详情。控制台通过带 `ops.read` 权限的 `GET /api/health` 获取数据库、Redis、RabbitMQ 和磁盘的状态摘要；该接口只返回状态码，不返回组件 details。`/actuator/metrics/**`、`/actuator/prometheus` 和 `/actuator/info` 均需要 `ops.read`，生产环境不要将这些端点直接暴露到公网。
 
 ## API 示例
 

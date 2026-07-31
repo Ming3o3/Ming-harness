@@ -76,6 +76,21 @@ class HarnessIdentityInterceptorTests {
     }
 
     @Test
+    void apiKeyShouldRequireOpsPermissionForActuatorMetrics() {
+        HarnessAuthProperties properties = new HarnessAuthProperties();
+        properties.setMode("api-key");
+        properties.setApiKeys("secret-key|tenant-a|alice|run.read");
+        HarnessIdentityInterceptor interceptor = new HarnessIdentityInterceptor(properties);
+        MockHttpServletRequest request = request("GET", "/actuator/metrics/harness.runs.created");
+        request.addHeader("X-Api-Key", "secret-key");
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> interceptor.preHandle(request, new MockHttpServletResponse(), null));
+
+        assertEquals("PERMISSION_DENIED", exception.getCode());
+    }
+
+    @Test
     void oidcShouldMapJwtClaimsToIdentity() throws Exception {
         HarnessAuthProperties properties = new HarnessAuthProperties();
         properties.setMode("oidc");

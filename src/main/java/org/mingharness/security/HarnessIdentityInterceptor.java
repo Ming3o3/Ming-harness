@@ -44,12 +44,13 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())
-                || !request.getRequestURI().startsWith("/api/")) {
+                || !isHarnessProtectedPath(request.getRequestURI())) {
             return true;
         }
 
         HarnessIdentity identity = resolveIdentity(request);
-        String requiredPermission = requiredPermission(request.getMethod(), request.getRequestURI());
+        String requestPath = request.getRequestURI();
+        String requiredPermission = requiredPermission(request.getMethod(), requestPath);
         if (protectedAuthenticationMode() && requiredPermission != null
                 && !identity.hasPermission(requiredPermission)) {
             throw new BusinessException(HttpStatus.FORBIDDEN, "PERMISSION_DENIED",
@@ -62,9 +63,17 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
     @Override
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response,
                                 Object handler, Exception exception) {
-        if (request.getRequestURI().startsWith("/api/")) {
+        if (isHarnessProtectedPath(request.getRequestURI())) {
             HarnessIdentityContext.clear();
         }
+    }
+
+    private boolean isHarnessProtectedPath(String path) {
+        return path.startsWith("/api/")
+                || path.equals("/actuator/metrics")
+                || path.startsWith("/actuator/metrics/")
+                || path.equals("/actuator/prometheus")
+                || path.equals("/actuator/info");
     }
 
     private HarnessIdentity resolveIdentity(HttpServletRequest request) {
@@ -77,13 +86,7 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
                 throw new BusinessException(HttpStatus.UNAUTHORIZED, "AUTHENTICATION_REQUIRED",
                         "缺少 Authorization Bearer Token 或 X-Api-Key");
             }
-            byte[] digest = digest(token);
-            return credentials.stream()
-                    .filter(item -> MessageDigest.isEqual(item.digest(), digest))
-                    .map(ApiKeyCredential::identity)
-                    .findFirst()
-                    .orElseThrow(() -> new BusinessException(HttpStatus.UNAUTHORIZED, "INVALID_API_KEY",
-                            "API Key 无效或已失效"));
+            return authenticateApiKeyToken(token);
         }
 
         return new HarnessIdentity(
@@ -92,6 +95,17 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
                 parsePermissions(request.getHeader("X-Permissions")),
                 "local"
         );
+    }
+
+    /** 供管理端点 Security Filter 复用同一套 API Key 校验规则。 */
+    HarnessIdentity authenticateApiKeyToken(String token) {
+        byte[] digest = digest(token);
+        return credentials.stream()
+                .filter(item -> MessageDigest.isEqual(item.digest(), digest))
+                .map(ApiKeyCredential::identity)
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(HttpStatus.UNAUTHORIZED, "INVALID_API_KEY",
+                        "API Key 无效或已失效"));
     }
 
     /** API Key 和 OIDC 都需要执行接口级 RBAC；local 保留请求头演示兼容性。 */
@@ -202,6 +216,10 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
     }
 
     private String requiredPermission(String method, String path) {
+        if (path.startsWith("/actuator/")) {
+            return "ops.read";
+        }
+        if (path.equals("/api/health")) return "ops.read";
         if ("GET".equalsIgnoreCase(method) && path.matches("/api/runs/[^/]+/audit-events(?:/verify)?")) {
             return "audit.read";
         }

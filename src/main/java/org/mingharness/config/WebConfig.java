@@ -26,7 +26,10 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(identityInterceptor).addPathPatterns("/api/**");
+        // API Key/OIDC 也要保护管理指标；健康探针本身不在这里拦截，避免影响容器存活检查。
+        registry.addInterceptor(identityInterceptor)
+                .addPathPatterns("/api/**", "/actuator/metrics", "/actuator/metrics/**",
+                        "/actuator/prometheus", "/actuator/info");
     }
 
     @Override

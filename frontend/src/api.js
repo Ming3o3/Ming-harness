@@ -31,14 +31,8 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  health: async () => {
-    const response = await fetch('/actuator/health')
-    const payload = await response.json().catch(() => ({}))
-    if (!response.ok) {
-      throw new Error(payload.message || `基础设施健康检查失败（${response.status}）`)
-    }
-    return payload
-  },
+  // 控制台使用受 ops.read 保护的摘要接口，避免直接暴露 Actuator 组件详情。
+  health: () => request('/health'),
   listRuns: () => request('/runs'),
   dashboardSummary: () => request('/dashboard/summary'),
   getRun: (runId) => request(`/runs/${runId}`),

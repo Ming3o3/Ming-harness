@@ -71,7 +71,7 @@ export MODEL_FALLBACK_NAME=backup-model
 
 ```bash
 export HARNESS_AUTH_MODE=api-key
-export HARNESS_API_KEYS='demo-key|tenant-demo|operator|run.read,run.create,run.execute,run.approve,run.cancel,audit.read,context.read,context.write,evaluation.read,evaluation.run,tool.read'
+export HARNESS_API_KEYS='demo-key|tenant-demo|operator|run.read,run.create,run.execute,run.approve,run.cancel,audit.read,context.read,context.write,evaluation.read,evaluation.run,tool.read,ops.read'
 ```
 
 调用时使用 `Authorization: Bearer demo-key`。API Key 绑定的租户和用户会覆盖请求头，Run 创建请求中的 `tenantId/userId` 必须与认证身份一致。默认 `local` 模式仍兼容 `X-Tenant-Id`、`X-User-Id` 和 `X-Permissions`，仅适合本地演示。
@@ -102,10 +102,14 @@ curl http://localhost:8080/api/runs/<RUN_ID>/audit-events/verify \
 健康检查：
 
 ```bash
+# 公开探针只返回整体 status，不返回组件详情。
 curl http://localhost:8080/actuator/health
-curl http://localhost:8080/actuator/metrics/harness.worker.duration
-curl http://localhost:8080/actuator/metrics/harness.rabbit.retries
-curl http://localhost:8080/actuator/metrics/harness.rabbit.dead_letters
+# 控制台和运维查看组件状态使用受 ops.read 保护的摘要接口。
+curl http://localhost:8080/api/health -H 'Authorization: Bearer demo-key'
+# 运行指标、Prometheus 和应用信息同样需要 ops.read。
+curl http://localhost:8080/actuator/metrics/harness.worker.duration -H 'Authorization: Bearer demo-key'
+curl http://localhost:8080/actuator/metrics/harness.rabbit.retries -H 'Authorization: Bearer demo-key'
+curl http://localhost:8080/actuator/metrics/harness.rabbit.dead_letters -H 'Authorization: Bearer demo-key'
 ```
 
 ## 4. 启动前端
