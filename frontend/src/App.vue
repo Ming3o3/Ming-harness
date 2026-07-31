@@ -16,8 +16,47 @@ const noticeMessage = ref('')
 const showCreateForm = ref(true)
 const showGovernance = ref(false)
 const health = ref(null)
+// 主题设置会保存在浏览器中，刷新页面后继续使用上次选择。
+const THEME_STORAGE_KEY = 'harnessTheme'
+const theme = ref(readTheme())
 let runPollTimer
 let healthPollTimer
+
+function readTheme() {
+  if (typeof window === 'undefined') return 'dark'
+  try {
+    const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY)
+    if (storedTheme === 'light' || storedTheme === 'dark') return storedTheme
+  } catch {
+    // 浏览器禁用本地存储时使用默认的黑夜模式。
+  }
+  return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+}
+
+function applyTheme(nextTheme) {
+  if (typeof document !== 'undefined') {
+    document.documentElement.dataset.theme = nextTheme
+    document.querySelector('meta[name="theme-color"]')?.setAttribute(
+      'content',
+      nextTheme === 'dark' ? '#080d1a' : '#f5f7fb',
+    )
+  }
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, nextTheme)
+    } catch {
+      // 浏览器禁用本地存储时仍然允许本次会话切换主题。
+    }
+  }
+}
+
+function toggleTheme() {
+  theme.value = theme.value === 'dark' ? 'light' : 'dark'
+  applyTheme(theme.value)
+}
+
+// 在首屏渲染前同步主题，避免切换时出现短暂的错误背景色。
+applyTheme(theme.value)
 
 const form = reactive({
   tenantId: 'tenant-demo',
@@ -353,6 +392,16 @@ onBeforeUnmount(() => {
           <h1>运行中心</h1>
         </div>
         <div class="topbar-actions">
+          <button
+            class="theme-toggle"
+            type="button"
+            :aria-label="theme === 'dark' ? '切换到白天模式' : '切换到黑夜模式'"
+            :title="theme === 'dark' ? '切换到白天模式' : '切换到黑夜模式'"
+            @click="toggleTheme"
+          >
+            <span aria-hidden="true">{{ theme === 'dark' ? '☼' : '☾' }}</span>
+            {{ theme === 'dark' ? '白天' : '黑夜' }}
+          </button>
           <span class="date-chip">本地演示环境</span>
           <button class="primary-button" type="button" @click="showCreateForm = !showCreateForm">
             <span>＋</span> 新建 Run
