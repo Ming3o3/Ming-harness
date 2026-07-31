@@ -133,6 +133,20 @@ public class Step {
         this.approvalGranted = false;
     }
 
+    /**
+     * 只读工具在同一次执行中的瞬态重试。
+     * 保留已经完成的审批快照，避免自动重试过程中意外扩大或撤销授权语义。
+     */
+    public void retryAutomatically() {
+        if (status != StepStatus.FAILED && status != StepStatus.TIMED_OUT) {
+            return;
+        }
+        this.status = StepStatus.QUEUED;
+        this.error = null;
+        this.startedAt = null;
+        this.finishedAt = null;
+    }
+
     public String getId() { return id; }
     public String getSpanId() { return spanId; }
     public Run getRun() { return run; }

@@ -45,6 +45,6 @@ class RedisTenantRateLimiterTests {
 
     private RuntimeLimits limits(int maxCreatesPerMinute) {
         return new RuntimeLimits(20, 20, 10_000, BigDecimal.ONE, 30_000,
-                4_000, maxCreatesPerMinute, 120_000);
+                4_000, maxCreatesPerMinute, 120_000, 3);
     }
 }

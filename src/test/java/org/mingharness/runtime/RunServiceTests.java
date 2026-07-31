@@ -12,6 +12,7 @@ import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.runtime.domain.StepStatus;
 import org.mingharness.runtime.repository.RunRepository;
 import org.mingharness.tool.HarnessTool;
+import org.mingharness.tool.RetryableToolException;
 import org.mingharness.tool.ToolDefinition;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -174,6 +175,49 @@ class RunServiceTests {
     }
 
     @Test
+    void shouldAutoRetryExplicitRetryableReadOnlyTool() {
+        RunSummary created = runService.create(request("test.auto-flaky", "自动重试"));
+
+        RunDetail result = runService.start(created.id(), "tenant-demo");
+
+        assertEquals(RunStatus.SUCCEEDED, result.run().status());
+        assertEquals(2, result.steps().get(1).attempt());
+        assertEquals(1, auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
+                .filter(event -> "STEP_RETRY_SCHEDULED".equals(event.getEventType()))
+                .count());
+    }
+
+    @Test
+    void shouldNeverAutoRetrySideEffectTool() {
+        RunSummary created = runService.create(request("test.side-effect-flaky", "副作用重试保护"));
+
+        RunDetail result = runService.start(created.id(), "tenant-demo");
+
+        assertEquals(RunStatus.FAILED, result.run().status());
+        assertEquals(1, result.steps().get(1).attempt());
+        assertEquals(0, auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
+                .filter(event -> "STEP_RETRY_SCHEDULED".equals(event.getEventType()))
+                .count());
+    }
+
+    @Test
+    void shouldFailRunWhenModelCostExceedsBudget() {
+        CreateRunRequest lowBudget = new CreateRunRequest(
+                "tenant-demo", "user-demo", "预算校验", "超预算", "demo.echo",
+                null, "prompt-v1", "policy-v1", BigDecimal.valueOf(0.000001));
+        RunSummary created = runService.create(lowBudget);
+
+        RunDetail result = runService.start(created.id(), "tenant-demo");
+
+        assertEquals(RunStatus.FAILED, result.run().status());
+        assertEquals("模型调用成本超过 Run 预算", result.run().error());
+        assertEquals(StepStatus.FAILED, result.steps().get(0).status());
+        assertEquals(1, auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
+                .filter(event -> "BUDGET_EXCEEDED".equals(event.getEventType()))
+                .count());
+    }
+
+    @Test
     void shouldDenyToolWhenPermissionIsMissing() {
         RunSummary created = runService.create(request("test.secured", "读取订单"));
 
@@ -252,6 +296,43 @@ class RunServiceTests {
                         throw new IllegalStateException("瞬态工具错误");
                     }
                     return "重试成功: " + input;
+                }
+            };
+        }
+
+        @Bean
+        HarnessTool autoFlakyTool() {
+            AtomicInteger attempts = new AtomicInteger();
+            return new HarnessTool() {
+                @Override
+                public ToolDefinition definition() {
+                    return new ToolDefinition("test.auto-flaky", "可自动重试的只读工具", true, "LOW", false,
+                            Map.of(), Set.of(), 1_000, 2, "DENY_EXTERNAL", Map.of());
+                }
+
+                @Override
+                public String execute(String input) {
+                    if (attempts.getAndIncrement() == 0) {
+                        throw new RetryableToolException("外部依赖暂时不可用");
+                    }
+                    return "自动重试成功: " + input;
+                }
+            };
+        }
+
+        @Bean
+        HarnessTool sideEffectFlakyTool() {
+            return new HarnessTool() {
+                @Override
+                public ToolDefinition definition() {
+                    return new ToolDefinition("test.side-effect-flaky", "禁止自动重试的副作用工具",
+                            false, "LOW", false, Map.of(), Set.of(), 1_000, 3,
+                            "DENY_EXTERNAL", Map.of());
+                }
+
+                @Override
+                public String execute(String input) {
+                    throw new RetryableToolException("外部依赖暂时不可用");
                 }
             };
         }

@@ -12,7 +12,8 @@ public record RuntimeLimits(
         int modelTimeoutMs,
         int maxContextChars,
         int maxCreatesPerMinute,
-        int recoveryTimeoutMs
+        int recoveryTimeoutMs,
+        int maxToolAttempts
 ) {
 
     public RuntimeLimits {
@@ -40,5 +41,9 @@ public record RuntimeLimits(
         if (recoveryTimeoutMs < 1) {
             recoveryTimeoutMs = 120_000;
         }
+        if (maxToolAttempts < 1) {
+            maxToolAttempts = 3;
+        }
+        maxToolAttempts = Math.min(maxToolAttempts, 10);
     }
 }

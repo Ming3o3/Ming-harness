@@ -66,6 +66,8 @@ export OIDC_ISSUER_URI=https://login.example.com/realms/harness
 
 JWT 必须包含 `sub` 和 `tenant_id`（或 `tenant`），权限可放在 `permissions`、`scope` 或 `scp` 声明中。Spring Security Resource Server 负责 JWT 验签，Harness 负责租户绑定和接口 RBAC。
 
+工具重试和预算治理：只读工具抛出 `RetryableToolException` 时才会按 `maxAttempts` 有限重试，`MAX_TOOL_ATTEMPTS` 默认限制为 3 次；副作用工具不会自动重试。模型实际成本超过 Run 的 `budget` 时，任务会失败并记录 `RUN_BUDGET_EXCEEDED` 审计事件。
+
 健康检查：
 
 ```bash

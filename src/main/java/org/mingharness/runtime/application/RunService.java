@@ -32,6 +32,7 @@ import org.mingharness.context.api.ContextResult;
 import org.mingharness.config.RedisProperties;
 import org.mingharness.messaging.OutboxService;
 import org.mingharness.messaging.RunExecutionMessage;
+import org.mingharness.tool.RetryableToolException;
 import org.mingharness.tool.ToolExecutionContext;
 import org.mingharness.observability.HarnessMetrics;
 import org.springframework.http.HttpStatus;
@@ -330,6 +331,14 @@ public class RunService {
         if (step.getStatus() == StepStatus.SUCCEEDED) {
             return;
         }
+        if (step.getType() == StepType.MODEL) {
+            executeModelStep(run, step, lockToken);
+            return;
+        }
+        executeToolStep(run, step, lockToken);
+    }
+
+    private void executeModelStep(Run run, Step step, RunExecutionLock.LockToken lockToken) {
         refreshLease(run, lockToken);
         step.start();
         runRepository.save(run);
@@ -348,16 +357,11 @@ public class RunService {
                 ModelResponse response = boundedExecutor.execute("模型调用", runtimeLimits.modelTimeoutMs(),
                         () -> modelGateway.complete(new ModelRequest(
                                 modelInput, run.getModelName(), run.getPromptVersion())));
+                if (exceedsBudget(run, response.cost())) {
+                    throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "RUN_BUDGET_EXCEEDED",
+                            "模型调用成本超过 Run 预算");
+                }
                 step.succeed(response.content(), response.inputTokens(), response.outputTokens(), response.cost());
-            } else {
-                HarnessTool tool = toolRegistry.get(step.getName());
-                ToolExecutionContext executionContext = new ToolExecutionContext(
-                        run.getId(), step.getId(), run.getTenantId(),
-                        run.getId() + ":" + step.getId() + ":" + step.getName());
-                String output = boundedExecutor.execute("工具 " + step.getName(), tool.definition().timeoutMs(),
-                        () -> tool.execute(step.getInput(), executionContext));
-                toolOutputValidator.validate(tool.definition(), output);
-                step.succeed(output);
             }
             record(run.getId(), step.getId(), "STEP_SUCCEEDED", "步骤执行成功");
         } catch (ExecutionTimeoutException exception) {
@@ -365,13 +369,60 @@ public class RunService {
             record(run.getId(), step.getId(), "STEP_TIMED_OUT", step.getError());
             throw exception;
         } catch (Exception exception) {
-            if (step.getType() == StepType.TOOL) {
-                metrics.toolFailed();
-            }
             step.fail(exception.getMessage() == null ? "步骤执行失败" : exception.getMessage());
-            record(run.getId(), step.getId(), "STEP_FAILED", step.getError());
+            String eventType = exception instanceof BusinessException businessException
+                    && "RUN_BUDGET_EXCEEDED".equals(businessException.getCode())
+                    ? "BUDGET_EXCEEDED" : "STEP_FAILED";
+            record(run.getId(), step.getId(), eventType, step.getError());
             throw exception;
         }
+    }
+
+    private void executeToolStep(Run run, Step step, RunExecutionLock.LockToken lockToken) {
+        HarnessTool tool = toolRegistry.get(step.getName());
+        ToolDefinition definition = tool.definition();
+        ToolExecutionContext executionContext = new ToolExecutionContext(
+                run.getId(), step.getId(), run.getTenantId(),
+                run.getId() + ":" + step.getId() + ":" + step.getName());
+        // 有副作用的工具禁止自动重试；只读工具也必须显式声明瞬态错误才会重试。
+        int maxAttempts = definition.readOnly()
+                ? Math.min(definition.maxAttempts(), runtimeLimits.maxToolAttempts()) : 1;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            if (attempt > 1) {
+                step.retryAutomatically();
+                record(run.getId(), step.getId(), "STEP_RETRY_SCHEDULED",
+                        "只读工具瞬态错误，准备第 " + attempt + " 次尝试");
+            }
+            refreshLease(run, lockToken);
+            step.start();
+            runRepository.save(run);
+            record(run.getId(), step.getId(), "STEP_STARTED", "开始执行步骤: " + step.getName()
+                    + "（第 " + attempt + " 次尝试）");
+            try {
+                String output = boundedExecutor.execute("工具 " + step.getName(), definition.timeoutMs(),
+                        () -> tool.execute(step.getInput(), executionContext));
+                toolOutputValidator.validate(definition, output);
+                step.succeed(output);
+                record(run.getId(), step.getId(), "STEP_SUCCEEDED", "步骤执行成功");
+                return;
+            } catch (ExecutionTimeoutException exception) {
+                step.timeout(exception.getMessage());
+                record(run.getId(), step.getId(), "STEP_TIMED_OUT", step.getError());
+                throw exception;
+            } catch (Exception exception) {
+                metrics.toolFailed();
+                step.fail(exception.getMessage() == null ? "步骤执行失败" : exception.getMessage());
+                record(run.getId(), step.getId(), "STEP_FAILED", step.getError());
+                boolean canRetry = definition.readOnly()
+                        && exception instanceof RetryableToolException
+                        && attempt < maxAttempts;
+                if (!canRetry) {
+                    throw exception;
+                }
+            }
+        }
+        throw new IllegalStateException("工具执行未产生结果: " + step.getName());
     }
 
     private RunDetail executePending(Run run) {
@@ -533,6 +584,18 @@ public class RunService {
             throw new BusinessException(HttpStatus.TOO_MANY_REQUESTS, "TENANT_RUN_QUOTA_EXCEEDED",
                     "租户当前运行数已达到上限");
         }
+    }
+
+    /** 模型调用完成后再核对成本，确保实际计费不会静默超过 Run 预算。 */
+    private boolean exceedsBudget(Run run, BigDecimal additionalCost) {
+        if (run.getBudget() == null || additionalCost == null || additionalCost.signum() <= 0) {
+            return false;
+        }
+        BigDecimal currentCost = run.getSteps().stream()
+                .map(Step::getCost)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        return currentCost.add(additionalCost).compareTo(run.getBudget()) > 0;
     }
 
     private String normalizeIdempotencyKey(String idempotencyKey) {
