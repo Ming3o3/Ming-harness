@@ -13,6 +13,8 @@ Ming Harness 是一个面向企业 Agent 的可运行 Harness：后端使用 Spr
 - 失败重试：失败步骤会保留 attempt 次数；有副作用的工具重试前会重新走审批
 - 上下文与记忆：授权文档检索、引用来源、过期记忆、删除和敏感凭证拦截
 - 离线评测：固定用例回放并保存模型/Prompt/策略版本报告
+- 本地基础设施 Profile：PostgreSQL + Flyway、Redis 共享治理、RabbitMQ Outbox Worker
+- 健康检查与运行指标：`/actuator/health`、`/actuator/metrics`
 - Vue 3 控制台：Run 创建、执行、取消、审批、重试、工具注册、上下文和快速评测
 
 ## 启动方式
@@ -33,6 +35,9 @@ npm run dev
 
 打开 `http://localhost:5173`。Vite 会把 `/api` 代理到 `http://localhost:8080`。
 
+默认启动使用 H2 和进程内同步执行；接入本机 PostgreSQL、Redis、RabbitMQ 的方式见
+[docs/local-infra.md](docs/local-infra.md)。
+
 ## 常用配置
 
 | 环境变量 | 默认值 | 说明 |
@@ -51,6 +56,10 @@ npm run dev
 | `MODEL_TIMEOUT_MS` | `30000` | 模型调用超时 |
 | `MAX_CONTEXT_CHARS` | `4000` | 注入模型的上下文最大字符数 |
 | `RECOVERY_TIMEOUT_MS` | `120000` | Worker 中断后将 RUNNING 任务转为超时的阈值 |
+| `SPRING_PROFILES_ACTIVE` | `local` | `local` 或 `local-infra` |
+| `HARNESS_EXECUTION_MODE` | `sync` | `sync` 或 `rabbit` |
+| `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | Redis 连接参数 |
+| `RABBITMQ_HOST` / `RABBITMQ_PORT` | `localhost` / `5672` | RabbitMQ 连接参数 |
 
 默认演示网关不会访问外部模型服务，适合本地开发和联调。
 
@@ -76,4 +85,4 @@ curl -X POST http://localhost:8080/api/runs \
 
 ## 设计约束
 
-模型只能提出行动，工具注册表和策略代码才可以授权执行。所有执行结果、错误、审批和版本信息都会持久化，便于恢复、重放和审计。当前关键词检索和单实例限流是可替换基线，生产部署时应切换为向量索引、共享限流、正式数据库、密钥托管、认证授权和消息队列。
+模型只能提出行动，工具注册表和策略代码才可以授权执行。所有执行结果、错误、审批和版本信息都会持久化，便于恢复、重放和审计。`local-infra` 已提供 PostgreSQL、Redis 共享限流/执行锁和 RabbitMQ 异步 Worker 基线；正式环境仍需接入认证授权、密钥托管、告警和密钥轮换。

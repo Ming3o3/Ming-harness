@@ -40,6 +40,7 @@ button:disabled { cursor: wait; opacity: .58; }
 .sidebar-foot { margin-top: auto; padding: 0 11px; }
 .system-state { display: flex; align-items: center; gap: 8px; color: var(--soft); font-size: 11px; }
 .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px rgba(85, 214, 138, .1), 0 0 13px var(--green); }
+.pulse.offline { background: var(--red); box-shadow: 0 0 0 4px rgba(255, 114, 123, .1), 0 0 13px var(--red); }
 .sidebar-foot small { display: block; margin-top: 11px; color: #596780; font: 10px "DM Mono", monospace; }
 
 .main-content { width: calc(100% - 238px); margin-left: 238px; padding: 34px 48px 50px; }
@@ -61,6 +62,14 @@ h3 { margin: 0; font-size: 13px; }
 .message { margin: -10px 0 22px; border-radius: 8px; padding: 10px 14px; font-size: 12px; }
 .error-message { border: 1px solid rgba(255,114,123,.25); background: rgba(255,114,123,.08); color: #ff9ca3; }
 .notice-message { border: 1px solid rgba(85,214,138,.25); background: rgba(85,214,138,.08); color: #84eaae; }
+.infra-strip { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 24px; padding: 15px 18px; }
+.infra-strip .eyebrow { margin-bottom: 4px; }
+.health-items { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.health-items span { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 20px; padding: 7px 10px; color: var(--muted); font: 9px "DM Mono", monospace; }
+.health-items i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.health-items .health-up { border-color: rgba(85,214,138,.25); color: var(--green); }
+.health-items .health-down { border-color: rgba(255,114,123,.25); color: var(--red); }
+.health-items .health-unknown { color: var(--muted); }
 
 .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 13px; margin-bottom: 24px; }
 .stat-card, .panel, .create-panel { border: 1px solid var(--line); background: linear-gradient(145deg, rgba(18, 28, 49, .96), rgba(12, 19, 34, .96)); box-shadow: 0 20px 60px rgba(0,0,0,.12); }

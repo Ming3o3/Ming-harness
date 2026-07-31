@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { api } from './api'
 
 const runs = ref([])
@@ -15,6 +15,9 @@ const errorMessage = ref('')
 const noticeMessage = ref('')
 const showCreateForm = ref(true)
 const showGovernance = ref(false)
+const health = ref(null)
+let runPollTimer
+let healthPollTimer
 
 const form = reactive({
   tenantId: 'tenant-demo',
@@ -56,6 +59,21 @@ const canStart = computed(() => selectedStatus.value === 'QUEUED')
 const canCancel = computed(() => ['QUEUED', 'RUNNING'].includes(selectedStatus.value))
 const canApprove = computed(() => selectedStatus.value === 'WAITING_APPROVAL')
 const canRetry = computed(() => ['FAILED', 'TIMED_OUT'].includes(selectedStatus.value))
+const infraOnline = computed(() => health.value?.status === 'UP')
+const infraLabel = computed(() => health.value ? (infraOnline.value ? '基础设施在线' : '基础设施异常') : '检查基础设施')
+
+function isTerminal(status) {
+  return ['SUCCEEDED', 'FAILED', 'CANCELLED', 'TIMED_OUT'].includes(status)
+}
+
+function healthStatus(name) {
+  return health.value?.components?.[name]?.status || '—'
+}
+
+function healthClass(name) {
+  const status = healthStatus(name)
+  return status === 'UP' ? 'health-up' : status === '—' ? 'health-unknown' : 'health-down'
+}
 
 function statusLabel(status) {
   const labels = {
@@ -119,6 +137,14 @@ async function loadDashboard() {
   }
 }
 
+async function loadHealth() {
+  try {
+    health.value = await api.health()
+  } catch {
+    health.value = { status: 'DOWN', components: {} }
+  }
+}
+
 async function createDocument() {
   clearMessages()
   loading.value = true
@@ -159,8 +185,8 @@ async function runQuickEvaluation() {
   }
 }
 
-async function selectRun(runId, announce = true) {
-  detailLoading.value = true
+async function selectRun(runId, announce = true, showLoading = true) {
+  if (showLoading) detailLoading.value = true
   if (announce) clearMessages()
   try {
     const [detail, events] = await Promise.all([api.getRun(runId), api.listAuditEvents(runId)])
@@ -169,8 +195,16 @@ async function selectRun(runId, announce = true) {
   } catch (error) {
     errorMessage.value = error.message
   } finally {
-    detailLoading.value = false
+    if (showLoading) detailLoading.value = false
   }
+}
+
+async function pollSelectedRun() {
+  if (!selectedRun.value || isTerminal(selectedStatus.value)) return
+  await selectRun(selectedRun.value.run.id, false, false)
+  const [runData, summaryData] = await Promise.all([api.listRuns(), api.dashboardSummary()])
+  runs.value = runData
+  summary.value = summaryData
 }
 
 async function createAndStartRun() {
@@ -187,7 +221,9 @@ async function createAndStartRun() {
     const started = await api.startRun(created.id)
     noticeMessage.value = started.run.status === 'WAITING_APPROVAL'
       ? 'Run 已创建，等待人工审批'
-      : 'Run 已创建并完成执行'
+      : started.run.status === 'RUNNING'
+        ? 'Run 已提交，Worker 正在异步执行'
+        : 'Run 已创建并完成执行'
     showCreateForm.value = false
     await loadDashboard()
     await selectRun(created.id, false)
@@ -275,7 +311,16 @@ async function cancelSelectedRun() {
   }
 }
 
-onMounted(loadDashboard)
+onMounted(async () => {
+  await Promise.all([loadDashboard(), loadHealth()])
+  runPollTimer = window.setInterval(pollSelectedRun, 1500)
+  healthPollTimer = window.setInterval(loadHealth, 10000)
+})
+
+onBeforeUnmount(() => {
+  window.clearInterval(runPollTimer)
+  window.clearInterval(healthPollTimer)
+})
 </script>
 
 <template>
@@ -296,7 +341,7 @@ onMounted(loadDashboard)
       </nav>
 
       <div class="sidebar-foot">
-        <div class="system-state"><span class="pulse"></span><span>演示网关在线</span></div>
+        <div class="system-state"><span class="pulse" :class="{ offline: !infraOnline }"></span><span>{{ infraLabel }}</span></div>
         <small>Runtime v0.1 · Java 17</small>
       </div>
     </aside>
@@ -317,6 +362,16 @@ onMounted(loadDashboard)
 
       <div v-if="errorMessage" class="message error-message">{{ errorMessage }}</div>
       <div v-if="noticeMessage" class="message notice-message">{{ noticeMessage }}</div>
+
+      <section class="infra-strip panel" aria-label="基础设施状态">
+        <div><p class="eyebrow">INFRASTRUCTURE</p><h2>本地依赖状态</h2></div>
+        <div class="health-items">
+          <span :class="healthClass('db')"><i></i>数据库 {{ healthStatus('db') }}</span>
+          <span :class="healthClass('redis')"><i></i>Redis {{ healthStatus('redis') }}</span>
+          <span :class="healthClass('rabbit')"><i></i>RabbitMQ {{ healthStatus('rabbit') }}</span>
+          <span :class="healthClass('diskSpace')"><i></i>应用 {{ health?.status || '—' }}</span>
+        </div>
+      </section>
 
       <section class="stats-grid" aria-label="运行统计">
         <div class="stat-card stat-total">

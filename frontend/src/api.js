@@ -23,6 +23,14 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  health: async () => {
+    const response = await fetch('/actuator/health')
+    const payload = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      throw new Error(payload.message || `基础设施健康检查失败（${response.status}）`)
+    }
+    return payload
+  },
   listRuns: () => request('/runs'),
   dashboardSummary: () => request('/dashboard/summary'),
   getRun: (runId) => request(`/runs/${runId}`),
