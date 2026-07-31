@@ -13,7 +13,10 @@ async function request(path, options = {}) {
 
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}))
-    throw new Error(payload.message || `请求失败（${response.status}）`)
+    const error = new Error(payload.message || `请求失败（${response.status}）`)
+    error.code = payload.code
+    error.traceId = payload.traceId || response.headers.get('X-Trace-Id')
+    throw error
   }
 
   if (response.status === 204) {

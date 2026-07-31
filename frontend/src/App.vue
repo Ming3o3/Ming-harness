@@ -151,6 +151,11 @@ function clearMessages() {
   noticeMessage.value = ''
 }
 
+function errorText(error) {
+  if (!error) return '请求失败'
+  return error.traceId ? `${error.message}（追踪 ID：${error.traceId}）` : error.message
+}
+
 async function loadDashboard() {
   clearMessages()
   try {
@@ -172,7 +177,7 @@ async function loadDashboard() {
       await selectRun(runs.value[0].id, false)
     }
   } catch (error) {
-    errorMessage.value = error.message
+    errorMessage.value = errorText(error)
   }
 }
 
@@ -192,7 +197,7 @@ async function createDocument() {
     noticeMessage.value = '知识文档已保存，后续模型步骤会按租户和用户权限检索'
     await loadDashboard()
   } catch (error) {
-    errorMessage.value = error.message
+    errorMessage.value = errorText(error)
   } finally {
     loading.value = false
   }
@@ -218,7 +223,7 @@ async function runQuickEvaluation() {
     noticeMessage.value = '评测完成，报告已记录'
     await loadDashboard()
   } catch (error) {
-    errorMessage.value = error.message
+    errorMessage.value = errorText(error)
   } finally {
     loading.value = false
   }
@@ -232,7 +237,7 @@ async function selectRun(runId, announce = true, showLoading = true) {
     selectedRun.value = detail
     auditEvents.value = events
   } catch (error) {
-    errorMessage.value = error.message
+    errorMessage.value = errorText(error)
   } finally {
     if (showLoading) detailLoading.value = false
   }
@@ -267,7 +272,7 @@ async function createAndStartRun() {
     await loadDashboard()
     await selectRun(created.id, false)
   } catch (error) {
-    errorMessage.value = error.message
+    errorMessage.value = errorText(error)
   } finally {
     loading.value = false
   }
@@ -282,7 +287,7 @@ async function approveSelectedRun() {
     noticeMessage.value = '审批已通过，Run 已继续执行'
     await loadDashboard()
   } catch (error) {
-    errorMessage.value = error.message
+    errorMessage.value = errorText(error)
   } finally {
     loading.value = false
   }
@@ -297,7 +302,7 @@ async function rejectSelectedRun() {
     noticeMessage.value = '审批已拒绝，Run 已结束'
     await loadDashboard()
   } catch (error) {
-    errorMessage.value = error.message
+    errorMessage.value = errorText(error)
   } finally {
     loading.value = false
   }
@@ -314,7 +319,7 @@ async function retrySelectedRun() {
       : '重试已完成'
     await loadDashboard()
   } catch (error) {
-    errorMessage.value = error.message
+    errorMessage.value = errorText(error)
   } finally {
     loading.value = false
   }
@@ -329,7 +334,7 @@ async function startSelectedRun() {
     noticeMessage.value = 'Run 已启动'
     await loadDashboard()
   } catch (error) {
-    errorMessage.value = error.message
+    errorMessage.value = errorText(error)
   } finally {
     loading.value = false
   }
@@ -344,7 +349,7 @@ async function cancelSelectedRun() {
     noticeMessage.value = 'Run 已取消'
     await loadDashboard()
   } catch (error) {
-    errorMessage.value = error.message
+    errorMessage.value = errorText(error)
   } finally {
     loading.value = false
   }

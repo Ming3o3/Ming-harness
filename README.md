@@ -15,6 +15,7 @@ Ming Harness 是一个面向企业 Agent 的可运行 Harness：后端使用 Spr
 - 离线评测：固定用例回放并保存模型/Prompt/策略版本报告
 - 本地基础设施 Profile：PostgreSQL + Flyway、Redis 共享治理、RabbitMQ Outbox Worker
 - 健康检查与运行指标：`/actuator/health`、`/actuator/metrics`
+- 请求关联追踪：自动生成并回传 `X-Request-Id`、`X-Trace-Id`，错误响应包含 `traceId`
 - Vue 3 控制台：Run 创建、执行、取消、审批、重试、工具注册、上下文和快速评测
 
 ## 启动方式
@@ -64,6 +65,8 @@ npm run dev
 默认演示网关不会访问外部模型服务，适合本地开发和联调。
 
 ## API 示例
+
+所有 API 请求都可以通过 `X-Request-Id` 和 `X-Trace-Id` 传入调用链标识；如果未传入或格式不安全，服务会生成新的 UUID，并在响应头中返回。错误响应统一包含 `code`、`message`、`details`、`timestamp` 和 `traceId`，排查问题时请优先使用 `traceId` 关联日志和审计记录。
 
 创建 Run：
 
