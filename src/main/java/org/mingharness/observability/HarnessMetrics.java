@@ -100,6 +100,41 @@ public class HarnessMetrics {
     public void modelFailed() { modelFailures.increment(); }
     public void pendingOutbox(int count) { pendingOutbox.set(Math.max(0, count)); }
 
+    /**
+     * 返回低基数的运行态摘要，供受 ops.read 保护的健康接口使用。
+     * 队列指标在同步模式或 Rabbit 状态未知时返回 null，避免把 -1 这样的内部哨兵值暴露给客户端。
+     */
+    public OperationalSnapshot operationalSnapshot() {
+        return new OperationalSnapshot(
+                activeWorkers.get(),
+                workerConcurrency.get(),
+                monitoredValue(rabbitQueueDepth),
+                monitoredValue(rabbitQueueCapacity),
+                pendingOutbox.get(),
+                Math.round(rabbitRetries.count()),
+                Math.round(rabbitDeadLetters.count()),
+                Math.round(runsTimedOut.count())
+        );
+    }
+
+    private Integer monitoredValue(AtomicInteger value) {
+        int current = value.get();
+        return current < 0 ? null : current;
+    }
+
+    /** 健康摘要中使用的 Worker、队列和消息治理指标。 */
+    public record OperationalSnapshot(
+            int activeWorkers,
+            int workerConcurrencyLimit,
+            Integer queueDepth,
+            Integer queueCapacity,
+            int pendingOutbox,
+            long rabbitRetryCount,
+            long rabbitDeadLetterCount,
+            long timedOutRunCount
+    ) {
+    }
+
     public <T> T recordWorkerDuration(Supplier<T> action) {
         return workerDuration.record(action);
     }

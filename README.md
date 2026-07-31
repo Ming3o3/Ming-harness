@@ -142,7 +142,7 @@ Harness 会在写入 Run/Step、审计、上下文、评测和 Outbox 错误前�
 
 ### 管理端点安全
 
-`/actuator/health`、`/actuator/health/liveness` 和 `/actuator/health/readiness` 仅公开整体存活状态，不返回数据库地址、Redis 配置或异常详情。控制台通过带 `ops.read` 权限的 `GET /api/health` 获取数据库、Redis、RabbitMQ 和磁盘的状态摘要；该接口只返回状态码，不返回组件 details。`/actuator/metrics/**`、`/actuator/prometheus` 和 `/actuator/info` 均需要 `ops.read`，生产环境不要将这些端点直接暴露到公网。
+`/actuator/health`、`/actuator/health/liveness` 和 `/actuator/health/readiness` 仅公开整体存活状态，不返回数据库地址、Redis 配置或异常详情。控制台通过带 `ops.read` 权限的 `GET /api/health` 获取数据库、Redis、RabbitMQ 和磁盘的状态摘要；该接口只返回状态码，不返回组件 details。`/api/health` 同时返回 Worker 活跃数/并发上限、Rabbit 队列深度/剩余容量、Outbox 待投递量以及重试、死信和超时计数；同步执行模式下无法监控的队列指标会省略对应字段，不会把内部哨兵值暴露给前端。`/actuator/metrics/**`、`/actuator/prometheus` 和 `/actuator/info` 均需要 `ops.read`，生产环境不要将这些端点直接暴露到公网。
 
 ## API 示例
 

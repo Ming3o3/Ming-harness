@@ -115,6 +115,36 @@ const infraLabel = computed(() => {
   if (health.value.error) return health.value.error
   return infraOnline.value ? '基础设施在线' : '基础设施异常'
 })
+const workerLabel = computed(() => {
+  const runtime = health.value?.runtime
+  if (!runtime || !runtime.workerConcurrencyLimit) return 'Worker 同步执行'
+  return `Worker ${runtime.activeWorkers}/${runtime.workerConcurrencyLimit}`
+})
+const workerHealthClass = computed(() => {
+  const runtime = health.value?.runtime
+  if (!runtime || !runtime.workerConcurrencyLimit) return 'health-unknown'
+  return runtime.activeWorkers >= runtime.workerConcurrencyLimit ? 'health-warning' : 'health-up'
+})
+const queueLabel = computed(() => {
+  const runtime = health.value?.runtime
+  if (!runtime || runtime.queueDepth == null || runtime.queueCapacity == null) return '队列 未监控'
+  return `队列 ${runtime.queueDepth} · 余量 ${runtime.queueCapacity}`
+})
+const queueHealthClass = computed(() => {
+  const runtime = health.value?.runtime
+  if (!runtime || runtime.queueDepth == null || runtime.queueCapacity == null) return 'health-unknown'
+  return runtime.queueCapacity === 0 ? 'health-warning' : 'health-up'
+})
+const runtimeAlerts = computed(() => {
+  const runtime = health.value?.runtime
+  if (!runtime) return []
+  return [
+    runtime.pendingOutbox > 0 && { level: 'info', label: `待投递消息 ${runtime.pendingOutbox}` },
+    runtime.rabbitRetryCount > 0 && { level: 'warning', label: `Rabbit 重试 ${runtime.rabbitRetryCount}` },
+    runtime.rabbitDeadLetterCount > 0 && { level: 'danger', label: `Rabbit 死信 ${runtime.rabbitDeadLetterCount}` },
+    runtime.timedOutRunCount > 0 && { level: 'warning', label: `运行超时 ${runtime.timedOutRunCount}` },
+  ].filter(Boolean)
+})
 const runPageLabel = computed(() => {
   if (!runPage.totalElements) return '0 条记录'
   return `第 ${runPage.page + 1} / ${runPage.totalPages} 页 · 共 ${runPage.totalElements} 条`
@@ -516,11 +546,18 @@ onBeforeUnmount(() => {
 
       <section class="infra-strip panel" aria-label="基础设施状态">
         <div><p class="eyebrow">INFRASTRUCTURE</p><h2>本地依赖状态</h2></div>
-        <div class="health-items">
-          <span :class="healthClass('db')"><i></i>数据库 {{ healthStatus('db') }}</span>
-          <span :class="healthClass('redis')"><i></i>Redis {{ healthStatus('redis') }}</span>
-          <span :class="healthClass('rabbit')"><i></i>RabbitMQ {{ healthStatus('rabbit') }}</span>
-          <span :class="healthClass('diskSpace')"><i></i>应用 {{ health?.status || '—' }}</span>
+        <div class="infra-status">
+          <div class="health-items">
+            <span :class="healthClass('db')"><i></i>数据库 {{ healthStatus('db') }}</span>
+            <span :class="healthClass('redis')"><i></i>Redis {{ healthStatus('redis') }}</span>
+            <span :class="healthClass('rabbit')"><i></i>RabbitMQ {{ healthStatus('rabbit') }}</span>
+            <span :class="healthClass('diskSpace')"><i></i>应用 {{ health?.status || '—' }}</span>
+            <span :class="workerHealthClass"><i></i>{{ workerLabel }}</span>
+            <span :class="queueHealthClass"><i></i>{{ queueLabel }}</span>
+          </div>
+          <div v-if="runtimeAlerts.length" class="runtime-alerts" aria-live="polite">
+            <span v-for="alert in runtimeAlerts" :key="alert.label" :class="`runtime-alert-${alert.level}`">{{ alert.label }}</span>
+          </div>
         </div>
       </section>
 

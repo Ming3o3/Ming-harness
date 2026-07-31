@@ -22,9 +22,11 @@ import java.util.TreeMap;
 public class OperationalHealthController {
 
     private final HealthEndpoint healthEndpoint;
+    private final HarnessMetrics metrics;
 
-    public OperationalHealthController(HealthEndpoint healthEndpoint) {
+    public OperationalHealthController(HealthEndpoint healthEndpoint, HarnessMetrics metrics) {
         this.healthEndpoint = healthEndpoint;
+        this.metrics = metrics;
     }
 
     @GetMapping
@@ -37,11 +39,14 @@ public class OperationalHealthController {
         }
         return new OperationalHealthView(
                 component.getStatus().getCode(),
-                new LinkedHashMap<>(components)
+                new LinkedHashMap<>(components),
+                metrics.operationalSnapshot()
         );
     }
 
     /** 只暴露状态码，不暴露 Actuator 组件 details。 */
-    public record OperationalHealthView(String status, Map<String, String> components) {
+    public record OperationalHealthView(String status,
+                                        Map<String, String> components,
+                                        HarnessMetrics.OperationalSnapshot runtime) {
     }
 }
