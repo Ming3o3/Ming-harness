@@ -19,6 +19,11 @@ public record HarnessIdentity(
         return "api-key".equalsIgnoreCase(authenticationMode);
     }
 
+    /** API Key 和 OIDC 的权限均来自服务端已验证的身份，不允许请求体覆盖。 */
+    public boolean usesTrustedPermissions() {
+        return isApiKey() || "oidc".equalsIgnoreCase(authenticationMode);
+    }
+
     public boolean hasPermission(String permission) {
         int separator = permission.indexOf('.');
         return permissions.contains("*")

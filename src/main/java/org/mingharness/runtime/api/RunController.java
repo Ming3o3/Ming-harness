@@ -46,7 +46,7 @@ public class RunController {
         String tenantId = identity.tenantId();
         String idempotencyKey = httpRequest.getHeader("Idempotency-Key");
         String permissions = httpRequest.getHeader("X-Permissions");
-        if (identity.isApiKey()) {
+        if (identity.usesTrustedPermissions()) {
             permissions = identity.permissionsCsv();
         }
         if (!tenantId.equals(request.tenantId())) {
@@ -57,7 +57,7 @@ public class RunController {
         }
         String effectiveKey = idempotencyKey == null || idempotencyKey.isBlank()
                 ? request.idempotencyKey() : idempotencyKey;
-        String effectivePermissions = identity.isApiKey()
+        String effectivePermissions = identity.usesTrustedPermissions()
                 ? identity.permissionsCsv()
                 : permissions == null || permissions.isBlank() ? request.permissions() : permissions;
         return runService.create(request.withIdempotencyKey(effectiveKey).withPermissions(effectivePermissions));
