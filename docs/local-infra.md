@@ -48,6 +48,16 @@ SPRING_PROFILES_ACTIVE=local-infra \
 `local-infra` 启动时会执行 Flyway 迁移，创建 Run、Step、审计、上下文、评测和 Outbox 表，并声明 RabbitMQ 主队列和死信队列。
 Outbox Relay 会先在 PostgreSQL 中抢占短期发布租约，再在租约外等待 RabbitMQ 发布确认；多实例不会同时发送同一条待处理事件。进程在确认前中断时，租约到期后允许重新投递，Run 执行锁负责去重。
 
+Worker 默认每个实例启动 1 个消费者，最多扩展到 4 个消费者，每个消费者预取 1 条消息。Outbox Relay 发布前会读取执行队列深度：达到 `RABBITMQ_MAX_QUEUE_DEPTH`（默认 1000）时暂停抢占，RabbitMQ 队列状态读取失败时也会安全暂停，待下一轮恢复后继续。可以根据模型供应商并发额度和数据库容量覆盖：
+
+```bash
+export RABBITMQ_CONSUMER_CONCURRENCY=1
+export RABBITMQ_MAX_CONSUMER_CONCURRENCY=4
+export RABBITMQ_PREFETCH=1
+export RABBITMQ_MAX_QUEUE_DEPTH=1000
+export RABBITMQ_QUEUE_METRICS_POLL_MS=5000
+```
+
 如果使用真实模型服务，建议同时设置供应商可靠性和成本参数：
 
 ```bash
@@ -110,6 +120,8 @@ curl http://localhost:8080/api/health -H 'Authorization: Bearer demo-key'
 curl http://localhost:8080/actuator/metrics/harness.worker.duration -H 'Authorization: Bearer demo-key'
 curl http://localhost:8080/actuator/metrics/harness.rabbit.retries -H 'Authorization: Bearer demo-key'
 curl http://localhost:8080/actuator/metrics/harness.rabbit.dead_letters -H 'Authorization: Bearer demo-key'
+curl http://localhost:8080/actuator/metrics/harness.rabbit.queue.depth -H 'Authorization: Bearer demo-key'
+curl http://localhost:8080/actuator/metrics/harness.rabbit.backpressure -H 'Authorization: Bearer demo-key'
 ```
 
 ## 4. 启动前端

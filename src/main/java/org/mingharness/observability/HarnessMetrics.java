@@ -24,12 +24,18 @@ public class HarnessMetrics {
     private final Counter outboxFailures;
     private final Counter rabbitRetries;
     private final Counter rabbitDeadLetters;
+    private final Counter rabbitBackpressure;
+    private final Counter rabbitQueuePollFailures;
     private final Counter retentionDeleted;
     private final Counter modelRetries;
     private final Counter modelFallbacks;
     private final Counter modelFailures;
     private final Timer workerDuration;
     private final AtomicInteger pendingOutbox = new AtomicInteger();
+    private final AtomicInteger rabbitQueueDepth = new AtomicInteger(-1);
+    private final AtomicInteger rabbitQueueCapacity = new AtomicInteger(-1);
+    private final AtomicInteger activeWorkers = new AtomicInteger();
+    private final AtomicInteger workerConcurrency = new AtomicInteger();
 
     public HarnessMetrics(MeterRegistry registry) {
         runsCreated = Counter.builder("harness.runs.created").description("创建的 Run 数量").register(registry);
@@ -45,12 +51,20 @@ public class HarnessMetrics {
         outboxFailures = Counter.builder("harness.outbox.failed").description("发布失败的 Outbox 数量").register(registry);
         rabbitRetries = Counter.builder("harness.rabbit.retries").description("RabbitMQ 消费重试次数").register(registry);
         rabbitDeadLetters = Counter.builder("harness.rabbit.dead_letters").description("RabbitMQ 死信数量").register(registry);
+        rabbitBackpressure = Counter.builder("harness.rabbit.backpressure")
+                .description("因执行队列达到上限而暂停发布的次数").register(registry);
+        rabbitQueuePollFailures = Counter.builder("harness.rabbit.queue.poll_failures")
+                .description("读取 RabbitMQ 队列深度失败次数").register(registry);
         retentionDeleted = Counter.builder("harness.retention.deleted").description("数据保留任务删除的记录数量").register(registry);
         modelRetries = Counter.builder("harness.models.retries").description("模型供应商重试次数").register(registry);
         modelFallbacks = Counter.builder("harness.models.fallbacks").description("模型备用供应商切换次数").register(registry);
         modelFailures = Counter.builder("harness.models.failed").description("模型供应商最终失败次数").register(registry);
         workerDuration = Timer.builder("harness.worker.duration").description("Worker 执行耗时").register(registry);
         registry.gauge("harness.outbox.pending", pendingOutbox);
+        registry.gauge("harness.rabbit.queue.depth", rabbitQueueDepth);
+        registry.gauge("harness.rabbit.queue.capacity", rabbitQueueCapacity);
+        registry.gauge("harness.worker.active", activeWorkers);
+        registry.gauge("harness.worker.concurrency", workerConcurrency);
     }
 
     public void runCreated() { runsCreated.increment(); }
@@ -65,6 +79,21 @@ public class HarnessMetrics {
     public void outboxFailed() { outboxFailures.increment(); }
     public void rabbitRetry() { rabbitRetries.increment(); }
     public void rabbitDeadLetter() { rabbitDeadLetters.increment(); }
+    public void rabbitBackpressure() { rabbitBackpressure.increment(); }
+    public void rabbitQueuePollFailed() { rabbitQueuePollFailures.increment(); }
+    public void rabbitQueueDepth(long depth) {
+        rabbitQueueDepth.set(depth < 0 ? -1 : (int) Math.min(Integer.MAX_VALUE, depth));
+    }
+    public void rabbitQueueCapacity(long capacity) {
+        rabbitQueueCapacity.set(capacity < 0 ? -1 : (int) Math.min(Integer.MAX_VALUE, capacity));
+    }
+    public void workerStarted() { activeWorkers.incrementAndGet(); }
+    public void workerFinished() {
+        activeWorkers.updateAndGet(value -> Math.max(0, value - 1));
+    }
+    public void workerConcurrency(int concurrency) {
+        workerConcurrency.set(Math.max(0, concurrency));
+    }
     public void retentionDeleted(int count) { retentionDeleted.increment(Math.max(0, count)); }
     public void modelRetry() { modelRetries.increment(); }
     public void modelFallback() { modelFallbacks.increment(); }

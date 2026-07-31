@@ -22,6 +22,8 @@ import java.util.UUID;
 @ConditionalOnProperty(prefix = "harness.messaging", name = "enabled", havingValue = "true")
 public class OutboxClaimService {
 
+    private static final int MAX_CLAIM_BATCH_SIZE = 50;
+
     private final OutboxEventRepository repository;
     private final MessagingProperties properties;
     private final SensitiveDataSanitizer sanitizer;
@@ -38,10 +40,25 @@ public class OutboxClaimService {
     /** 在独立事务内批量抢占待发布事件。 */
     @Transactional
     public List<OutboxClaim> claimPending() {
+        return claimPending(MAX_CLAIM_BATCH_SIZE);
+    }
+
+    /**
+     * 在剩余队列容量内抢占待发布事件。
+     *
+     * <p>即使调用方错误传入过大值，也不会让单个 Relay 一次抢占超过固定批次，
+     * 防止网络确认较慢时长期占用过多 Outbox 租约。</p>
+     */
+    @Transactional
+    public List<OutboxClaim> claimPending(int requestedLimit) {
+        if (requestedLimit < 1) {
+            return List.of();
+        }
         Instant now = Instant.now();
         Instant leaseUntil = now.plusMillis(properties.outboxClaimLeaseMs());
+        int limit = Math.min(MAX_CLAIM_BATCH_SIZE, requestedLimit);
         return repository.findClaimableForUpdate(OutboxStatus.PENDING, OutboxStatus.PUBLISHING, now,
-                        PageRequest.of(0, 50)).stream()
+                        PageRequest.of(0, limit)).stream()
                 .filter(event -> event.claim(relayId, now, leaseUntil))
                 .map(event -> new OutboxClaim(event.getId(), event.getPayload()))
                 .toList();

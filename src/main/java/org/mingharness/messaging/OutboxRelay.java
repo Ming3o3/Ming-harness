@@ -17,23 +17,37 @@ public class OutboxRelay {
     private final ObjectMapper objectMapper;
     private final MessagingProperties properties;
     private final OutboxClaimService claimService;
+    private final RabbitQueueDepthMonitor queueDepthMonitor;
     private final HarnessMetrics metrics;
 
     public OutboxRelay(RabbitTemplate rabbitTemplate,
                        ObjectMapper objectMapper,
                        MessagingProperties properties,
                        OutboxClaimService claimService,
+                       RabbitQueueDepthMonitor queueDepthMonitor,
                        HarnessMetrics metrics) {
         this.rabbitTemplate = rabbitTemplate;
         this.objectMapper = objectMapper;
         this.properties = properties;
         this.claimService = claimService;
+        this.queueDepthMonitor = queueDepthMonitor;
         this.metrics = metrics;
     }
 
     @Scheduled(fixedDelayString = "${harness.messaging.outbox-poll-ms:1000}")
     public void publishPending() {
-        var claims = claimService.claimPending();
+        var capacity = queueDepthMonitor.availableCapacity();
+        if (capacity.isEmpty()) {
+            // RabbitMQ 状态未知时保留 Outbox，等待下一轮安全重试。
+            metrics.pendingOutbox(0);
+            return;
+        }
+        if (capacity.getAsInt() == 0) {
+            metrics.rabbitBackpressure();
+            metrics.pendingOutbox(0);
+            return;
+        }
+        var claims = claimService.claimPending(capacity.getAsInt());
         metrics.pendingOutbox(claims.size());
         for (OutboxClaim claim : claims) {
             try {

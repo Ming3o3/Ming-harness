@@ -88,6 +88,11 @@ public class RabbitMessagingConfig {
                 .maxDelay(Duration.ofSeconds(5))
                 .build();
         factory.setDefaultRequeueRejected(false);
+        // 显式限制每个实例的消费者数量和预取量，避免 Worker 在下游变慢时无限放大并发。
+        factory.setConcurrentConsumers(properties.consumerConcurrency());
+        factory.setMaxConcurrentConsumers(properties.maxConsumerConcurrency());
+        factory.setPrefetchCount(properties.prefetch());
+        metrics.workerConcurrency(properties.maxConsumerConcurrency());
         factory.setAdviceChain(RetryInterceptorBuilder.stateless()
                 .retryPolicy(new RabbitRetryMetricsPolicy(retryPolicy, metrics))
                 .recoverer(new RabbitDeadLetterRecoverer(metrics))

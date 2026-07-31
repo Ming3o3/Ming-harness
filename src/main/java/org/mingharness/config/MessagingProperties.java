@@ -13,7 +13,12 @@ public record MessagingProperties(
         String deadLetterQueue,
         int maxAttempts,
         long outboxPollMs,
-        long outboxClaimLeaseMs
+        long outboxClaimLeaseMs,
+        int consumerConcurrency,
+        int maxConsumerConcurrency,
+        int prefetch,
+        int maxQueueDepth,
+        long queueMetricsPollMs
 ) {
     public MessagingProperties {
         exchange = blankOrDefault(exchange, "harness.runtime");
@@ -24,6 +29,12 @@ public record MessagingProperties(
         maxAttempts = maxAttempts < 1 ? 3 : maxAttempts;
         outboxPollMs = outboxPollMs < 100 ? 1_000 : outboxPollMs;
         outboxClaimLeaseMs = outboxClaimLeaseMs < 1_000 ? 30_000 : outboxClaimLeaseMs;
+        consumerConcurrency = consumerConcurrency < 1 ? 1 : consumerConcurrency;
+        maxConsumerConcurrency = maxConsumerConcurrency < consumerConcurrency
+                ? consumerConcurrency : maxConsumerConcurrency;
+        prefetch = prefetch < 1 ? 1 : prefetch;
+        maxQueueDepth = maxQueueDepth < 1 ? 1_000 : maxQueueDepth;
+        queueMetricsPollMs = queueMetricsPollMs < 1_000 ? 5_000 : queueMetricsPollMs;
     }
 
     private static String blankOrDefault(String value, String fallback) {

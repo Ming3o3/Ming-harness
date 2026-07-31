@@ -1,6 +1,8 @@
 package org.mingharness.integration;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.Test;
+import org.mingharness.messaging.RabbitQueueDepthMonitor;
 import org.mingharness.runtime.api.CreateRunRequest;
 import org.mingharness.runtime.api.RunDetail;
 import org.mingharness.runtime.api.RunSummary;
@@ -18,6 +20,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** 本地基础设施集成测试，由 -Pintegration 显式触发。 */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -36,6 +39,18 @@ class LocalInfrastructureIT {
 
     @Autowired
     private RunService runService;
+
+    @Autowired
+    private RabbitQueueDepthMonitor queueDepthMonitor;
+
+    @Autowired
+    private MeterRegistry meterRegistry;
+
+    @Test
+    void shouldReadRabbitQueueDepthForBackpressure() {
+        assertTrue(queueDepthMonitor.availableCapacity().isPresent());
+        assertTrue(meterRegistry.get("harness.rabbit.queue.depth").gauge().value() >= 0);
+    }
 
     @Test
     void shouldPersistAndExecuteRunThroughRabbitWorker() throws InterruptedException {

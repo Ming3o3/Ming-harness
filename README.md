@@ -91,6 +91,11 @@ npm run dev
 | `REDIS_QUOTA_LOCK_WAIT_MS` | `1000` | 活动 Run 配额锁等待时长；Redis 不可用时快速失败 |
 | `RABBITMQ_HOST` / `RABBITMQ_PORT` | `localhost` / `5672` | RabbitMQ 连接参数 |
 | `OUTBOX_CLAIM_LEASE_MS` | `30000` | Outbox Relay 发布租约时长；实例中断后过期租约可被其他实例接管 |
+| `RABBITMQ_CONSUMER_CONCURRENCY` | `1` | 每个应用实例初始 Worker 消费者数量 |
+| `RABBITMQ_MAX_CONSUMER_CONCURRENCY` | `4` | 每个应用实例 Worker 消费者数量上限 |
+| `RABBITMQ_PREFETCH` | `1` | 每个消费者预取消息数，避免未执行消息脱离队列监控 |
+| `RABBITMQ_MAX_QUEUE_DEPTH` | `1000` | 执行队列允许的最大待消费消息数，达到上限时 Outbox Relay 暂停抢占 |
+| `RABBITMQ_QUEUE_METRICS_POLL_MS` | `5000` | 队列深度指标刷新间隔 |
 
 默认演示网关不会访问外部模型服务，适合本地开发和联调。
 
@@ -127,7 +132,7 @@ npm run dev
 
 模型网关只对网络错误、408、425、429 和 5xx 等临时故障重试；结构化响应错误和其他 4xx 不会盲目重试。主供应商达到熔断阈值后，配置了 `MODEL_FALLBACK_BASE_URL` 才会切换备用供应商。供应商返回的 `usage.prompt_tokens`/`completion_tokens`（也兼容 `input_tokens`/`output_tokens`）会写入 Step，并按每千 Token 单价计算实际成本；未返回 usage 时成本为 0，不会伪造计费数据。
 
-Rabbit Worker 仅在抛出临时基础设施异常时由队列重试；业务、策略和工具错误会持久化为 Run 的 `FAILED` 状态并确认消息。可通过 `harness.rabbit.retries`、`harness.rabbit.dead_letters` 和 `harness.worker.infrastructure_failed` 指标观察重试、死信和执行锁/租约基础设施故障。
+Rabbit Worker 仅在抛出临时基础设施异常时由队列重试；业务、策略和工具错误会持久化为 Run 的 `FAILED` 状态并确认消息。每个实例的消费者并发和预取量都有上限；Outbox Relay 发布前读取队列深度，达到 `RABBITMQ_MAX_QUEUE_DEPTH` 或无法读取队列状态时会暂停抢占，等待下一轮重试。可通过 `harness.rabbit.queue.depth`、`harness.rabbit.queue.capacity`、`harness.worker.active`、`harness.worker.concurrency`、`harness.rabbit.backpressure`、`harness.rabbit.queue.poll_failures` 以及原有的 `harness.rabbit.retries`、`harness.rabbit.dead_letters` 指标观察背压和 Worker 状态。
 
 ### 敏感数据与保留策略
 
