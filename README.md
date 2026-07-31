@@ -50,6 +50,7 @@ npm run dev
 | `MAX_RUN_BUDGET` | `1000` | 单次 Run 预算上限 |
 | `MODEL_TIMEOUT_MS` | `30000` | 模型调用超时 |
 | `MAX_CONTEXT_CHARS` | `4000` | 注入模型的上下文最大字符数 |
+| `RECOVERY_TIMEOUT_MS` | `120000` | Worker 中断后将 RUNNING 任务转为超时的阈值 |
 
 默认演示网关不会访问外部模型服务，适合本地开发和联调。
 
