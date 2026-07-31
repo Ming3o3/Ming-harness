@@ -19,8 +19,11 @@ public class HarnessMetrics {
     private final Counter toolFailures;
     private final Counter workerClaims;
     private final Counter workerFailures;
+    private final Counter workerInfrastructureFailures;
     private final Counter outboxPublished;
     private final Counter outboxFailures;
+    private final Counter rabbitRetries;
+    private final Counter rabbitDeadLetters;
     private final Counter retentionDeleted;
     private final Counter modelRetries;
     private final Counter modelFallbacks;
@@ -36,8 +39,12 @@ public class HarnessMetrics {
         toolFailures = Counter.builder("harness.tools.failed").description("工具失败数量").register(registry);
         workerClaims = Counter.builder("harness.worker.claims").description("Worker 获取租约数量").register(registry);
         workerFailures = Counter.builder("harness.worker.failed").description("Worker 消费失败数量").register(registry);
+        workerInfrastructureFailures = Counter.builder("harness.worker.infrastructure_failed")
+                .description("Worker 临时基础设施故障数量").register(registry);
         outboxPublished = Counter.builder("harness.outbox.published").description("发布成功的 Outbox 数量").register(registry);
         outboxFailures = Counter.builder("harness.outbox.failed").description("发布失败的 Outbox 数量").register(registry);
+        rabbitRetries = Counter.builder("harness.rabbit.retries").description("RabbitMQ 消费重试次数").register(registry);
+        rabbitDeadLetters = Counter.builder("harness.rabbit.dead_letters").description("RabbitMQ 死信数量").register(registry);
         retentionDeleted = Counter.builder("harness.retention.deleted").description("数据保留任务删除的记录数量").register(registry);
         modelRetries = Counter.builder("harness.models.retries").description("模型供应商重试次数").register(registry);
         modelFallbacks = Counter.builder("harness.models.fallbacks").description("模型备用供应商切换次数").register(registry);
@@ -53,8 +60,11 @@ public class HarnessMetrics {
     public void toolFailed() { toolFailures.increment(); }
     public void workerClaimed() { workerClaims.increment(); }
     public void workerFailed() { workerFailures.increment(); }
+    public void workerInfrastructureFailed() { workerInfrastructureFailures.increment(); }
     public void outboxPublished() { outboxPublished.increment(); }
     public void outboxFailed() { outboxFailures.increment(); }
+    public void rabbitRetry() { rabbitRetries.increment(); }
+    public void rabbitDeadLetter() { rabbitDeadLetters.increment(); }
     public void retentionDeleted(int count) { retentionDeleted.increment(Math.max(0, count)); }
     public void modelRetry() { modelRetries.increment(); }
     public void modelFallback() { modelFallbacks.increment(); }

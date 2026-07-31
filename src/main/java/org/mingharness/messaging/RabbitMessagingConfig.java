@@ -15,7 +15,10 @@ import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.support.converter.JacksonJsonMessageConverter;
 import org.springframework.amqp.support.converter.MessageConverter;
 import org.springframework.amqp.rabbit.config.RetryInterceptorBuilder;
-import org.springframework.amqp.rabbit.retry.RejectAndDontRequeueRecoverer;
+import org.mingharness.observability.HarnessMetrics;
+import org.springframework.core.retry.RetryPolicy;
+
+import java.time.Duration;
 
 /** RabbitMQ 执行交换机、主队列和死信队列声明。 */
 @Configuration
@@ -73,15 +76,21 @@ public class RabbitMessagingConfig {
             SimpleRabbitListenerContainerFactoryConfigurer configurer,
             ConnectionFactory connectionFactory,
             MessageConverter messageConverter,
-            MessagingProperties properties) {
+            MessagingProperties properties,
+            HarnessMetrics metrics) {
         SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
         configurer.configure(factory, connectionFactory);
         factory.setMessageConverter(messageConverter);
+        RetryPolicy retryPolicy = RetryPolicy.builder()
+                .maxRetries(Math.max(0, properties.maxAttempts() - 1L))
+                .delay(Duration.ofMillis(500))
+                .multiplier(2.0)
+                .maxDelay(Duration.ofSeconds(5))
+                .build();
         factory.setDefaultRequeueRejected(false);
         factory.setAdviceChain(RetryInterceptorBuilder.stateless()
-                .maxRetries(Math.max(0, properties.maxAttempts() - 1))
-                .backOffOptions(500, 2.0, 5_000)
-                .recoverer(new RejectAndDontRequeueRecoverer())
+                .retryPolicy(new RabbitRetryMetricsPolicy(retryPolicy, metrics))
+                .recoverer(new RabbitDeadLetterRecoverer(metrics))
                 .build());
         return factory;
     }

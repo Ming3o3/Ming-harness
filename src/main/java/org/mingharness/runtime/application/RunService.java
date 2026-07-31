@@ -325,7 +325,13 @@ public class RunService {
             return;
         }
         Duration lease = Duration.ofMillis(redisProperties.lockTtlMs());
-        Optional<RunExecutionLock.LockToken> lock = executionLock.tryAcquire(run.getId(), lease);
+        Optional<RunExecutionLock.LockToken> lock;
+        try {
+            lock = executionLock.tryAcquire(run.getId(), lease);
+        } catch (RuntimeException exception) {
+            metrics.workerInfrastructureFailed();
+            throw new TransientInfrastructureException("Run 执行锁基础设施不可用", exception);
+        }
         if (lock.isEmpty()) {
             return;
         }
@@ -492,6 +498,9 @@ public class RunService {
             metrics.runTimedOut();
             runRepository.save(run);
             record(run.getId(), null, "RUN_TIMED_OUT", run.getError());
+        } catch (TransientInfrastructureException exception) {
+            metrics.workerInfrastructureFailed();
+            throw exception;
         } catch (RuntimeException exception) {
             run.fail(safeError(exception, exception.toString()));
             metrics.runFailed();
@@ -520,8 +529,14 @@ public class RunService {
             return;
         }
         Duration lease = Duration.ofMillis(redisProperties.lockTtlMs());
-        if (!executionLock.renew(lockToken, lease)) {
-            throw new IllegalStateException("Run 执行锁已丢失，任务将等待恢复处理");
+        try {
+            if (!executionLock.renew(lockToken, lease)) {
+                throw new TransientInfrastructureException("Run 执行锁已丢失，任务将等待恢复处理");
+            }
+        } catch (TransientInfrastructureException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw new TransientInfrastructureException("Run 执行锁续租基础设施不可用", exception);
         }
         run.heartbeat(workerId, Instant.now().plus(lease));
         runRepository.save(run);

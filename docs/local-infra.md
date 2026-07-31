@@ -104,6 +104,8 @@ curl http://localhost:8080/api/runs/<RUN_ID>/audit-events/verify \
 ```bash
 curl http://localhost:8080/actuator/health
 curl http://localhost:8080/actuator/metrics/harness.worker.duration
+curl http://localhost:8080/actuator/metrics/harness.rabbit.retries
+curl http://localhost:8080/actuator/metrics/harness.rabbit.dead_letters
 ```
 
 ## 4. 启动前端
