@@ -143,7 +143,7 @@ npm run dev
 
 在 Rabbit/Redis 模式下，取消接口会先写入租户绑定、自动过期的 Redis 取消信号，再等待数据库行锁释放并将 Run 状态写为 `CANCELLED`。Worker 在每个步骤和最终成功落库前读取该信号及数据库状态；发现取消时不会执行后续步骤，也不会用长事务中的旧状态覆盖取消结果。已经开始的外部工具调用不能被安全地强制中断，因此工具本身仍应实现超时、幂等和可取消协议。Redis 取消协调不可用时，`local-infra` 会返回基础设施不可用，而不会静默继续执行。
 
-Rabbit Worker 仅在抛出临时基础设施异常时由队列重试；业务、策略和工具错误会持久化为 Run 的 `FAILED` 状态并确认消息。Worker 的模型/工具网络调用在数据库事务之外执行，领取、步骤状态、心跳、结果和审计分别使用短事务，避免长调用占用连接和行锁；每个步骤前后都会续租并再次校验 Worker 所有权。每个实例的消费者并发和预取量都有上限；Outbox Relay 发布前读取队列深度，达到 `RABBITMQ_MAX_QUEUE_DEPTH` 或无法读取队列状态时会暂停抢占，等待下一轮重试。可通过 `harness.rabbit.queue.depth`、`harness.rabbit.queue.capacity`、`harness.worker.active`、`harness.worker.concurrency`、`harness.rabbit.backpressure`、`harness.rabbit.queue.poll_failures` 以及原有的 `harness.rabbit.retries`、`harness.rabbit.dead_letters` 指标观察背压和 Worker 状态。
+Rabbit Worker 仅在抛出临时基础设施异常时由队列重试；业务、策略和工具错误会持久化为 Run 的 `FAILED` 状态并确认消息。Worker 的模型/工具网络调用在数据库事务之外执行，领取、步骤状态、心跳、结果和审计分别使用短事务，避免长调用占用连接和行锁；每个步骤前后都会续租并再次校验 Worker 所有权。每个实例的消费者并发和预取量都有上限；Outbox Relay 发布前读取队列深度，达到 `RABBITMQ_MAX_QUEUE_DEPTH` 或无法读取队列状态时会暂停抢占，等待下一轮重试。Outbox 耗尽发布重试次数后会立即将尚未执行的 Run 标记为 `FAILED` 并记录 `RUN_DISPATCH_FAILED` 审计事件，避免任务无 Worker 执行却长时间显示为 `RUNNING`。可通过 `harness.rabbit.queue.depth`、`harness.rabbit.queue.capacity`、`harness.worker.active`、`harness.worker.concurrency`、`harness.rabbit.backpressure`、`harness.rabbit.queue.poll_failures` 以及原有的 `harness.rabbit.retries`、`harness.rabbit.dead_letters` 指标观察背压和 Worker 状态。
 
 ### 敏感数据与保留策略
 

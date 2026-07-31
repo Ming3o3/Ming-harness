@@ -269,6 +269,41 @@ public class RunExecutionStateService {
         runRepository.save(run);
     }
 
+    /**
+     * Outbox 达到最大重试次数后，立即把尚未执行的 Run 标记为失败。
+     *
+     * <p>消息投递失败不是业务步骤失败，但继续保留 RUNNING 会让用户误以为任务仍在执行，
+     * 也会让恢复器只能在租约超时后再处理。该方法使用同一套悲观锁和审计链，确保终态只写入一次。</p>
+     */
+    @Transactional
+    public boolean failAfterDispatchFailure(String runId, String tenantId, String error) {
+        Run run = loadForUpdate(runId);
+        assertTenant(run, tenantId);
+        if (run.getStatus() == RunStatus.SUCCEEDED
+                || run.getStatus() == RunStatus.FAILED
+                || run.getStatus() == RunStatus.TIMED_OUT
+                || run.getStatus() == RunStatus.CANCELLED) {
+            return false;
+        }
+        String safeError = sanitizer.sanitize(error == null || error.isBlank()
+                ? "执行消息投递失败，已达到最大重试次数" : error);
+        Step pendingStep = run.getSteps().stream()
+                .filter(step -> step.getStatus() == StepStatus.QUEUED
+                        || step.getStatus() == StepStatus.RUNNING
+                        || step.getStatus() == StepStatus.WAITING_APPROVAL)
+                .findFirst()
+                .orElse(null);
+        if (pendingStep != null) {
+            pendingStep.fail(safeError);
+            append(run, pendingStep, "DISPATCH_FAILED", safeError);
+        }
+        run.fail(safeError);
+        append(run, null, "RUN_DISPATCH_FAILED", safeError);
+        append(run, null, "RUN_FAILED", safeError);
+        runRepository.save(run);
+        return true;
+    }
+
     private Run loadForUpdate(String runId) {
         return runRepository.findByIdForExecutionUpdate(runId).orElseThrow(() ->
                 new BusinessException(HttpStatus.NOT_FOUND, "RUN_NOT_FOUND", "执行任务不存在: " + runId));

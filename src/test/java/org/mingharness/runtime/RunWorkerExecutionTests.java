@@ -7,6 +7,7 @@ import org.mingharness.messaging.RunExecutionMessage;
 import org.mingharness.runtime.api.CreateRunRequest;
 import org.mingharness.runtime.api.RunSummary;
 import org.mingharness.runtime.application.RunService;
+import org.mingharness.runtime.application.RunExecutionStateService;
 import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.runtime.domain.StepStatus;
@@ -37,6 +38,8 @@ class RunWorkerExecutionTests {
     private RunService runService;
     @Autowired
     private RunRepository runRepository;
+    @Autowired
+    private RunExecutionStateService executionStateService;
     @Autowired
     private AuditEventRepository auditEventRepository;
     @Autowired
@@ -86,6 +89,25 @@ class RunWorkerExecutionTests {
         assertEquals(RunStatus.SUCCEEDED, completed.getStatus());
         assertEquals(2, completed.getSteps().get(1).getAttempt());
         assertEquals(2, workerFlakyState.invocations());
+    }
+
+    @Test
+    void shouldFailQueuedStepsWhenDispatchHasExhaustedRetries() {
+        Run run = new Run("tenant-dispatch", "worker-user", "消息投递失败", "输入",
+                BigDecimal.ONE, "demo-model", "prompt-v1", "policy-v1");
+        run.addStep(new org.mingharness.runtime.domain.Step(
+                1, org.mingharness.runtime.domain.StepType.MODEL, "model.complete", "输入"));
+        run.start();
+        runRepository.saveAndFlush(run);
+
+        assertTrue(executionStateService.failAfterDispatchFailure(
+                run.getId(), run.getTenantId(), "RabbitMQ 发布确认失败"));
+
+        Run failed = runRepository.findById(run.getId()).orElseThrow();
+        assertEquals(RunStatus.FAILED, failed.getStatus());
+        assertEquals(StepStatus.FAILED, failed.getSteps().get(0).getStatus());
+        assertTrue(auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(run.getId()).stream()
+                .anyMatch(event -> "RUN_DISPATCH_FAILED".equals(event.getEventType())));
     }
 
     @TestConfiguration

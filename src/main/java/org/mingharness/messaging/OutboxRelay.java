@@ -3,6 +3,7 @@ package org.mingharness.messaging;
 import tools.jackson.databind.ObjectMapper;
 import org.mingharness.config.MessagingProperties;
 import org.mingharness.observability.HarnessMetrics;
+import org.mingharness.runtime.application.RunExecutionStateService;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -19,19 +20,22 @@ public class OutboxRelay {
     private final OutboxClaimService claimService;
     private final RabbitQueueDepthMonitor queueDepthMonitor;
     private final HarnessMetrics metrics;
+    private final RunExecutionStateService executionStateService;
 
     public OutboxRelay(RabbitTemplate rabbitTemplate,
                        ObjectMapper objectMapper,
                        MessagingProperties properties,
                        OutboxClaimService claimService,
                        RabbitQueueDepthMonitor queueDepthMonitor,
-                       HarnessMetrics metrics) {
+                       HarnessMetrics metrics,
+                       RunExecutionStateService executionStateService) {
         this.rabbitTemplate = rabbitTemplate;
         this.objectMapper = objectMapper;
         this.properties = properties;
         this.claimService = claimService;
         this.queueDepthMonitor = queueDepthMonitor;
         this.metrics = metrics;
+        this.executionStateService = executionStateService;
     }
 
     @Scheduled(fixedDelayString = "${harness.messaging.outbox-poll-ms:1000}")
@@ -65,6 +69,12 @@ public class OutboxRelay {
             } catch (Exception exception) {
                 if (claimService.markFailed(claim.eventId(), exception.getMessage())) {
                     metrics.outboxFailed();
+                    claimService.findTerminalFailure(claim.eventId()).ifPresent(failure -> {
+                        if (executionStateService.failAfterDispatchFailure(
+                                failure.runId(), failure.tenantId(), failure.error())) {
+                            metrics.runFailed();
+                        }
+                    });
                 }
             }
         }

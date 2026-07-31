@@ -46,7 +46,7 @@ SPRING_PROFILES_ACTIVE=local-infra \
 ```
 
 `local-infra` 启动时会执行 Flyway 迁移，创建 Run、Step、审计、上下文、评测、Outbox 和租户资源策略表，并声明 RabbitMQ 主队列和死信队列。
-Outbox Relay 会先在 PostgreSQL 中抢占短期发布租约，再在租约外等待 RabbitMQ 发布确认；多实例不会同时发送同一条待处理事件。进程在确认前中断时，租约到期后允许重新投递，Run 执行锁负责去重。
+Outbox Relay 会先在 PostgreSQL 中抢占短期发布租约，再在租约外等待 RabbitMQ 发布确认；多实例不会同时发送同一条待处理事件。进程在确认前中断时，租约到期后允许重新投递，Run 执行锁负责去重。当同一事件达到 `RABBITMQ_MAX_ATTEMPTS` 仍无法获得发布确认时，Outbox 会进入 `FAILED`，对应 Run 会在带行锁的短事务中立即落为 `FAILED`，并追加 `RUN_DISPATCH_FAILED` 审计事件，不再等待 Worker 租约超时后才让用户看到失败。
 
 Rabbit Worker 的模型和工具调用在数据库事务之外执行；领取租约、步骤开始/完成、心跳、审计和终态写回分别是短事务。每个步骤前后都会续租 Redis 锁并刷新 PostgreSQL Worker 租约，旧 Worker 丢失所有权后不能覆盖新 Worker 或取消操作的结果。Worker 执行锁会自动使用不小于 `RECOVERY_TIMEOUT_MS` 的租期，避免数据库恢复器在一个受控长步骤期间过早回收 Run。
 

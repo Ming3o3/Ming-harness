@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -81,7 +82,22 @@ public class OutboxClaimService {
                 .orElse(false);
     }
 
+    /**
+     * 读取已经耗尽投递次数的事件，用于把对应 Run 及时落为终态。
+     * 查询与终态回写分为两个短事务：Relay 绝不在 RabbitMQ 网络调用期间持有 Run 行锁。
+     */
+    @Transactional(readOnly = true)
+    public Optional<FailedOutbox> findTerminalFailure(String eventId) {
+        return repository.findById(eventId)
+                .filter(event -> event.getStatus() == OutboxStatus.FAILED)
+                .map(event -> new FailedOutbox(event.getRunId(), event.getTenantId(), event.getLastError()));
+    }
+
     public String relayId() {
         return relayId;
+    }
+
+    /** 已耗尽发布重试预算的 Outbox 最小快照，不暴露完整消息正文。 */
+    public record FailedOutbox(String runId, String tenantId, String error) {
     }
 }
