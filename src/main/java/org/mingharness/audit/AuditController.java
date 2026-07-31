@@ -14,10 +14,14 @@ import java.util.List;
 public class AuditController {
 
     private final AuditEventRepository auditEventRepository;
+    private final AuditTrailService auditTrailService;
     private final RunService runService;
 
-    public AuditController(AuditEventRepository auditEventRepository, RunService runService) {
+    public AuditController(AuditEventRepository auditEventRepository,
+                           AuditTrailService auditTrailService,
+                           RunService runService) {
         this.auditEventRepository = auditEventRepository;
+        this.auditTrailService = auditTrailService;
         this.runService = runService;
     }
 
@@ -25,5 +29,12 @@ public class AuditController {
     public List<AuditEvent> list(@PathVariable String runId) {
         runService.assertTenant(runId, HarnessIdentityContext.require().tenantId());
         return auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(runId);
+    }
+
+    /** 供运维或审计人员主动校验指定 Run 的事件链完整性。 */
+    @GetMapping("/verify")
+    public AuditIntegrityVerification verify(@PathVariable String runId) {
+        runService.assertTenant(runId, HarnessIdentityContext.require().tenantId());
+        return auditTrailService.verify(runId);
     }
 }

@@ -6,4 +6,6 @@ import java.util.List;
 
 public interface AuditEventRepository extends JpaRepository<AuditEvent, String> {
     List<AuditEvent> findTop100ByRunIdOrderByCreatedAtDesc(String runId);
+
+    List<AuditEvent> findByRunIdOrderByIntegritySequenceAsc(String runId);
 }

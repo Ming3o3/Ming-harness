@@ -25,6 +25,12 @@ public class AuditEvent {
     @Column(columnDefinition = "text")
     private String metadata;
     private Instant createdAt;
+    @Column(name = "integrity_sequence")
+    private Long integritySequence;
+    @Column(name = "previous_hash", length = 64)
+    private String previousHash;
+    @Column(name = "integrity_hash", length = 64)
+    private String integrityHash;
 
     protected AuditEvent() {
     }
@@ -47,6 +53,16 @@ public class AuditEvent {
         this.createdAt = Instant.now();
     }
 
+    /** 事件写入前只能由审计服务完成一次封签。 */
+    public void seal(long sequence, String previousHash, String integrityHash) {
+        if (integritySequence != null || this.integrityHash != null) {
+            throw new IllegalStateException("审计事件已经完成封签");
+        }
+        this.integritySequence = sequence;
+        this.previousHash = previousHash;
+        this.integrityHash = integrityHash;
+    }
+
     public String getId() { return id; }
     public String getRunId() { return runId; }
     public String getStepId() { return stepId; }
@@ -57,4 +73,7 @@ public class AuditEvent {
     public String getMessage() { return message; }
     public String getMetadata() { return metadata; }
     public Instant getCreatedAt() { return createdAt; }
+    public Long getIntegritySequence() { return integritySequence; }
+    public String getPreviousHash() { return previousHash; }
+    public String getIntegrityHash() { return integrityHash; }
 }

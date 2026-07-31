@@ -9,10 +9,11 @@ import org.mingharness.config.RedisProperties;
 import org.mingharness.config.MessagingProperties;
 import org.mingharness.runtime.application.RuntimeLimits;
 import org.mingharness.security.HarnessAuthProperties;
+import org.mingharness.audit.AuditIntegrityProperties;
 
 @SpringBootApplication
 @EnableConfigurationProperties({ModelConfig.class, RuntimeLimits.class, RedisProperties.class,
-        MessagingProperties.class, HarnessAuthProperties.class})
+        MessagingProperties.class, HarnessAuthProperties.class, AuditIntegrityProperties.class})
 @EnableScheduling
 public class MingHarnessApplication {
 

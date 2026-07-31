@@ -1,7 +1,7 @@
 package org.mingharness.runtime.application;
 
 import org.mingharness.audit.AuditEvent;
-import org.mingharness.audit.AuditEventRepository;
+import org.mingharness.audit.AuditTrailService;
 import org.mingharness.common.BusinessException;
 import org.mingharness.runtime.api.CreateRunRequest;
 import org.mingharness.runtime.api.RunDetail;
@@ -54,7 +54,7 @@ import java.util.stream.Collectors;
 public class RunService {
 
     private final RunRepository runRepository;
-    private final AuditEventRepository auditEventRepository;
+    private final AuditTrailService auditTrailService;
     private final ToolRegistry toolRegistry;
     private final ModelGateway modelGateway;
     private final String defaultModel;
@@ -75,7 +75,7 @@ public class RunService {
     private final HarnessMetrics metrics;
 
     public RunService(RunRepository runRepository,
-                      AuditEventRepository auditEventRepository,
+                      AuditTrailService auditTrailService,
                       ToolRegistry toolRegistry,
                       ModelGateway modelGateway,
                       @Value("${harness.model.name:demo-model}") String defaultModel,
@@ -94,7 +94,7 @@ public class RunService {
                       @Value("${harness.execution.mode:sync}") String executionMode,
                       HarnessMetrics metrics) {
         this.runRepository = runRepository;
-        this.auditEventRepository = auditEventRepository;
+        this.auditTrailService = auditTrailService;
         this.toolRegistry = toolRegistry;
         this.modelGateway = modelGateway;
         this.defaultModel = defaultModel;
@@ -529,7 +529,7 @@ public class RunService {
     private void record(String runId, String stepId, String eventType, String message,
                         String actorId, String metadata) {
         Run run = runRepository.findById(runId).orElse(null);
-        auditEventRepository.save(new AuditEvent(
+        auditTrailService.append(new AuditEvent(
                 run == null ? null : run.getTenantId(),
                 actorId,
                 run == null ? null : run.getTraceId(),

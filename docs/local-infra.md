@@ -61,10 +61,20 @@ export HARNESS_API_KEYS='demo-key|tenant-demo|operator|run.read,run.create,run.e
 ```bash
 export SPRING_PROFILES_ACTIVE=local-infra,oidc
 export OIDC_ISSUER_URI=https://login.example.com/realms/harness
+export AUDIT_INTEGRITY_KEY='由密钥系统注入的长随机字符串'
 ./mvnw spring-boot:run
 ```
 
 JWT 必须包含 `sub` 和 `tenant_id`（或 `tenant`），权限可放在 `permissions`、`scope` 或 `scp` 声明中。Spring Security Resource Server 负责 JWT 验签，Harness 负责租户绑定和接口 RBAC。
+
+审计完整性密钥通过 `AUDIT_INTEGRITY_KEY` 注入。审计查询接口之外，还可以校验指定 Run：
+
+```bash
+curl http://localhost:8080/api/runs/<RUN_ID>/audit-events/verify \
+  -H 'X-Tenant-Id: tenant-demo'
+```
+
+返回 `valid=false` 时优先查看 `failureCode`；`LEGACY_UNSIGNED_EVENTS` 表示迁移前的历史审计记录尚未封签。
 
 工具重试和预算治理：只读工具抛出 `RetryableToolException` 时才会按 `maxAttempts` 有限重试，`MAX_TOOL_ATTEMPTS` 默认限制为 3 次；副作用工具不会自动重试。模型实际成本超过 Run 的 `budget` 时，任务会失败并记录 `RUN_BUDGET_EXCEEDED` 审计事件。
 

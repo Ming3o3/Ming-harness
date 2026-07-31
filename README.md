@@ -8,7 +8,7 @@ Ming Harness 是一个面向企业 Agent 的可运行 Harness：后端使用 Spr
 - 幂等与资源边界：支持 `Idempotency-Key`、租户活动 Run 配额、创建速率、输入/预算/步骤数限制
 - 可插拔模型网关：默认演示模型，也支持 OpenAI 兼容的 `/chat/completions` 接口
 - 工具注册表与确定性策略：权限、风险、审批、网络策略、超时和输入校验
-- 审计与观测：Run `traceId`、Step `spanId`、Token、耗时、成本和租户/操作者快照
+- 审计与观测：Run `traceId`、Step `spanId`、Token、耗时、成本和租户/操作者快照，审计事件支持 HMAC 完整性校验
 - 租户隔离：读写 Run、Step、审计事件都需要 `X-Tenant-Id`
 - 可插拔认证与 RBAC：`local` 兼容演示请求头，`api-key` 和 `oidc` 支持租户、用户和接口权限快照
 - 失败重试：只读工具可用 `RetryableToolException` 触发有限自动重试；有副作用的工具禁止自动重试，人工重试前会重新走审批
@@ -50,6 +50,7 @@ npm run dev
 | `HARNESS_AUTH_MODE` | `local` | `local`、`api-key` 或 `oidc`（OIDC 推荐使用 `oidc` Profile） |
 | `HARNESS_API_KEYS` | 空 | `key|tenant|user|permission1,permission2;...`，生产环境通过密钥系统注入 |
 | `OIDC_ISSUER_URI` | 空 | `oidc` Profile 使用的 OIDC Issuer 地址 |
+| `AUDIT_INTEGRITY_KEY` | 本地演示默认值 | 审计 HMAC 密钥，生产环境必须从密钥系统注入 |
 | `MODEL_ENABLED` | `false` | 是否启用 OpenAI 兼容模型网关 |
 | `MODEL_BASE_URL` | `https://api.openai.com/v1` | 模型服务地址 |
 | `MODEL_API_KEY` | 空 | 模型服务密钥，仅通过环境变量注入 |
@@ -76,6 +77,10 @@ npm run dev
 生产或共享环境建议设置 `HARNESS_AUTH_MODE=api-key`。调用方使用 `Authorization: Bearer <key>` 或 `X-Api-Key`，服务端根据配置将请求绑定到固定租户和用户，并按接口校验权限，例如 `run.read`、`run.create`、`run.execute`、`run.approve`、`context.read`、`context.write`、`audit.read`、`evaluation.run` 和 `tool.read`。API Key 只在启动配置中出现，应用内部仅保存 SHA-256 摘要。
 
 企业环境接入 OIDC/JWT 时使用 `SPRING_PROFILES_ACTIVE=local-infra,oidc`，并设置 `OIDC_ISSUER_URI`。Spring Security Resource Server 负责验签和校验 issuer/audience 基础身份，Harness 从 JWT 的 `sub`、`tenant_id`（兼容 `tenant`）以及 `permissions`/`scope`/`scp` 声明映射用户、租户和 RBAC 权限。
+
+### 审计完整性
+
+每条新审计事件都会使用 `AUDIT_INTEGRITY_KEY` 计算 HMAC，并与同一 Run 的前序哈希、序号组成链；Run 同时保存链头签名。运维可以调用 `GET /api/runs/{runId}/audit-events/verify` 主动校验，检测事件内容修改、删除、乱序或数据库中的链头篡改。迁移前的旧事件会标记为未签名历史记录，不能被校验结果当作完整可信链。
 
 ### 工具重试与 Run 预算
 

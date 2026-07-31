@@ -1,7 +1,7 @@
 package org.mingharness.runtime.application;
 
 import org.mingharness.audit.AuditEvent;
-import org.mingharness.audit.AuditEventRepository;
+import org.mingharness.audit.AuditTrailService;
 import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.runtime.repository.RunRepository;
@@ -17,16 +17,16 @@ import java.time.Instant;
 public class RunRecoveryService {
 
     private final RunRepository runRepository;
-    private final AuditEventRepository auditEventRepository;
+    private final AuditTrailService auditTrailService;
     private final RuntimeLimits runtimeLimits;
     private final HarnessMetrics metrics;
 
     public RunRecoveryService(RunRepository runRepository,
-                              AuditEventRepository auditEventRepository,
+                              AuditTrailService auditTrailService,
                               RuntimeLimits runtimeLimits,
                               HarnessMetrics metrics) {
         this.runRepository = runRepository;
-        this.auditEventRepository = auditEventRepository;
+        this.auditTrailService = auditTrailService;
         this.runtimeLimits = runtimeLimits;
         this.metrics = metrics;
     }
@@ -48,7 +48,7 @@ public class RunRecoveryService {
             metrics.runTimedOut();
             run.clearLease();
             runRepository.save(run);
-            auditEventRepository.save(new AuditEvent(
+            auditTrailService.append(new AuditEvent(
                     run.getTenantId(), run.getUserId(), run.getTraceId(), run.getId(), null,
                     "RUN_RECOVERED_AS_TIMED_OUT", run.getError(), "recovery=stale-running"));
         }

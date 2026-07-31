@@ -202,7 +202,7 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
     }
 
     private String requiredPermission(String method, String path) {
-        if ("GET".equalsIgnoreCase(method) && path.matches("/api/runs/[^/]+/audit-events")) {
+        if ("GET".equalsIgnoreCase(method) && path.matches("/api/runs/[^/]+/audit-events(?:/verify)?")) {
             return "audit.read";
         }
         if (path.equals("/api/runs")) {

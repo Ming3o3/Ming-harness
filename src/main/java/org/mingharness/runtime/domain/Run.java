@@ -54,6 +54,12 @@ public class Run {
     private String workerId;
     private Instant leaseUntil;
     private Instant heartbeatAt;
+    @Column(name = "audit_event_count", nullable = false)
+    private long auditEventCount;
+    @Column(name = "audit_head_hash", length = 64)
+    private String auditHeadHash;
+    @Column(name = "audit_head_signature", length = 64)
+    private String auditHeadSignature;
     @Version
     private long version;
 
@@ -203,6 +209,17 @@ public class Run {
         touch();
     }
 
+    /** 更新 Run 的已签名审计链头，用于检测事件删除、乱序和替换。 */
+    public void updateAuditHead(long eventCount, String eventHash, String headSignature) {
+        if (eventCount != auditEventCount + 1) {
+            throw new IllegalStateException("审计事件序号不连续");
+        }
+        this.auditEventCount = eventCount;
+        this.auditHeadHash = eventHash;
+        this.auditHeadSignature = headSignature;
+        touch();
+    }
+
     private void requireStatus(RunStatus expected) {
         if (status != expected) {
             throw new IllegalStateException("Run 状态不允许执行当前操作: " + status);
@@ -235,6 +252,9 @@ public class Run {
     public String getWorkerId() { return workerId; }
     public Instant getLeaseUntil() { return leaseUntil; }
     public Instant getHeartbeatAt() { return heartbeatAt; }
+    public long getAuditEventCount() { return auditEventCount; }
+    public String getAuditHeadHash() { return auditHeadHash; }
+    public String getAuditHeadSignature() { return auditHeadSignature; }
     public long getDurationMs() {
         if (startedAt == null) {
             return 0;
