@@ -11,6 +11,7 @@ import org.mingharness.observability.HarnessMetrics;
 import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.runtime.repository.RunRepository;
+import org.mingharness.runtime.repository.TenantPolicyAuditRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -39,6 +40,7 @@ public class DataRetentionService {
     private final MemoryEntryRepository memoryEntryRepository;
     private final KnowledgeDocumentRepository documentRepository;
     private final EvaluationReportRepository evaluationReportRepository;
+    private final TenantPolicyAuditRepository tenantPolicyAuditRepository;
     private final HarnessMetrics metrics;
 
     public DataRetentionService(DataRetentionProperties properties,
@@ -48,6 +50,7 @@ public class DataRetentionService {
                                 MemoryEntryRepository memoryEntryRepository,
                                 KnowledgeDocumentRepository documentRepository,
                                 EvaluationReportRepository evaluationReportRepository,
+                                TenantPolicyAuditRepository tenantPolicyAuditRepository,
                                 HarnessMetrics metrics) {
         this.properties = properties;
         this.runRepository = runRepository;
@@ -56,6 +59,7 @@ public class DataRetentionService {
         this.memoryEntryRepository = memoryEntryRepository;
         this.documentRepository = documentRepository;
         this.evaluationReportRepository = evaluationReportRepository;
+        this.tenantPolicyAuditRepository = tenantPolicyAuditRepository;
         this.metrics = metrics;
     }
 
@@ -107,10 +111,12 @@ public class DataRetentionService {
         outboxEventsDeleted += Math.toIntExact(outboxEventRepository.deleteByStatusInAndCreatedAtBefore(
                 List.of(OutboxStatus.PUBLISHED, OutboxStatus.FAILED),
                 now.minus(properties.outboxDays(), ChronoUnit.DAYS)));
+        int tenantPolicyAuditsDeleted = Math.toIntExact(tenantPolicyAuditRepository.deleteByCreatedAtBefore(
+                now.minus(properties.tenantPolicyAuditDays(), ChronoUnit.DAYS)));
 
         RetentionCleanupResult result = new RetentionCleanupResult(
                 runsDeleted, auditEventsDeleted, stepsDeleted, memoriesDeleted, documentsDeleted,
-                evaluationReportsDeleted, outboxEventsDeleted);
+                evaluationReportsDeleted, outboxEventsDeleted, tenantPolicyAuditsDeleted);
         metrics.retentionDeleted(result.totalDeleted());
         return result;
     }

@@ -2,6 +2,7 @@ package org.mingharness.common;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -44,6 +45,19 @@ public class GlobalExceptionHandler {
                 Instant.now()
         );
         return ResponseEntity.badRequest().body(response);
+    }
+
+    /** 并发修改带版本字段的运行或租户策略时，要求客户端重新读取后再提交，不能伪装成服务故障。 */
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<ErrorResponse> handleOptimisticLockingFailure(
+            ObjectOptimisticLockingFailureException exception) {
+        ErrorResponse response = new ErrorResponse(
+                "CONCURRENT_UPDATE",
+                "数据已被其他请求更新，请刷新后重试",
+                Map.of(),
+                Instant.now()
+        );
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
     }
 
     @ExceptionHandler(Exception.class)

@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(properties = {
         "harness.auth.mode=api-key",
-        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,ops.read",
+        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,ops.read,tenant.policy.read,tenant.policy.write",
         "management.endpoint.health.show-details=when_authorized",
         "management.endpoint.health.show-components=when_authorized"
 })
@@ -103,6 +103,43 @@ class HarnessAuthWebTests {
                         .GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, metrics.statusCode(), metrics.body());
+    }
+
+    @Test
+    void shouldExposeAndUpdateOwnTenantPolicy() throws Exception {
+        HttpResponse<String> update = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/admin/tenants/tenant-web/policy"))
+                        .header("Authorization", "Bearer web-test-key")
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString(
+                                "{\"maxActiveRuns\":5,\"maxStepsPerRun\":10,\"maxInputLength\":5000,"
+                                        + "\"maxBudget\":50,\"maxCreatesPerMinute\":20}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(200, update.statusCode(), update.body());
+        assertTrue(update.body().contains("\"defaulted\":false"));
+        assertTrue(update.body().contains("\"maxActiveRuns\":5"));
+
+        HttpResponse<String> read = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/admin/tenants/tenant-web/policy"))
+                        .header("Authorization", "Bearer web-test-key")
+                        .GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, read.statusCode());
+        assertTrue(read.body().contains("\"maxBudget\":50"));
+    }
+
+    @Test
+    void shouldRejectCrossTenantPolicyWithoutExplicitScope() throws Exception {
+        HttpResponse<String> response = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/admin/tenants/another-tenant/policy"))
+                        .header("Authorization", "Bearer web-test-key")
+                        .GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(403, response.statusCode());
+        assertTrue(response.body().contains("TENANT_POLICY_SCOPE_DENIED"));
     }
 
     private String baseUrl() {

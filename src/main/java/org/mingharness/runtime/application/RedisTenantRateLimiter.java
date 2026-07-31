@@ -31,12 +31,20 @@ public class RedisTenantRateLimiter implements TenantRateLimiter {
 
     @Override
     public void acquire(String tenantId) {
+        acquire(tenantId, limits.maxCreatesPerMinute());
+    }
+
+    @Override
+    public void acquire(String tenantId, int maxCreatesPerMinute) {
+        if (maxCreatesPerMinute < 1) {
+            throw new IllegalArgumentException("租户每分钟创建上限必须大于 0");
+        }
         String bucket = String.valueOf(Instant.now().getEpochSecond() / 60);
         String key = "harness:tenant:" + tenantId + ":run-create:" + bucket;
         try {
             Long count = redisTemplate.execute(INCREMENT_SCRIPT, List.of(key),
                     String.valueOf(Duration.ofMinutes(2).toMillis()));
-            if (count != null && count > limits.maxCreatesPerMinute()) {
+            if (count != null && count > maxCreatesPerMinute) {
                 throw new BusinessException(HttpStatus.TOO_MANY_REQUESTS, "TENANT_RATE_LIMITED",
                         "租户创建 Run 的频率超过限制");
             }

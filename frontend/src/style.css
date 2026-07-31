@@ -214,9 +214,13 @@ h3 { margin: 0; font-size: 13px; }
 .tool-card p { min-height: 32px; margin: 8px 0 11px; color: var(--muted); font-size: 10px; line-height: 1.55; }
 .tool-card small { color: #596780; font-size: 9px; }
 .governance-section { margin-top: 18px; }
-.governance-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.governance-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .governance-card { display: grid; gap: 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--governance-bg); padding: 15px; }
 .governance-card h3 { margin-bottom: 2px; }
+.policy-card .subsection-title { margin-bottom: 0; }
+.policy-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.policy-actions button { padding: 8px 10px; font-size: 10px; }
+.policy-error { margin: 0; border-radius: 6px; background: rgba(255,114,123,.08); color: var(--red); padding: 8px 10px; font-size: 10px; }
 .evaluation-list { display: grid; gap: 5px; margin-top: 14px; border-top: 1px solid var(--line); padding-top: 13px; }
 .evaluation-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 12px; border-bottom: 1px solid rgba(153,174,218,.08); padding: 9px 0; color: var(--soft); font-size: 11px; }
 .evaluation-row span { color: var(--green); font: 10px "DM Mono", monospace; }

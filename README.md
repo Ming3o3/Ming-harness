@@ -69,10 +69,10 @@ npm run dev
 | `MODEL_INPUT_COST_PER_1K_TOKENS` | `0` | 输入每 1000 token 成本，按实际 usage 计算 |
 | `MODEL_OUTPUT_COST_PER_1K_TOKENS` | `0` | 输出每 1000 token 成本，按实际 usage 计算 |
 | `MODEL_MAX_RESPONSE_CHARS` | `100000` | 单次模型响应正文上限 |
-| `MAX_ACTIVE_RUNS_PER_TENANT` | `20` | 单租户活动 Run 上限 |
-| `MAX_CREATES_PER_MINUTE` | `60` | 单租户每分钟创建 Run 上限 |
-| `MAX_INPUT_LENGTH` | `10000` | 单次输入最大字符数 |
-| `MAX_RUN_BUDGET` | `1000` | 单次 Run 预算上限 |
+| `MAX_ACTIVE_RUNS_PER_TENANT` | `20` | 平台单租户活动 Run 硬上限；可通过租户策略进一步收紧 |
+| `MAX_CREATES_PER_MINUTE` | `60` | 平台单租户每分钟创建 Run 硬上限；可通过租户策略进一步收紧 |
+| `MAX_INPUT_LENGTH` | `10000` | 平台单次输入字符硬上限；可通过租户策略进一步收紧 |
+| `MAX_RUN_BUDGET` | `1000` | 平台单次 Run 预算硬上限；可通过租户策略进一步收紧 |
 | `MODEL_TIMEOUT_MS` | `30000` | 模型调用超时 |
 | `MAX_CONTEXT_CHARS` | `4000` | 注入模型的上下文最大字符数 |
 | `RECOVERY_TIMEOUT_MS` | `120000` | Worker 中断后将 RUNNING 任务转为超时的阈值 |
@@ -84,6 +84,7 @@ npm run dev
 | `DOCUMENT_RETENTION_DAYS` | `30` | 已删除知识文档的保留天数 |
 | `EVALUATION_RETENTION_DAYS` | `90` | 评测报告保留天数 |
 | `OUTBOX_RETENTION_DAYS` | `14` | 已发布/最终失败 Outbox 保留天数，`PENDING` 永不自动清理 |
+| `TENANT_POLICY_AUDIT_RETENTION_DAYS` | `365` | 租户资源策略变更审计保留天数 |
 | `RETENTION_BATCH_SIZE` | `100` | 每轮最多清理的终态 Run 数量 |
 | `SPRING_PROFILES_ACTIVE` | `local` | `local`、`local-infra`，可组合 `oidc` |
 | `HARNESS_EXECUTION_MODE` | `sync` | `sync` 或 `rabbit` |

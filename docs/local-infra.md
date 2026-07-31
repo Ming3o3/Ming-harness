@@ -45,7 +45,7 @@ SPRING_PROFILES_ACTIVE=local-infra \
 ./mvnw spring-boot:run
 ```
 
-`local-infra` 启动时会执行 Flyway 迁移，创建 Run、Step、审计、上下文、评测和 Outbox 表，并声明 RabbitMQ 主队列和死信队列。
+`local-infra` 启动时会执行 Flyway 迁移，创建 Run、Step、审计、上下文、评测、Outbox 和租户资源策略表，并声明 RabbitMQ 主队列和死信队列。
 Outbox Relay 会先在 PostgreSQL 中抢占短期发布租约，再在租约外等待 RabbitMQ 发布确认；多实例不会同时发送同一条待处理事件。进程在确认前中断时，租约到期后允许重新投递，Run 执行锁负责去重。
 
 Rabbit Worker 的模型和工具调用在数据库事务之外执行；领取租约、步骤开始/完成、心跳、审计和终态写回分别是短事务。每个步骤前后都会续租 Redis 锁并刷新 PostgreSQL Worker 租约，旧 Worker 丢失所有权后不能覆盖新 Worker 或取消操作的结果。Worker 执行锁会自动使用不小于 `RECOVERY_TIMEOUT_MS` 的租期，避免数据库恢复器在一个受控长步骤期间过早回收 Run。
@@ -94,10 +94,23 @@ export MODEL_FALLBACK_NAME=backup-model
 
 ```bash
 export HARNESS_AUTH_MODE=api-key
-export HARNESS_API_KEYS='demo-key|tenant-demo|operator|run.read,run.create,run.execute,run.approve,run.cancel,audit.read,context.read,context.write,evaluation.read,evaluation.run,tool.read,ops.read'
+export HARNESS_API_KEYS='demo-key|tenant-demo|operator|run.read,run.create,run.execute,run.approve,run.cancel,audit.read,context.read,context.write,evaluation.read,evaluation.run,tool.read,ops.read,tenant.policy.read,tenant.policy.write'
 ```
 
 调用时使用 `Authorization: Bearer demo-key`。API Key 绑定的租户和用户会覆盖请求头，Run 创建请求中的 `tenantId/userId` 必须与认证身份一致。默认 `local` 模式仍兼容 `X-Tenant-Id`、`X-User-Id` 和 `X-Permissions`，仅适合本地演示。
+
+### 租户级资源治理
+
+平台环境变量定义所有租户都不能突破的硬上限。拥有 `tenant.policy.read`/`tenant.policy.write` 权限的身份可以通过管理接口为自己的租户设置更严格的活动 Run 数、步骤数、输入长度、单次预算和创建速率；跨租户运维还需要额外的 `tenant.policy.cross-tenant` 权限。未配置覆盖策略的租户自动使用平台默认值。
+
+```bash
+curl -X PUT http://localhost:8080/api/admin/tenants/tenant-demo/policy \
+  -H 'Authorization: Bearer demo-key' \
+  -H 'Content-Type: application/json' \
+  -d '{"maxActiveRuns":5,"maxStepsPerRun":10,"maxInputLength":5000,"maxBudget":50,"maxCreatesPerMinute":20}'
+```
+
+`GET /api/admin/tenants/{tenantId}/policy` 查看当前生效策略，`DELETE` 恢复平台默认值，`GET .../policy/audits` 查看最近策略变更。策略变更与前后数值会单独留痕；策略只能收紧平台硬上限，不会因为租户配置错误而突破系统容量边界。
 
 企业 OIDC/JWT：
 

@@ -14,6 +14,7 @@ public record DataRetentionProperties(
         int documentDays,
         int evaluationDays,
         int outboxDays,
+        int tenantPolicyAuditDays,
         long cleanupIntervalMs,
         long cleanupInitialDelayMs,
         int batchSize
@@ -26,6 +27,7 @@ public record DataRetentionProperties(
         documentDays = positiveOrDefault(documentDays, 30);
         evaluationDays = positiveOrDefault(evaluationDays, 90);
         outboxDays = positiveOrDefault(outboxDays, 14);
+        tenantPolicyAuditDays = positiveOrDefault(tenantPolicyAuditDays, 365);
         cleanupIntervalMs = cleanupIntervalMs < 60_000 ? 3_600_000 : cleanupIntervalMs;
         cleanupInitialDelayMs = cleanupInitialDelayMs < 1_000 ? 60_000 : cleanupInitialDelayMs;
         batchSize = Math.min(1_000, Math.max(1, batchSize));

@@ -147,6 +147,20 @@ class RunServiceTests {
     }
 
     @Test
+    void shouldNotReuseIdempotencyKeyAcrossDifferentPermissionSnapshots() {
+        runService.create(request("demo.echo", "相同输入").withIdempotencyKey("request-permission")
+                .withPermissions("orders.read"));
+
+        BusinessException exception = assertThrows(
+                BusinessException.class,
+                () -> runService.create(request("demo.echo", "相同输入")
+                        .withIdempotencyKey("request-permission"))
+        );
+
+        assertEquals("IDEMPOTENCY_KEY_REUSED", exception.getCode());
+    }
+
+    @Test
     void shouldRejectSensitiveIdempotencyKeyBeforePersistingIt() {
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> runService.create(request("demo.echo", "安全输入")

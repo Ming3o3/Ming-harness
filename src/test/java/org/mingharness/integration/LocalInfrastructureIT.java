@@ -7,6 +7,9 @@ import org.mingharness.runtime.api.CreateRunRequest;
 import org.mingharness.runtime.api.RunDetail;
 import org.mingharness.runtime.api.RunSummary;
 import org.mingharness.runtime.application.RunService;
+import org.mingharness.runtime.application.TenantPolicyService;
+import org.mingharness.runtime.api.TenantPolicyRequest;
+import org.mingharness.runtime.api.TenantPolicyView;
 import org.mingharness.runtime.domain.RunStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -46,10 +49,25 @@ class LocalInfrastructureIT {
     @Autowired
     private MeterRegistry meterRegistry;
 
+    @Autowired
+    private TenantPolicyService tenantPolicyService;
+
     @Test
     void shouldReadRabbitQueueDepthForBackpressure() {
         assertTrue(queueDepthMonitor.availableCapacity().isPresent());
         assertTrue(meterRegistry.get("harness.rabbit.queue.depth").gauge().value() >= 0);
+    }
+
+    @Test
+    void shouldPersistTenantPolicyThroughPostgresFlywaySchema() {
+        String tenantId = "tenant-policy-" + UUID.randomUUID();
+        TenantPolicyView saved = tenantPolicyService.upsert(tenantId,
+                new TenantPolicyRequest(3, 8, 3000, BigDecimal.valueOf(25), 15), "integration-user");
+
+        assertEquals(3, saved.maxActiveRuns());
+        assertEquals(15, tenantPolicyService.get(tenantId).maxCreatesPerMinute());
+        assertEquals(1, tenantPolicyService.auditTrail(tenantId).size());
+        tenantPolicyService.reset(tenantId, "integration-user");
     }
 
     @Test

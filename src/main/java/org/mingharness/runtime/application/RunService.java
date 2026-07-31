@@ -14,6 +14,7 @@ import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.runtime.domain.Step;
 import org.mingharness.runtime.domain.StepStatus;
 import org.mingharness.runtime.domain.StepType;
+import org.mingharness.runtime.domain.TenantPolicyLimits;
 import org.mingharness.model.ModelGateway;
 import org.mingharness.model.ModelRequest;
 import org.mingharness.model.ModelResponse;
@@ -69,6 +70,7 @@ public class RunService {
     private final String defaultPromptVersion;
     private final String defaultPolicyVersion;
     private final RuntimeLimits runtimeLimits;
+    private final TenantPolicyService tenantPolicyService;
     private final PolicyEngine policyEngine;
     private final ToolInputValidator toolInputValidator;
     private final BoundedExecutor boundedExecutor;
@@ -97,6 +99,7 @@ public class RunService {
                       @Value("${harness.prompt.version:prompt-v1}") String defaultPromptVersion,
                       @Value("${harness.policy.version:policy-v1}") String defaultPolicyVersion,
                       RuntimeLimits runtimeLimits,
+                      TenantPolicyService tenantPolicyService,
                       PolicyEngine policyEngine,
                       ToolInputValidator toolInputValidator,
                       BoundedExecutor boundedExecutor,
@@ -121,6 +124,7 @@ public class RunService {
         this.defaultPromptVersion = defaultPromptVersion;
         this.defaultPolicyVersion = defaultPolicyVersion;
         this.runtimeLimits = runtimeLimits;
+        this.tenantPolicyService = tenantPolicyService;
         this.policyEngine = policyEngine;
         this.toolInputValidator = toolInputValidator;
         this.boundedExecutor = boundedExecutor;
@@ -154,6 +158,7 @@ public class RunService {
         }
         String idempotencyKey = normalizeIdempotencyKey(request.idempotencyKey());
         return tenantRunQuotaGuard.withLock(request.tenantId(), () -> {
+            TenantPolicyLimits tenantLimits = tenantPolicyService.limitsFor(request.tenantId());
             // 幂等查询必须与配额计数处于同一个租户互斥区，避免并发重复创建或误占用配额。
             if (idempotencyKey != null) {
                 Optional<Run> existing = runRepository.findByTenantIdAndIdempotencyKey(
@@ -166,8 +171,9 @@ public class RunService {
                     return toSummary(existing.get());
                 }
             }
-            tenantRateLimiter.acquire(request.tenantId());
-            validateRuntimeLimits(request);
+            // 参数/配额校验失败的请求不应消耗 Redis 或内存速率桶中的合法创建额度。
+            validateRuntimeLimits(request, tenantLimits);
+            tenantRateLimiter.acquire(request.tenantId(), tenantLimits.maxCreatesPerMinute());
 
             Run run = new Run(
                     request.tenantId(),
@@ -183,7 +189,7 @@ public class RunService {
             );
             run.addStep(new Step(1, StepType.MODEL, "model.complete", sanitizedInput));
             run.addStep(new Step(2, StepType.TOOL, toolName, sanitizedInput));
-            if (run.getSteps().size() > runtimeLimits.maxStepsPerRun()) {
+            if (run.getSteps().size() > tenantLimits.maxStepsPerRun()) {
                 throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "STEP_LIMIT_EXCEEDED",
                         "任务步骤数超过租户运行上限");
             }
@@ -883,20 +889,20 @@ public class RunService {
         );
     }
 
-    private void validateRuntimeLimits(CreateRunRequest request) {
+    private void validateRuntimeLimits(CreateRunRequest request, TenantPolicyLimits tenantLimits) {
         // 资源边界按原始请求计算，不能因为脱敏后文本变短而绕过输入大小限制。
-        if (request.input() != null && request.input().length() > runtimeLimits.maxInputLength()) {
+        if (request.input() != null && request.input().length() > tenantLimits.maxInputLength()) {
             throw new BusinessException(HttpStatus.PAYLOAD_TOO_LARGE, "INPUT_TOO_LARGE",
                     "任务输入超过允许的最大长度");
         }
         BigDecimal budget = request.budget() == null ? BigDecimal.ONE : request.budget();
-        if (budget.compareTo(runtimeLimits.maxBudget()) > 0) {
+        if (budget.compareTo(tenantLimits.maxBudget()) > 0) {
             throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "BUDGET_EXCEEDED",
                     "任务预算超过运行上限");
         }
         long activeRuns = runRepository.countByTenantIdAndStatusIn(
                 request.tenantId(), List.of(RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.WAITING_APPROVAL));
-        if (activeRuns >= runtimeLimits.maxActiveRunsPerTenant()) {
+        if (activeRuns >= tenantLimits.maxActiveRuns()) {
             throw new BusinessException(HttpStatus.TOO_MANY_REQUESTS, "TENANT_RUN_QUOTA_EXCEEDED",
                     "租户当前运行数已达到上限");
         }
@@ -958,6 +964,8 @@ public class RunService {
                 && Objects.equals(run.getModelName(), modelName)
                 && Objects.equals(run.getPromptVersion(), promptVersion)
                 && Objects.equals(run.getPolicyVersion(), policyVersion)
+                // 权限快照属于执行语义的一部分，幂等键不能被低权限/高权限请求混用。
+                && Objects.equals(run.getPermissionsSnapshot(), normalizePermissions(request.permissions()))
                 && run.getBudget().compareTo(request.budget() == null ? BigDecimal.ONE : request.budget()) == 0
                 && run.getSteps().stream().anyMatch(step -> Objects.equals(step.getName(), toolName));
     }

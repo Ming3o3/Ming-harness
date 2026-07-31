@@ -61,4 +61,11 @@ export const api = {
   createMemory: (payload) => request('/context/memories', { method: 'POST', body: JSON.stringify(payload) }),
   listEvaluations: () => request('/evaluations'),
   runEvaluation: (payload) => request('/evaluations', { method: 'POST', body: JSON.stringify(payload) }),
+  getTenantPolicy: (tenantId) => request(`/admin/tenants/${encodeURIComponent(tenantId)}/policy`),
+  updateTenantPolicy: (tenantId, payload) => request(`/admin/tenants/${encodeURIComponent(tenantId)}/policy`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  }),
+  resetTenantPolicy: (tenantId) => request(`/admin/tenants/${encodeURIComponent(tenantId)}/policy`, { method: 'DELETE' }),
+  listTenantPolicyAudits: (tenantId) => request(`/admin/tenants/${encodeURIComponent(tenantId)}/policy/audits`),
 }

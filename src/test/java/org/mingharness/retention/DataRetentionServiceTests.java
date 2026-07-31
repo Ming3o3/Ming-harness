@@ -14,7 +14,9 @@ import org.mingharness.evaluation.EvaluationReportRepository;
 import org.mingharness.messaging.OutboxEvent;
 import org.mingharness.messaging.OutboxEventRepository;
 import org.mingharness.runtime.domain.Run;
+import org.mingharness.runtime.domain.TenantPolicyAudit;
 import org.mingharness.runtime.repository.RunRepository;
+import org.mingharness.runtime.repository.TenantPolicyAuditRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -48,6 +50,8 @@ class DataRetentionServiceTests {
     @Autowired
     private EvaluationReportRepository evaluationReportRepository;
     @Autowired
+    private TenantPolicyAuditRepository tenantPolicyAuditRepository;
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @BeforeEach
@@ -58,6 +62,7 @@ class DataRetentionServiceTests {
         memoryEntryRepository.deleteAll();
         documentRepository.deleteAll();
         evaluationReportRepository.deleteAll();
+        tenantPolicyAuditRepository.deleteAll();
     }
 
     @Test
@@ -85,6 +90,11 @@ class DataRetentionServiceTests {
                 1, 1, 0, BigDecimal.ONE, "旧评测详情"));
         jdbcTemplate.update("UPDATE harness_evaluation_reports SET created_at = ? WHERE id = ?",
                 Timestamp.from(old), report.getId());
+
+        TenantPolicyAudit policyAudit = tenantPolicyAuditRepository.save(new TenantPolicyAudit(
+                "tenant-retention", "operator", "TENANT_POLICY_UPDATED", "old policy"));
+        jdbcTemplate.update("UPDATE harness_tenant_policy_audits SET created_at = ? WHERE id = ?",
+                Timestamp.from(old), policyAudit.getId());
 
         Run oldRun = runRepository.save(new Run("tenant-retention", "operator", "旧 Run", "输入",
                 BigDecimal.ONE, "demo-model", "prompt-v1", "policy-v1"));
@@ -124,6 +134,7 @@ class DataRetentionServiceTests {
         assertEquals(1, result.documentsDeleted());
         assertEquals(1, result.evaluationReportsDeleted());
         assertEquals(1, result.outboxEventsDeleted());
+        assertEquals(1, result.tenantPolicyAuditsDeleted());
         assertFalse(runRepository.findById(oldRun.getId()).isPresent());
         assertTrue(runRepository.findById(activeRun.getId()).isPresent());
         assertFalse(auditEventRepository.findById(auditEvent.getId()).isPresent());

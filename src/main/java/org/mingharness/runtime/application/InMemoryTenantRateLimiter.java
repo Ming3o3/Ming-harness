@@ -25,6 +25,14 @@ public class InMemoryTenantRateLimiter implements TenantRateLimiter {
 
     @Override
     public void acquire(String tenantId) {
+        acquire(tenantId, limits.maxCreatesPerMinute());
+    }
+
+    @Override
+    public void acquire(String tenantId, int maxCreatesPerMinute) {
+        if (maxCreatesPerMinute < 1) {
+            throw new IllegalArgumentException("租户每分钟创建上限必须大于 0");
+        }
         Instant now = Instant.now();
         Deque<Instant> window = windows.computeIfAbsent(tenantId, ignored -> new ArrayDeque<>());
         synchronized (window) {
@@ -32,7 +40,7 @@ public class InMemoryTenantRateLimiter implements TenantRateLimiter {
             while (!window.isEmpty() && window.peekFirst().isBefore(threshold)) {
                 window.removeFirst();
             }
-            if (window.size() >= limits.maxCreatesPerMinute()) {
+            if (window.size() >= maxCreatesPerMinute) {
                 throw new BusinessException(HttpStatus.TOO_MANY_REQUESTS, "TENANT_RATE_LIMITED",
                         "租户创建 Run 的频率超过限制");
             }

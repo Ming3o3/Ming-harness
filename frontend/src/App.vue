@@ -9,6 +9,9 @@ const selectedRun = ref(null)
 const auditEvents = ref([])
 const documents = ref([])
 const evaluations = ref([])
+const tenantPolicy = ref(null)
+const tenantPolicyAudits = ref([])
+const tenantPolicyError = ref('')
 const loading = ref(false)
 const detailLoading = ref(false)
 const errorMessage = ref('')
@@ -94,6 +97,14 @@ const evaluationForm = reactive({
   name: '控制台快速回归',
   input: '请分析订单状态',
   expectedContains: '请分析订单状态',
+})
+
+const tenantPolicyForm = reactive({
+  maxActiveRuns: 20,
+  maxStepsPerRun: 20,
+  maxInputLength: 10000,
+  maxBudget: 1000,
+  maxCreatesPerMinute: 60,
 })
 
 const stats = computed(() => ({
@@ -310,6 +321,75 @@ async function loadHealth() {
   }
 }
 
+async function loadTenantPolicy() {
+  tenantPolicyError.value = ''
+  try {
+    localStorage.setItem('harnessTenantId', form.tenantId)
+    const [policy, audits] = await Promise.all([
+      api.getTenantPolicy(form.tenantId),
+      api.listTenantPolicyAudits(form.tenantId),
+    ])
+    tenantPolicy.value = policy
+    tenantPolicyAudits.value = audits || []
+    Object.assign(tenantPolicyForm, {
+      maxActiveRuns: policy.maxActiveRuns,
+      maxStepsPerRun: policy.maxStepsPerRun,
+      maxInputLength: policy.maxInputLength,
+      maxBudget: Number(policy.maxBudget),
+      maxCreatesPerMinute: policy.maxCreatesPerMinute,
+    })
+  } catch (error) {
+    tenantPolicy.value = null
+    tenantPolicyAudits.value = []
+    tenantPolicyError.value = error.code === 'PERMISSION_DENIED'
+      ? '当前身份缺少 tenant.policy.read/write 权限'
+      : errorText(error)
+  }
+}
+
+async function saveTenantPolicy() {
+  clearMessages()
+  loading.value = true
+  try {
+    localStorage.setItem('harnessTenantId', form.tenantId)
+    tenantPolicy.value = await api.updateTenantPolicy(form.tenantId, {
+      maxActiveRuns: Number(tenantPolicyForm.maxActiveRuns),
+      maxStepsPerRun: Number(tenantPolicyForm.maxStepsPerRun),
+      maxInputLength: Number(tenantPolicyForm.maxInputLength),
+      maxBudget: Number(tenantPolicyForm.maxBudget),
+      maxCreatesPerMinute: Number(tenantPolicyForm.maxCreatesPerMinute),
+    })
+    tenantPolicyAudits.value = await api.listTenantPolicyAudits(form.tenantId)
+    noticeMessage.value = '租户资源策略已保存，新的 Run 会立即使用最新限制'
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    loading.value = false
+  }
+}
+
+async function resetTenantPolicy() {
+  clearMessages()
+  loading.value = true
+  try {
+    localStorage.setItem('harnessTenantId', form.tenantId)
+    tenantPolicy.value = await api.resetTenantPolicy(form.tenantId)
+    tenantPolicyAudits.value = await api.listTenantPolicyAudits(form.tenantId)
+    Object.assign(tenantPolicyForm, {
+      maxActiveRuns: tenantPolicy.value.maxActiveRuns,
+      maxStepsPerRun: tenantPolicy.value.maxStepsPerRun,
+      maxInputLength: tenantPolicy.value.maxInputLength,
+      maxBudget: Number(tenantPolicy.value.maxBudget),
+      maxCreatesPerMinute: tenantPolicy.value.maxCreatesPerMinute,
+    })
+    noticeMessage.value = '租户策略已恢复为平台默认值'
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    loading.value = false
+  }
+}
+
 async function createDocument() {
   clearMessages()
   loading.value = true
@@ -483,7 +563,7 @@ async function cancelSelectedRun() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadDashboard(), loadHealth()])
+  await Promise.all([loadDashboard(), loadHealth(), loadTenantPolicy()])
   runPollTimer = window.setInterval(pollSelectedRun, 1500)
   healthPollTimer = window.setInterval(loadHealth, 10000)
 })
@@ -787,6 +867,17 @@ onBeforeUnmount(() => {
             <label class="field"><span>期望包含</span><input v-model="evaluationForm.expectedContains" /></label>
             <button class="secondary-button" type="submit" :disabled="loading">执行评测</button>
             <small class="form-hint">历史报告 {{ evaluations.length }} 份；每份报告绑定模型、Prompt 和策略版本。</small>
+          </form>
+          <form class="governance-card policy-card" @submit.prevent="saveTenantPolicy">
+            <div class="subsection-title"><h3>租户资源策略</h3><span v-if="tenantPolicy">{{ tenantPolicy.defaulted ? '平台默认' : '租户覆盖' }}</span></div>
+            <p v-if="tenantPolicyError" class="policy-error">{{ tenantPolicyError }}</p>
+            <label class="field"><span>最大活动 Run 数</span><input v-model.number="tenantPolicyForm.maxActiveRuns" type="number" min="1" required /></label>
+            <label class="field"><span>单次最大步骤数</span><input v-model.number="tenantPolicyForm.maxStepsPerRun" type="number" min="1" required /></label>
+            <label class="field"><span>最大输入字符数</span><input v-model.number="tenantPolicyForm.maxInputLength" type="number" min="1" required /></label>
+            <label class="field"><span>单次最大预算</span><input v-model.number="tenantPolicyForm.maxBudget" type="number" min="0.000001" step="0.000001" required /></label>
+            <label class="field"><span>每分钟创建 Run 数</span><input v-model.number="tenantPolicyForm.maxCreatesPerMinute" type="number" min="1" required /></label>
+            <div class="policy-actions"><button class="secondary-button" type="button" :disabled="loading" @click="loadTenantPolicy">读取策略</button><button class="secondary-button" type="submit" :disabled="loading">保存策略</button><button class="danger-button" type="button" :disabled="loading" @click="resetTenantPolicy">恢复默认</button></div>
+            <small class="form-hint">策略只能收紧平台硬上限；最近 {{ tenantPolicyAudits.length }} 条变更已留痕。</small>
           </form>
         </div>
         <div v-if="showGovernance && evaluations.length" class="evaluation-list">

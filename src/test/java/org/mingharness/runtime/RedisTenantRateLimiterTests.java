@@ -43,6 +43,18 @@ class RedisTenantRateLimiterTests {
         assertEquals("RATE_LIMIT_STORE_UNAVAILABLE", exception.getCode());
     }
 
+    @Test
+    void shouldUseTenantOverrideInsteadOfPlatformDefault() {
+        StringRedisTemplate redisTemplate = mock(StringRedisTemplate.class);
+        when(redisTemplate.execute(any(), anyList(), anyString())).thenReturn(2L);
+        RedisTenantRateLimiter limiter = new RedisTenantRateLimiter(redisTemplate, limits(60));
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> limiter.acquire("tenant-1", 1));
+
+        assertEquals("TENANT_RATE_LIMITED", exception.getCode());
+    }
+
     private RuntimeLimits limits(int maxCreatesPerMinute) {
         return new RuntimeLimits(20, 20, 10_000, BigDecimal.ONE, 30_000,
                 4_000, maxCreatesPerMinute, 120_000, 3);
