@@ -52,6 +52,7 @@ npm run dev
 | `HARNESS_AUTH_MODE` | `local` | `local`、`api-key` 或 `oidc`（OIDC 推荐使用 `oidc` Profile） |
 | `HARNESS_API_KEYS` | 空 | `key|tenant|user|permission1,permission2;...`，生产环境通过密钥系统注入 |
 | `OIDC_ISSUER_URI` | 空 | `oidc` Profile 使用的 OIDC Issuer 地址 |
+| `OIDC_AUDIENCE` | 空 | OIDC Token 必须包含的受众，多个值使用逗号分隔；生产 OIDC 必填 |
 | `AUDIT_INTEGRITY_KEY` | 本地演示默认值 | 审计 HMAC 密钥，生产环境必须从密钥系统注入 |
 | `MODEL_ENABLED` | `false` | 是否启用 OpenAI 兼容模型网关 |
 | `MODEL_BASE_URL` | `https://api.openai.com/v1` | 模型服务地址 |
@@ -96,7 +97,7 @@ npm run dev
 
 生产或共享环境建议设置 `HARNESS_AUTH_MODE=api-key`。调用方使用 `Authorization: Bearer <key>` 或 `X-Api-Key`，服务端根据配置将请求绑定到固定租户和用户，并按接口校验权限，例如 `run.read`、`run.create`、`run.execute`、`run.approve`、`context.read`、`context.write`、`audit.read`、`evaluation.run` 和 `tool.read`。API Key 只在启动配置中出现，应用内部仅保存 SHA-256 摘要。
 
-企业环境接入 OIDC/JWT 时使用 `SPRING_PROFILES_ACTIVE=local-infra,oidc`，并设置 `OIDC_ISSUER_URI`。Spring Security Resource Server 负责验签和校验 issuer/audience 基础身份，Harness 从 JWT 的 `sub`、`tenant_id`（兼容 `tenant`）以及 `permissions`/`scope`/`scp` 声明映射用户、租户和 RBAC 权限。
+企业环境接入 OIDC/JWT 时使用 `SPRING_PROFILES_ACTIVE=local-infra,oidc`，并设置 `OIDC_ISSUER_URI` 与 `OIDC_AUDIENCE`。Spring Security Resource Server 负责验签和明确校验 issuer/audience，Harness 从 JWT 的 `sub`、`tenant_id`（兼容 `tenant`）以及 `permissions`/`scope`/`scp` 声明映射用户、租户和 RBAC 权限。
 
 ### 审计完整性
 

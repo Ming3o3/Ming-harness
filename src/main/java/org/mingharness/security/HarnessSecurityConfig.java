@@ -1,9 +1,18 @@
 package org.mingharness.security;
 
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtDecoders;
+import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
@@ -12,6 +21,19 @@ import org.springframework.security.web.SecurityFilterChain;
  */
 @Configuration
 public class HarnessSecurityConfig {
+
+    /** OIDC 模式显式绑定 issuer + audience，避免只依赖框架默认的 issuer 校验。 */
+    @Bean
+    @ConditionalOnProperty(prefix = "harness.auth", name = "mode", havingValue = "oidc")
+    JwtDecoder harnessJwtDecoder(HarnessAuthProperties properties,
+                                 @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}") String issuer) {
+        JwtAudienceValidator audienceValidator = new JwtAudienceValidator(properties.getOidcAudience());
+        NimbusJwtDecoder decoder = (NimbusJwtDecoder) JwtDecoders.fromIssuerLocation(issuer);
+        OAuth2TokenValidator<Jwt> issuerValidator = JwtValidators.createDefaultWithIssuer(issuer);
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(issuerValidator,
+                audienceValidator));
+        return decoder;
+    }
 
     @Bean
     SecurityFilterChain harnessSecurityFilterChain(HttpSecurity http,

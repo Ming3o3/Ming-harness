@@ -80,11 +80,12 @@ export HARNESS_API_KEYS='demo-key|tenant-demo|operator|run.read,run.create,run.e
 ```bash
 export SPRING_PROFILES_ACTIVE=local-infra,oidc
 export OIDC_ISSUER_URI=https://login.example.com/realms/harness
+export OIDC_AUDIENCE=ming-harness-api
 export AUDIT_INTEGRITY_KEY='由密钥系统注入的长随机字符串'
 ./mvnw spring-boot:run
 ```
 
-JWT 必须包含 `sub` 和 `tenant_id`（或 `tenant`），权限可放在 `permissions`、`scope` 或 `scp` 声明中。Spring Security Resource Server 负责 JWT 验签，Harness 负责租户绑定和接口 RBAC。
+JWT 必须包含 `sub`、`tenant_id`（或 `tenant`）以及配置的 `aud`（`OIDC_AUDIENCE`，多个值逗号分隔），权限可放在 `permissions`、`scope` 或 `scp` 声明中。Spring Security Resource Server 负责 JWT 验签及 issuer/audience 校验，Harness 负责租户绑定和接口 RBAC。未配置 audience 时 OIDC 模式会快速失败，不允许无受众保护地上线。
 
 审计完整性密钥通过 `AUDIT_INTEGRITY_KEY` 注入。审计查询接口之外，还可以校验指定 Run：
 

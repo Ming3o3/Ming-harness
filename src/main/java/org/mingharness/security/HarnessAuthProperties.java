@@ -12,6 +12,8 @@ public class HarnessAuthProperties {
     /** local 兼容本地请求头，api-key 启用配置化 API Key 认证。 */
     private String mode = "local";
     private String apiKeys = "";
+    /** OIDC Token 必须包含的受众，多个受众使用逗号分隔。 */
+    private String oidcAudience = "";
 
     public String getMode() {
         return mode;
@@ -27,5 +29,13 @@ public class HarnessAuthProperties {
 
     public void setApiKeys(String apiKeys) {
         this.apiKeys = apiKeys;
+    }
+
+    public String getOidcAudience() {
+        return oidcAudience;
+    }
+
+    public void setOidcAudience(String oidcAudience) {
+        this.oidcAudience = oidcAudience;
     }
 }
