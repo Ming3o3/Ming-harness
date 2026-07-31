@@ -87,6 +87,8 @@ npm run dev
 | `RETENTION_BATCH_SIZE` | `100` | 每轮最多清理的终态 Run 数量 |
 | `SPRING_PROFILES_ACTIVE` | `local` | `local`、`local-infra`，可组合 `oidc` |
 | `HARNESS_EXECUTION_MODE` | `sync` | `sync` 或 `rabbit` |
+| `EVALUATION_WAIT_TIMEOUT_MS` | `120000` | Rabbit 异步评测等待单个 Run 到终态的最长时间；超时记录当前状态并继续后续用例 |
+| `EVALUATION_POLL_INTERVAL_MS` | `250` | Rabbit 异步评测查询 Run 状态的间隔，不能小于 1 毫秒 |
 | `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | Redis 连接参数 |
 | `REDIS_LOCK_TTL_MS` | `30000` | Run 执行锁和租户配额锁租约时长，不能低于 1000 毫秒 |
 | `REDIS_QUOTA_LOCK_WAIT_MS` | `1000` | 活动 Run 配额锁等待时长；Redis 不可用时快速失败 |
@@ -170,7 +172,7 @@ curl -X POST http://localhost:8080/api/runs \
 - `POST/GET/DELETE /api/context/documents`：管理租户隔离的知识文档
 - `POST/GET/DELETE /api/context/memories`：管理用户范围的长期记忆
 - `GET /api/context/preview?query=...`：预览授权来源和引用
-- `POST/GET /api/evaluations`：运行固定回归用例并查询评测报告
+- `POST/GET /api/evaluations`：运行固定回归用例并查询评测报告；`rabbit` 模式下接口会等待每个 Run 到终态，等待审批的用例不会自动审批，单个用例超时会记录当前状态并继续后续用例
 
 ## 设计约束
 
