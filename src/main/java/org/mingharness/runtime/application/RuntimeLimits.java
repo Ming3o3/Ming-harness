@@ -11,7 +11,8 @@ public record RuntimeLimits(
         java.math.BigDecimal maxBudget,
         int modelTimeoutMs,
         int maxContextChars,
-        int maxCreatesPerMinute
+        int maxCreatesPerMinute,
+        int recoveryTimeoutMs
 ) {
 
     public RuntimeLimits {
@@ -35,6 +36,9 @@ public record RuntimeLimits(
         }
         if (maxCreatesPerMinute < 1) {
             maxCreatesPerMinute = 60;
+        }
+        if (recoveryTimeoutMs < 1) {
+            recoveryTimeoutMs = 120_000;
         }
     }
 }
