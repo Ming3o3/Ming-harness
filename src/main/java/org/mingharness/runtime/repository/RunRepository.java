@@ -30,6 +30,10 @@ public interface RunRepository extends JpaRepository<Run, String> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select run from Run run where run.id = :runId")
     Optional<Run> findByIdForCancelUpdate(@Param("runId") String runId);
+    /** Worker 每次短事务状态变更都锁定最新 Run，避免取消或恢复覆盖执行结果。 */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select run from Run run where run.id = :runId")
+    Optional<Run> findByIdForExecutionUpdate(@Param("runId") String runId);
     Optional<Run> findByTenantIdAndIdempotencyKey(String tenantId, String idempotencyKey);
     long countByTenantIdAndStatusIn(String tenantId, List<RunStatus> statuses);
     /** 恢复器必须锁住候选 Run，等待并发 Worker 提交后再重新判断状态，避免覆盖最新结果。 */

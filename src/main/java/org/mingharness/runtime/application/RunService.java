@@ -43,6 +43,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.dao.DataAccessException;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 
@@ -76,6 +77,7 @@ public class RunService {
     private final ToolOutputValidator toolOutputValidator;
     private final OutboxService outboxService;
     private final RunExecutionLock executionLock;
+    private final RunExecutionStateService executionStateService;
     private final RunCancellationSignal cancellationSignal;
     private final RunCancellationChecker cancellationChecker;
     private final TenantRunQuotaGuard tenantRunQuotaGuard;
@@ -103,6 +105,7 @@ public class RunService {
                       ToolOutputValidator toolOutputValidator,
                       OutboxService outboxService,
                       RunExecutionLock executionLock,
+                      RunExecutionStateService executionStateService,
                       RunCancellationSignal cancellationSignal,
                       RunCancellationChecker cancellationChecker,
                       TenantRunQuotaGuard tenantRunQuotaGuard,
@@ -126,6 +129,7 @@ public class RunService {
         this.toolOutputValidator = toolOutputValidator;
         this.outboxService = outboxService;
         this.executionLock = executionLock;
+        this.executionStateService = executionStateService;
         this.cancellationSignal = cancellationSignal;
         this.cancellationChecker = cancellationChecker;
         this.tenantRunQuotaGuard = tenantRunQuotaGuard;
@@ -357,20 +361,14 @@ public class RunService {
     }
 
     /** Rabbit Worker 调用的入口，重复消息会被执行锁安全丢弃。 */
-    @Transactional
     public void executeFromWorker(RunExecutionMessage message) {
         if (message == null || message.runId() == null || message.tenantId() == null) {
             throw new IllegalArgumentException("Run 执行消息缺少必要字段");
         }
-        Run run = getRun(message.runId());
-        assertTenant(run, message.tenantId());
-        if (run.getStatus() != RunStatus.RUNNING) {
-            return;
-        }
-        Duration lease = Duration.ofMillis(redisProperties.lockTtlMs());
+        Duration lease = workerLockLease();
         Optional<RunExecutionLock.LockToken> lock;
         try {
-            lock = executionLock.tryAcquire(run.getId(), lease);
+            lock = executionLock.tryAcquire(message.runId(), lease);
         } catch (RuntimeException exception) {
             metrics.workerInfrastructureFailed();
             throw new TransientInfrastructureException("Run 执行锁基础设施不可用", exception);
@@ -380,17 +378,238 @@ public class RunService {
         }
         RunExecutionLock.LockToken token = lock.get();
         try {
-            run.claim(workerId, Instant.now().plus(lease));
-            runRepository.save(run);
-            record(run.getId(), null, "WORKER_CLAIMED", "Worker 已获取执行租约");
+            Optional<RunExecutionStateService.RunExecutionSnapshot> claimed = executionStateService.claim(
+                    message.runId(), message.tenantId(), workerId, nextRunLeaseUntil());
+            if (claimed.isEmpty()) {
+                return;
+            }
             metrics.workerClaimed();
-            metrics.recordWorkerDuration(() -> executePending(run, token));
+            metrics.recordWorkerDuration(() -> executePendingOutsideTransaction(claimed.get(), token));
         } catch (RuntimeException exception) {
             metrics.workerFailed();
             throw exception;
         } finally {
             executionLock.release(token);
         }
+    }
+
+    /**
+     * Rabbit Worker 的执行编排。外部模型和工具调用不包含在数据库事务内，所有状态变更通过
+     * {@link RunExecutionStateService} 的短事务完成。
+     */
+    private void executePendingOutsideTransaction(RunExecutionStateService.RunExecutionSnapshot run,
+                                                  RunExecutionLock.LockToken lockToken) {
+        String activeStepId = null;
+        try {
+            for (RunExecutionStateService.StepExecutionSnapshot step : run.steps()) {
+                if (step.status() == StepStatus.SUCCEEDED) {
+                    continue;
+                }
+                activeStepId = step.id();
+                ensureNotCancelled(run.id(), run.tenantId());
+                refreshLease(run, lockToken);
+                if (step.type() == StepType.TOOL) {
+                    HarnessTool tool = toolRegistry.get(step.name());
+                    ToolDefinition definition = tool.definition();
+                    PolicyDecision decision = policyEngine.evaluate(new PolicyContext(
+                            run.tenantId(), run.userId(), permissions(run.permissionsSnapshot()), step.approvalGranted()),
+                            definition);
+                    if (decision.type() == PolicyDecisionType.DENY) {
+                        if (executionStateService.failRunWithStep(run.id(), run.tenantId(), workerId,
+                                step.id(), decision.reason(), "POLICY_DENIED")) {
+                            metrics.runFailed();
+                        }
+                        return;
+                    }
+                    if (decision.requiresApproval()) {
+                        executionStateService.requestApproval(run.id(), run.tenantId(), workerId,
+                                step.id(), decision.reason());
+                        return;
+                    }
+                }
+                WorkerStepOutcome outcome = step.type() == StepType.MODEL
+                        ? executeModelStepOutsideTransaction(run, step, lockToken)
+                        : executeToolStepOutsideTransaction(run, step, lockToken);
+                if (outcome == WorkerStepOutcome.STOP) {
+                    return;
+                }
+                activeStepId = null;
+            }
+            ensureNotCancelled(run.id(), run.tenantId());
+            if (executionStateService.finishSuccess(run.id(), run.tenantId(), workerId)) {
+                metrics.runSucceeded();
+            }
+        } catch (RunCancellationRequestedException exception) {
+            // 取消事务已经是最终事实来源，Worker 不再保存旧对象或写入成功状态。
+        } catch (TransientInfrastructureException exception) {
+            executionStateService.requeueAfterInfrastructureFailure(run.id(), run.tenantId(), workerId, activeStepId);
+            metrics.workerInfrastructureFailed();
+            throw exception;
+        } catch (DataAccessException exception) {
+            // 数据库短事务失败属于可恢复基础设施错误，不能把仍可重试的 Run 误落为 FAILED。
+            try {
+                executionStateService.requeueAfterInfrastructureFailure(
+                        run.id(), run.tenantId(), workerId, activeStepId);
+            } catch (RuntimeException requeueException) {
+                exception.addSuppressed(requeueException);
+            }
+            metrics.workerInfrastructureFailed();
+            throw new TransientInfrastructureException("Run 状态存储暂时不可用", exception);
+        } catch (RuntimeException exception) {
+            if (activeStepId == null) {
+                throw exception;
+            }
+            if (executionStateService.failRunWithStep(run.id(), run.tenantId(), workerId,
+                    activeStepId, safeError(exception, "步骤执行失败"), "STEP_FAILED")) {
+                metrics.runFailed();
+            }
+        }
+    }
+
+    private WorkerStepOutcome executeModelStepOutsideTransaction(
+            RunExecutionStateService.RunExecutionSnapshot run,
+            RunExecutionStateService.StepExecutionSnapshot step,
+            RunExecutionLock.LockToken lockToken) {
+        Optional<RunExecutionStateService.StepExecutionSnapshot> started = executionStateService.startStep(
+                run.id(), run.tenantId(), workerId, step.id(), nextRunLeaseUntil());
+        if (started.isEmpty()) {
+            return WorkerStepOutcome.STOP;
+        }
+        try {
+            ContextResult context = contextBuilder.build(run.tenantId(), run.userId(),
+                    started.get().input(), runtimeLimits.maxContextChars());
+            if (!context.isEmpty()) {
+                executionStateService.recordContextRetrieved(run.id(), run.tenantId(), workerId,
+                        step.id(), context.evidences().size());
+            }
+            String modelInput = context.isEmpty()
+                    ? started.get().input()
+                    : started.get().input() + "\n\n参考资料（请保留来源标记）:\n" + context.text();
+            ModelResponse response = boundedExecutor.execute("模型调用", runtimeLimits.modelTimeoutMs(),
+                    () -> modelGateway.complete(new ModelRequest(
+                            sanitizer.sanitize(modelInput), run.modelName(), run.promptVersion())));
+            // 外部调用期间 Redis 锁和数据库租约都可能接近过期，完成步骤前必须再次确认 Worker 所有权。
+            refreshLease(run, lockToken);
+            RunExecutionStateService.StepCompletionResult result = executionStateService.completeStep(
+                    run.id(), run.tenantId(), workerId, step.id(), response.content(),
+                    response.inputTokens(), response.outputTokens(), response.cost());
+            if (result == RunExecutionStateService.StepCompletionResult.COMPLETED) {
+                return WorkerStepOutcome.CONTINUE;
+            }
+            if (result == RunExecutionStateService.StepCompletionResult.BUDGET_EXCEEDED) {
+                metrics.runFailed();
+            }
+            return WorkerStepOutcome.STOP;
+        } catch (ExecutionTimeoutException exception) {
+            if (executionStateService.timeoutRunWithStep(run.id(), run.tenantId(), workerId,
+                    step.id(), safeError(exception, "步骤执行超时"))) {
+                metrics.runTimedOut();
+            }
+            return WorkerStepOutcome.STOP;
+        } catch (TransientInfrastructureException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            if (executionStateService.failRunWithStep(run.id(), run.tenantId(), workerId,
+                    step.id(), safeError(exception, "步骤执行失败"), "STEP_FAILED")) {
+                metrics.runFailed();
+            }
+            return WorkerStepOutcome.STOP;
+        }
+    }
+
+    private WorkerStepOutcome executeToolStepOutsideTransaction(
+            RunExecutionStateService.RunExecutionSnapshot run,
+            RunExecutionStateService.StepExecutionSnapshot step,
+            RunExecutionLock.LockToken lockToken) {
+        HarnessTool tool = toolRegistry.get(step.name());
+        ToolDefinition definition = tool.definition();
+        ToolExecutionContext executionContext = new ToolExecutionContext(
+                run.id(), step.id(), run.tenantId(), run.id() + ":" + step.id() + ":" + step.name());
+        // 有副作用的工具禁止自动重试；只读工具也必须显式声明瞬态错误才会重试。
+        int maxAttempts = definition.readOnly()
+                ? Math.min(definition.maxAttempts(), runtimeLimits.maxToolAttempts()) : 1;
+
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            if (attempt > 1 && !executionStateService.retryStepAutomatically(
+                    run.id(), run.tenantId(), workerId, step.id(), attempt)) {
+                return WorkerStepOutcome.STOP;
+            }
+            refreshLease(run, lockToken);
+            Optional<RunExecutionStateService.StepExecutionSnapshot> started = executionStateService.startStep(
+                    run.id(), run.tenantId(), workerId, step.id(), nextRunLeaseUntil());
+            if (started.isEmpty()) {
+                return WorkerStepOutcome.STOP;
+            }
+            try {
+                String output = boundedExecutor.execute("工具 " + step.name(), definition.timeoutMs(),
+                        () -> tool.execute(started.get().input(), executionContext));
+                toolOutputValidator.validate(definition, output);
+                // 工具可能产生外部副作用，只有续租成功后才允许写入本次结果。
+                refreshLease(run, lockToken);
+                RunExecutionStateService.StepCompletionResult result = executionStateService.completeStep(
+                        run.id(), run.tenantId(), workerId, step.id(), output, 0, 0, BigDecimal.ZERO);
+                return result == RunExecutionStateService.StepCompletionResult.COMPLETED
+                        ? WorkerStepOutcome.CONTINUE : WorkerStepOutcome.STOP;
+            } catch (ExecutionTimeoutException exception) {
+                if (executionStateService.timeoutRunWithStep(run.id(), run.tenantId(), workerId,
+                        step.id(), safeError(exception, "步骤执行超时"))) {
+                    metrics.runTimedOut();
+                }
+                return WorkerStepOutcome.STOP;
+            } catch (TransientInfrastructureException exception) {
+                throw exception;
+            } catch (RuntimeException exception) {
+                metrics.toolFailed();
+                String error = safeError(exception, "步骤执行失败");
+                boolean canRetry = definition.readOnly()
+                        && exception instanceof RetryableToolException
+                        && attempt < maxAttempts;
+                if (!executionStateService.failStepForRetry(run.id(), run.tenantId(), workerId, step.id(), error)) {
+                    return WorkerStepOutcome.STOP;
+                }
+                if (canRetry) {
+                    continue;
+                }
+                if (executionStateService.failRunWithStep(run.id(), run.tenantId(), workerId,
+                        step.id(), error, "STEP_FAILED")) {
+                    metrics.runFailed();
+                }
+                return WorkerStepOutcome.STOP;
+            }
+        }
+        return WorkerStepOutcome.STOP;
+    }
+
+    private void refreshLease(RunExecutionStateService.RunExecutionSnapshot run,
+                              RunExecutionLock.LockToken lockToken) {
+        Duration lease = workerLockLease();
+        try {
+            if (!executionLock.renew(lockToken, lease)) {
+                throw new TransientInfrastructureException("Run 执行锁已丢失，任务将等待恢复处理");
+            }
+        } catch (TransientInfrastructureException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw new TransientInfrastructureException("Run 执行锁续租基础设施不可用", exception);
+        }
+        if (!executionStateService.heartbeat(run.id(), run.tenantId(), workerId, nextRunLeaseUntil())) {
+            throw new RunCancellationRequestedException(run.id());
+        }
+    }
+
+    /** Worker 互斥锁至少覆盖一次恢复窗口，避免长工具调用期间锁提前过期而重复副作用。 */
+    private Duration workerLockLease() {
+        return Duration.ofMillis(Math.max(redisProperties.lockTtlMs(), runtimeLimits.recoveryTimeoutMs()));
+    }
+
+    /** 数据库恢复租约覆盖完整外部步骤，不能直接复用较短的 Redis 互斥锁租期。 */
+    private Instant nextRunLeaseUntil() {
+        return Instant.now().plusMillis(Math.max(redisProperties.lockTtlMs(), runtimeLimits.recoveryTimeoutMs()));
+    }
+
+    private enum WorkerStepOutcome {
+        CONTINUE,
+        STOP
     }
 
     private void executeStep(Run run, Step step, RunExecutionLock.LockToken lockToken) {
@@ -594,9 +813,14 @@ public class RunService {
 
     /** 在每个步骤边界同时检查跨实例信号和数据库最终状态。 */
     private void ensureNotCancelled(Run run) {
-        if (cancellationSignal.isRequested(run.getId(), run.getTenantId())
-                || cancellationChecker.isCancelled(run.getId())) {
-            throw new RunCancellationRequestedException(run.getId());
+        ensureNotCancelled(run.getId(), run.getTenantId());
+    }
+
+    /** Worker 短事务编排使用 ID 读取最新取消事实，避免依赖旧 JPA 实体。 */
+    private void ensureNotCancelled(String runId, String tenantId) {
+        if (cancellationSignal.isRequested(runId, tenantId)
+                || cancellationChecker.isCancelled(runId)) {
+            throw new RunCancellationRequestedException(runId);
         }
     }
 
@@ -710,10 +934,14 @@ public class RunService {
     }
 
     private Set<String> permissions(Run run) {
-        if (run.getPermissionsSnapshot() == null || run.getPermissionsSnapshot().isBlank()) {
+        return permissions(run.getPermissionsSnapshot());
+    }
+
+    private Set<String> permissions(String permissionsSnapshot) {
+        if (permissionsSnapshot == null || permissionsSnapshot.isBlank()) {
             return Set.of();
         }
-        return Arrays.stream(run.getPermissionsSnapshot().split(","))
+        return Arrays.stream(permissionsSnapshot.split(","))
                 .map(String::trim)
                 .filter(value -> !value.isBlank())
                 .collect(Collectors.toUnmodifiableSet());

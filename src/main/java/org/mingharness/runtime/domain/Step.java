@@ -147,6 +147,20 @@ public class Step {
         this.finishedAt = null;
     }
 
+    /**
+     * Worker 在事务性基础设施故障后回滚当前步骤，交给 Rabbit 重试；不能把 RUNNING 步骤留给下一次消费。
+     */
+    public void requeueAfterInfrastructureFailure() {
+        if (status != StepStatus.RUNNING) {
+            return;
+        }
+        this.status = StepStatus.QUEUED;
+        this.error = null;
+        this.startedAt = null;
+        this.finishedAt = null;
+        this.durationMs = 0;
+    }
+
     public String getId() { return id; }
     public String getSpanId() { return spanId; }
     public Run getRun() { return run; }

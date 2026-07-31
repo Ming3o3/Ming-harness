@@ -48,6 +48,8 @@ SPRING_PROFILES_ACTIVE=local-infra \
 `local-infra` 启动时会执行 Flyway 迁移，创建 Run、Step、审计、上下文、评测和 Outbox 表，并声明 RabbitMQ 主队列和死信队列。
 Outbox Relay 会先在 PostgreSQL 中抢占短期发布租约，再在租约外等待 RabbitMQ 发布确认；多实例不会同时发送同一条待处理事件。进程在确认前中断时，租约到期后允许重新投递，Run 执行锁负责去重。
 
+Rabbit Worker 的模型和工具调用在数据库事务之外执行；领取租约、步骤开始/完成、心跳、审计和终态写回分别是短事务。每个步骤前后都会续租 Redis 锁并刷新 PostgreSQL Worker 租约，旧 Worker 丢失所有权后不能覆盖新 Worker 或取消操作的结果。Worker 执行锁会自动使用不小于 `RECOVERY_TIMEOUT_MS` 的租期，避免数据库恢复器在一个受控长步骤期间过早回收 Run。
+
 评测接口在 Rabbit 模式下会轮询每个 Run 的详情，直到成功、失败、取消、超时或等待审批；等待审批不会被评测逻辑自动批准。单个 Run 超过等待边界后，报告会记录 `TIMEOUT` 和当时的 `QUEUED/RUNNING` 状态，然后继续下一个用例，不会让整批评测持有长数据库事务。默认等待 120 秒、每 250 毫秒轮询一次，可按模型响应时间和 API 请求超时覆盖：
 
 ```bash
