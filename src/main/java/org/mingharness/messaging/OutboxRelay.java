@@ -2,6 +2,7 @@ package org.mingharness.messaging;
 
 import tools.jackson.databind.ObjectMapper;
 import org.mingharness.config.MessagingProperties;
+import org.mingharness.observability.HarnessMetrics;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -19,23 +20,28 @@ public class OutboxRelay {
     private final RabbitTemplate rabbitTemplate;
     private final ObjectMapper objectMapper;
     private final MessagingProperties properties;
+    private final HarnessMetrics metrics;
 
     public OutboxRelay(OutboxEventRepository repository,
                        RabbitTemplate rabbitTemplate,
                        ObjectMapper objectMapper,
-                       MessagingProperties properties) {
+                       MessagingProperties properties,
+                       HarnessMetrics metrics) {
         this.repository = repository;
         this.rabbitTemplate = rabbitTemplate;
         this.objectMapper = objectMapper;
         this.properties = properties;
+        this.metrics = metrics;
     }
 
     @Scheduled(fixedDelayString = "${harness.messaging.outbox-poll-ms:1000}")
     @Transactional
     public void publishPending() {
-        for (OutboxEvent event : repository
+        var events = repository
                 .findTop50ByStatusAndNextAttemptAtLessThanEqualOrderByCreatedAtAsc(
-                        OutboxStatus.PENDING, Instant.now())) {
+                        OutboxStatus.PENDING, Instant.now());
+        metrics.pendingOutbox(events.size());
+        for (OutboxEvent event : events) {
             try {
                 RunExecutionMessage message = objectMapper.readValue(event.getPayload(), RunExecutionMessage.class);
                 Boolean confirmed = rabbitTemplate.invoke(operations -> {
@@ -47,9 +53,11 @@ public class OutboxRelay {
                 }
                 event.markPublished();
                 repository.save(event);
+                metrics.outboxPublished();
             } catch (Exception exception) {
                 event.markFailed(exception.getMessage(), properties.maxAttempts());
                 repository.save(event);
+                metrics.outboxFailed();
             }
         }
     }
