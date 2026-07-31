@@ -171,6 +171,10 @@ public class RunService {
                     return toSummary(existing.get());
                 }
             }
+            if (!tenantLimits.allowsTool(toolName)) {
+                throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_TOOL_NOT_ALLOWED",
+                        "当前租户策略不允许使用工具: " + toolName);
+            }
             // 参数/配额校验失败的请求不应消耗 Redis 或内存速率桶中的合法创建额度。
             validateRuntimeLimits(request, tenantLimits);
             tenantRateLimiter.acquire(request.tenantId(), tenantLimits.maxCreatesPerMinute());

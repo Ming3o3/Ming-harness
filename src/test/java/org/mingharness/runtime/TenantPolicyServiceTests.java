@@ -17,6 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import java.math.BigDecimal;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -106,5 +107,27 @@ class TenantPolicyServiceTests {
                 java.util.List.of(org.mingharness.runtime.domain.RunStatus.QUEUED,
                         org.mingharness.runtime.domain.RunStatus.RUNNING,
                         org.mingharness.runtime.domain.RunStatus.WAITING_APPROVAL)));
+    }
+
+    @Test
+    void shouldRejectToolOutsideTenantAllowlistBeforeRunIsPersisted() {
+        policyService.upsert("tenant-tool-allowlist", new TenantPolicyRequest(
+                5, 10, 5000, BigDecimal.TEN, 20, Set.of("demo.echo")), "operator-1");
+
+        BusinessException exception = assertThrows(BusinessException.class, () -> runService.create(
+                new CreateRunRequest("tenant-tool-allowlist", "user-1", "受限工具", "输入", "demo.approval",
+                        null, null, null, BigDecimal.ONE)));
+
+        assertEquals("TENANT_TOOL_NOT_ALLOWED", exception.getCode());
+        assertTrue(policyService.get("tenant-tool-allowlist").allowedTools().contains("demo.echo"));
+    }
+
+    @Test
+    void shouldRejectUnknownToolWhenSavingAllowlist() {
+        BusinessException exception = assertThrows(BusinessException.class, () -> policyService.upsert(
+                "tenant-tool-allowlist", new TenantPolicyRequest(
+                        5, 10, 5000, BigDecimal.TEN, 20, Set.of("unknown.tool")), "operator-1"));
+
+        assertEquals("TENANT_TOOL_NOT_FOUND", exception.getCode());
     }
 }

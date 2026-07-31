@@ -101,13 +101,13 @@ export HARNESS_API_KEYS='demo-key|tenant-demo|operator|run.read,run.create,run.e
 
 ### 租户级资源治理
 
-平台环境变量定义所有租户都不能突破的硬上限。拥有 `tenant.policy.read`/`tenant.policy.write` 权限的身份可以通过管理接口为自己的租户设置更严格的活动 Run 数、步骤数、输入长度、单次预算和创建速率；跨租户运维还需要额外的 `tenant.policy.cross-tenant` 权限。未配置覆盖策略的租户自动使用平台默认值。
+平台环境变量定义所有租户都不能突破的硬上限。拥有 `tenant.policy.read`/`tenant.policy.write` 权限的身份可以通过管理接口为自己的租户设置更严格的活动 Run 数、步骤数、输入长度、单次预算、创建速率和工具白名单；跨租户运维还需要额外的 `tenant.policy.cross-tenant` 权限。未配置覆盖策略的租户自动使用平台默认值。工具白名单为空表示允许所有已注册工具，非空时 Run 创建阶段会在任何执行前拒绝未列出的工具。
 
 ```bash
 curl -X PUT http://localhost:8080/api/admin/tenants/tenant-demo/policy \
   -H 'Authorization: Bearer demo-key' \
   -H 'Content-Type: application/json' \
-  -d '{"maxActiveRuns":5,"maxStepsPerRun":10,"maxInputLength":5000,"maxBudget":50,"maxCreatesPerMinute":20}'
+  -d '{"maxActiveRuns":5,"maxStepsPerRun":10,"maxInputLength":5000,"maxBudget":50,"maxCreatesPerMinute":20,"allowedTools":["demo.echo"]}'
 ```
 
 `GET /api/admin/tenants/{tenantId}/policy` 查看当前生效策略，`DELETE` 恢复平台默认值，`GET .../policy/audits` 查看最近策略变更。策略变更与前后数值会单独留痕；策略只能收紧平台硬上限，不会因为租户配置错误而突破系统容量边界。

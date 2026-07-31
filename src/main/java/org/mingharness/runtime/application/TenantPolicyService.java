@@ -9,6 +9,7 @@ import org.mingharness.runtime.domain.TenantPolicyAudit;
 import org.mingharness.runtime.domain.TenantPolicyLimits;
 import org.mingharness.runtime.repository.TenantPolicyAuditRepository;
 import org.mingharness.runtime.repository.TenantPolicyRepository;
+import org.mingharness.tool.ToolRegistry;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -16,6 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * 解析和维护租户级运行资源策略。
@@ -31,13 +34,16 @@ public class TenantPolicyService {
     private final TenantPolicyRepository policyRepository;
     private final TenantPolicyAuditRepository auditRepository;
     private final RuntimeLimits runtimeLimits;
+    private final ToolRegistry toolRegistry;
 
     public TenantPolicyService(TenantPolicyRepository policyRepository,
                                TenantPolicyAuditRepository auditRepository,
-                               RuntimeLimits runtimeLimits) {
+                               RuntimeLimits runtimeLimits,
+                               ToolRegistry toolRegistry) {
         this.policyRepository = policyRepository;
         this.auditRepository = auditRepository;
         this.runtimeLimits = runtimeLimits;
+        this.toolRegistry = toolRegistry;
     }
 
     /** 返回创建 Run 时使用的有效限制；平台默认值仍是无法突破的硬上限。 */
@@ -108,7 +114,8 @@ public class TenantPolicyService {
         TenantPolicyLimits requested;
         try {
             requested = new TenantPolicyLimits(request.maxActiveRuns(), request.maxStepsPerRun(),
-                    request.maxInputLength(), request.maxBudget(), request.maxCreatesPerMinute());
+                    request.maxInputLength(), request.maxBudget(), request.maxCreatesPerMinute(),
+                    normalizeAllowedTools(request.allowedTools()));
         } catch (IllegalArgumentException exception) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "INVALID_TENANT_POLICY", exception.getMessage());
         }
@@ -131,7 +138,8 @@ public class TenantPolicyService {
 
     private TenantPolicyLimits limitsOf(TenantPolicy policy) {
         return new TenantPolicyLimits(policy.getMaxActiveRuns(), policy.getMaxStepsPerRun(),
-                policy.getMaxInputLength(), policy.getMaxBudget(), policy.getMaxCreatesPerMinute());
+                policy.getMaxInputLength(), policy.getMaxBudget(), policy.getMaxCreatesPerMinute(),
+                parseAllowedTools(policy.getAllowedTools()));
     }
 
     private TenantPolicyView toView(TenantPolicy policy, boolean defaulted) {
@@ -156,6 +164,45 @@ public class TenantPolicyService {
                 + ",steps=" + limits.maxStepsPerRun()
                 + ",inputChars=" + limits.maxInputLength()
                 + ",budget=" + budget.toPlainString()
-                + ",createsPerMinute=" + limits.maxCreatesPerMinute();
+                + ",createsPerMinute=" + limits.maxCreatesPerMinute()
+                + ",allowedTools=" + (limits.allowedTools().isEmpty()
+                ? "*" : String.join(",", limits.allowedTools().stream().sorted().toList()));
+    }
+
+    private Set<String> normalizeAllowedTools(Set<String> rawTools) {
+        if (rawTools == null || rawTools.isEmpty()) {
+            return Set.of();
+        }
+        TreeSet<String> normalized = new TreeSet<>();
+        for (String rawTool : rawTools) {
+            if (rawTool == null || rawTool.isBlank()
+                    || !rawTool.matches("[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}")) {
+                throw new BusinessException(HttpStatus.BAD_REQUEST, "INVALID_TENANT_TOOL_NAME",
+                        "租户工具白名单包含不合法的工具名称");
+            }
+            normalized.add(rawTool.trim());
+        }
+        Set<String> registered = toolRegistry.definitions().stream()
+                .map(definition -> definition.name())
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        Set<String> unknown = normalized.stream().filter(name -> !registered.contains(name)).collect(java.util.stream.Collectors.toSet());
+        if (!unknown.isEmpty()) {
+            throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "TENANT_TOOL_NOT_FOUND",
+                    "租户工具白名单包含未注册工具: " + String.join(",", unknown));
+        }
+        return Set.copyOf(normalized);
+    }
+
+    private Set<String> parseAllowedTools(String csv) {
+        if (csv == null || csv.isBlank()) {
+            return Set.of();
+        }
+        TreeSet<String> parsed = new TreeSet<>();
+        for (String item : csv.split(",")) {
+            if (!item.isBlank()) {
+                parsed.add(item.trim());
+            }
+        }
+        return Set.copyOf(parsed);
     }
 }

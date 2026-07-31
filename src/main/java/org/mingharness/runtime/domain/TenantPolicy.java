@@ -38,6 +38,10 @@ public class TenantPolicy {
     @Column(name = "max_creates_per_minute", nullable = false)
     private int maxCreatesPerMinute;
 
+    /** 逗号分隔的工具白名单；为空表示兼容旧行为，允许所有已注册工具。 */
+    @Column(name = "allowed_tools", length = 4000)
+    private String allowedTools;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -63,6 +67,7 @@ public class TenantPolicy {
         this.maxInputLength = limits.maxInputLength();
         this.maxBudget = limits.maxBudget();
         this.maxCreatesPerMinute = limits.maxCreatesPerMinute();
+        this.allowedTools = String.join(",", limits.allowedTools().stream().sorted().toList());
         this.updatedAt = Instant.now();
     }
 
@@ -72,6 +77,7 @@ public class TenantPolicy {
     public int getMaxInputLength() { return maxInputLength; }
     public BigDecimal getMaxBudget() { return maxBudget; }
     public int getMaxCreatesPerMinute() { return maxCreatesPerMinute; }
+    public String getAllowedTools() { return allowedTools; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public long getVersion() { return version; }

@@ -105,6 +105,7 @@ const tenantPolicyForm = reactive({
   maxInputLength: 10000,
   maxBudget: 1000,
   maxCreatesPerMinute: 60,
+  allowedTools: '',
 })
 
 const stats = computed(() => ({
@@ -337,6 +338,7 @@ async function loadTenantPolicy() {
       maxInputLength: policy.maxInputLength,
       maxBudget: Number(policy.maxBudget),
       maxCreatesPerMinute: policy.maxCreatesPerMinute,
+      allowedTools: (policy.allowedTools || []).join(', '),
     })
   } catch (error) {
     tenantPolicy.value = null
@@ -358,6 +360,7 @@ async function saveTenantPolicy() {
       maxInputLength: Number(tenantPolicyForm.maxInputLength),
       maxBudget: Number(tenantPolicyForm.maxBudget),
       maxCreatesPerMinute: Number(tenantPolicyForm.maxCreatesPerMinute),
+      allowedTools: String(tenantPolicyForm.allowedTools || '').split(',').map((item) => item.trim()).filter(Boolean),
     })
     tenantPolicyAudits.value = await api.listTenantPolicyAudits(form.tenantId)
     noticeMessage.value = '租户资源策略已保存，新的 Run 会立即使用最新限制'
@@ -381,6 +384,7 @@ async function resetTenantPolicy() {
       maxInputLength: tenantPolicy.value.maxInputLength,
       maxBudget: Number(tenantPolicy.value.maxBudget),
       maxCreatesPerMinute: tenantPolicy.value.maxCreatesPerMinute,
+      allowedTools: (tenantPolicy.value.allowedTools || []).join(', '),
     })
     noticeMessage.value = '租户策略已恢复为平台默认值'
   } catch (error) {
@@ -876,6 +880,7 @@ onBeforeUnmount(() => {
             <label class="field"><span>最大输入字符数</span><input v-model.number="tenantPolicyForm.maxInputLength" type="number" min="1" required /></label>
             <label class="field"><span>单次最大预算</span><input v-model.number="tenantPolicyForm.maxBudget" type="number" min="0.000001" step="0.000001" required /></label>
             <label class="field"><span>每分钟创建 Run 数</span><input v-model.number="tenantPolicyForm.maxCreatesPerMinute" type="number" min="1" required /></label>
+            <label class="field"><span>工具白名单（逗号分隔，留空表示全部）</span><input v-model="tenantPolicyForm.allowedTools" placeholder="例如：demo.echo" /></label>
             <div class="policy-actions"><button class="secondary-button" type="button" :disabled="loading" @click="loadTenantPolicy">读取策略</button><button class="secondary-button" type="submit" :disabled="loading">保存策略</button><button class="danger-button" type="button" :disabled="loading" @click="resetTenantPolicy">恢复默认</button></div>
             <small class="form-hint">策略只能收紧平台硬上限；最近 {{ tenantPolicyAudits.length }} 条变更已留痕。</small>
           </form>
