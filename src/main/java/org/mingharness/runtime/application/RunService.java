@@ -33,6 +33,7 @@ import org.mingharness.config.RedisProperties;
 import org.mingharness.messaging.OutboxService;
 import org.mingharness.messaging.RunExecutionMessage;
 import org.mingharness.tool.ToolExecutionContext;
+import org.mingharness.observability.HarnessMetrics;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -70,6 +71,7 @@ public class RunService {
     private final RedisProperties redisProperties;
     private final String executionMode;
     private final String workerId = "worker-" + UUID.randomUUID();
+    private final HarnessMetrics metrics;
 
     public RunService(RunRepository runRepository,
                       AuditEventRepository auditEventRepository,
@@ -88,7 +90,8 @@ public class RunService {
                       OutboxService outboxService,
                       RunExecutionLock executionLock,
                       RedisProperties redisProperties,
-                      @Value("${harness.execution.mode:sync}") String executionMode) {
+                      @Value("${harness.execution.mode:sync}") String executionMode,
+                      HarnessMetrics metrics) {
         this.runRepository = runRepository;
         this.auditEventRepository = auditEventRepository;
         this.toolRegistry = toolRegistry;
@@ -107,6 +110,7 @@ public class RunService {
         this.executionLock = executionLock;
         this.redisProperties = redisProperties;
         this.executionMode = executionMode;
+        this.metrics = metrics;
     }
 
     @Transactional
@@ -149,6 +153,7 @@ public class RunService {
                     "任务步骤数超过租户运行上限");
         }
         Run saved = runRepository.save(run);
+        metrics.runCreated();
         record(saved.getId(), null, "RUN_CREATED", "创建执行任务");
         return toSummary(saved);
     }
@@ -311,7 +316,11 @@ public class RunService {
             run.claim(workerId, Instant.now().plus(lease));
             runRepository.save(run);
             record(run.getId(), null, "WORKER_CLAIMED", "Worker 已获取执行租约");
-            executePending(run, token);
+            metrics.workerClaimed();
+            metrics.recordWorkerDuration(() -> executePending(run, token));
+        } catch (RuntimeException exception) {
+            metrics.workerFailed();
+            throw exception;
         } finally {
             executionLock.release(token);
         }
@@ -356,6 +365,9 @@ public class RunService {
             record(run.getId(), step.getId(), "STEP_TIMED_OUT", step.getError());
             throw exception;
         } catch (Exception exception) {
+            if (step.getType() == StepType.TOOL) {
+                metrics.toolFailed();
+            }
             step.fail(exception.getMessage() == null ? "步骤执行失败" : exception.getMessage());
             record(run.getId(), step.getId(), "STEP_FAILED", step.getError());
             throw exception;
@@ -408,15 +420,20 @@ public class RunService {
             record(run.getId(), null, "RUN_SUCCEEDED", "任务执行成功");
         } catch (ExecutionTimeoutException exception) {
             run.timeout(exception.getMessage() == null ? "步骤执行超时" : exception.getMessage());
+            metrics.runTimedOut();
             runRepository.save(run);
             record(run.getId(), null, "RUN_TIMED_OUT", run.getError());
         } catch (RuntimeException exception) {
             run.fail(exception.getMessage() == null ? exception.toString() : exception.getMessage());
+            metrics.runFailed();
             runRepository.save(run);
             record(run.getId(), null, "RUN_FAILED", run.getError());
         }
         if (lockToken != null) {
             run.clearLease();
+        }
+        if (run.getStatus() == RunStatus.SUCCEEDED) {
+            metrics.runSucceeded();
         }
         return toDetail(runRepository.save(run));
     }

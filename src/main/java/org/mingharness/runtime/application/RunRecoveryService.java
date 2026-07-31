@@ -5,6 +5,7 @@ import org.mingharness.audit.AuditEventRepository;
 import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.runtime.repository.RunRepository;
+import org.mingharness.observability.HarnessMetrics;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,13 +19,16 @@ public class RunRecoveryService {
     private final RunRepository runRepository;
     private final AuditEventRepository auditEventRepository;
     private final RuntimeLimits runtimeLimits;
+    private final HarnessMetrics metrics;
 
     public RunRecoveryService(RunRepository runRepository,
                               AuditEventRepository auditEventRepository,
-                              RuntimeLimits runtimeLimits) {
+                              RuntimeLimits runtimeLimits,
+                              HarnessMetrics metrics) {
         this.runRepository = runRepository;
         this.auditEventRepository = auditEventRepository;
         this.runtimeLimits = runtimeLimits;
+        this.metrics = metrics;
     }
 
     @Scheduled(
@@ -41,6 +45,7 @@ public class RunRecoveryService {
                 .forEach(run -> staleRuns.put(run.getId(), run));
         for (Run run : staleRuns.values()) {
             run.timeout("Worker 执行中断，任务已转为超时状态，请人工重试");
+            metrics.runTimedOut();
             run.clearLease();
             runRepository.save(run);
             auditEventRepository.save(new AuditEvent(
