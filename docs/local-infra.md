@@ -47,6 +47,25 @@ SPRING_PROFILES_ACTIVE=local-infra \
 
 `local-infra` 启动时会执行 Flyway 迁移，创建 Run、Step、审计、上下文、评测和 Outbox 表，并声明 RabbitMQ 主队列和死信队列。
 
+如果使用真实模型服务，建议同时设置供应商可靠性和成本参数：
+
+```bash
+export MODEL_ENABLED=true
+export MODEL_BASE_URL=https://api.example.com/v1
+export MODEL_API_KEY='由密钥系统注入'
+export MODEL_NAME=primary-model
+export MODEL_MAX_ATTEMPTS=3
+export MODEL_CIRCUIT_FAILURE_THRESHOLD=3
+export MODEL_INPUT_COST_PER_1K_TOKENS=0.0005
+export MODEL_OUTPUT_COST_PER_1K_TOKENS=0.0015
+# 可选：主供应商临时故障时切换到另一家 OpenAI 兼容服务
+export MODEL_FALLBACK_BASE_URL=https://backup.example.com/v1
+export MODEL_FALLBACK_API_KEY='由密钥系统注入'
+export MODEL_FALLBACK_NAME=backup-model
+```
+
+网关只重试临时 HTTP/网络故障，并对连续故障执行应用内熔断；4xx 参数错误和响应契约错误会直接让当前 Run 失败。供应商未返回 usage 时不会猜测 token 成本，Run 预算按已知实际成本校验。
+
 共享环境可以启用 API Key 认证和接口权限校验：
 
 ```bash

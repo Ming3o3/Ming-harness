@@ -57,6 +57,16 @@ npm run dev
 | `MODEL_BASE_URL` | `https://api.openai.com/v1` | 模型服务地址 |
 | `MODEL_API_KEY` | 空 | 模型服务密钥，仅通过环境变量注入 |
 | `MODEL_NAME` | `gpt-4o-mini` | 模型名称 |
+| `MODEL_FALLBACK_BASE_URL` | 空 | 临时故障时使用的备用 OpenAI 兼容服务地址 |
+| `MODEL_FALLBACK_API_KEY` | 空 | 备用模型服务密钥，仅通过环境变量注入 |
+| `MODEL_FALLBACK_NAME` | 主模型名称 | 备用服务默认模型名称 |
+| `MODEL_MAX_ATTEMPTS` | `3` | 单个供应商最大尝试次数，包含首次调用 |
+| `MODEL_RETRY_BACKOFF_MS` | `200` | 供应商重试初始退避毫秒数，按指数退避并限制上限 |
+| `MODEL_CIRCUIT_FAILURE_THRESHOLD` | `3` | 连续临时故障达到后打开应用内熔断 |
+| `MODEL_CIRCUIT_OPEN_MS` | `30000` | 熔断打开时间 |
+| `MODEL_INPUT_COST_PER_1K_TOKENS` | `0` | 输入每 1000 token 成本，按实际 usage 计算 |
+| `MODEL_OUTPUT_COST_PER_1K_TOKENS` | `0` | 输出每 1000 token 成本，按实际 usage 计算 |
+| `MODEL_MAX_RESPONSE_CHARS` | `100000` | 单次模型响应正文上限 |
 | `MAX_ACTIVE_RUNS_PER_TENANT` | `20` | 单租户活动 Run 上限 |
 | `MAX_CREATES_PER_MINUTE` | `60` | 单租户每分钟创建 Run 上限 |
 | `MAX_INPUT_LENGTH` | `10000` | 单次输入最大字符数 |
@@ -95,6 +105,8 @@ npm run dev
 ### 工具重试与 Run 预算
 
 工具只有抛出 `RetryableToolException` 才会进入自动重试；Runtime 仅对 `readOnly=true` 的工具使用 `maxAttempts`，并受 `MAX_TOOL_ATTEMPTS` 全局上限约束。副作用工具即使声明更高次数也只执行一次，失败后通过 Run 重试接口重新经过策略和审批。模型步骤完成后会校验实际成本，超过 Run 预算的任务会以 `RUN_BUDGET_EXCEEDED` 失败并写入审计事件。
+
+模型网关只对网络错误、408、425、429 和 5xx 等临时故障重试；结构化响应错误和其他 4xx 不会盲目重试。主供应商达到熔断阈值后，配置了 `MODEL_FALLBACK_BASE_URL` 才会切换备用供应商。供应商返回的 `usage.prompt_tokens`/`completion_tokens`（也兼容 `input_tokens`/`output_tokens`）会写入 Step，并按每千 Token 单价计算实际成本；未返回 usage 时成本为 0，不会伪造计费数据。
 
 ### 敏感数据与保留策略
 

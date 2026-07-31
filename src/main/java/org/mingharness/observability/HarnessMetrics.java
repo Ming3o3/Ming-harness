@@ -22,6 +22,9 @@ public class HarnessMetrics {
     private final Counter outboxPublished;
     private final Counter outboxFailures;
     private final Counter retentionDeleted;
+    private final Counter modelRetries;
+    private final Counter modelFallbacks;
+    private final Counter modelFailures;
     private final Timer workerDuration;
     private final AtomicInteger pendingOutbox = new AtomicInteger();
 
@@ -36,6 +39,9 @@ public class HarnessMetrics {
         outboxPublished = Counter.builder("harness.outbox.published").description("发布成功的 Outbox 数量").register(registry);
         outboxFailures = Counter.builder("harness.outbox.failed").description("发布失败的 Outbox 数量").register(registry);
         retentionDeleted = Counter.builder("harness.retention.deleted").description("数据保留任务删除的记录数量").register(registry);
+        modelRetries = Counter.builder("harness.models.retries").description("模型供应商重试次数").register(registry);
+        modelFallbacks = Counter.builder("harness.models.fallbacks").description("模型备用供应商切换次数").register(registry);
+        modelFailures = Counter.builder("harness.models.failed").description("模型供应商最终失败次数").register(registry);
         workerDuration = Timer.builder("harness.worker.duration").description("Worker 执行耗时").register(registry);
         registry.gauge("harness.outbox.pending", pendingOutbox);
     }
@@ -50,6 +56,9 @@ public class HarnessMetrics {
     public void outboxPublished() { outboxPublished.increment(); }
     public void outboxFailed() { outboxFailures.increment(); }
     public void retentionDeleted(int count) { retentionDeleted.increment(Math.max(0, count)); }
+    public void modelRetry() { modelRetries.increment(); }
+    public void modelFallback() { modelFallbacks.increment(); }
+    public void modelFailed() { modelFailures.increment(); }
     public void pendingOutbox(int count) { pendingOutbox.set(Math.max(0, count)); }
 
     public <T> T recordWorkerDuration(Supplier<T> action) {
