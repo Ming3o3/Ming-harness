@@ -51,6 +51,19 @@ class ContextServiceTests {
     void shouldRejectSensitiveLongTermMemory() {
         assertThrows(BusinessException.class, () -> contextService.createMemory("tenant-a", "operator",
                 new CreateMemoryRequest("profile", "api_key=do-not-store", null, null)));
+        assertThrows(BusinessException.class, () -> contextService.createMemory("tenant-a", "operator",
+                new CreateMemoryRequest("profile", "Authorization: Bearer do-not-store", null, null)));
+    }
+
+    @Test
+    void shouldSanitizeDocumentBeforeItCanBeRetrievedIntoModelContext() {
+        KnowledgeDocument document = contextService.createDocument("tenant-a", "owner", new CreateDocumentRequest(
+                "接口说明", "api_key=do-not-persist", "INTERNAL", "operator"));
+
+        assertEquals("api_key=[REDACTED]", document.getContent());
+        ContextResult result = contextBuilder.build("tenant-a", "operator", "接口说明", 4_000);
+        assertEquals(1, result.evidences().size());
+        assertEquals("api_key=[REDACTED]", result.evidences().get(0).excerpt());
     }
 
     @Test

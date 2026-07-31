@@ -1,6 +1,7 @@
 package org.mingharness.context;
 
 import org.mingharness.common.BusinessException;
+import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.context.api.CreateDocumentRequest;
 import org.mingharness.context.api.CreateMemoryRequest;
 import org.springframework.http.HttpStatus;
@@ -15,17 +16,21 @@ public class ContextService {
 
     private final KnowledgeDocumentRepository documentRepository;
     private final MemoryEntryRepository memoryRepository;
+    private final SensitiveDataSanitizer sanitizer;
 
     public ContextService(KnowledgeDocumentRepository documentRepository,
-                          MemoryEntryRepository memoryRepository) {
+                          MemoryEntryRepository memoryRepository,
+                          SensitiveDataSanitizer sanitizer) {
         this.documentRepository = documentRepository;
         this.memoryRepository = memoryRepository;
+        this.sanitizer = sanitizer;
     }
 
     @Transactional
     public KnowledgeDocument createDocument(String tenantId, String userId, CreateDocumentRequest request) {
-        return documentRepository.save(new KnowledgeDocument(tenantId, userId, request.title(), request.content(),
-                request.sensitivity(), request.allowedUsers()));
+        return documentRepository.save(new KnowledgeDocument(tenantId, userId,
+                sanitizer.sanitize(request.title()), sanitizer.sanitize(request.content()),
+                sanitizer.sanitize(request.sensitivity()), sanitizer.sanitize(request.allowedUsers())));
     }
 
     @Transactional(readOnly = true)
@@ -49,12 +54,12 @@ public class ContextService {
 
     @Transactional
     public MemoryEntry createMemory(String tenantId, String userId, CreateMemoryRequest request) {
-        if (request.content().matches("(?is).*\\b(api[_-]?key|password|passwd|secret|token)\\b.*")) {
+        if (sanitizer.containsSensitiveData(request.content())) {
             throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "SENSITIVE_MEMORY_REJECTED",
                     "疑似密钥或凭证的信息不能写入长期记忆");
         }
-        return memoryRepository.save(new MemoryEntry(tenantId, userId, request.memoryType(), request.content(),
-                request.sourceRunId(), request.expiresAt()));
+        return memoryRepository.save(new MemoryEntry(tenantId, userId, sanitizer.sanitize(request.memoryType()),
+                sanitizer.sanitize(request.content()), sanitizer.sanitize(request.sourceRunId()), request.expiresAt()));
     }
 
     @Transactional(readOnly = true)

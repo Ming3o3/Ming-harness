@@ -8,4 +8,6 @@ public interface AuditEventRepository extends JpaRepository<AuditEvent, String> 
     List<AuditEvent> findTop100ByRunIdOrderByCreatedAtDesc(String runId);
 
     List<AuditEvent> findByRunIdOrderByIntegritySequenceAsc(String runId);
+
+    long deleteByRunId(String runId);
 }

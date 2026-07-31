@@ -1,5 +1,6 @@
 package org.mingharness.audit;
 
+import org.mingharness.common.SensitiveDataSanitizer;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Id;
@@ -61,6 +62,15 @@ public class AuditEvent {
         this.integritySequence = sequence;
         this.previousHash = previousHash;
         this.integrityHash = integrityHash;
+    }
+
+    /** 审计事件封签前统一脱敏，确保 HMAC 绑定的是安全后的持久化内容。 */
+    public void sanitize(SensitiveDataSanitizer sanitizer) {
+        if (sanitizer == null) {
+            return;
+        }
+        this.message = sanitizer.sanitize(this.message);
+        this.metadata = sanitizer.sanitize(this.metadata);
     }
 
     public String getId() { return id; }

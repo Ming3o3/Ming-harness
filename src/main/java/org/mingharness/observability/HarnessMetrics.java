@@ -21,6 +21,7 @@ public class HarnessMetrics {
     private final Counter workerFailures;
     private final Counter outboxPublished;
     private final Counter outboxFailures;
+    private final Counter retentionDeleted;
     private final Timer workerDuration;
     private final AtomicInteger pendingOutbox = new AtomicInteger();
 
@@ -34,6 +35,7 @@ public class HarnessMetrics {
         workerFailures = Counter.builder("harness.worker.failed").description("Worker 消费失败数量").register(registry);
         outboxPublished = Counter.builder("harness.outbox.published").description("发布成功的 Outbox 数量").register(registry);
         outboxFailures = Counter.builder("harness.outbox.failed").description("发布失败的 Outbox 数量").register(registry);
+        retentionDeleted = Counter.builder("harness.retention.deleted").description("数据保留任务删除的记录数量").register(registry);
         workerDuration = Timer.builder("harness.worker.duration").description("Worker 执行耗时").register(registry);
         registry.gauge("harness.outbox.pending", pendingOutbox);
     }
@@ -47,6 +49,7 @@ public class HarnessMetrics {
     public void workerFailed() { workerFailures.increment(); }
     public void outboxPublished() { outboxPublished.increment(); }
     public void outboxFailed() { outboxFailures.increment(); }
+    public void retentionDeleted(int count) { retentionDeleted.increment(Math.max(0, count)); }
     public void pendingOutbox(int count) { pendingOutbox.set(Math.max(0, count)); }
 
     public <T> T recordWorkerDuration(Supplier<T> action) {

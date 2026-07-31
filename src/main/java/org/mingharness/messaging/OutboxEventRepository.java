@@ -9,4 +9,8 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, String
 
     List<OutboxEvent> findTop50ByStatusAndNextAttemptAtLessThanEqualOrderByCreatedAtAsc(
             OutboxStatus status, Instant nextAttemptAt);
+
+    long deleteByRunId(String runId);
+
+    long deleteByStatusInAndCreatedAtBefore(List<OutboxStatus> statuses, Instant createdAt);
 }

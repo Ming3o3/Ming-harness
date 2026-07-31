@@ -1,5 +1,6 @@
 package org.mingharness.evaluation;
 
+import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.evaluation.api.EvaluationCaseRequest;
 import org.mingharness.evaluation.api.EvaluationReportView;
 import org.mingharness.evaluation.api.EvaluationRequest;
@@ -27,17 +28,20 @@ public class EvaluationService {
     private final String defaultModel;
     private final String defaultPromptVersion;
     private final String defaultPolicyVersion;
+    private final SensitiveDataSanitizer sanitizer;
 
     public EvaluationService(RunService runService,
                              EvaluationReportRepository reportRepository,
                              @Value("${harness.model.name:demo-model}") String defaultModel,
                              @Value("${harness.prompt.version:prompt-v1}") String defaultPromptVersion,
-                             @Value("${harness.policy.version:policy-v1}") String defaultPolicyVersion) {
+                             @Value("${harness.policy.version:policy-v1}") String defaultPolicyVersion,
+                             SensitiveDataSanitizer sanitizer) {
         this.runService = runService;
         this.reportRepository = reportRepository;
         this.defaultModel = defaultModel;
         this.defaultPromptVersion = defaultPromptVersion;
         this.defaultPolicyVersion = defaultPolicyVersion;
+        this.sanitizer = sanitizer;
     }
 
     @Transactional
@@ -59,16 +63,17 @@ public class EvaluationService {
             if (success) {
                 passed++;
             }
-            details.add(item.name() + "=" + (success ? "PASSED" : "FAILED")
+            details.add(sanitizer.sanitize(item.name()) + "=" + (success ? "PASSED" : "FAILED")
                     + ":run=" + created.id() + ":status=" + result.run().status());
         }
         int total = request.cases().size();
         BigDecimal successRate = BigDecimal.valueOf(passed)
                 .divide(BigDecimal.valueOf(total), 4, RoundingMode.HALF_UP);
         EvaluationReport report = new EvaluationReport(
-                tenantId, request.name(), valueOrDefault(request.modelName(), defaultModel),
-                valueOrDefault(request.promptVersion(), defaultPromptVersion),
-                valueOrDefault(request.policyVersion(), defaultPolicyVersion),
+                tenantId, sanitizer.sanitize(request.name()),
+                sanitizer.sanitize(valueOrDefault(request.modelName(), defaultModel)),
+                sanitizer.sanitize(valueOrDefault(request.promptVersion(), defaultPromptVersion)),
+                sanitizer.sanitize(valueOrDefault(request.policyVersion(), defaultPolicyVersion)),
                 total, passed, total - passed, successRate, String.join("\n", details));
         return EvaluationReportView.from(reportRepository.save(report));
     }

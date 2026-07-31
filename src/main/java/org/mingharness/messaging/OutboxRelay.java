@@ -2,6 +2,7 @@ package org.mingharness.messaging;
 
 import tools.jackson.databind.ObjectMapper;
 import org.mingharness.config.MessagingProperties;
+import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.observability.HarnessMetrics;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -21,17 +22,20 @@ public class OutboxRelay {
     private final ObjectMapper objectMapper;
     private final MessagingProperties properties;
     private final HarnessMetrics metrics;
+    private final SensitiveDataSanitizer sanitizer;
 
     public OutboxRelay(OutboxEventRepository repository,
                        RabbitTemplate rabbitTemplate,
                        ObjectMapper objectMapper,
                        MessagingProperties properties,
-                       HarnessMetrics metrics) {
+                       HarnessMetrics metrics,
+                       SensitiveDataSanitizer sanitizer) {
         this.repository = repository;
         this.rabbitTemplate = rabbitTemplate;
         this.objectMapper = objectMapper;
         this.properties = properties;
         this.metrics = metrics;
+        this.sanitizer = sanitizer;
     }
 
     @Scheduled(fixedDelayString = "${harness.messaging.outbox-poll-ms:1000}")
@@ -55,7 +59,7 @@ public class OutboxRelay {
                 repository.save(event);
                 metrics.outboxPublished();
             } catch (Exception exception) {
-                event.markFailed(exception.getMessage(), properties.maxAttempts());
+                event.markFailed(sanitizer.sanitize(exception.getMessage()), properties.maxAttempts());
                 repository.save(event);
                 metrics.outboxFailed();
             }

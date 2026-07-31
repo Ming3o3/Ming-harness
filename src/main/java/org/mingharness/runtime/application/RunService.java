@@ -3,6 +3,7 @@ package org.mingharness.runtime.application;
 import org.mingharness.audit.AuditEvent;
 import org.mingharness.audit.AuditTrailService;
 import org.mingharness.common.BusinessException;
+import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.runtime.api.CreateRunRequest;
 import org.mingharness.runtime.api.RunDetail;
 import org.mingharness.runtime.api.RunSummary;
@@ -73,6 +74,7 @@ public class RunService {
     private final String executionMode;
     private final String workerId = "worker-" + UUID.randomUUID();
     private final HarnessMetrics metrics;
+    private final SensitiveDataSanitizer sanitizer;
 
     public RunService(RunRepository runRepository,
                       AuditTrailService auditTrailService,
@@ -92,7 +94,8 @@ public class RunService {
                       RunExecutionLock executionLock,
                       RedisProperties redisProperties,
                       @Value("${harness.execution.mode:sync}") String executionMode,
-                      HarnessMetrics metrics) {
+                      HarnessMetrics metrics,
+                      SensitiveDataSanitizer sanitizer) {
         this.runRepository = runRepository;
         this.auditTrailService = auditTrailService;
         this.toolRegistry = toolRegistry;
@@ -112,20 +115,27 @@ public class RunService {
         this.redisProperties = redisProperties;
         this.executionMode = executionMode;
         this.metrics = metrics;
+        this.sanitizer = sanitizer;
     }
 
     @Transactional
     public RunSummary create(CreateRunRequest request) {
+        String sanitizedTitle = sanitizer.sanitize(request.title());
+        String sanitizedInput = sanitizer.sanitize(request.input());
         String toolName = request.toolName() == null || request.toolName().isBlank()
                 ? "demo.echo" : request.toolName();
         HarnessTool selectedTool = toolRegistry.get(toolName);
-        toolInputValidator.validate(selectedTool.definition(), request.input());
+        toolInputValidator.validate(selectedTool.definition(), sanitizedInput);
 
+        if (sanitizer.containsSensitiveData(request.idempotencyKey())) {
+            throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "SENSITIVE_IDEMPOTENCY_KEY_REJECTED",
+                    "幂等键不能包含疑似密钥或凭证");
+        }
         String idempotencyKey = normalizeIdempotencyKey(request.idempotencyKey());
         if (idempotencyKey != null) {
             Optional<Run> existing = runRepository.findByTenantIdAndIdempotencyKey(request.tenantId(), idempotencyKey);
             if (existing.isPresent()) {
-                if (!sameCreateRequest(existing.get(), request, toolName)) {
+                if (!sameCreateRequest(existing.get(), request, toolName, sanitizedTitle, sanitizedInput)) {
                     throw new BusinessException(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED",
                             "幂等键已经用于其他任务");
                 }
@@ -138,17 +148,17 @@ public class RunService {
         Run run = new Run(
                 request.tenantId(),
                 request.userId(),
-                request.title(),
-                request.input(),
+                sanitizedTitle,
+                sanitizedInput,
                 request.budget() == null ? BigDecimal.ONE : request.budget(),
-                valueOrDefault(request.modelName(), defaultModel),
-                valueOrDefault(request.promptVersion(), defaultPromptVersion),
-                valueOrDefault(request.policyVersion(), defaultPolicyVersion),
+                sanitizer.sanitize(valueOrDefault(request.modelName(), defaultModel)),
+                sanitizer.sanitize(valueOrDefault(request.promptVersion(), defaultPromptVersion)),
+                sanitizer.sanitize(valueOrDefault(request.policyVersion(), defaultPolicyVersion)),
                 idempotencyKey,
                 normalizePermissions(request.permissions())
         );
-        run.addStep(new Step(1, StepType.MODEL, "model.complete", request.input()));
-        run.addStep(new Step(2, StepType.TOOL, toolName, request.input()));
+        run.addStep(new Step(1, StepType.MODEL, "model.complete", sanitizedInput));
+        run.addStep(new Step(2, StepType.TOOL, toolName, sanitizedInput));
         if (run.getSteps().size() > runtimeLimits.maxStepsPerRun()) {
             throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "STEP_LIMIT_EXCEEDED",
                     "任务步骤数超过租户运行上限");
@@ -265,7 +275,7 @@ public class RunService {
                 .filter(item -> item.getStatus() == StepStatus.WAITING_APPROVAL)
                 .findFirst()
                 .orElseThrow(() -> new BusinessException(HttpStatus.CONFLICT, "APPROVAL_STEP_NOT_FOUND", "找不到待审批步骤"));
-        String rejectReason = reason == null || reason.isBlank() ? "人工审批拒绝" : reason;
+        String rejectReason = sanitizer.sanitize(reason == null || reason.isBlank() ? "人工审批拒绝" : reason);
         step.fail(rejectReason);
         run.fail(rejectReason);
         runRepository.save(run);
@@ -354,22 +364,23 @@ public class RunService {
                 String modelInput = context.isEmpty()
                         ? step.getInput()
                         : step.getInput() + "\n\n参考资料（请保留来源标记）:\n" + context.text();
+                String safeModelInput = sanitizer.sanitize(modelInput);
                 ModelResponse response = boundedExecutor.execute("模型调用", runtimeLimits.modelTimeoutMs(),
                         () -> modelGateway.complete(new ModelRequest(
-                                modelInput, run.getModelName(), run.getPromptVersion())));
+                                safeModelInput, run.getModelName(), run.getPromptVersion())));
                 if (exceedsBudget(run, response.cost())) {
                     throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "RUN_BUDGET_EXCEEDED",
                             "模型调用成本超过 Run 预算");
                 }
-                step.succeed(response.content(), response.inputTokens(), response.outputTokens(), response.cost());
+                step.succeed(sanitizer.sanitize(response.content()), response.inputTokens(), response.outputTokens(), response.cost());
             }
             record(run.getId(), step.getId(), "STEP_SUCCEEDED", "步骤执行成功");
         } catch (ExecutionTimeoutException exception) {
-            step.timeout(exception.getMessage());
+            step.timeout(safeError(exception, "步骤执行超时"));
             record(run.getId(), step.getId(), "STEP_TIMED_OUT", step.getError());
             throw exception;
         } catch (Exception exception) {
-            step.fail(exception.getMessage() == null ? "步骤执行失败" : exception.getMessage());
+            step.fail(safeError(exception, "步骤执行失败"));
             String eventType = exception instanceof BusinessException businessException
                     && "RUN_BUDGET_EXCEEDED".equals(businessException.getCode())
                     ? "BUDGET_EXCEEDED" : "STEP_FAILED";
@@ -403,16 +414,16 @@ public class RunService {
                 String output = boundedExecutor.execute("工具 " + step.getName(), definition.timeoutMs(),
                         () -> tool.execute(step.getInput(), executionContext));
                 toolOutputValidator.validate(definition, output);
-                step.succeed(output);
+                step.succeed(sanitizer.sanitize(output));
                 record(run.getId(), step.getId(), "STEP_SUCCEEDED", "步骤执行成功");
                 return;
             } catch (ExecutionTimeoutException exception) {
-                step.timeout(exception.getMessage());
+                step.timeout(safeError(exception, "步骤执行超时"));
                 record(run.getId(), step.getId(), "STEP_TIMED_OUT", step.getError());
                 throw exception;
             } catch (Exception exception) {
                 metrics.toolFailed();
-                step.fail(exception.getMessage() == null ? "步骤执行失败" : exception.getMessage());
+                step.fail(safeError(exception, "步骤执行失败"));
                 record(run.getId(), step.getId(), "STEP_FAILED", step.getError());
                 boolean canRetry = definition.readOnly()
                         && exception instanceof RetryableToolException
@@ -470,12 +481,12 @@ public class RunService {
             run.succeed(output);
             record(run.getId(), null, "RUN_SUCCEEDED", "任务执行成功");
         } catch (ExecutionTimeoutException exception) {
-            run.timeout(exception.getMessage() == null ? "步骤执行超时" : exception.getMessage());
+            run.timeout(safeError(exception, "步骤执行超时"));
             metrics.runTimedOut();
             runRepository.save(run);
             record(run.getId(), null, "RUN_TIMED_OUT", run.getError());
         } catch (RuntimeException exception) {
-            run.fail(exception.getMessage() == null ? exception.toString() : exception.getMessage());
+            run.fail(safeError(exception, exception.toString()));
             metrics.runFailed();
             runRepository.save(run);
             record(run.getId(), null, "RUN_FAILED", run.getError());
@@ -541,7 +552,7 @@ public class RunService {
     }
 
     private String approvalSnapshot(Step step) {
-        return "tool=" + step.getName() + ";input=" + step.getInput();
+        return sanitizer.sanitize("tool=" + step.getName() + ";input=" + step.getInput());
     }
 
     private RunDetail toDetail(Run run) {
@@ -569,6 +580,7 @@ public class RunService {
     }
 
     private void validateRuntimeLimits(CreateRunRequest request) {
+        // 资源边界按原始请求计算，不能因为脱敏后文本变短而绕过输入大小限制。
         if (request.input() != null && request.input().length() > runtimeLimits.maxInputLength()) {
             throw new BusinessException(HttpStatus.PAYLOAD_TOO_LARGE, "INPUT_TOO_LARGE",
                     "任务输入超过允许的最大长度");
@@ -627,18 +639,26 @@ public class RunService {
                 .collect(Collectors.toUnmodifiableSet());
     }
 
-    private boolean sameCreateRequest(Run run, CreateRunRequest request, String toolName) {
-        String modelName = valueOrDefault(request.modelName(), defaultModel);
-        String promptVersion = valueOrDefault(request.promptVersion(), defaultPromptVersion);
-        String policyVersion = valueOrDefault(request.policyVersion(), defaultPolicyVersion);
+    private boolean sameCreateRequest(Run run, CreateRunRequest request, String toolName,
+                                      String sanitizedTitle, String sanitizedInput) {
+        String modelName = sanitizer.sanitize(valueOrDefault(request.modelName(), defaultModel));
+        String promptVersion = sanitizer.sanitize(valueOrDefault(request.promptVersion(), defaultPromptVersion));
+        String policyVersion = sanitizer.sanitize(valueOrDefault(request.policyVersion(), defaultPolicyVersion));
         return Objects.equals(run.getUserId(), request.userId())
-                && Objects.equals(run.getTitle(), request.title())
-                && Objects.equals(run.getInput(), request.input())
+                && Objects.equals(run.getTitle(), sanitizedTitle)
+                && Objects.equals(run.getInput(), sanitizedInput)
                 && Objects.equals(run.getModelName(), modelName)
                 && Objects.equals(run.getPromptVersion(), promptVersion)
                 && Objects.equals(run.getPolicyVersion(), policyVersion)
                 && run.getBudget().compareTo(request.budget() == null ? BigDecimal.ONE : request.budget()) == 0
                 && run.getSteps().stream().anyMatch(step -> Objects.equals(step.getName(), toolName));
+    }
+
+    /** 外部模型、工具和网络库的异常可能携带请求头或连接串，持久化前必须脱敏。 */
+    private String safeError(Exception exception, String fallback) {
+        String message = exception == null || exception.getMessage() == null || exception.getMessage().isBlank()
+                ? fallback : exception.getMessage();
+        return sanitizer.sanitize(message);
     }
 
     private String valueOrDefault(String value, String fallback) {

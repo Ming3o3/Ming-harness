@@ -28,6 +28,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
 @Import(RunServiceTests.FailureToolConfiguration.class)
@@ -117,6 +119,15 @@ class RunServiceTests {
         );
 
         assertEquals("IDEMPOTENCY_KEY_REUSED", exception.getCode());
+    }
+
+    @Test
+    void shouldRejectSensitiveIdempotencyKeyBeforePersistingIt() {
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> runService.create(request("demo.echo", "安全输入")
+                        .withIdempotencyKey("api_key=do-not-store")));
+
+        assertEquals("SENSITIVE_IDEMPOTENCY_KEY_REJECTED", exception.getCode());
     }
 
     @Test
@@ -237,6 +248,23 @@ class RunServiceTests {
 
         assertEquals(RunStatus.SUCCEEDED, result.run().status());
         assertEquals("已读取订单: 读取订单", result.run().output());
+    }
+
+    @Test
+    void shouldSanitizeRunInputOutputAndApprovalAudit() {
+        String secret = "approval-secret-123";
+        RunSummary created = runService.create(request("demo.approval",
+                "authorization: Bearer " + secret));
+
+        assertFalse(created.input().contains(secret));
+        RunDetail waiting = runService.start(created.id(), "tenant-demo");
+        RunDetail completed = runService.approve(created.id(), "tenant-demo", "approver-1");
+
+        assertFalse(completed.run().output().contains(secret));
+        assertTrue(auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
+                .allMatch(event -> !event.getMessage().contains(secret)
+                        && (event.getMetadata() == null || !event.getMetadata().contains(secret))));
+        assertEquals(RunStatus.SUCCEEDED, completed.run().status());
     }
 
     @Test

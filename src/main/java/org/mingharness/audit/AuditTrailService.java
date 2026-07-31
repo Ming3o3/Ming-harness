@@ -1,5 +1,6 @@
 package org.mingharness.audit;
 
+import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.repository.RunRepository;
 import org.springframework.stereotype.Service;
@@ -23,13 +24,16 @@ public class AuditTrailService {
     private final AuditEventRepository auditEventRepository;
     private final RunRepository runRepository;
     private final byte[] integrityKey;
+    private final SensitiveDataSanitizer sanitizer;
 
     public AuditTrailService(AuditEventRepository auditEventRepository,
                              RunRepository runRepository,
-                             AuditIntegrityProperties properties) {
+                             AuditIntegrityProperties properties,
+                             SensitiveDataSanitizer sanitizer) {
         this.auditEventRepository = auditEventRepository;
         this.runRepository = runRepository;
         this.integrityKey = properties.integrityKey().getBytes(StandardCharsets.UTF_8);
+        this.sanitizer = sanitizer;
     }
 
     /** 在与业务状态相同的事务中追加一条已封签的审计事件。 */
@@ -38,6 +42,7 @@ public class AuditTrailService {
         if (event.getRunId() == null || event.getRunId().isBlank()) {
             throw new IllegalArgumentException("审计事件必须关联 Run");
         }
+        event.sanitize(sanitizer);
         Run run = runRepository.findByIdForAuditUpdate(event.getRunId())
                 .orElseThrow(() -> new IllegalArgumentException("审计事件关联的 Run 不存在"));
         if (!Objects.equals(run.getTenantId(), event.getTenantId())) {

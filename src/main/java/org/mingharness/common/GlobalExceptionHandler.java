@@ -14,11 +14,17 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    private final SensitiveDataSanitizer sanitizer;
+
+    public GlobalExceptionHandler(SensitiveDataSanitizer sanitizer) {
+        this.sanitizer = sanitizer;
+    }
+
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ErrorResponse> handleBusinessException(BusinessException exception) {
         ErrorResponse response = new ErrorResponse(
                 exception.getCode(),
-                exception.getMessage(),
+                sanitizer.sanitize(exception.getMessage()),
                 Map.of(),
                 Instant.now()
         );
@@ -29,7 +35,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleValidationException(MethodArgumentNotValidException exception) {
         Map<String, String> details = new LinkedHashMap<>();
         for (FieldError error : exception.getBindingResult().getFieldErrors()) {
-            details.putIfAbsent(error.getField(), error.getDefaultMessage());
+            details.putIfAbsent(error.getField(), sanitizer.sanitize(error.getDefaultMessage()));
         }
         ErrorResponse response = new ErrorResponse(
                 "VALIDATION_FAILED",

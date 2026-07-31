@@ -72,6 +72,19 @@ class AuditTrailServiceTests {
         assertEquals("AUDIT_EVENT_COUNT_MISMATCH", verification.failureCode());
     }
 
+    @Test
+    void shouldSanitizeAuditPayloadBeforeSigningIt() {
+        Run run = saveRun();
+        AuditEvent event = auditTrailService.append(new AuditEvent(
+                run.getTenantId(), run.getUserId(), run.getTraceId(), run.getId(), null,
+                "TOOL_FAILED", "authorization: Bearer do-not-store",
+                "api_key=do-not-store"));
+
+        assertFalse(event.getMessage().contains("do-not-store"));
+        assertFalse(event.getMetadata().contains("do-not-store"));
+        assertTrue(auditTrailService.verify(run.getId()).valid());
+    }
+
     private Run saveRun() {
         return runRepository.save(new Run(
                 "tenant-audit", "audit-user", "审计测试", "审计输入", BigDecimal.ONE,

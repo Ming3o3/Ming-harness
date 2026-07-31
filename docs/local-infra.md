@@ -125,3 +125,22 @@ brew services stop postgresql@17
 ```
 
 Redis 只保存限流计数和短期执行锁；业务数据、审计数据和幂等事实始终以 PostgreSQL 为准。
+
+## 7. 数据保留和敏感信息治理
+
+`local-infra` 默认开启定时清理。可以在启动前按合规要求覆盖配置：
+
+```bash
+export DATA_RETENTION_ENABLED=true
+export RUN_RETENTION_DAYS=90
+export AUDIT_RETENTION_DAYS=365
+export MEMORY_RETENTION_DAYS=30
+export DOCUMENT_RETENTION_DAYS=30
+export EVALUATION_RETENTION_DAYS=90
+export OUTBOX_RETENTION_DAYS=14
+export RETENTION_BATCH_SIZE=100
+```
+
+清理任务只处理已结束 Run，并同时删除其 Step、审计事件和对应 Outbox；仍处于 `QUEUED`、`RUNNING` 或 `WAITING_APPROVAL` 的任务不会被删除。`PENDING` Outbox 代表尚未投递的执行命令，永远不会被保留任务直接删除。到期长期记忆会清理，用户主动删除的文档和记忆则在各自保留期结束后物理删除。
+
+Run 和审计保留期取两者较大值，这是为了保持审计 HMAC 链完整。清理是不可逆操作，生产环境应先在备份和合规策略确认后启用；本地演示可以设置 `DATA_RETENTION_ENABLED=false`。Run、Step、审计、模型输入输出和工具错误中的常见凭证会在持久化或外发前替换为 `[REDACTED]`，长期记忆发现疑似凭证时会拒绝写入。

@@ -1,5 +1,6 @@
 package org.mingharness.model;
 
+import org.mingharness.common.SensitiveDataSanitizer;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
@@ -15,17 +16,20 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
 
     private final RestClient restClient;
     private final String model;
+    private final SensitiveDataSanitizer sanitizer;
 
     public OpenAiCompatibleModelGateway(
             RestClient.Builder restClientBuilder,
             @Value("${harness.model.base-url}") String baseUrl,
             @Value("${harness.model.api-key}") String apiKey,
-            @Value("${harness.model.name:demo-model}") String model) {
+            @Value("${harness.model.name:demo-model}") String model,
+            SensitiveDataSanitizer sanitizer) {
         this.restClient = restClientBuilder
                 .baseUrl(baseUrl)
                 .defaultHeader("Authorization", "Bearer " + apiKey)
                 .build();
         this.model = model;
+        this.sanitizer = sanitizer;
     }
 
     @Override
@@ -33,7 +37,7 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
     public ModelResponse complete(ModelRequest request) {
         Map<String, Object> body = Map.of(
                 "model", model,
-                "messages", List.of(Map.of("role", "user", "content", request.input())),
+                "messages", List.of(Map.of("role", "user", "content", sanitizer.sanitize(request.input()))),
                 "temperature", 0.2
         );
         Map<String, Object> response = restClient.post()
