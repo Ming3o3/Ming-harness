@@ -59,8 +59,8 @@ function toggleTheme() {
 applyTheme(theme.value)
 
 const form = reactive({
-  tenantId: 'tenant-demo',
-  userId: 'operator',
+  tenantId: import.meta.env.VITE_HARNESS_TENANT_ID || 'tenant-demo',
+  userId: import.meta.env.VITE_HARNESS_USER_ID || 'operator',
   title: '订单状态分析',
   input: '请分析这条任务并返回可追溯结果',
   toolName: 'demo.echo',

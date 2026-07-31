@@ -1,11 +1,16 @@
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api'
+const configuredApiKey = import.meta.env.VITE_HARNESS_API_KEY || ''
 
 async function request(path, options = {}) {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     headers: {
       'Content-Type': 'application/json',
-      'X-Tenant-Id': localStorage.getItem('harnessTenantId') || 'tenant-demo',
-      'X-User-Id': localStorage.getItem('harnessUserId') || 'operator',
+      ...(configuredApiKey
+        ? { Authorization: `Bearer ${configuredApiKey}` }
+        : {
+            'X-Tenant-Id': localStorage.getItem('harnessTenantId') || 'tenant-demo',
+            'X-User-Id': localStorage.getItem('harnessUserId') || 'operator',
+          }),
       ...(options.headers || {}),
     },
     ...options,
