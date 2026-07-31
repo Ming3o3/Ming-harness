@@ -24,7 +24,7 @@ import java.util.List;
  * 按保留策略清理已过期的业务数据。
  *
  * Run、Step 和其审计链作为一个整体删除；不能单独裁剪仍然可查询的 Run 审计事件，
- * 否则 HMAC 链会被人为截断。PENDING Outbox 从不由保留任务删除，避免丢失尚未投递的命令。
+ * 否则 HMAC 链会被人为截断。PENDING/PUBLISHING Outbox 从不由保留任务删除，避免丢失尚未确认投递的命令。
  */
 @Service
 public class DataRetentionService {

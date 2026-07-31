@@ -96,7 +96,9 @@ class DataRetentionServiceTests {
                 "RUN_SUCCEEDED", "旧 Run 成功", "retention=test"));
         OutboxEvent publishedOutbox = outboxEventRepository.save(new OutboxEvent(
                 oldRun.getId(), oldRun.getTenantId(), oldRun.getTraceId(), "START", "{}"));
-        publishedOutbox.markPublished();
+        Instant publishNow = Instant.now();
+        publishedOutbox.claim("retention-test-relay", publishNow, publishNow.plusSeconds(30));
+        publishedOutbox.markPublished("retention-test-relay");
         outboxEventRepository.save(publishedOutbox);
         jdbcTemplate.update("UPDATE harness_runs SET finished_at = ?, updated_at = ? WHERE id = ?",
                 Timestamp.from(old), Timestamp.from(old), oldRun.getId());
@@ -107,6 +109,11 @@ class DataRetentionServiceTests {
                 BigDecimal.ONE, "demo-model", "prompt-v1", "policy-v1"));
         OutboxEvent pendingOutbox = outboxEventRepository.save(new OutboxEvent(
                 activeRun.getId(), activeRun.getTenantId(), activeRun.getTraceId(), "START", "{}"));
+        OutboxEvent publishingOutbox = outboxEventRepository.save(new OutboxEvent(
+                activeRun.getId(), activeRun.getTenantId(), activeRun.getTraceId(), "START", "{}"));
+        Instant claimNow = Instant.now();
+        publishingOutbox.claim("active-relay", claimNow, claimNow.plusSeconds(30));
+        outboxEventRepository.save(publishingOutbox);
 
         RetentionCleanupResult result = retentionService.cleanupNow();
 
@@ -121,6 +128,7 @@ class DataRetentionServiceTests {
         assertTrue(runRepository.findById(activeRun.getId()).isPresent());
         assertFalse(auditEventRepository.findById(auditEvent.getId()).isPresent());
         assertTrue(outboxEventRepository.findById(pendingOutbox.getId()).isPresent());
+        assertTrue(outboxEventRepository.findById(publishingOutbox.getId()).isPresent());
         assertFalse(memoryEntryRepository.findById(expiredMemory.getId()).isPresent());
     }
 }
