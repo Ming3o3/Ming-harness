@@ -6,6 +6,7 @@ import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.runtime.repository.RunRepository;
 import org.mingharness.observability.HarnessMetrics;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,6 +16,8 @@ import java.time.Instant;
 /** 扫描 Worker 中断后遗留的 RUNNING 任务，安全转为超时并等待人工重试。 */
 @Component
 public class RunRecoveryService {
+
+    private static final int RECOVERY_BATCH_SIZE = 100;
 
     private final RunRepository runRepository;
     private final AuditTrailService auditTrailService;
@@ -37,16 +40,18 @@ public class RunRecoveryService {
     )
     @Transactional
     public void recoverStaleRuns() {
-        Instant threshold = Instant.now().minusMillis(runtimeLimits.recoveryTimeoutMs());
+        Instant now = Instant.now();
+        Instant threshold = now.minusMillis(runtimeLimits.recoveryTimeoutMs());
+        PageRequest batch = PageRequest.of(0, RECOVERY_BATCH_SIZE);
         java.util.LinkedHashMap<String, Run> staleRuns = new java.util.LinkedHashMap<>();
-        runRepository.findTop100ByStatusAndLeaseUntilBefore(RunStatus.RUNNING, Instant.now())
+        // 查询本身持有行锁；如果 Worker 正在提交，数据库会先等待并重新判断 WHERE 条件。
+        runRepository.findStaleByLeaseForUpdate(RunStatus.RUNNING, now, batch)
                 .forEach(run -> staleRuns.put(run.getId(), run));
-        runRepository.findTop100ByStatusAndLeaseUntilIsNullAndUpdatedAtBefore(RunStatus.RUNNING, threshold)
+        runRepository.findStaleWithoutLeaseForUpdate(RunStatus.RUNNING, threshold, batch)
                 .forEach(run -> staleRuns.put(run.getId(), run));
         for (Run run : staleRuns.values()) {
             run.timeout("Worker 执行中断，任务已转为超时状态，请人工重试");
             metrics.runTimedOut();
-            run.clearLease();
             runRepository.save(run);
             auditTrailService.append(new AuditEvent(
                     run.getTenantId(), run.getUserId(), run.getTraceId(), run.getId(), null,

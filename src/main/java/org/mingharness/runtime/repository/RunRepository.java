@@ -32,6 +32,30 @@ public interface RunRepository extends JpaRepository<Run, String> {
     Optional<Run> findByIdForCancelUpdate(@Param("runId") String runId);
     Optional<Run> findByTenantIdAndIdempotencyKey(String tenantId, String idempotencyKey);
     long countByTenantIdAndStatusIn(String tenantId, List<RunStatus> statuses);
+    /** 恢复器必须锁住候选 Run，等待并发 Worker 提交后再重新判断状态，避免覆盖最新结果。 */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select run from Run run
+            where run.status = :status
+              and run.leaseUntil is not null
+              and run.leaseUntil <= :now
+            order by run.leaseUntil asc
+            """)
+    List<Run> findStaleByLeaseForUpdate(@Param("status") RunStatus status,
+                                        @Param("now") Instant now,
+                                        org.springframework.data.domain.Pageable pageable);
+    /** 没有租约的遗留任务按更新时间恢复，同样使用行锁避免多实例重复处理。 */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select run from Run run
+            where run.status = :status
+              and run.leaseUntil is null
+              and run.updatedAt <= :threshold
+            order by run.updatedAt asc
+            """)
+    List<Run> findStaleWithoutLeaseForUpdate(@Param("status") RunStatus status,
+                                             @Param("threshold") Instant threshold,
+                                             org.springframework.data.domain.Pageable pageable);
     List<Run> findTop100ByStatusAndUpdatedAtBefore(RunStatus status, Instant updatedAt);
     List<Run> findTop100ByStatusAndLeaseUntilBefore(RunStatus status, Instant leaseUntil);
     List<Run> findTop100ByStatusAndLeaseUntilIsNullAndUpdatedAtBefore(RunStatus status, Instant updatedAt);

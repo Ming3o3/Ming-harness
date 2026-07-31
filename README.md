@@ -176,4 +176,4 @@ curl -X POST http://localhost:8080/api/runs \
 
 ## 设计约束
 
-模型只能提出行动，工具注册表和策略代码才可以授权执行。所有执行结果、错误、审批和版本信息都会持久化，便于恢复、重放和审计。`local-infra` 已提供 PostgreSQL、Redis 共享限流/执行锁、带发布租约的 RabbitMQ 异步 Worker、API Key 和 OIDC/JWT RBAC 基线；正式环境仍需接入密钥托管、告警和密钥轮换。
+模型只能提出行动，工具注册表和策略代码才可以授权执行。所有执行结果、错误、审批和版本信息都会持久化，便于恢复、重放和审计。`local-infra` 已提供 PostgreSQL、Redis 共享限流/执行锁、带发布租约的 RabbitMQ 异步 Worker、带数据库行锁的多实例超时恢复、API Key 和 OIDC/JWT RBAC 基线；正式环境仍需接入密钥托管、告警和密钥轮换。
