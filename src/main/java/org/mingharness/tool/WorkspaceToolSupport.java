@@ -76,6 +76,21 @@ public class WorkspaceToolSupport {
         }
     }
 
+    /**
+     * Git 工具只接受工作区根目录下的普通 .git 目录，避免仓库配置把工作树指向边界之外。
+     * 采用独立 Git worktree（.git 文件）时应将工作区根目录配置为主仓库目录。
+     */
+    public Path requireGitDirectory() {
+        requireEnabled();
+        Path gitDirectory = root.resolve(".git");
+        if (Files.isSymbolicLink(gitDirectory)
+                || !Files.isDirectory(gitDirectory, LinkOption.NOFOLLOW_LINKS)) {
+            throw new BusinessException(HttpStatus.CONFLICT, "WORKSPACE_GIT_REPOSITORY_INVALID",
+                    "工作区根目录必须是包含普通 .git 目录的 Git 仓库");
+        }
+        return gitDirectory;
+    }
+
     /** 解析工作区内的路径，并对已有路径的真实位置做二次校验。 */
     public Path resolve(String rawPath, boolean allowMissing) {
         requireEnabled();

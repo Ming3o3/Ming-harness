@@ -5,9 +5,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -18,8 +15,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 在工作区内执行受控命令。
@@ -35,6 +30,7 @@ public class WorkspaceExecTool implements HarnessTool {
     private static final int MAX_ARGUMENT_LENGTH = 4_000;
 
     private final WorkspaceToolSupport support;
+    private final WorkspaceCommandRunner commandRunner = new WorkspaceCommandRunner();
 
     public WorkspaceExecTool(WorkspaceToolSupport support) {
         this.support = support;
@@ -112,7 +108,8 @@ public class WorkspaceExecTool implements HarnessTool {
         }
 
         Instant startedAt = Instant.now();
-        ProcessResult result = runProcess(commandLine, workdir, timeoutMs, maxOutputBytes);
+        WorkspaceCommandRunner.Result result = commandRunner.run(commandLine, workdir, timeoutMs, maxOutputBytes,
+                "WORKSPACE_EXEC");
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("command", support.sanitize(command));
         response.put("args", args.stream().map(support::sanitize).toList());
@@ -174,112 +171,9 @@ public class WorkspaceExecTool implements HarnessTool {
         }
     }
 
-    private ProcessResult runProcess(List<String> commandLine, Path workdir,
-                                     int timeoutMs, int maxOutputBytes) {
-        try {
-            ProcessBuilder builder = new ProcessBuilder(commandLine)
-                    .directory(workdir.toFile())
-                    .redirectErrorStream(true);
-            // 清空环境，避免把模型密钥、数据库密码和其他宿主机凭证传给子进程。
-            Map<String, String> environment = builder.environment();
-            environment.clear();
-            copySafeEnvironment(environment, "PATH");
-            copySafeEnvironment(environment, "LANG");
-            copySafeEnvironment(environment, "LC_ALL");
-            environment.put("JAVA_HOME", System.getProperty("java.home", ""));
-            environment.put("TMPDIR", System.getProperty("java.io.tmpdir", "/tmp"));
-
-            Process process = builder.start();
-            OutputCollector collector = new OutputCollector(process, maxOutputBytes);
-            Thread reader = new Thread(collector, "harness-workspace-output");
-            reader.setDaemon(true);
-            reader.start();
-            boolean finished = process.waitFor(timeoutMs, TimeUnit.MILLISECONDS);
-            if (!finished) destroyProcessTree(process);
-            reader.join(Math.min(timeoutMs, 5_000L));
-            if (reader.isAlive()) {
-                destroyProcessTree(process);
-                reader.interrupt();
-            }
-            if (!finished) process.waitFor(2, TimeUnit.SECONDS);
-            Integer exitCode = finished && !process.isAlive() ? process.exitValue() : null;
-            return new ProcessResult(exitCode, !finished, collector.outputTruncated(), collector.output());
-        } catch (IOException exception) {
-            throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "WORKSPACE_EXEC_START_FAILED",
-                    "无法启动白名单命令");
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            throw new BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "WORKSPACE_EXEC_INTERRUPTED",
-                    "命令执行被中断");
-        }
-    }
-
-    private void copySafeEnvironment(Map<String, String> environment, String name) {
-        String value = System.getenv(name);
-        if (value != null && !value.isBlank()) environment.put(name, value);
-    }
-
-    private static void destroyProcessTree(Process process) {
-        try {
-            List<ProcessHandle> descendants = process.toHandle().descendants().toList();
-            for (int index = descendants.size() - 1; index >= 0; index--) {
-                ProcessHandle handle = descendants.get(index);
-                handle.destroy();
-                if (handle.isAlive()) handle.destroyForcibly();
-            }
-        } catch (RuntimeException ignored) {
-            // 即使子进程枚举失败，也必须继续尝试销毁主进程。
-        }
-        process.destroy();
-        if (process.isAlive()) process.destroyForcibly();
-    }
-
     private BusinessException invalidInput(String message) {
         return new BusinessException(HttpStatus.BAD_REQUEST, "WORKSPACE_INPUT_INVALID",
                 definition().name() + " 输入无效: " + message);
     }
 
-    private record ProcessResult(Integer exitCode, boolean timedOut,
-                                 boolean outputTruncated, String output) {
-    }
-
-    private static final class OutputCollector implements Runnable {
-        private final Process process;
-        private final int maxBytes;
-        private final ByteArrayOutputStream output = new ByteArrayOutputStream();
-        private volatile boolean outputTruncated;
-
-        private OutputCollector(Process process, int maxBytes) {
-            this.process = process;
-            this.maxBytes = maxBytes;
-        }
-
-        @Override
-        public void run() {
-            try (InputStream input = process.getInputStream()) {
-                byte[] buffer = new byte[8_192];
-                int read;
-                while ((read = input.read(buffer)) >= 0) {
-                    int remaining = maxBytes - output.size();
-                    if (read > remaining) {
-                        if (remaining > 0) output.write(buffer, 0, remaining);
-                        outputTruncated = true;
-                        destroyProcessTree(process);
-                        break;
-                    }
-                    output.write(buffer, 0, read);
-                }
-            } catch (IOException ignored) {
-                // 进程被超时或输出上限主动销毁时，管道关闭属于预期路径。
-            }
-        }
-
-        private String output() {
-            return output.toString(StandardCharsets.UTF_8);
-        }
-
-        private boolean outputTruncated() {
-            return outputTruncated;
-        }
-    }
 }

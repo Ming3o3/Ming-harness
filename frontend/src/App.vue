@@ -264,6 +264,26 @@ function decodeWorkspaceEdit(step) {
   }
 }
 
+function decodeWorkspaceGitStatus(step) {
+  if (!step || step.name !== 'workspace.git.status' || !step.output) return null
+  try {
+    const parsed = JSON.parse(step.output)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function decodeWorkspaceGitDiff(step) {
+  if (!step || step.name !== 'workspace.git.diff' || !step.output) return null
+  try {
+    const parsed = JSON.parse(step.output)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
 function formatDate(value) {
   if (!value) return '—'
   return new Intl.DateTimeFormat('zh-CN', {
@@ -1013,6 +1033,18 @@ onBeforeUnmount(() => {
                         <span>{{ decodeWorkspaceEdit(step).edits || 0 }} 个编辑</span>
                         <span>{{ decodeWorkspaceEdit(step).replacements || 0 }} 处替换</span>
                       </div>
+                    </template>
+                    <template v-else-if="decodeWorkspaceGitStatus(step)">
+                      <p class="git-line"><span>⌘</span> {{ decodeWorkspaceGitStatus(step).branch || 'Git 工作区' }}</p>
+                      <div class="command-summary">
+                        <span :class="decodeWorkspaceGitStatus(step).clean ? 'command-ok' : 'command-failed'">{{ decodeWorkspaceGitStatus(step).clean ? '工作区干净' : '存在文件变更' }}</span>
+                        <span>{{ decodeWorkspaceGitStatus(step).entryCount || 0 }} 个变更</span>
+                      </div>
+                    </template>
+                    <template v-else-if="decodeWorkspaceGitDiff(step)">
+                      <p class="git-line"><span>⌘</span> {{ decodeWorkspaceGitDiff(step).path || '.' }} · {{ decodeWorkspaceGitDiff(step).staged ? '已暂存' : '未暂存' }}</p>
+                      <pre v-if="decodeWorkspaceGitDiff(step).diff" class="git-diff-output">{{ decodeWorkspaceGitDiff(step).diff }}</pre>
+                      <p v-else class="muted-line">当前范围没有代码差异</p>
                     </template>
                     <p v-else-if="step.type !== 'MODEL' && step.output" class="step-output">{{ step.output }}</p>
                     <p v-if="step.error" class="step-error">{{ step.error }}</p>

@@ -21,7 +21,7 @@ export WORKSPACE_MAX_COMMAND_TIMEOUT_MS=120000
 export WORKSPACE_MAX_COMMAND_OUTPUT_BYTES=200000
 ```
 
-`workspace.list`、`workspace.read` 和 `workspace.search` 需要 `workspace.read` 权限；`workspace.write` 和 `workspace.edit` 是高风险副作用工具，需要 `workspace.write` 权限和人工审批。覆盖已有文件时必须携带读取结果中的 `sha256`，从而避免 Agent 把其他人的并发修改静默覆盖。`workspace.edit` 只允许精确文本片段替换，单个片段默认必须唯一匹配，适合代码 Agent 增量修改而不必回传整文件。默认拒绝隐藏文件、符号链接和工作区外路径，单次读取/写入默认限制为 1 MB。
+`workspace.list`、`workspace.read`、`workspace.search`、`workspace.git.status` 和 `workspace.git.diff` 需要 `workspace.read` 权限；Git 工具只查看工作区范围内的状态和差异，并禁用外部 Diff、TextConv 与 fsmonitor，不需要人工审批。Git 工具要求 `HARNESS_WORKSPACE_ROOT` 指向包含普通 `.git` 目录的仓库根目录，不接受通过 `.git` 文件指向外部目录的独立 worktree。`workspace.write` 和 `workspace.edit` 是高风险副作用工具，需要 `workspace.write` 权限和人工审批。覆盖已有文件时必须携带读取结果中的 `sha256`，从而避免 Agent 把其他人的并发修改静默覆盖。`workspace.edit` 只允许精确文本片段替换，单个片段默认必须唯一匹配，适合代码 Agent 增量修改而不必回传整文件。默认拒绝隐藏文件、符号链接和工作区外路径，单次读取/写入默认限制为 1 MB。
 
 `workspace.exec` 是高风险命令沙箱，需要 `workspace.exec` 权限、人工审批和 `WORKSPACE_ALLOWED_COMMANDS` 白名单。它使用参数数组直接启动进程，不执行 `sh -c` 或其他 Shell 拼接；工作目录必须在工作区根目录内，子进程不会继承数据库密码、模型 API Key 等宿主环境变量。命令超时或输出超过上限会终止进程树，并在结果和 `WORKSPACE_COMMAND_EXECUTED` 审计事件中标记 `timedOut`/`outputTruncated`。建议只允许项目测试、构建所需的固定可执行文件，不要把 `sh`、`bash`、`sudo`、`rm` 等通用系统命令加入白名单。
 

@@ -10,6 +10,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -201,6 +202,47 @@ class WorkspaceToolTests {
         assertFalse(new WorkspaceEditFileTool(disabledSupport).available());
         assertFalse(new WorkspaceReadFileTool(disabledSupport).available());
         assertFalse(new WorkspaceWriteFileTool(disabledSupport).available());
+        assertFalse(new WorkspaceGitStatusTool(disabledSupport).available());
+        assertFalse(new WorkspaceGitDiffTool(disabledSupport).available());
+    }
+
+    @Test
+    void shouldInspectGitStatusAndDiffOnlyInsideWorkspace() throws Exception {
+        runGit(tempDir, "init", "-q");
+        Path target = tempDir.resolve("App.java");
+        Files.writeString(target, "old\n");
+        runGit(tempDir, "add", "App.java");
+        runGit(tempDir, "-c", "user.name=Harness Test", "-c", "user.email=harness@example.com",
+                "commit", "-qm", "initial");
+        Files.writeString(target, "new\n");
+
+        WorkspaceToolSupport support = support();
+        String status = new WorkspaceGitStatusTool(support).execute("{}");
+        assertTrue(status.contains("App.java"));
+        assertTrue(status.contains("\"clean\":false"));
+
+        WorkspaceGitDiffTool diffTool = new WorkspaceGitDiffTool(support);
+        String diff = diffTool.execute("{\"path\":\"App.java\"}");
+        assertTrue(diff.contains("-old"));
+        assertTrue(diff.contains("+new"));
+        assertTrue(diff.contains("\"hasChanges\":true"));
+
+        runGit(tempDir, "add", "App.java");
+        String stagedDiff = diffTool.execute("{\"path\":\"App.java\",\"staged\":true}");
+        assertTrue(stagedDiff.contains("-old"));
+        assertTrue(stagedDiff.contains("+new"));
+
+        BusinessException traversal = assertThrows(BusinessException.class,
+                () -> diffTool.execute("{\"path\":\"../outside.txt\"}"));
+        assertEquals("WORKSPACE_PATH_DENIED", traversal.getCode());
+    }
+
+    @Test
+    void shouldFailClearlyWhenWorkspaceIsNotGitRepository() {
+        WorkspaceToolSupport support = support();
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> new WorkspaceGitStatusTool(support).execute("{}"));
+        assertEquals("WORKSPACE_GIT_REPOSITORY_INVALID", exception.getCode());
     }
 
     private WorkspaceToolSupport support() {
@@ -228,5 +270,19 @@ class WorkspaceToolTests {
             throw new IllegalStateException("当前测试环境不支持执行工作区脚本", exception);
         }
         return "./" + name;
+    }
+
+    private void runGit(Path directory, String... arguments) throws Exception {
+        List<String> command = new ArrayList<>();
+        command.add("git");
+        command.addAll(List.of(arguments));
+        Process process = new ProcessBuilder(command)
+                .directory(directory.toFile())
+                .redirectErrorStream(true)
+                .start();
+        assertTrue(process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS),
+                "Git 测试命令未在超时前结束");
+        assertEquals(0, process.exitValue(), "Git 测试命令失败: "
+                + new String(process.getInputStream().readAllBytes()));
     }
 }
