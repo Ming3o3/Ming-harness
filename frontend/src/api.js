@@ -5,7 +5,9 @@ const defaultChatPermissions = import.meta.env.VITE_HARNESS_CHAT_PERMISSIONS
   || 'workspace.read,workspace.write,workspace.exec'
 
 async function request(path, options = {}) {
+  const { headers: requestHeaders, ...requestOptions } = options
   const response = await fetch(`${apiBaseUrl}${path}`, {
+    ...requestOptions,
     headers: {
       'Content-Type': 'application/json',
       ...(configuredApiKey
@@ -14,9 +16,8 @@ async function request(path, options = {}) {
             'X-Tenant-Id': localStorage.getItem('harnessTenantId') || 'tenant-demo',
             'X-User-Id': localStorage.getItem('harnessUserId') || 'operator',
           }),
-      ...(options.headers || {}),
+      ...(requestHeaders || {}),
     },
-    ...options,
   })
 
   if (!response.ok) {
