@@ -7,6 +7,17 @@
 
 应用不会自动启动 Homebrew 服务，也不会自动迁移现有 H2 演示数据。
 
+## 工作区工具
+
+代码 Agent 的文件访问必须通过工作区工具，不直接暴露应用进程的任意文件系统。生产或共享环境请显式指定专用项目目录：
+
+```bash
+export WORKSPACE_ENABLED=true
+export HARNESS_WORKSPACE_ROOT=/Users/ming/Projects/example
+```
+
+`workspace.list`、`workspace.read` 和 `workspace.search` 需要 `workspace.read` 权限；`workspace.write` 是高风险副作用工具，需要 `workspace.write` 权限和人工审批。覆盖已有文件时必须携带读取结果中的 `sha256`，从而避免 Agent 把其他人的并发修改静默覆盖。默认拒绝隐藏文件、符号链接和工作区外路径，单次读取/写入默认限制为 1 MB。
+
 ## 1. 启动本地服务
 
 ```bash

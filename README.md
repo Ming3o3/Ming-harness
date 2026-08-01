@@ -8,6 +8,7 @@ Ming Harness 是一个面向企业 Agent 的可运行 Harness：后端使用 Spr
 - 幂等与资源边界：支持 `Idempotency-Key`、租户活动 Run 配额、创建速率、输入/预算/步骤数限制
 - 可插拔模型网关：默认演示模型，也支持 OpenAI 兼容的 `/chat/completions` 接口
 - 工具注册表与确定性策略：权限、风险、审批、网络策略、超时和输入校验
+- 受控代码工作区工具：目录浏览、UTF-8 文件读取、文本搜索和带哈希并发保护的原子写入
 - 审计与观测：Run `traceId`、Step `spanId`、Token、耗时、成本和租户/操作者快照，审计事件支持 HMAC 完整性校验
 - 租户隔离：读写 Run、Step、审计事件都需要 `X-Tenant-Id`
 - 可插拔认证与 RBAC：`local` 兼容演示请求头，`api-key` 和 `oidc` 支持租户、用户和接口权限快照
@@ -77,6 +78,13 @@ npm run dev
 | `MAX_CONTEXT_CHARS` | `4000` | 注入模型的上下文最大字符数 |
 | `RECOVERY_TIMEOUT_MS` | `120000` | Worker 中断后将 RUNNING 任务转为超时的阈值 |
 | `MAX_TOOL_ATTEMPTS` | `3` | 单个只读工具的自动重试次数上限，副作用工具固定为 1 |
+| `WORKSPACE_ENABLED` | `false`（`local` 为 `true`） | 是否启用 Agent 工作区工具；生产环境必须显式评估后开启 |
+| `HARNESS_WORKSPACE_ROOT` | `./workspace` | 工作区根目录，所有文件工具都不能访问该目录之外的路径 |
+| `WORKSPACE_MAX_READ_BYTES` / `WORKSPACE_MAX_WRITE_BYTES` | `1000000` / `1000000` | 单次读取/写入的 UTF-8 字节上限 |
+| `WORKSPACE_MAX_LIST_ENTRIES` | `200` | 单次目录浏览最多返回的条目数 |
+| `WORKSPACE_MAX_SEARCH_FILES` / `WORKSPACE_MAX_SEARCH_RESULTS` | `2000` / `200` | 搜索扫描文件数和返回匹配数上限 |
+| `WORKSPACE_MAX_READ_LINES` | `2000` | 单次文件读取允许请求的最大行数 |
+| `WORKSPACE_ALLOW_HIDDEN_FILES` | `false` | 是否允许访问 `.git`、`.env` 等隐藏路径，生产环境建议保持关闭 |
 | `DATA_RETENTION_ENABLED` | `false`（`local-infra` 为 `true`） | 是否启用定时数据保留清理 |
 | `RUN_RETENTION_DAYS` | `90` | 终态 Run 最短保留天数；实际会与审计保留期取较大值 |
 | `AUDIT_RETENTION_DAYS` | `365` | 审计链保留天数，避免清理部分事件破坏完整性 |
@@ -108,7 +116,7 @@ npm run dev
 
 ### API Key / OIDC 认证
 
-生产或共享环境建议设置 `HARNESS_AUTH_MODE=api-key`。调用方使用 `Authorization: Bearer <key>` 或 `X-Api-Key`，服务端根据配置或数据库凭证将请求绑定到固定租户和用户，并按接口校验权限，例如 `run.read`、`run.create`、`run.execute`、`run.approve`、`context.read`、`context.write`、`audit.read`、`evaluation.run`、`tool.read` 和 `ops.read`。`ops.read` 用于读取 `/api/health`、Actuator 指标、Prometheus 和应用信息。
+生产或共享环境建议设置 `HARNESS_AUTH_MODE=api-key`。调用方使用 `Authorization: Bearer <key>` 或 `X-Api-Key`，服务端根据配置或数据库凭证将请求绑定到固定租户和用户，并按接口校验权限，例如 `run.read`、`run.create`、`run.execute`、`run.approve`、`context.read`、`context.write`、`audit.read`、`evaluation.run`、`tool.read` 和 `ops.read`。工作区读取工具还需要 `workspace.read`，写入工具需要 `workspace.write` 并进入人工审批；`ops.read` 用于读取 `/api/health`、Actuator 指标、Prometheus 和应用信息。
 
 通过具有 `auth.key.manage` 权限的引导 Key 或 OIDC 服务账号，可调用 `POST /api/admin/api-keys` 创建数据库 API Key；明文 `secret` 仅在创建响应中出现一次，数据库只保存 SHA-256 摘要。`GET /api/admin/api-keys` 只返回前缀和元数据，`POST /api/admin/api-keys/{keyId}/rotate` 会在同一事务中创建同权限新 Key 并立即撤销旧 Key，`DELETE /api/admin/api-keys/{keyId}` 可即时撤销，`GET /api/admin/api-keys/audits` 可查看生命周期审计。读取接口需要 `auth.key.read`，跨租户管理还需 `auth.key.cross-tenant`。环境变量 `HARNESS_API_KEYS` 保留为紧急引导兼容方案，变更或撤销需要重启；正式环境应逐步迁移至数据库生命周期 Key。
 
@@ -123,6 +131,31 @@ npm run dev
 工具只有抛出 `RetryableToolException` 才会进入自动重试；Runtime 仅对 `readOnly=true` 的工具使用 `maxAttempts`，并受 `MAX_TOOL_ATTEMPTS` 全局上限约束。副作用工具即使声明更高次数也只执行一次，失败后通过 Run 重试接口重新经过策略和审批。模型步骤完成后会校验实际成本，超过 Run 预算的任务会以 `RUN_BUDGET_EXCEEDED` 失败并写入审计事件。
 
 工具的 `inputSchema` 和 `outputSchema` 现在按结构化 JSON Schema 校验，不再通过字符串包含字段名来判断数据是否合格。当前支持对象、数组、字符串、数字、整数、布尔值和 null 类型，以及 `required`、`properties`、`additionalProperties`、`items`、`enum`、`const`、`allOf`、`anyOf`、`oneOf`、`not`、长度/数量/数值边界、`pattern`、`uniqueItems` 和常用 `format`（`email`、`uuid`、`date-time`、`uri`）。校验器会拒绝重复 JSON 字段和尾随的第二个 JSON 文档，避免解析差异造成输入绕过。校验失败会以 `TOOL_INPUT_INVALID` 或 `TOOL_OUTPUT_INVALID` 终止当前 Run，并保留脱敏后的错误原因。
+
+### Agent 工作区工具
+
+工作区工具是代码 Agent 的受控文件边界。启动前将 `HARNESS_WORKSPACE_ROOT` 指向一个专用项目目录；工具不会跟随符号链接访问根目录之外的文件，默认拒绝隐藏路径和非 UTF-8 文件。
+
+- `workspace.list`：浏览目录结构，需要 `workspace.read`
+- `workspace.read`：读取文件，可按 `startLine`/`endLine` 截取，并返回当前文件 SHA-256
+- `workspace.search`：在工作区文本文件中搜索路径、行号和脱敏后的内容，需要 `workspace.read`
+- `workspace.write`：原子写入 UTF-8 文件，需要 `workspace.write` 和人工审批；覆盖已有文件必须携带上一次读取返回的 `sha256`，文件被其他人修改时会返回 `WORKSPACE_FILE_CHANGED`
+
+本地配置示例：
+
+```bash
+export WORKSPACE_ENABLED=true
+export HARNESS_WORKSPACE_ROOT=/Users/ming/Projects/example
+./mvnw spring-boot:run
+```
+
+工具输入使用 JSON，例如读取文件：
+
+```json
+{"path":"src/main/java/App.java","startLine":1,"endLine":120}
+```
+
+工作区写入只负责可靠地落盘，不会执行 Shell 命令；命令执行沙箱和模型多轮 Tool Call 编排将在此基础能力上继续增加。
 
 旧版纯文本工具必须在 schema 中显式声明 `"x-harness-legacy-text": true`，普通文本会先转换成 JSON 字符串节点再执行其余约束；结构化对象工具不会静默降级为纯文本。新工具建议始终传入 JSON，例如：
 
