@@ -13,6 +13,7 @@ import org.mingharness.runtime.repository.RunRepository;
 import org.mingharness.model.AgentTurnCodec;
 import org.mingharness.model.ModelToolCall;
 import org.mingharness.runtime.application.RuntimeLimits;
+import org.mingharness.tool.ToolAudit;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -154,6 +155,15 @@ public class RunExecutionStateService {
     public StepCompletionResult completeStep(String runId, String tenantId, String workerId,
                                              String stepId, String output, int inputTokens,
                                              int outputTokens, BigDecimal cost) {
+        return completeStep(runId, tenantId, workerId, stepId, output, inputTokens,
+                outputTokens, cost, null);
+    }
+
+    /** 完成步骤并在同一事务追加工具的结构化执行审计。 */
+    @Transactional
+    public StepCompletionResult completeStep(String runId, String tenantId, String workerId,
+                                             String stepId, String output, int inputTokens,
+                                             int outputTokens, BigDecimal cost, ToolAudit toolAudit) {
         Run run = loadForUpdate(runId);
         assertTenant(run, tenantId);
         if (!ownsRunningRun(run, workerId)) {
@@ -174,6 +184,9 @@ public class RunExecutionStateService {
         }
         step.succeed(sanitizer.sanitize(output), inputTokens, outputTokens, safeCost);
         append(run, step, "STEP_SUCCEEDED", "步骤执行成功");
+        if (toolAudit != null) {
+            append(run, step, toolAudit.eventType(), toolAudit.message(), toolAudit.metadata());
+        }
         runRepository.save(run);
         return StepCompletionResult.COMPLETED;
     }
@@ -515,10 +528,14 @@ public class RunExecutionStateService {
     }
 
     private void append(Run run, Step step, String eventType, String message) {
+        append(run, step, eventType, message, "status=" + run.getStatus());
+    }
+
+    private void append(Run run, Step step, String eventType, String message, String metadata) {
         auditTrailService.append(new AuditEvent(
                 run.getTenantId(), run.getUserId(), run.getTraceId(), run.getId(),
                 step == null ? null : step.getId(), eventType, sanitizer.sanitize(message),
-                "status=" + run.getStatus()));
+                sanitizer.sanitize(metadata)));
     }
 
     private RunExecutionSnapshot snapshot(Run run) {

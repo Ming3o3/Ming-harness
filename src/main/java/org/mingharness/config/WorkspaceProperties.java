@@ -1,7 +1,9 @@
 package org.mingharness.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -20,9 +22,24 @@ public record WorkspaceProperties(
         int maxSearchFiles,
         int maxSearchResults,
         int maxReadLines,
-        boolean allowHiddenFiles
+        boolean allowHiddenFiles,
+        boolean execEnabled,
+        List<String> allowedCommands,
+        int maxCommandTimeoutMs,
+        int maxCommandOutputBytes,
+        int maxCommandArgs
 ) {
 
+    /** 兼容工作区文件工具阶段的旧构造方式。 */
+    public WorkspaceProperties(boolean enabled, String root, int maxReadBytes, int maxWriteBytes,
+                               int maxListEntries, int maxSearchFiles, int maxSearchResults,
+                               int maxReadLines, boolean allowHiddenFiles) {
+        this(enabled, root, maxReadBytes, maxWriteBytes, maxListEntries, maxSearchFiles,
+                maxSearchResults, maxReadLines, allowHiddenFiles, false, List.of(),
+                120_000, 200_000, 32);
+    }
+
+    @ConstructorBinding
     public WorkspaceProperties {
         root = root == null || root.isBlank() ? "./workspace" : root;
         maxReadBytes = positiveOrDefault(maxReadBytes, 1_000_000);
@@ -31,9 +48,26 @@ public record WorkspaceProperties(
         maxSearchFiles = positiveOrDefault(maxSearchFiles, 2_000);
         maxSearchResults = positiveOrDefault(maxSearchResults, 200);
         maxReadLines = positiveOrDefault(maxReadLines, 2_000);
+        List<String> normalizedCommands = new ArrayList<>();
+        if (allowedCommands != null) {
+            allowedCommands.stream()
+                    .map(value -> value == null ? "" : value.trim())
+                    .filter(value -> !value.isBlank())
+                    .distinct()
+                    .forEach(normalizedCommands::add);
+        }
+        allowedCommands = List.copyOf(normalizedCommands);
+        maxCommandTimeoutMs = boundedOrDefault(maxCommandTimeoutMs, 120_000, 1_000, 600_000);
+        maxCommandOutputBytes = boundedOrDefault(maxCommandOutputBytes, 200_000, 1_024, 5_000_000);
+        maxCommandArgs = boundedOrDefault(maxCommandArgs, 32, 1, 128);
     }
 
     private static int positiveOrDefault(int value, int fallback) {
         return value < 1 ? fallback : value;
+    }
+
+    private static int boundedOrDefault(int value, int fallback, int min, int max) {
+        if (value < min) return fallback;
+        return Math.min(value, max);
     }
 }

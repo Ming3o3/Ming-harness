@@ -40,6 +40,7 @@ import org.mingharness.messaging.OutboxService;
 import org.mingharness.messaging.RunExecutionMessage;
 import org.mingharness.tool.RetryableToolException;
 import org.mingharness.tool.ToolExecutionContext;
+import org.mingharness.tool.ToolAudit;
 import org.mingharness.observability.HarnessMetrics;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -542,7 +543,7 @@ public class RunService {
             String persistedOutput = run.agentMode() ? agentTurnCodec.encode(response) : response.content();
             RunExecutionStateService.StepCompletionResult result = executionStateService.completeStep(
                     run.id(), run.tenantId(), workerId, step.id(), persistedOutput,
-                    response.inputTokens(), response.outputTokens(), response.cost());
+                    response.inputTokens(), response.outputTokens(), response.cost(), null);
             if (result == RunExecutionStateService.StepCompletionResult.COMPLETED) {
                 if (run.agentMode() && !response.toolCalls().isEmpty()
                         && !executionStateService.appendAgentToolSteps(
@@ -599,10 +600,11 @@ public class RunService {
                 String output = boundedExecutor.execute("工具 " + step.name(), definition.timeoutMs(),
                         () -> tool.execute(started.get().input(), executionContext));
                 toolOutputValidator.validate(definition, output);
+                ToolAudit toolAudit = tool.audit(started.get().input(), output);
                 // 工具可能产生外部副作用，只有续租成功后才允许写入本次结果。
                 refreshLease(run, lockToken);
                 RunExecutionStateService.StepCompletionResult result = executionStateService.completeStep(
-                        run.id(), run.tenantId(), workerId, step.id(), output, 0, 0, BigDecimal.ZERO);
+                        run.id(), run.tenantId(), workerId, step.id(), output, 0, 0, BigDecimal.ZERO, toolAudit);
                 return result == RunExecutionStateService.StepCompletionResult.COMPLETED
                         ? WorkerStepOutcome.CONTINUE : WorkerStepOutcome.STOP;
             } catch (ExecutionTimeoutException exception) {
@@ -813,8 +815,13 @@ public class RunService {
                 String output = boundedExecutor.execute("工具 " + step.getName(), definition.timeoutMs(),
                         () -> tool.execute(step.getInput(), executionContext));
                 toolOutputValidator.validate(definition, output);
+                ToolAudit toolAudit = tool.audit(step.getInput(), output);
                 step.succeed(sanitizer.sanitize(output));
                 record(run.getId(), step.getId(), "STEP_SUCCEEDED", "步骤执行成功");
+                if (toolAudit != null) {
+                    record(run.getId(), step.getId(), toolAudit.eventType(), toolAudit.message(),
+                            run.getUserId(), toolAudit.metadata());
+                }
                 return;
             } catch (ExecutionTimeoutException exception) {
                 step.timeout(safeError(exception, "步骤执行超时"));
@@ -1145,6 +1152,7 @@ public class RunService {
         TenantPolicyLimits limits = tenantPolicyService.limitsFor(tenantId);
         return toolRegistry.definitions().stream()
                 .filter(definition -> limits.allowsTool(definition.name()))
+                .filter(definition -> toolRegistry.get(definition.name()).available())
                 .map(definition -> new ModelToolDefinition(
                         definition.name(), definition.description(), definition.inputSchema()))
                 .toList();

@@ -203,6 +203,12 @@ h3 { margin: 0; font-size: 13px; }
 .tool-call-list { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 9px 0 6px; }
 .tool-call-heading { color: var(--accent-light); font: 9px "DM Mono", monospace; letter-spacing: .05em; }
 .tool-call-list code { border: 1px solid rgba(141,124,255,.2); border-radius: 5px; background: rgba(141,124,255,.08); color: var(--soft); padding: 4px 6px; font: 9px "DM Mono", monospace; }
+.command-line { overflow: hidden; margin: 9px 0 6px; border: 1px solid rgba(76,226,213,.15); border-radius: 5px; background: rgba(76,226,213,.05); color: var(--soft); padding: 7px 8px; font: 10px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.command-line span { color: var(--cyan); margin-right: 5px; }
+.command-summary { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font: 9px "DM Mono", monospace; }
+.command-ok { color: var(--green); }
+.command-failed { color: var(--red); }
+.command-output { max-height: 190px; overflow: auto; margin: 8px 0 6px; border: 1px solid rgba(153,174,218,.1); border-radius: 6px; background: var(--input-bg); color: var(--soft); padding: 8px; white-space: pre-wrap; word-break: break-word; font: 10px/1.55 "DM Mono", monospace; }
 .audit-subsection { padding-top: 2px; }
 .audit-list { display: grid; gap: 9px; }
 .audit-row { display: grid; grid-template-columns: 74px 110px 1fr; gap: 9px; align-items: baseline; color: var(--muted); font-size: 10px; }

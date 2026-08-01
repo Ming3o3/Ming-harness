@@ -67,6 +67,15 @@ public class WorkspaceToolSupport {
         }
     }
 
+    /** 命令执行单独受开关保护，读取/写入工具启用不代表允许启动子进程。 */
+    public void requireExecEnabled() {
+        requireEnabled();
+        if (!properties.execEnabled()) {
+            throw new BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "WORKSPACE_EXEC_DISABLED",
+                    "工作区命令执行未启用，请配置 WORKSPACE_EXEC_ENABLED=true");
+        }
+    }
+
     /** 解析工作区内的路径，并对已有路径的真实位置做二次校验。 */
     public Path resolve(String rawPath, boolean allowMissing) {
         requireEnabled();
@@ -323,6 +332,10 @@ public class WorkspaceToolSupport {
         } catch (JacksonException exception) {
             throw new IllegalStateException("无法序列化工作区工具结果", exception);
         }
+    }
+
+    public String sanitize(String value) {
+        return sanitizer.sanitize(value);
     }
 
     public String relative(Path path) {

@@ -9,6 +9,9 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
+import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -102,9 +105,72 @@ class WorkspaceToolTests {
         assertFalse(Files.exists(tempDir.resolve("workspace")));
     }
 
+    @Test
+    void shouldExecuteOnlyWhitelistedCommandWithoutShellInterpretation() throws Exception {
+        String command = executableScript("echo.sh", "#!/bin/sh\nprintf 'value:%s:%s' \"$1\" \"${MODEL_API_KEY:-missing}\"\n");
+        WorkspaceExecTool tool = new WorkspaceExecTool(execSupport(command, 5_000, 20_000, 8));
+
+        String result = tool.execute("{\"command\":\"" + command
+                + "\",\"args\":[\"hello;touch should-not-exist\"]}");
+
+        assertTrue(result.contains("\"exitCode\":0"));
+        assertTrue(result.contains("value:hello;touch should-not-exist:missing"));
+        assertTrue(result.contains("\"ok\":true"));
+        assertFalse(Files.exists(tempDir.resolve("should-not-exist")));
+        assertTrue(tool.audit("{}", result).message().contains("退出码=0"));
+    }
+
+    @Test
+    void shouldRejectUnknownCommandAndDisabledExecution() throws Exception {
+        String command = executableScript("echo.sh", "#!/bin/sh\necho ok\n");
+        WorkspaceExecTool disabledTool = new WorkspaceExecTool(support());
+        BusinessException disabled = assertThrows(BusinessException.class,
+                () -> disabledTool.execute("{\"command\":\"" + command + "\"}"));
+        assertEquals("WORKSPACE_EXEC_DISABLED", disabled.getCode());
+
+        WorkspaceExecTool notAllowed = new WorkspaceExecTool(execSupport("./other.sh", 5_000, 20_000, 8));
+        BusinessException denied = assertThrows(BusinessException.class,
+                () -> notAllowed.execute("{\"command\":\"" + command + "\"}"));
+        assertEquals("WORKSPACE_COMMAND_NOT_ALLOWED", denied.getCode());
+    }
+
+    @Test
+    void shouldStopTimedOutCommandAndLimitOutput() throws Exception {
+        String slow = executableScript("slow.sh", "#!/bin/sh\nsleep 2\necho late\n");
+        WorkspaceExecTool slowTool = new WorkspaceExecTool(execSupport(slow, 3_000, 20_000, 8));
+        String timeout = slowTool.execute("{\"command\":\"" + slow + "\",\"timeoutMs\":100}");
+        assertTrue(timeout.contains("\"timedOut\":true"));
+
+        String noisy = executableScript("noisy.sh", "#!/bin/sh\nprintf '0123456789%.0s' $(seq 1 1000)\n");
+        WorkspaceExecTool noisyTool = new WorkspaceExecTool(execSupport(noisy, 5_000, 1_024, 8));
+        String limited = noisyTool.execute("{\"command\":\"" + noisy + "\",\"maxOutputBytes\":1024}");
+        assertTrue(limited.contains("\"outputTruncated\":true"));
+    }
+
     private WorkspaceToolSupport support() {
         WorkspaceProperties properties = new WorkspaceProperties(true, tempDir.toString(),
                 100_000, 100_000, 100, 100, 20, 100, false);
         return new WorkspaceToolSupport(properties, new ObjectMapper(), new SensitiveDataSanitizer());
+    }
+
+    private WorkspaceToolSupport execSupport(String command, int timeoutMs,
+                                             int outputBytes, int maxArgs) {
+        WorkspaceProperties properties = new WorkspaceProperties(true, tempDir.toString(),
+                100_000, 100_000, 100, 100, 20, 100, false,
+                true, List.of(command), timeoutMs, outputBytes, maxArgs);
+        return new WorkspaceToolSupport(properties, new ObjectMapper(), new SensitiveDataSanitizer());
+    }
+
+    private String executableScript(String name, String content) throws Exception {
+        Path script = tempDir.resolve(name);
+        Files.writeString(script, content);
+        try {
+            Files.setPosixFilePermissions(script, Set.of(
+                    PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE,
+                    PosixFilePermission.OWNER_EXECUTE));
+        } catch (UnsupportedOperationException exception) {
+            throw new IllegalStateException("当前测试环境不支持执行工作区脚本", exception);
+        }
+        return "./" + name;
     }
 }

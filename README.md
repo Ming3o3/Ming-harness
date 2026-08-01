@@ -8,7 +8,7 @@ Ming Harness 是一个面向企业 Agent 的可运行 Harness：后端使用 Spr
 - 幂等与资源边界：支持 `Idempotency-Key`、租户活动 Run 配额、创建速率、输入/预算/步骤数限制
 - 可插拔模型网关：默认演示模型，也支持 OpenAI 兼容的 `/chat/completions` 接口
 - 工具注册表与确定性策略：权限、风险、审批、网络策略、超时和输入校验
-- 受控代码工作区工具：目录浏览、UTF-8 文件读取、文本搜索和带哈希并发保护的原子写入
+- 受控代码工作区工具：目录浏览、UTF-8 文件读取、文本搜索、带哈希并发保护的原子写入和白名单命令沙箱
 - 审计与观测：Run `traceId`、Step `spanId`、Token、耗时、成本和租户/操作者快照，审计事件支持 HMAC 完整性校验
 - 租户隔离：读写 Run、Step、审计事件都需要 `X-Tenant-Id`
 - 可插拔认证与 RBAC：`local` 兼容演示请求头，`api-key` 和 `oidc` 支持租户、用户和接口权限快照
@@ -85,6 +85,11 @@ npm run dev
 | `WORKSPACE_MAX_SEARCH_FILES` / `WORKSPACE_MAX_SEARCH_RESULTS` | `2000` / `200` | 搜索扫描文件数和返回匹配数上限 |
 | `WORKSPACE_MAX_READ_LINES` | `2000` | 单次文件读取允许请求的最大行数 |
 | `WORKSPACE_ALLOW_HIDDEN_FILES` | `false` | 是否允许访问 `.git`、`.env` 等隐藏路径，生产环境建议保持关闭 |
+| `WORKSPACE_EXEC_ENABLED` | `false` | 是否允许 `workspace.exec` 启动子进程；默认关闭，开启后仍需白名单和人工审批 |
+| `WORKSPACE_ALLOWED_COMMANDS` | 空 | 允许的可执行文件逗号列表，例如 `./mvnw,npm,node`；未命中白名单直接拒绝 |
+| `WORKSPACE_MAX_COMMAND_TIMEOUT_MS` | `120000` | 单条命令最大运行时间，超时会终止进程树 |
+| `WORKSPACE_MAX_COMMAND_OUTPUT_BYTES` | `200000` | 单条命令最大合并输出，超过后终止进程并标记截断 |
+| `WORKSPACE_MAX_COMMAND_ARGS` | `32` | 单条命令最多参数数量 |
 | `DATA_RETENTION_ENABLED` | `false`（`local-infra` 为 `true`） | 是否启用定时数据保留清理 |
 | `RUN_RETENTION_DAYS` | `90` | 终态 Run 最短保留天数；实际会与审计保留期取较大值 |
 | `AUDIT_RETENTION_DAYS` | `365` | 审计链保留天数，避免清理部分事件破坏完整性 |
@@ -155,7 +160,7 @@ export HARNESS_WORKSPACE_ROOT=/Users/ming/Projects/example
 {"path":"src/main/java/App.java","startLine":1,"endLine":120}
 ```
 
-工作区写入只负责可靠地落盘，不会执行 Shell 命令；命令执行沙箱和模型多轮 Tool Call 编排将在此基础能力上继续增加。
+工作区写入只负责可靠地落盘；`workspace.exec` 使用 `ProcessBuilder` 参数列表直接启动白名单命令，不经过 Shell 拼接。命令执行默认关闭，开启后仍需要 `workspace.exec` 权限和人工审批，并会将命令、工作目录、退出码、超时/截断状态和输出摘要写入 Step 与 HMAC 审计链。
 
 ### 代码 Agent 多轮模式
 
@@ -170,7 +175,22 @@ curl -X POST http://localhost:8080/api/runs \
 
 Agent 模式下 `toolName` 不参与选择，模型只会收到当前租户工具白名单内的工具契约；工具注册表、JSON Schema、租户策略、权限和审批仍是最终授权边界。`maxTurns` 范围为 1 到 20，超过后 Run 以 `FAILED` 结束并记录 `AGENT_MAX_TURNS_EXCEEDED`。控制台创建表单可以直接开启 Agent 模式，详情页会展示模型轮次、Tool Call、工具输出和审批状态。
 
-当前工作区工具支持浏览、读取、搜索和原子写入代码文件。写入工具需要 `workspace.write` 权限、人工审批以及读取时返回的 `sha256` 并发校验；Agent 不会因为启用多轮模式而获得 Shell 执行权限。命令执行沙箱将在后续模块中单独增加白名单、超时和审计边界。
+当前工作区工具支持浏览、读取、搜索、原子写入代码文件和受控命令执行。写入工具需要 `workspace.write` 权限、人工审批以及读取时返回的 `sha256` 并发校验；命令工具需要 `workspace.exec` 权限、白名单和人工审批。所有工作目录仍受工作区根目录、隐藏路径和符号链接边界保护，Agent 不会获得任意 Shell 拼接能力。
+
+开启命令沙箱的本地示例：
+
+```bash
+export WORKSPACE_ENABLED=true
+export WORKSPACE_EXEC_ENABLED=true
+export HARNESS_WORKSPACE_ROOT=/Users/ming/Projects/example
+export WORKSPACE_ALLOWED_COMMANDS=./mvnw,npm,node
+```
+
+模型可以提交如下工具参数来运行测试；`args` 是独立参数数组，不是 Shell 字符串：
+
+```json
+{"command":"./mvnw","args":["test","-q"],"workdir":".","timeoutMs":120000}
+```
 
 旧版纯文本工具必须在 schema 中显式声明 `"x-harness-legacy-text": true`，普通文本会先转换成 JSON 字符串节点再执行其余约束；结构化对象工具不会静默降级为纯文本。新工具建议始终传入 JSON，例如：
 

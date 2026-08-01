@@ -14,9 +14,16 @@
 ```bash
 export WORKSPACE_ENABLED=true
 export HARNESS_WORKSPACE_ROOT=/Users/ming/Projects/example
+# 命令执行默认关闭；只把确实需要的可执行文件加入白名单。
+export WORKSPACE_EXEC_ENABLED=true
+export WORKSPACE_ALLOWED_COMMANDS=./mvnw,npm,node
+export WORKSPACE_MAX_COMMAND_TIMEOUT_MS=120000
+export WORKSPACE_MAX_COMMAND_OUTPUT_BYTES=200000
 ```
 
 `workspace.list`、`workspace.read` 和 `workspace.search` 需要 `workspace.read` 权限；`workspace.write` 是高风险副作用工具，需要 `workspace.write` 权限和人工审批。覆盖已有文件时必须携带读取结果中的 `sha256`，从而避免 Agent 把其他人的并发修改静默覆盖。默认拒绝隐藏文件、符号链接和工作区外路径，单次读取/写入默认限制为 1 MB。
+
+`workspace.exec` 是高风险命令沙箱，需要 `workspace.exec` 权限、人工审批和 `WORKSPACE_ALLOWED_COMMANDS` 白名单。它使用参数数组直接启动进程，不执行 `sh -c` 或其他 Shell 拼接；工作目录必须在工作区根目录内，子进程不会继承数据库密码、模型 API Key 等宿主环境变量。命令超时或输出超过上限会终止进程树，并在结果和 `WORKSPACE_COMMAND_EXECUTED` 审计事件中标记 `timedOut`/`outputTruncated`。建议只允许项目测试、构建所需的固定可执行文件，不要把 `sh`、`bash`、`sudo`、`rm` 等通用系统命令加入白名单。
 
 ## 1. 启动本地服务
 

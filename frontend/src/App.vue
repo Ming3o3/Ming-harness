@@ -244,6 +244,16 @@ function runModeLabel(run) {
   return run?.agentMode ? `代码 Agent · 最多 ${run.maxTurns || '—'} 轮` : '单轮执行'
 }
 
+function decodeWorkspaceExec(step) {
+  if (!step || step.name !== 'workspace.exec' || !step.output) return null
+  try {
+    const parsed = JSON.parse(step.output)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
 function formatDate(value) {
   if (!value) return '—'
   return new Intl.DateTimeFormat('zh-CN', {
@@ -976,7 +986,17 @@ onBeforeUnmount(() => {
                       <span class="tool-call-heading">Tool Call</span>
                       <code v-for="call in decodeAgentStep(step).toolCalls" :key="call.id">{{ call.name }} · {{ call.id }}</code>
                     </div>
-                    <p v-if="step.type !== 'MODEL' && step.output" class="step-output">{{ step.output }}</p>
+                    <template v-if="decodeWorkspaceExec(step)">
+                      <p class="command-line"><span>$</span> {{ decodeWorkspaceExec(step).command }} {{ (decodeWorkspaceExec(step).args || []).join(' ') }}</p>
+                      <div class="command-summary">
+                        <span :class="decodeWorkspaceExec(step).ok ? 'command-ok' : 'command-failed'">{{ decodeWorkspaceExec(step).ok ? '命令成功' : '命令未成功' }}</span>
+                        <span>退出码 {{ decodeWorkspaceExec(step).exitCode ?? '—' }}</span>
+                        <span v-if="decodeWorkspaceExec(step).timedOut">已超时</span>
+                        <span v-if="decodeWorkspaceExec(step).outputTruncated">输出已截断</span>
+                      </div>
+                      <pre v-if="decodeWorkspaceExec(step).output" class="command-output">{{ decodeWorkspaceExec(step).output }}</pre>
+                    </template>
+                    <p v-else-if="step.type !== 'MODEL' && step.output" class="step-output">{{ step.output }}</p>
                     <p v-if="step.error" class="step-error">{{ step.error }}</p>
                     <small>尝试 {{ step.attempt }} 次 · {{ formatDate(step.finishedAt || step.startedAt) }} · {{ step.durationMs || 0 }} ms<span v-if="step.inputTokens"> · {{ step.inputTokens + step.outputTokens }} tokens</span><span v-if="step.cost"> · ${{ step.cost }}</span></small>
                   </div>
