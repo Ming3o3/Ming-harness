@@ -145,6 +145,7 @@ npm run dev
 - `workspace.read`：读取文件，可按 `startLine`/`endLine` 截取，并返回当前文件 SHA-256
 - `workspace.search`：在工作区文本文件中搜索路径、行号和脱敏后的内容，需要 `workspace.read`
 - `workspace.write`：原子写入 UTF-8 文件，需要 `workspace.write` 和人工审批；覆盖已有文件必须携带上一次读取返回的 `sha256`，文件被其他人修改时会返回 `WORKSPACE_FILE_CHANGED`
+- `workspace.edit`：按多个精确 `oldText`/`newText` 片段增量编辑文件，需要 `workspace.write` 和人工审批；默认要求每个片段只匹配一处，并且必须携带读取时的 `expectedSha256`
 
 本地配置示例：
 
@@ -158,6 +159,12 @@ export HARNESS_WORKSPACE_ROOT=/Users/ming/Projects/example
 
 ```json
 {"path":"src/main/java/App.java","startLine":1,"endLine":120}
+```
+
+代码 Agent 修改已读取的文件时，应使用返回的 `sha256` 做乐观并发校验，并提交精确替换：
+
+```json
+{"path":"src/main/java/App.java","expectedSha256":"<read-result-sha256>","edits":[{"oldText":"return oldValue;","newText":"return newValue;"}]}
 ```
 
 工作区写入只负责可靠地落盘；`workspace.exec` 使用 `ProcessBuilder` 参数列表直接启动白名单命令，不经过 Shell 拼接。命令执行默认关闭，开启后仍需要 `workspace.exec` 权限和人工审批，并会将命令、工作目录、退出码、超时/截断状态和输出摘要写入 Step 与 HMAC 审计链。
@@ -175,7 +182,7 @@ curl -X POST http://localhost:8080/api/runs \
 
 Agent 模式下 `toolName` 不参与选择，模型只会收到当前租户工具白名单内的工具契约；工具注册表、JSON Schema、租户策略、权限和审批仍是最终授权边界。`maxTurns` 范围为 1 到 20，超过后 Run 以 `FAILED` 结束并记录 `AGENT_MAX_TURNS_EXCEEDED`。控制台创建表单可以直接开启 Agent 模式，详情页会展示模型轮次、Tool Call、工具输出和审批状态。
 
-当前工作区工具支持浏览、读取、搜索、原子写入代码文件和受控命令执行。写入工具需要 `workspace.write` 权限、人工审批以及读取时返回的 `sha256` 并发校验；命令工具需要 `workspace.exec` 权限、白名单和人工审批。所有工作目录仍受工作区根目录、隐藏路径和符号链接边界保护，Agent 不会获得任意 Shell 拼接能力。
+当前工作区工具支持浏览、读取、搜索、精确增量编辑、原子写入代码文件和受控命令执行。写入和编辑工具需要 `workspace.write` 权限、人工审批以及读取时返回的 `sha256` 并发校验；编辑工具只接受精确文本替换，匹配不唯一时会拒绝执行，避免误改代码。命令工具需要 `workspace.exec` 权限、白名单和人工审批。所有工作目录仍受工作区根目录、隐藏路径和符号链接边界保护，Agent 不会获得任意 Shell 拼接能力。
 
 开启命令沙箱的本地示例：
 

@@ -19,6 +19,11 @@ public class WorkspaceSearchTool implements HarnessTool {
     }
 
     @Override
+    public boolean available() {
+        return support.properties().enabled();
+    }
+
+    @Override
     public ToolDefinition definition() {
         return new ToolDefinition(
                 "workspace.search",

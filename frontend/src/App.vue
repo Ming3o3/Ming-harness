@@ -254,6 +254,16 @@ function decodeWorkspaceExec(step) {
   }
 }
 
+function decodeWorkspaceEdit(step) {
+  if (!step || step.name !== 'workspace.edit' || !step.output) return null
+  try {
+    const parsed = JSON.parse(step.output)
+    return parsed && typeof parsed === 'object' ? parsed : null
+  } catch {
+    return null
+  }
+}
+
 function formatDate(value) {
   if (!value) return '—'
   return new Intl.DateTimeFormat('zh-CN', {
@@ -995,6 +1005,14 @@ onBeforeUnmount(() => {
                         <span v-if="decodeWorkspaceExec(step).outputTruncated">输出已截断</span>
                       </div>
                       <pre v-if="decodeWorkspaceExec(step).output" class="command-output">{{ decodeWorkspaceExec(step).output }}</pre>
+                    </template>
+                    <template v-else-if="decodeWorkspaceEdit(step)">
+                      <p class="edit-line"><span>✎</span> {{ decodeWorkspaceEdit(step).path }}</p>
+                      <div class="command-summary">
+                        <span class="command-ok">文件已修改</span>
+                        <span>{{ decodeWorkspaceEdit(step).edits || 0 }} 个编辑</span>
+                        <span>{{ decodeWorkspaceEdit(step).replacements || 0 }} 处替换</span>
+                      </div>
                     </template>
                     <p v-else-if="step.type !== 'MODEL' && step.output" class="step-output">{{ step.output }}</p>
                     <p v-if="step.error" class="step-error">{{ step.error }}</p>

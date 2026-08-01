@@ -147,6 +147,62 @@ class WorkspaceToolTests {
         assertTrue(limited.contains("\"outputTruncated\":true"));
     }
 
+    @Test
+    void shouldApplyExactEditsWithHashAndAudit() throws Exception {
+        WorkspaceToolSupport support = support();
+        Path target = tempDir.resolve("src/App.java");
+        Files.createDirectories(target.getParent());
+        Files.writeString(target, "class App {\n  String name = \"old\";\n}\n");
+        String hash = support.sha256(Files.readAllBytes(target));
+        WorkspaceEditFileTool tool = new WorkspaceEditFileTool(support);
+
+        String result = tool.execute("{\"path\":\"src/App.java\",\"expectedSha256\":\""
+                + hash + "\",\"edits\":[{\"oldText\":\"old\",\"newText\":\"new\"}]}");
+
+        assertTrue(result.contains("\"replacements\":1"));
+        assertEquals("class App {\n  String name = \"new\";\n}\n", Files.readString(target));
+        assertTrue(tool.audit("{}", result).message().contains("src/App.java"));
+    }
+
+    @Test
+    void shouldRejectStaleOrAmbiguousEdits() throws Exception {
+        WorkspaceToolSupport support = support();
+        Path target = tempDir.resolve("App.java");
+        Files.writeString(target, "value\nvalue\n");
+        String hash = support.sha256(Files.readAllBytes(target));
+        WorkspaceEditFileTool tool = new WorkspaceEditFileTool(support);
+
+        BusinessException ambiguous = assertThrows(BusinessException.class,
+                () -> tool.execute("{\"path\":\"App.java\",\"expectedSha256\":\""
+                        + hash + "\",\"edits\":[{\"oldText\":\"value\",\"newText\":\"next\"}]}"));
+        assertEquals("WORKSPACE_EDIT_AMBIGUOUS", ambiguous.getCode());
+
+        String replaced = tool.execute("{\"path\":\"App.java\",\"expectedSha256\":\""
+                + hash + "\",\"edits\":[{\"oldText\":\"value\",\"newText\":\"next\",\"replaceAll\":true}]}");
+        assertTrue(replaced.contains("\"replacements\":2"));
+        assertEquals("next\nnext\n", Files.readString(target));
+
+        Files.writeString(target, "changed\nvalue\n");
+        BusinessException stale = assertThrows(BusinessException.class,
+                () -> tool.execute("{\"path\":\"App.java\",\"expectedSha256\":\""
+                        + hash + "\",\"edits\":[{\"oldText\":\"value\",\"newText\":\"next\"}]}"));
+        assertEquals("WORKSPACE_FILE_CHANGED", stale.getCode());
+    }
+
+    @Test
+    void shouldExposeWorkspaceToolsOnlyWhenEnabled() {
+        WorkspaceToolSupport support = support();
+        WorkspaceProperties disabled = new WorkspaceProperties(false, tempDir.toString(),
+                1000, 1000, 20, 20, 20, 20, false);
+        WorkspaceToolSupport disabledSupport = new WorkspaceToolSupport(disabled, new ObjectMapper(),
+                new SensitiveDataSanitizer());
+
+        assertTrue(new WorkspaceEditFileTool(support).available());
+        assertFalse(new WorkspaceEditFileTool(disabledSupport).available());
+        assertFalse(new WorkspaceReadFileTool(disabledSupport).available());
+        assertFalse(new WorkspaceWriteFileTool(disabledSupport).available());
+    }
+
     private WorkspaceToolSupport support() {
         WorkspaceProperties properties = new WorkspaceProperties(true, tempDir.toString(),
                 100_000, 100_000, 100, 100, 20, 100, false);

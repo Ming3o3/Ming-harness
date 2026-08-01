@@ -212,6 +212,10 @@ public class WorkspaceToolSupport {
                 throw new BusinessException(HttpStatus.CONFLICT, "WORKSPACE_TARGET_NOT_FILE",
                         "写入目标不是普通文件: " + displayPath);
             }
+            if (!exists && expectedSha256 != null && !expectedSha256.isBlank()) {
+                throw new BusinessException(HttpStatus.CONFLICT, "WORKSPACE_FILE_CHANGED",
+                        "文件在读取后已被删除，请重新读取后再写入");
+            }
             if (exists && (expectedSha256 == null || expectedSha256.isBlank())) {
                 throw new BusinessException(HttpStatus.CONFLICT, "WORKSPACE_EXPECTED_HASH_REQUIRED",
                         "覆盖已有文件必须提供 expectedSha256");
