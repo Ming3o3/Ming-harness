@@ -19,6 +19,17 @@ function identityHeaders(requestHeaders = {}) {
   }
 }
 
+/** 桌面主进程只接收当前身份所需的最小字段，桥接令牌不会进入 Vue 运行时。 */
+function desktopIdentityPayload(payload = {}) {
+  return {
+    displayName: payload.displayName || '',
+    apiKey: configuredApiKey,
+    tenantId: localStorage.getItem('harnessTenantId') || 'tenant-demo',
+    userId: localStorage.getItem('harnessUserId') || 'operator',
+    permissions: localStorage.getItem('harnessChatPermissions') || defaultChatPermissions,
+  }
+}
+
 async function request(path, options = {}) {
   const { headers: requestHeaders, ...requestOptions } = options
   // multipart 的 boundary 必须由浏览器生成，不能手动设置 JSON Content-Type。
@@ -106,13 +117,17 @@ export const api = {
     if (!desktopBridge?.pickWorkspace) {
       throw new Error('当前为浏览器模式，请使用桌面版选择本地项目')
     }
-    return desktopBridge.pickWorkspace({
-      displayName: payload.displayName || '',
-      apiKey: configuredApiKey,
-      tenantId: localStorage.getItem('harnessTenantId') || 'tenant-demo',
-      userId: localStorage.getItem('harnessUserId') || 'operator',
-      permissions: localStorage.getItem('harnessChatPermissions') || defaultChatPermissions,
-    })
+    return desktopBridge.pickWorkspace(desktopIdentityPayload(payload))
+  },
+  /** 配置后由 preload 捕获原生目录拖拽；页面回调只接收工作区摘要或错误消息。 */
+  configureDesktopWorkspaceDrop: () => {
+    desktopBridge?.configureWorkspaceDrop?.(desktopIdentityPayload())
+  },
+  onDesktopWorkspaceDropped: (listener) => {
+    desktopBridge?.onWorkspaceDropped?.(listener)
+  },
+  clearDesktopWorkspaceDropListener: () => {
+    desktopBridge?.clearWorkspaceDropListener?.()
   },
   isDesktop: () => Boolean(desktopBridge?.isDesktop),
   listRuns: () => request('/runs'),

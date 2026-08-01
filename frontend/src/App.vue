@@ -29,6 +29,8 @@ const workspace = ref(null)
 const localWorkspaces = ref([])
 const newConversationWorkspaceId = ref('')
 const desktopWorkspacePicking = ref(false)
+// Electron 原生文件夹拖入会创建新的固定工作区会话，不与浏览器附件导入混淆。
+const desktopWorkspaceDropping = ref(false)
 const runStatusFilter = ref('')
 const runsLoading = ref(false)
 const runPage = reactive({
@@ -539,11 +541,25 @@ function handleChatFolderInput(event) {
 async function handleChatDrop(event) {
   chatDragActive.value = false
   if (!activeConversationId.value || chatSending.value || chatUploading.value) return
+  if (isDesktopWorkspaceDirectoryDrop(event.dataTransfer)) {
+    desktopWorkspaceDropping.value = true
+    noticeMessage.value = '正在授权拖入的本地项目，随后会创建绑定该项目的新会话…'
+    return
+  }
   try {
     addChatAttachments(await readDroppedChatEntries(event.dataTransfer))
   } catch {
     errorMessage.value = '读取拖入的文件夹失败，请使用“文件夹”按钮选择。'
   }
+}
+
+/** Electron 目录拖拽获得原项目授权；浏览器环境或普通文件继续使用安全的复制导入。 */
+function isDesktopWorkspaceDirectoryDrop(dataTransfer) {
+  if (!desktopWorkspaceAvailable.value) return false
+  return Array.from(dataTransfer?.items || []).some((item) => {
+    const entry = item.webkitGetAsEntry?.()
+    return Boolean(entry?.isDirectory)
+  })
 }
 
 async function readDroppedChatEntries(dataTransfer) {
@@ -629,6 +645,7 @@ async function createChatConversation() {
     activeConversation.value = created
     chatInput.value = ''
     clearChatAttachments()
+    stopRunEventStream()
     selectedRun.value = null
     auditEvents.value = []
   } catch (error) {
@@ -672,6 +689,24 @@ async function chooseDesktopWorkspace() {
     errorMessage.value = errorText(error)
   } finally {
     desktopWorkspacePicking.value = false
+  }
+}
+
+/** preload 不返回绝对路径；收到工作区摘要后立即新建会话以冻结 Agent 的项目边界。 */
+async function handleDesktopWorkspaceDropped(result) {
+  desktopWorkspaceDropping.value = false
+  if (result?.error) {
+    errorMessage.value = result.error
+    return
+  }
+  if (!result?.workspace?.id) return
+  try {
+    await loadLocalWorkspaces()
+    newConversationWorkspaceId.value = result.workspace.id
+    await createChatConversation()
+    noticeMessage.value = `已授权拖入的本地项目“${result.workspace.displayName}”，已创建独立会话。`
+  } catch (error) {
+    errorMessage.value = errorText(error)
   }
 }
 
@@ -1318,6 +1353,12 @@ async function cancelSelectedRun() {
 }
 
 onMounted(async () => {
+  if (desktopWorkspaceAvailable.value) {
+    api.configureDesktopWorkspaceDrop()
+    api.onDesktopWorkspaceDropped((result) => {
+      void handleDesktopWorkspaceDropped(result)
+    })
+  }
   await Promise.all([loadDashboard(), loadHealth(), loadWorkspace(), loadTenantPolicy(), loadApiKeys(), loadLocalWorkspaces()])
   await loadConversations()
   runPollTimer = window.setInterval(pollSelectedRun, 1500)
@@ -1327,6 +1368,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   stopRunEventStream()
+  api.clearDesktopWorkspaceDropListener()
   window.clearInterval(runPollTimer)
   window.clearInterval(conversationPollTimer)
   window.clearInterval(healthPollTimer)
@@ -1505,12 +1547,12 @@ onBeforeUnmount(() => {
               v-model="chatInput"
               rows="3"
               :disabled="chatSending || chatUploading || !activeConversationId"
-              placeholder="描述你要完成的代码任务，或拖入文本文件、文件夹…"
+              placeholder="描述代码任务；桌面版可拖入项目文件夹，浏览器会导入文本副本…"
               aria-label="输入消息"
               @keydown.enter.exact.prevent="sendChatMessage"
             ></textarea>
             <div class="chat-composer-footer">
-              <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行 · {{ workspaceConnected ? 'Agent 可直接操作本会话绑定的本地项目' : '文件夹导入后保留层级' }}</span>
+              <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行 · {{ desktopWorkspaceDropping ? '正在授权拖入的本地项目…' : workspaceConnected ? 'Agent 可直接操作本会话绑定的本地项目' : '文件夹导入后保留层级' }}</span>
               <div class="chat-composer-actions">
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatAttachmentPicker">⌁ 附件</button>
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatFolderPicker">▣ 文件夹</button>

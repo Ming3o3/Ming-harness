@@ -174,6 +174,45 @@ ipcMain.handle('harness:pick-workspace', async (event, payload) => {
   return { cancelled: false, workspace }
 })
 
+/**
+ * 原生拖拽只接受真实目录：路径来自 preload 对浏览器 File 的受控解析，
+ * 渲染层既不能调用此 IPC，也不会从结果中得到绝对路径。
+ */
+ipcMain.handle('harness:register-dropped-workspace', async (event, payload) => {
+  if (!isTrustedRenderer(event.sender)) {
+    throw new Error('未受信任的页面不能登记拖入目录')
+  }
+  const rootPath = await resolveDroppedWorkspaceRoot(payload?.droppedPaths)
+  if (!rootPath) return { ignored: true }
+  const workspace = await registerWorkspace(rootPath, payload?.identity)
+  return { ignored: false, workspace }
+})
+
+/** 仅保留一个项目根目录，避免一次拖入多项目时把 Agent 的可写边界扩大为不明确集合。 */
+async function resolveDroppedWorkspaceRoot(droppedPaths) {
+  if (!Array.isArray(droppedPaths) || droppedPaths.length === 0) return null
+  if (droppedPaths.length > 8) {
+    throw new Error('一次最多检查 8 个拖入项目，请一次只拖入一个目录')
+  }
+  const directories = []
+  for (const value of droppedPaths) {
+    if (typeof value !== 'string' || value.length === 0 || value.length > 4096) continue
+    try {
+      const realPath = await fs.realpath(path.resolve(value))
+      const stat = await fs.stat(realPath)
+      if (stat.isDirectory()) directories.push(realPath)
+    } catch {
+      // 被移动、无权限或不是目录的拖入项会被忽略，普通文件继续走浏览器附件导入。
+    }
+  }
+  const uniqueDirectories = [...new Set(directories)]
+  if (!uniqueDirectories.length) return null
+  if (uniqueDirectories.length > 1) {
+    throw new Error('一次只能授权一个本地项目目录，请拆分后重新拖入')
+  }
+  return uniqueDirectories[0]
+}
+
 app.whenReady().then(() => {
   return (frontendUrl ? Promise.resolve(frontendUrl) : startStaticFrontendServer())
     .then((resolvedUrl) => {
