@@ -49,6 +49,7 @@ let runPollTimer
 let healthPollTimer
 // 聊天工作台状态：每轮消息对应一个后端 Run，助手气泡由 Run 终态回写。
 const chatMode = ref(true)
+const activeConsoleSection = ref('runtime')
 const conversations = ref([])
 const activeConversation = ref(null)
 const chatInput = ref('')
@@ -117,6 +118,15 @@ function applyTheme(nextTheme) {
 function toggleTheme() {
   theme.value = theme.value === 'dark' ? 'light' : 'dark'
   applyTheme(theme.value)
+}
+
+function setActiveConsoleSection(section) {
+  activeConsoleSection.value = section
+}
+
+function syncActiveConsoleSectionFromHash() {
+  const section = window.location.hash.slice(1)
+  activeConsoleSection.value = ['runtime', 'tools', 'audit'].includes(section) ? section : 'runtime'
 }
 
 // 在首屏渲染前同步主题，避免切换时出现短暂的错误背景色。
@@ -1613,6 +1623,8 @@ async function cancelSelectedRun() {
 }
 
 onMounted(async () => {
+  syncActiveConsoleSectionFromHash()
+  window.addEventListener('hashchange', syncActiveConsoleSectionFromHash)
   if (desktopWorkspaceAvailable.value) {
     api.configureDesktopWorkspaceDrop()
     api.onDesktopWorkspaceDropped((result) => {
@@ -1627,6 +1639,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('hashchange', syncActiveConsoleSectionFromHash)
   stopRunEventStream()
   api.clearDesktopWorkspaceDropListener()
   window.clearInterval(runPollTimer)
@@ -1732,7 +1745,7 @@ onBeforeUnmount(() => {
               <span v-if="runEventStreaming && !isTerminal(selectedStatus)" class="chat-live-indicator"><i></i>实时执行</span>
               <span v-if="pendingChatMessage" class="chat-run-pill" :class="statusClass(chatRunStatus)"><i></i>{{ statusLabel(chatRunStatus) }}</span>
               <button v-if="workspaceExplorerAvailable" class="secondary-button" type="button" @click="toggleWorkspaceExplorer">{{ showChatWorkspace ? '隐藏文件' : '项目文件' }}</button>
-              <button v-if="latestConversationRun(activeConversation)" class="secondary-button" type="button" @click="showChatWorkspace = false; showChatRun = !showChatRun">{{ showChatRun ? '隐藏运行' : '查看运行' }}</button>
+              <button v-if="latestConversationRun(activeConversation)" class="secondary-button" type="button" @click="toggleRunPanel">{{ showChatRun ? '隐藏运行' : '查看运行' }}</button>
             </div>
           </div>
 
@@ -1937,9 +1950,9 @@ onBeforeUnmount(() => {
       </div>
 
       <nav class="side-nav" aria-label="主导航">
-        <a class="nav-item active" href="#runtime"><span class="nav-icon">◈</span>运行中心</a>
-        <a class="nav-item" href="#tools"><span class="nav-icon">⌘</span>工具注册</a>
-        <a class="nav-item" href="#audit"><span class="nav-icon">↯</span>审计追踪</a>
+        <a class="nav-item" :class="{ active: activeConsoleSection === 'runtime' }" href="#runtime" :aria-current="activeConsoleSection === 'runtime' ? 'page' : undefined" @click="setActiveConsoleSection('runtime')"><span class="nav-icon">◈</span>运行中心</a>
+        <a class="nav-item" :class="{ active: activeConsoleSection === 'tools' }" href="#tools" :aria-current="activeConsoleSection === 'tools' ? 'page' : undefined" @click="setActiveConsoleSection('tools')"><span class="nav-icon">⌘</span>工具注册</a>
+        <a class="nav-item" :class="{ active: activeConsoleSection === 'audit' }" href="#audit" :aria-current="activeConsoleSection === 'audit' ? 'page' : undefined" @click="setActiveConsoleSection('audit')"><span class="nav-icon">↯</span>审计追踪</a>
       </nav>
 
       <div class="sidebar-foot">
