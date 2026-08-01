@@ -43,7 +43,8 @@ class WorkspaceDirectoryServiceTests {
     void shouldEncryptRegisteredRootAndResolveOnlyForItsOwner() throws Exception {
         Files.writeString(tempDir.resolve("README.md"), "# local project");
 
-        var registered = workspaceDirectoryService.register("tenant-local", "developer", "示例项目", tempDir.toString());
+        var registered = workspaceDirectoryService.register("tenant-local", "developer", "示例项目", tempDir.toString(),
+                "test-desktop-bridge-token");
         LocalWorkspace stored = workspaceRepository.findById(registered.id()).orElseThrow();
 
         assertEquals("示例项目", registered.displayName());
@@ -56,7 +57,8 @@ class WorkspaceDirectoryServiceTests {
     @Test
     void shouldExecuteWorkspaceToolInsideRunBoundWorkspaceInsteadOfConfiguredDefault() throws Exception {
         Files.writeString(tempDir.resolve("ProjectOnly.txt"), "只属于已授权项目");
-        var registered = workspaceDirectoryService.register("tenant-local", "developer", "项目", tempDir.toString());
+        var registered = workspaceDirectoryService.register("tenant-local", "developer", "项目", tempDir.toString(),
+                "test-desktop-bridge-token");
 
         String result = workspaceListTool.execute("{\"path\":\".\"}", new ToolExecutionContext(
                 "run-local", "step-list", "tenant-local", "developer", registered.id(), "idempotency-local"));

@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -34,9 +35,11 @@ public class LocalWorkspaceController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public LocalWorkspaceView register(@Valid @RequestBody RegisterLocalWorkspaceRequest request) {
+    public LocalWorkspaceView register(
+            @RequestHeader(value = "X-Harness-Desktop-Bridge", required = false) String bridgeToken,
+            @Valid @RequestBody RegisterLocalWorkspaceRequest request) {
         HarnessIdentity identity = HarnessIdentityContext.require();
         return workspaceDirectoryService.register(identity.tenantId(), identity.userId(),
-                request.displayName(), request.rootPath());
+                request.displayName(), request.rootPath(), bridgeToken);
     }
 }

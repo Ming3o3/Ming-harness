@@ -11,6 +11,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.List;
 
 /** 管理本地目录授权记录，并在每次使用前重新校验目录仍然可访问。 */
@@ -21,16 +23,19 @@ public class WorkspaceDirectoryService {
     private final WorkspacePathCipher pathCipher;
     private final WorkspaceProperties properties;
     private final boolean localRegistrationEnabled;
+    private final String desktopBridgeToken;
 
     public WorkspaceDirectoryService(LocalWorkspaceRepository repository,
                                      WorkspacePathCipher pathCipher,
                                      WorkspaceProperties properties,
                                      @Value("${harness.workspace.local-registration-enabled:false}")
-                                     boolean localRegistrationEnabled) {
+                                     boolean localRegistrationEnabled,
+                                     @Value("${harness.workspace.desktop-bridge-token:}") String desktopBridgeToken) {
         this.repository = repository;
         this.pathCipher = pathCipher;
         this.properties = properties;
         this.localRegistrationEnabled = localRegistrationEnabled;
+        this.desktopBridgeToken = desktopBridgeToken;
     }
 
     @Transactional(readOnly = true)
@@ -41,13 +46,25 @@ public class WorkspaceDirectoryService {
 
     /** 该入口仅提供给原生桌面目录选择器，普通浏览器模式默认关闭。 */
     @Transactional
-    public LocalWorkspaceView register(String tenantId, String userId, String displayName, String rawRootPath) {
+    public LocalWorkspaceView register(String tenantId, String userId, String displayName, String rawRootPath,
+                                       String suppliedBridgeToken) {
         if (!properties.enabled()) {
             throw new BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "WORKSPACE_DISABLED", "本地工作区工具未启用");
         }
         if (!localRegistrationEnabled) {
             throw new BusinessException(HttpStatus.FORBIDDEN, "LOCAL_WORKSPACE_REGISTRATION_DISABLED",
                     "仅桌面本地模式允许登记本机目录");
+        }
+        // 路径只能由本机 Electron/Tauri 主进程持有的令牌登记，渲染层和普通浏览器不会得到该令牌。
+        if (desktopBridgeToken == null || desktopBridgeToken.isBlank()) {
+            throw new BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "DESKTOP_BRIDGE_UNAVAILABLE",
+                    "桌面工作区桥接尚未配置");
+        }
+        if (suppliedBridgeToken == null || !MessageDigest.isEqual(
+                desktopBridgeToken.getBytes(StandardCharsets.UTF_8),
+                suppliedBridgeToken.getBytes(StandardCharsets.UTF_8))) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "DESKTOP_BRIDGE_DENIED",
+                    "本地目录只能通过受信任的桌面桥接登记");
         }
         Path root = validateRoot(rawRootPath);
         String name = normalizeName(displayName, root);
@@ -93,7 +110,12 @@ public class WorkspaceDirectoryService {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "WORKSPACE_ROOT_REQUIRED", "本地工作区目录不能为空");
         }
         try {
-            Path root = Path.of(rawPath).toAbsolutePath().normalize();
+            Path input = Path.of(rawPath);
+            if (!input.isAbsolute()) {
+                throw new BusinessException(HttpStatus.BAD_REQUEST, "WORKSPACE_ROOT_NOT_ABSOLUTE",
+                        "本地工作区必须是绝对路径");
+            }
+            Path root = input.normalize();
             if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS) || Files.isSymbolicLink(root)) {
                 throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "WORKSPACE_ROOT_UNAVAILABLE",
                         "所选本地工作区目录不可访问");

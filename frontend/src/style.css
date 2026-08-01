@@ -319,7 +319,7 @@ h3 { margin: 0; font-size: 13px; }
 /* 聊天工作台：消息区独立滚动，输入框固定在会话底部。 */
 .chat-app { display: grid; min-height: 100vh; grid-template-rows: auto 1fr; background: var(--bg); color: var(--text); }
 .chat-topbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; border-bottom: 1px solid var(--line); background: var(--sidebar-bg); padding: 15px 28px; }
-.chat-brand, .chat-topbar-actions, .chat-health, .conversation-sidebar-heading, .chat-heading, .chat-heading-actions, .chat-composer-footer, .chat-message-meta, .chat-run-summary, .chat-workspace-chip { display: flex; align-items: center; }
+.chat-brand, .chat-topbar-actions, .chat-health, .conversation-sidebar-heading, .chat-heading, .chat-heading-actions, .chat-composer-footer, .chat-message-meta, .chat-run-summary, .chat-workspace-chip, .chat-workspace-selector { display: flex; align-items: center; }
 .chat-brand { gap: 11px; }
 .chat-brand strong { display: block; color: var(--heading); font-size: 14px; }
 .chat-brand span { display: block; margin-top: 3px; color: var(--muted); font: 9px "DM Mono", monospace; letter-spacing: .08em; }
@@ -365,6 +365,10 @@ h3 { margin: 0; font-size: 13px; }
 .chat-heading-meta { margin: 7px 0 0; color: var(--muted); font-size: 10px; }
 .chat-heading-actions { flex-shrink: 0; gap: 8px; }
 .chat-workspace-chip { max-width: 230px; gap: 8px; border: 1px solid var(--line); border-radius: 9px; padding: 6px 9px; color: var(--soft); }
+.chat-workspace-selector { gap: 6px; }
+.chat-workspace-selector select { max-width: 170px; border: 1px solid var(--line); border-radius: 7px; outline: none; background: var(--input-bg); color: var(--soft); padding: 8px 9px; font: 10px "DM Mono", monospace; }
+.chat-workspace-selector select:focus { border-color: var(--accent); }
+.chat-project-button { padding: 8px 10px; font-size: 10px; white-space: nowrap; }
 .chat-workspace-chip > i { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--orange); box-shadow: 0 0 0 3px rgba(255,182,95,.12); }
 .chat-workspace-chip.workspace-connected > i { background: var(--green); box-shadow: 0 0 0 3px rgba(85,214,138,.12); }
 .chat-workspace-chip span { display: grid; min-width: 0; gap: 1px; }

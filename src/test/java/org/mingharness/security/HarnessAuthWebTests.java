@@ -78,6 +78,7 @@ class HarnessAuthWebTests {
                 HttpRequest.newBuilder(URI.create(baseUrl() + "/api/workspaces"))
                         .header("Authorization", "Bearer web-test-key")
                         .header("Content-Type", "application/json")
+                        .header("X-Harness-Desktop-Bridge", "test-desktop-bridge-token")
                         .POST(HttpRequest.BodyPublishers.ofString(
                                 "{\"displayName\":\"桌面测试项目\",\"rootPath\":\"" + jsonPath + "\"}"))
                         .build(),
@@ -87,6 +88,23 @@ class HarnessAuthWebTests {
         assertTrue(response.body().contains("\"displayName\":\"桌面测试项目\""));
         assertTrue(!response.body().contains(root));
         assertTrue(!response.body().contains("rootPath"));
+    }
+
+    @Test
+    void shouldRejectBrowserWorkspaceRegistrationWithoutDesktopBridgeToken() throws Exception {
+        String root = java.nio.file.Paths.get(System.getProperty("java.io.tmpdir")).toRealPath().toString();
+        String jsonPath = root.replace("\\", "\\\\");
+        HttpResponse<String> response = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/workspaces"))
+                        .header("Authorization", "Bearer web-test-key")
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(
+                                "{\"displayName\":\"浏览器请求\",\"rootPath\":\"" + jsonPath + "\"}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(403, response.statusCode(), response.body());
+        assertTrue(response.body().contains("DESKTOP_BRIDGE_DENIED"));
     }
 
     @Test

@@ -25,3 +25,16 @@ npm run dev
 ```
 
 开发服务器默认运行在 `http://localhost:5173`，`/api` 请求会代理到 Spring Boot 的 `8080` 端口。
+
+## 本地代码 Agent 桌面模式
+
+浏览器不能直接取得电脑上的任意绝对路径。桌面模式使用 Electron 主进程调用系统目录选择器，再把用户选择的目录安全登记给本机 Spring Boot Runtime：
+
+```bash
+npm install
+npm run desktop:dev
+```
+
+启动脚本会一并启动 `local` Profile 的后端、Vite 和 Electron，并在当前进程内生成 `HARNESS_DESKTOP_BRIDGE_TOKEN`。聊天页中的“选择本地项目”不会把绝对路径返回给 Vue；它会创建一条绑定该项目的新会话。退出桌面开发应用后，相应的本地开发进程会一起停止。
+
+`electron/preload.cjs` 只暴露 `pickWorkspace()`，不启用 Node Integration；目录路径、桥接令牌及登记 HTTP 请求都保留在 `electron/main.cjs`。不要把 `HARNESS_DESKTOP_BRIDGE_TOKEN` 写入 `.env`、前端代码或日志。

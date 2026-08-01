@@ -1,8 +1,10 @@
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api'
+// Electron 桌面版从 preload 获取本机 Runtime 地址；浏览器仍沿用 Vite 的 /api 代理。
+const desktopBridge = typeof window !== 'undefined' ? window.harnessDesktop : null
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || desktopBridge?.apiBaseUrl || '/api'
 const configuredApiKey = import.meta.env.VITE_HARNESS_API_KEY || ''
 // 本地聊天工作台默认开放工作区读写权限；写入和命令执行仍由后端策略要求人工审批。
 const defaultChatPermissions = import.meta.env.VITE_HARNESS_CHAT_PERMISSIONS
-  || 'workspace.read,workspace.write,workspace.exec'
+  || 'workspace.read,workspace.write,workspace.exec,workspace.manage'
 
 async function request(path, options = {}) {
   const { headers: requestHeaders, ...requestOptions } = options
@@ -41,6 +43,24 @@ export const api = {
   health: () => request('/health'),
   // 仅返回工作区名称和能力摘要，绝对路径始终只保留在本地后端进程。
   workspace: () => request('/workspace'),
+  listLocalWorkspaces: () => request('/workspaces'),
+  /**
+   * 目录选择和绝对路径登记都在 Electron 主进程完成；此处只传递当前用户身份。
+   * 浏览器环境不存在该桥接能力，会明确报错而不是伪造路径输入框。
+   */
+  pickDesktopWorkspace: (payload = {}) => {
+    if (!desktopBridge?.pickWorkspace) {
+      throw new Error('当前为浏览器模式，请使用桌面版选择本地项目')
+    }
+    return desktopBridge.pickWorkspace({
+      displayName: payload.displayName || '',
+      apiKey: configuredApiKey,
+      tenantId: localStorage.getItem('harnessTenantId') || 'tenant-demo',
+      userId: localStorage.getItem('harnessUserId') || 'operator',
+      permissions: localStorage.getItem('harnessChatPermissions') || defaultChatPermissions,
+    })
+  },
+  isDesktop: () => Boolean(desktopBridge?.isDesktop),
   listRuns: () => request('/runs'),
   // 分页接口不改变旧的数组接口，供历史列表按需增量加载。
   listRunsPage: ({ page = 0, size = 20, status } = {}) => {

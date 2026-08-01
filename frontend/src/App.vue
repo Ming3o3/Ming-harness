@@ -25,6 +25,10 @@ const showGovernance = ref(false)
 const health = ref(null)
 // 工作区状态用于告知用户 Agent 是否直接连接到本地项目；接口不会返回绝对路径。
 const workspace = ref(null)
+// 已登记工作区是用户明确在桌面端授权的项目；选择只影响后续创建的会话。
+const localWorkspaces = ref([])
+const newConversationWorkspaceId = ref('')
+const desktopWorkspacePicking = ref(false)
 const runStatusFilter = ref('')
 const runsLoading = ref(false)
 const runPage = reactive({
@@ -136,7 +140,7 @@ const tenantPolicyForm = reactive({
 const apiKeyForm = reactive({
   tenantId: form.tenantId,
   userId: form.userId,
-  permissions: 'run.read, run.create, run.execute, run.approve, run.cancel, audit.read, context.read, context.write, evaluation.read, evaluation.run, tool.read, workspace.read, ops.read, tenant.policy.read, tenant.policy.write, auth.key.read, auth.key.manage',
+  permissions: 'run.read, run.create, run.execute, run.approve, run.cancel, audit.read, context.read, context.write, evaluation.read, evaluation.run, tool.read, workspace.read, workspace.manage, ops.read, tenant.policy.read, tenant.policy.write, auth.key.read, auth.key.manage',
   expiresAt: '',
 })
 
@@ -189,12 +193,24 @@ const runtimeAlerts = computed(() => {
     runtime.timedOutRunCount > 0 && { level: 'warning', label: `运行超时 ${runtime.timedOutRunCount}` },
   ].filter(Boolean)
 })
-const workspaceConnected = computed(() => Boolean(workspace.value?.enabled && workspace.value?.accessible))
+const desktopWorkspaceAvailable = computed(() => api.isDesktop())
+const activeConversationWorkspaceId = computed(() => activeConversation.value?.conversation?.workspaceId || '')
+const activeRegisteredWorkspace = computed(() => localWorkspaces.value
+  .find((item) => item.id === activeConversationWorkspaceId.value) || null)
+const workspaceConnected = computed(() => activeRegisteredWorkspace.value
+  ? activeRegisteredWorkspace.value.accessible
+  : Boolean(workspace.value?.enabled && workspace.value?.accessible))
 const workspaceLabel = computed(() => {
+  if (activeRegisteredWorkspace.value) return activeRegisteredWorkspace.value.displayName
+  if (activeConversationWorkspaceId.value) return '已授权工作区不可访问'
   if (!workspace.value) return '正在检查本地工作区'
   return workspace.value.displayName || (workspaceConnected.value ? '本地工作区' : '未连接本地工作区')
 })
 const workspaceDetail = computed(() => {
+  if (activeRegisteredWorkspace.value) {
+    return `${activeRegisteredWorkspace.value.gitRepository ? 'Git 项目' : '本地目录'} · 会话已固定绑定`
+  }
+  if (activeConversationWorkspaceId.value) return '授权目录不可访问，请重新选择本地项目'
   if (!workspace.value) return '正在验证本地 Agent 权限'
   if (!workspace.value.enabled) return '工作区工具未启用'
   if (!workspace.value.accessible) return '目录不可访问，请检查本地配置'
@@ -585,7 +601,7 @@ async function loadConversations(preferredId = '') {
   try {
     conversations.value = await api.listConversations()
     if (!conversations.value.length) {
-      const created = await api.createConversation({ title: '新的对话' })
+      const created = await api.createConversation(newConversationPayload())
       conversations.value = [created.conversation]
       activeConversation.value = created
       return
@@ -602,7 +618,7 @@ async function loadConversations(preferredId = '') {
 async function createChatConversation() {
   clearMessages()
   try {
-    const created = await api.createConversation({ title: '新的对话' })
+    const created = await api.createConversation(newConversationPayload())
     conversations.value = [created.conversation, ...conversations.value.filter((item) => item.id !== created.conversation.id)]
     activeConversation.value = created
     chatInput.value = ''
@@ -611,6 +627,45 @@ async function createChatConversation() {
     auditEvents.value = []
   } catch (error) {
     errorMessage.value = errorText(error)
+  }
+}
+
+/** 新会话创建后工作区即冻结，避免用户后续切换项目时影响正在执行的 Agent。 */
+function newConversationPayload() {
+  return {
+    title: '新的对话',
+    ...(newConversationWorkspaceId.value ? { workspaceId: newConversationWorkspaceId.value } : {}),
+  }
+}
+
+async function loadLocalWorkspaces() {
+  try {
+    localWorkspaces.value = await api.listLocalWorkspaces()
+    if (!newConversationWorkspaceId.value) {
+      newConversationWorkspaceId.value = localWorkspaces.value.find((item) => item.accessible)?.id || ''
+    }
+  } catch {
+    // 缺少 workspace.read 或未启用桌面模式时不阻断普通聊天能力。
+    localWorkspaces.value = []
+  }
+}
+
+async function chooseDesktopWorkspace() {
+  if (!desktopWorkspaceAvailable.value || desktopWorkspacePicking.value) return
+  clearMessages()
+  desktopWorkspacePicking.value = true
+  try {
+    const result = await api.pickDesktopWorkspace()
+    if (result?.cancelled) return
+    if (!result?.workspace?.id) throw new Error('桌面桥接没有返回工作区摘要')
+    await loadLocalWorkspaces()
+    newConversationWorkspaceId.value = result.workspace.id
+    await createChatConversation()
+    noticeMessage.value = `已授权本地项目“${result.workspace.displayName}”，已创建独立会话。`
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    desktopWorkspacePicking.value = false
   }
 }
 
@@ -1177,7 +1232,8 @@ async function cancelSelectedRun() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadDashboard(), loadHealth(), loadWorkspace(), loadTenantPolicy(), loadApiKeys(), loadConversations()])
+  await Promise.all([loadDashboard(), loadHealth(), loadWorkspace(), loadTenantPolicy(), loadApiKeys(), loadLocalWorkspaces()])
+  await loadConversations()
   runPollTimer = window.setInterval(pollSelectedRun, 1500)
   conversationPollTimer = window.setInterval(pollConversation, 1200)
   healthPollTimer = window.setInterval(loadHealth, 10000)
@@ -1273,6 +1329,17 @@ onBeforeUnmount(() => {
                 <i></i>
                 <span><small>LOCAL WORKSPACE</small><strong>{{ workspaceLabel }}</strong></span>
               </div>
+              <div v-if="desktopWorkspaceAvailable" class="chat-workspace-selector" title="该选择只会绑定下一次新建的会话">
+                <select v-model="newConversationWorkspaceId" :disabled="desktopWorkspacePicking || chatSending || chatUploading">
+                  <option value="">默认受控工作区</option>
+                  <option v-for="item in localWorkspaces" :key="item.id" :value="item.id" :disabled="!item.accessible">
+                    {{ item.displayName }}{{ item.accessible ? '' : '（不可访问）' }}
+                  </option>
+                </select>
+                <button class="secondary-button chat-project-button" type="button" :disabled="desktopWorkspacePicking || chatSending || chatUploading" @click="chooseDesktopWorkspace">
+                  {{ desktopWorkspacePicking ? '选择中…' : '选择本地项目' }}
+                </button>
+              </div>
               <span v-if="pendingChatMessage" class="chat-run-pill" :class="statusClass(chatRunStatus)"><i></i>{{ statusLabel(chatRunStatus) }}</span>
               <button v-if="latestConversationRun(activeConversation)" class="secondary-button" type="button" @click="showChatRun = !showChatRun">{{ showChatRun ? '隐藏运行' : '查看运行' }}</button>
             </div>
@@ -1355,7 +1422,7 @@ onBeforeUnmount(() => {
               @keydown.enter.exact.prevent="sendChatMessage"
             ></textarea>
             <div class="chat-composer-footer">
-              <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行 · {{ workspaceConnected ? 'Agent 可直接操作当前本地工作区' : '文件夹导入后保留层级' }}</span>
+              <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行 · {{ workspaceConnected ? 'Agent 可直接操作本会话绑定的本地项目' : '文件夹导入后保留层级' }}</span>
               <div class="chat-composer-actions">
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatAttachmentPicker">⌁ 附件</button>
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatFolderPicker">▣ 文件夹</button>

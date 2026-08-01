@@ -3,16 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "desktop": "electron .",
+    "desktop:dev": "node electron/desktop-dev.cjs"
   },
   "dependencies": {
     "vue": "^3.5.40"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.8",
+    "electron": "^38.8.6",
     "vite": "^8.1.5"
   },
   "engines": {

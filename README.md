@@ -22,6 +22,7 @@ Ming Harness 是一个面向企业 Agent 的可运行 Harness：后端使用 Spr
 - 健康检查与运行指标：公开存活探针、受 `ops.read` 保护的 `/api/health` 和 Actuator 指标
 - 请求关联追踪：自动生成并回传 `X-Request-Id`、`X-Trace-Id`，错误响应包含 `traceId`
 - Vue 3 聊天工作台：持久化会话、消息气泡、逐轮输入、异步状态轮询和本轮 Run 执行链；原 Run 运维控制台仍可切换进入
+- Electron 桌面工作区桥接：原生选择本地项目、会话/Run 固定绑定、路径加密存储和受信任桌面令牌校验
 
 ## 启动方式
 
@@ -90,6 +91,9 @@ npm run dev
 | `WORKSPACE_MAX_COMMAND_TIMEOUT_MS` | `120000` | 单条命令最大运行时间，超时会终止进程树 |
 | `WORKSPACE_MAX_COMMAND_OUTPUT_BYTES` | `200000` | 单条命令最大合并输出，超过后终止进程并标记截断 |
 | `WORKSPACE_MAX_COMMAND_ARGS` | `32` | 单条命令最多参数数量 |
+| `WORKSPACE_PATH_ENCRYPTION_KEY` | 本地演示默认值 | 本机工作区绝对路径的 AES-GCM 加密密钥；正式环境必须单独配置并妥善保管 |
+| `WORKSPACE_LOCAL_REGISTRATION_ENABLED` | `false`（`local` 为 `true`） | 是否允许桌面端登记用户主动选择的本地项目；仍必须提供桌面桥接令牌 |
+| `HARNESS_DESKTOP_BRIDGE_TOKEN` | 空 | Electron/Tauri 主进程与本机 Runtime 的一次性桥接令牌；不可写入前端环境变量、数据库或聊天记录 |
 | `DATA_RETENTION_ENABLED` | `false`（`local-infra` 为 `true`） | 是否启用定时数据保留清理 |
 | `RUN_RETENTION_DAYS` | `90` | 终态 Run 最短保留天数；实际会与审计保留期取较大值 |
 | `AUDIT_RETENTION_DAYS` | `365` | 审计链保留天数，避免清理部分事件破坏完整性 |
@@ -159,7 +163,28 @@ export HARNESS_WORKSPACE_ROOT=/Users/ming/Projects/example
 ./mvnw spring-boot:run
 ```
 
-不要将工作区配置为用户主目录、桌面或 Documents 等宽泛目录。若需要切换项目，请在本机停止应用、修改 `HARNESS_WORKSPACE_ROOT` 后重新启动；下一阶段的桌面桥接会在用户明确选择文件夹后完成这一操作。
+不要将默认工作区配置为用户主目录、桌面或 Documents 等宽泛目录。桌面版可以在用户明确授权后登记多个项目；每个会话和其创建的 Run 都会固定绑定一个 `workspaceId`，之后切换到其他项目不会影响旧任务。
+
+### 桌面代码工作区（Electron）
+
+浏览器无法安全地读取任意本机目录，因此“选择本地项目”仅在 Electron 桌面模式显示。开发时可直接从前端目录启动：
+
+```bash
+cd frontend
+npm install
+npm run desktop:dev
+```
+
+该命令会生成一次性桌面桥接令牌，并启动本机 H2 Runtime、Vite 和 Electron 窗口。点击聊天页的“选择本地项目”后，系统原生目录选择器会请求用户授权；选择成功会自动创建一条绑定该项目的新会话。Agent 后续的 `workspace.*` 读取、编辑、Git 查看与受审批命令只作用在该会话的项目根目录内。
+
+桌面桥接遵循以下边界：
+
+- Electron 主进程持有绝对路径和桥接令牌；Vue 渲染层、模型、API 返回值和聊天记录均不会获得真实路径。
+- 后端只保存 AES-GCM 密文路径；`GET /api/workspaces` 仅返回项目名称、可访问状态与 Git 状态。
+- `POST /api/workspaces` 除了 `workspace.manage` 权限外，还需要 `X-Harness-Desktop-Bridge` 令牌。普通浏览器请求会被拒绝。
+- 新建会话时携带 `workspaceId`，Run 在创建时复制该 ID；Worker 每次工具调用都会重新验证项目仍存在且归属当前租户/用户。
+
+浏览器版仍保留“附件 / 文件夹”导入：这是复制 UTF-8 文本到受控工作区的降级能力，并不等于授权 Agent 操作原项目。Electron 当前提供开发态桌面壳；发行安装包、自动更新和代码签名可在后续发布模块接入。
 
 工具输入使用 JSON，例如读取文件：
 
