@@ -13,6 +13,7 @@ import org.mingharness.runtime.api.TenantPolicyView;
 import org.mingharness.security.ApiKeyCredentialService;
 import org.mingharness.security.ApiKeyView;
 import org.mingharness.security.CreateApiKeyRequest;
+import org.mingharness.security.RotateApiKeyRequest;
 import org.mingharness.security.HarnessIdentity;
 import org.mingharness.runtime.domain.RunStatus;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -89,11 +90,19 @@ class LocalInfrastructureIT {
         assertEquals("integration-user", identity.userId());
         assertTrue(apiKeyCredentialService.auditTrail(tenantId).size() >= 1);
 
-        apiKeyCredentialService.revoke(created.id(), "integration-admin");
+        ApiKeyView rotated = apiKeyCredentialService.rotate(created.id(), "integration-admin",
+                new RotateApiKeyRequest(Instant.now().plus(Duration.ofHours(2))));
         org.mingharness.common.BusinessException exception = org.junit.jupiter.api.Assertions.assertThrows(
                 org.mingharness.common.BusinessException.class,
                 () -> apiKeyCredentialService.authenticate(created.secret()));
         assertEquals("INVALID_API_KEY", exception.getCode());
+
+        assertEquals(tenantId, apiKeyCredentialService.authenticate(rotated.secret()).tenantId());
+        apiKeyCredentialService.revoke(rotated.id(), "integration-admin");
+        org.mingharness.common.BusinessException rotatedException = org.junit.jupiter.api.Assertions.assertThrows(
+                org.mingharness.common.BusinessException.class,
+                () -> apiKeyCredentialService.authenticate(rotated.secret()));
+        assertEquals("INVALID_API_KEY", rotatedException.getCode());
     }
 
     @Test

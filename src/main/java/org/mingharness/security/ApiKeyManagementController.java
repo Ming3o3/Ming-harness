@@ -55,6 +55,16 @@ public class ApiKeyManagementController {
         return view;
     }
 
+    @PostMapping("/{keyId}/rotate")
+    public ApiKeyView rotate(@PathVariable String keyId,
+                             @RequestBody(required = false) RotateApiKeyRequest request) {
+        HarnessIdentity identity = requireIdentity();
+        assertManagePermission(identity);
+        ApiKeyView view = credentialService.get(keyId);
+        assertTenantScope(identity, view.tenantId());
+        return credentialService.rotate(keyId, identity.userId(), request);
+    }
+
     @DeleteMapping("/{keyId}")
     public ApiKeyView revoke(@PathVariable String keyId) {
         HarnessIdentity identity = requireIdentity();

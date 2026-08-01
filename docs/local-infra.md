@@ -108,7 +108,7 @@ curl -X POST http://localhost:8080/api/admin/api-keys \
   -d '{"tenantId":"tenant-demo","userId":"analyst","permissions":["run.read","run.create","run.execute"],"expiresAt":"2027-01-01T00:00:00Z"}'
 ```
 
-保存响应中的 `secret` 后，可用 `GET /api/admin/api-keys` 查看前缀、状态和过期时间；使用 `DELETE /api/admin/api-keys/{keyId}` 会使该 Key 立即失效。创建响应之外，API、数据库、日志和审计均不会返回完整 Key 或摘要。查询需要 `auth.key.read`，创建/撤销需要 `auth.key.manage`，跨租户操作另需 `auth.key.cross-tenant`。
+保存响应中的 `secret` 后，可用 `GET /api/admin/api-keys` 查看前缀、状态和过期时间；使用 `POST /api/admin/api-keys/{keyId}/rotate` 会原子创建同权限新 Key 并立即使旧 Key 失效，`DELETE /api/admin/api-keys/{keyId}` 也可以直接撤销。创建或轮换响应之外，API、数据库、日志和审计均不会返回完整 Key 或摘要。查询需要 `auth.key.read`，创建/轮换/撤销需要 `auth.key.manage`，跨租户操作另需 `auth.key.cross-tenant`。
 
 ### 租户级资源治理
 

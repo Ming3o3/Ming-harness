@@ -100,6 +100,38 @@ public class ApiKeyCredentialService {
         return toView(saved, token);
     }
 
+    /**
+     * 原子轮换数据库 API Key：新凭证沿用旧租户、用户和权限，旧凭证在同一事务内立即撤销。
+     * 新 secret 只在本次响应中返回，避免先创建新 Key 再人工撤销旧 Key 造成长期双活。
+     */
+    @Transactional
+    public ApiKeyView rotate(String keyId, String actorId, RotateApiKeyRequest request) {
+        ApiKeyCredential previous = credentialRepository.findById(keyId).orElseThrow(() ->
+                new BusinessException(HttpStatus.NOT_FOUND, "API_KEY_NOT_FOUND", "API Key 不存在"));
+        if (previous.getStatus() != ApiKeyStatus.ACTIVE) {
+            throw new BusinessException(HttpStatus.CONFLICT, "API_KEY_NOT_ROTATABLE",
+                    "只有有效的 API Key 可以轮换");
+        }
+        Instant expiresAt = request != null && request.expiresAt() != null
+                ? request.expiresAt() : previous.getExpiresAt();
+        Set<String> permissions = parsePermissions(previous.getPermissions());
+        validateCreateRequest(new CreateApiKeyRequest(
+                previous.getTenantId(), previous.getUserId(), permissions, expiresAt));
+
+        String actor = safeActor(actorId);
+        String token = nextToken();
+        ApiKeyCredential replacement = new ApiKeyCredential(hash(token), token.substring(0, 8),
+                previous.getTenantId(), previous.getUserId(), permissionsCsv(permissions), expiresAt);
+        previous.revoke(actor);
+        ApiKeyCredential revoked = credentialRepository.save(previous);
+        ApiKeyCredential saved = credentialRepository.save(replacement);
+        auditRepository.save(new ApiKeyAudit(revoked.getId(), revoked.getTenantId(), actor,
+                "API_KEY_ROTATED", "newKeyId=" + saved.getId() + ";newPrefix=" + saved.getKeyPrefix()));
+        auditRepository.save(new ApiKeyAudit(saved.getId(), saved.getTenantId(), actor,
+                "API_KEY_ROTATED_FROM", "oldKeyId=" + revoked.getId() + ";oldPrefix=" + revoked.getKeyPrefix()));
+        return toView(saved, token);
+    }
+
     @Transactional(readOnly = true)
     public List<ApiKeyView> list(String tenantId) {
         requireIdentifier(tenantId, "租户标识");

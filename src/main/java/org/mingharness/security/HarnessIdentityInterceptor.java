@@ -188,6 +188,9 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
         if (path.matches("/api/admin/api-keys/[^/]+")) {
             return "GET".equalsIgnoreCase(method) ? "auth.key.read" : "auth.key.manage";
         }
+        if (path.matches("/api/admin/api-keys/[^/]+/rotate")) {
+            return "auth.key.manage";
+        }
         if (path.matches("/api/admin/tenants/[^/]+/policy(?:/audits)?")) {
             return "GET".equalsIgnoreCase(method) ? "tenant.policy.read" : "tenant.policy.write";
         }

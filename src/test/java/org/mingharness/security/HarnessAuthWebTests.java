@@ -143,7 +143,7 @@ class HarnessAuthWebTests {
     }
 
     @Test
-    void shouldCreateUseAndRevokeDatabaseApiKeyWithoutReturningSecretAgain() throws Exception {
+    void shouldCreateRotateUseAndRevokeDatabaseApiKeyWithoutReturningSecretAgain() throws Exception {
         HttpResponse<String> created = httpClient.send(
                 HttpRequest.newBuilder(URI.create(baseUrl() + "/api/admin/api-keys"))
                         .header("Authorization", "Bearer web-test-key")
@@ -181,8 +181,33 @@ class HarnessAuthWebTests {
         assertEquals(200, audits.statusCode(), audits.body());
         assertTrue(audits.body().contains("API_KEY_CREATED"));
 
+        HttpResponse<String> rotated = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/admin/api-keys/" + keyId + "/rotate"))
+                        .header("Authorization", "Bearer web-test-key")
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, rotated.statusCode(), rotated.body());
+        String rotatedSecret = rotated.body().replaceFirst(".*\\\"secret\\\":\\\"(mh_[^\\\"]+).*", "$1");
+        String rotatedKeyId = rotated.body().replaceFirst(".*\\\"id\\\":\\\"([^\\\"]+).*", "$1");
+        assertTrue(rotatedSecret.startsWith("mh_"));
+        assertTrue(!secret.equals(rotatedSecret));
+
+        HttpResponse<String> oldSecretRejected = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/tools"))
+                        .header("Authorization", "Bearer " + secret).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(401, oldSecretRejected.statusCode());
+
+        HttpResponse<String> rotatedSecretWorks = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/tools"))
+                        .header("Authorization", "Bearer " + rotatedSecret).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, rotatedSecretWorks.statusCode(), rotatedSecretWorks.body());
+
         HttpResponse<String> revoked = httpClient.send(
-                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/admin/api-keys/" + keyId))
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/admin/api-keys/" + rotatedKeyId))
                         .header("Authorization", "Bearer web-test-key").DELETE().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, revoked.statusCode(), revoked.body());
@@ -190,7 +215,7 @@ class HarnessAuthWebTests {
 
         HttpResponse<String> rejected = httpClient.send(
                 HttpRequest.newBuilder(URI.create(baseUrl() + "/api/tools"))
-                        .header("Authorization", "Bearer " + secret).GET().build(),
+                        .header("Authorization", "Bearer " + rotatedSecret).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(401, rejected.statusCode());
     }

@@ -465,6 +465,24 @@ async function createManagedApiKey() {
   }
 }
 
+async function rotateManagedApiKey(key) {
+  if (!key || key.status !== 'ACTIVE') return
+  if (typeof window !== 'undefined' && !window.confirm(`确认轮换 ${key.keyPrefix}… 的 API Key 吗？旧密钥会立即失效。`)) return
+  clearMessages()
+  loading.value = true
+  createdApiKeySecret.value = ''
+  try {
+    const rotated = await api.rotateApiKey(key.id)
+    createdApiKeySecret.value = rotated.secret || ''
+    noticeMessage.value = 'API Key 已轮换；旧密钥已立即失效，请保存新 secret'
+    await loadApiKeys()
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    loading.value = false
+  }
+}
+
 async function revokeManagedApiKey(key) {
   if (!key || key.status !== 'ACTIVE') return
   if (typeof window !== 'undefined' && !window.confirm(`确认立即撤销 ${key.keyPrefix}… 的 API Key 吗？`)) return
@@ -1013,7 +1031,10 @@ onBeforeUnmount(() => {
                 <div class="api-key-row-main"><strong>{{ key.keyPrefix }}…</strong><small>{{ key.userId }} · 创建于 {{ formatDate(key.createdAt) }}</small></div>
                 <div class="api-key-row-meta"><span class="api-key-status" :class="apiKeyStatusClass(key.status)">{{ apiKeyStatusLabel(key.status) }}</span><small>{{ key.expiresAt ? `到期 ${formatDate(key.expiresAt)}` : '永不过期' }}</small></div>
                 <div class="api-key-row-permissions">{{ key.permissions?.length ? key.permissions.join('、') : '未授予接口权限' }}</div>
-                <button class="danger-button" type="button" :disabled="loading || key.status !== 'ACTIVE'" @click="revokeManagedApiKey(key)">{{ key.status === 'ACTIVE' ? '立即撤销' : '已撤销' }}</button>
+                <div class="api-key-row-actions">
+                  <button v-if="key.status === 'ACTIVE'" class="secondary-button" type="button" :disabled="loading" @click="rotateManagedApiKey(key)">轮换</button>
+                  <button class="danger-button" type="button" :disabled="loading || key.status !== 'ACTIVE'" @click="revokeManagedApiKey(key)">{{ key.status === 'ACTIVE' ? '立即撤销' : '已撤销' }}</button>
+                </div>
               </div>
             </div>
             <div class="api-key-audits">

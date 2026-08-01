@@ -71,6 +71,10 @@ export const api = {
   // API Key 只在创建响应中返回一次明文，列表和审计接口不会泄露完整密钥。
   listApiKeys: (tenantId) => request(`/admin/api-keys${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ''}`),
   createApiKey: (payload) => request('/admin/api-keys', { method: 'POST', body: JSON.stringify(payload) }),
+  rotateApiKey: (keyId, payload = null) => request(`/admin/api-keys/${encodeURIComponent(keyId)}/rotate`, {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
+  }),
   revokeApiKey: (keyId) => request(`/admin/api-keys/${encodeURIComponent(keyId)}`, { method: 'DELETE' }),
   listApiKeyAudits: (tenantId) => request(`/admin/api-keys/audits${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ''}`),
 }

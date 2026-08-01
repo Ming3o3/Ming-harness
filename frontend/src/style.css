@@ -238,7 +238,8 @@ h3 { margin: 0; font-size: 13px; }
 .api-key-status-active { background: rgba(85,214,138,.1); color: var(--green); }
 .api-key-status-revoked { background: rgba(255,114,123,.1); color: var(--red); }
 .api-key-row-permissions { overflow: hidden; color: var(--muted); font-size: 10px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
-.api-key-row .danger-button { padding: 8px 10px; font-size: 10px; white-space: nowrap; }
+.api-key-row-actions { display: flex; gap: 6px; }
+.api-key-row-actions button { padding: 8px 10px; font-size: 10px; white-space: nowrap; }
 .api-key-audit-row { display: grid; grid-template-columns: 78px 145px 1fr; gap: 10px; align-items: baseline; border-bottom: 1px solid rgba(153,174,218,.08); padding: 8px 0; color: var(--muted); font-size: 10px; }
 .api-key-audit-row > span, .api-key-audit-row > strong { font: 9px "DM Mono", monospace; }
 .api-key-audit-row > strong { color: var(--soft); }
