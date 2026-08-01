@@ -5,10 +5,15 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
 
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -17,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(properties = {
         "harness.auth.mode=api-key",
-        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,ops.read,workspace.read,workspace.manage,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage",
+        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,run.create,ops.read,workspace.read,workspace.manage,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage;web-other-key|tenant-other|other-user|run.read",
         "harness.workspace.enabled=true",
         "harness.workspace.local-registration-enabled=true",
         "management.endpoint.health.show-details=when_authorized",
@@ -119,6 +124,42 @@ class HarnessAuthWebTests {
         assertEquals(200, response.statusCode());
         assertTrue(response.body().contains("\"items\""));
         assertTrue(response.body().contains("\"totalElements\""));
+    }
+
+    @Test
+    void shouldStreamInitialRunSnapshotForAuthorizedTenant() throws Exception {
+        String runId = createRunForEventStream();
+        HttpResponse<InputStream> response = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/runs/" + runId + "/events"))
+                        .header("Authorization", "Bearer web-test-key")
+                        .header("Accept", "text/event-stream")
+                        .GET().build(),
+                HttpResponse.BodyHandlers.ofInputStream());
+
+        assertEquals(200, response.statusCode());
+        assertTrue(response.headers().firstValue("Content-Type")
+                .orElse("").startsWith("text/event-stream"));
+        try (InputStream body = response.body();
+             BufferedReader reader = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8))) {
+            assertEquals("event:snapshot", reader.readLine());
+            String data = reader.readLine();
+            assertTrue(data.startsWith("data:"), data);
+            assertTrue(data.contains("\"id\":\"" + runId + "\""), data);
+        }
+    }
+
+    @Test
+    void shouldRejectCrossTenantRunEventStream() throws Exception {
+        String runId = createRunForEventStream();
+        HttpResponse<String> response = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/runs/" + runId + "/events"))
+                        .header("Authorization", "Bearer web-other-key")
+                        .header("Accept", "text/event-stream")
+                        .GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(403, response.statusCode(), response.body());
+        assertTrue(response.body().contains("TENANT_ACCESS_DENIED"));
     }
 
     @Test
@@ -275,5 +316,23 @@ class HarnessAuthWebTests {
 
     private String baseUrl() {
         return "http://localhost:" + port;
+    }
+
+    /** 真实 HTTP 创建 Run，确保 SSE 测试同时覆盖认证、路由与持久化读取链路。 */
+    private String createRunForEventStream() throws Exception {
+        String idempotencyKey = "web-sse-" + UUID.randomUUID();
+        HttpResponse<String> response = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/runs"))
+                        .header("Authorization", "Bearer web-test-key")
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("""
+                                {"tenantId":"tenant-web","userId":"web-user","title":"SSE 实时任务",
+                                "input":"验证首个实时快照","toolName":"demo.echo","budget":1,
+                                "idempotencyKey":"%s"}
+                                """.formatted(idempotencyKey)))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(201, response.statusCode(), response.body());
+        return response.body().replaceFirst(".*\\\"id\\\":\\\"([^\\\"]+).*", "$1");
     }
 }

@@ -319,7 +319,7 @@ h3 { margin: 0; font-size: 13px; }
 /* 聊天工作台：消息区独立滚动，输入框固定在会话底部。 */
 .chat-app { display: grid; min-height: 100vh; grid-template-rows: auto 1fr; background: var(--bg); color: var(--text); }
 .chat-topbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; border-bottom: 1px solid var(--line); background: var(--sidebar-bg); padding: 15px 28px; }
-.chat-brand, .chat-topbar-actions, .chat-health, .conversation-sidebar-heading, .chat-heading, .chat-heading-actions, .chat-composer-footer, .chat-message-meta, .chat-run-summary, .chat-workspace-chip, .chat-workspace-selector { display: flex; align-items: center; }
+.chat-brand, .chat-topbar-actions, .chat-health, .conversation-sidebar-heading, .chat-heading, .chat-heading-actions, .chat-composer-footer, .chat-message-meta, .chat-run-summary, .chat-workspace-chip, .chat-workspace-selector, .chat-live-indicator, .run-live-indicator { display: flex; align-items: center; }
 .chat-brand { gap: 11px; }
 .chat-brand strong { display: block; color: var(--heading); font-size: 14px; }
 .chat-brand span { display: block; margin-top: 3px; color: var(--muted); font: 9px "DM Mono", monospace; letter-spacing: .08em; }
@@ -374,6 +374,9 @@ h3 { margin: 0; font-size: 13px; }
 .chat-workspace-chip span { display: grid; min-width: 0; gap: 1px; }
 .chat-workspace-chip small { color: var(--muted); font: 8px "DM Mono", monospace; letter-spacing: .08em; }
 .chat-workspace-chip strong { overflow: hidden; color: var(--heading); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.chat-live-indicator, .run-live-indicator { gap: 5px; border: 1px solid rgba(76,226,213,.28); border-radius: 14px; background: rgba(76,226,213,.08); color: var(--cyan); padding: 5px 8px; font: 9px "DM Mono", monospace; white-space: nowrap; }
+.chat-live-indicator i, .run-live-indicator i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; animation: live-pulse 1.2s ease-in-out infinite; }
+@keyframes live-pulse { 50% { opacity: .35; transform: scale(.7); } }
 .chat-run-pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 18px; padding: 7px 10px; color: var(--soft); font: 9px "DM Mono", monospace; }
 .chat-run-pill i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .chat-run-pill.status-running, .chat-run-pill.status-queued { color: var(--cyan); }

@@ -6,6 +6,19 @@ const configuredApiKey = import.meta.env.VITE_HARNESS_API_KEY || ''
 const defaultChatPermissions = import.meta.env.VITE_HARNESS_CHAT_PERMISSIONS
   || 'workspace.read,workspace.write,workspace.exec,workspace.manage'
 
+/** API Key/OIDC 与本地请求头共用同一身份组装逻辑，SSE fetch 也能安全携带认证信息。 */
+function identityHeaders(requestHeaders = {}) {
+  return {
+    ...(configuredApiKey
+      ? { Authorization: `Bearer ${configuredApiKey}` }
+      : {
+          'X-Tenant-Id': localStorage.getItem('harnessTenantId') || 'tenant-demo',
+          'X-User-Id': localStorage.getItem('harnessUserId') || 'operator',
+        }),
+    ...(requestHeaders || {}),
+  }
+}
+
 async function request(path, options = {}) {
   const { headers: requestHeaders, ...requestOptions } = options
   // multipart 的 boundary 必须由浏览器生成，不能手动设置 JSON Content-Type。
@@ -14,13 +27,7 @@ async function request(path, options = {}) {
     ...requestOptions,
     headers: {
       ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-      ...(configuredApiKey
-        ? { Authorization: `Bearer ${configuredApiKey}` }
-        : {
-            'X-Tenant-Id': localStorage.getItem('harnessTenantId') || 'tenant-demo',
-            'X-User-Id': localStorage.getItem('harnessUserId') || 'operator',
-          }),
-      ...(requestHeaders || {}),
+      ...identityHeaders(requestHeaders),
     },
   })
 
@@ -36,6 +43,53 @@ async function request(path, options = {}) {
     return null
   }
   return response.json()
+}
+
+/**
+ * 使用 fetch 解析 SSE，避免原生 EventSource 无法携带 Authorization/X-Api-Key 请求头。
+ * 调用方负责 AbortController 和断线重连；服务端只推送脱敏后的既有 Run 详情结构。
+ */
+async function streamRunEvents(runId, { signal, onEvent } = {}) {
+  const response = await fetch(`${apiBaseUrl}/runs/${encodeURIComponent(runId)}/events`, {
+    method: 'GET',
+    signal,
+    headers: identityHeaders({ Accept: 'text/event-stream' }),
+  })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}))
+    const error = new Error(payload.message || `实时执行连接失败（${response.status}）`)
+    error.code = payload.code
+    error.traceId = payload.traceId || response.headers.get('X-Trace-Id')
+    throw error
+  }
+  if (!response.body) throw new Error('当前浏览器不支持实时执行流')
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const records = buffer.split(/\r?\n\r?\n/)
+      buffer = records.pop() || ''
+      records.forEach((record) => {
+        const lines = record.split(/\r?\n/)
+        const event = lines.find((line) => line.startsWith('event:'))?.slice(6).trim() || 'message'
+        const data = lines.filter((line) => line.startsWith('data:'))
+          .map((line) => line.slice(5).trimStart()).join('\n')
+        if (!data) return
+        try {
+          onEvent?.({ event, data: JSON.parse(data) })
+        } catch {
+          // 单条 SSE 损坏时忽略，后续快照或 HTTP 轮询会恢复客户端状态。
+        }
+      })
+    }
+  } finally {
+    reader.releaseLock()
+  }
 }
 
 export const api = {
@@ -70,6 +124,7 @@ export const api = {
   },
   dashboardSummary: () => request('/dashboard/summary'),
   getRun: (runId) => request(`/runs/${runId}`),
+  streamRunEvents,
   createRun: (payload) => request('/runs', { method: 'POST', body: JSON.stringify(payload) }),
   startRun: (runId) => request(`/runs/${runId}/start`, { method: 'POST' }),
   approveRun: (runId) => request(`/runs/${runId}/approve`, { method: 'POST' }),

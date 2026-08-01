@@ -21,7 +21,7 @@ Ming Harness 是一个面向企业 Agent 的可运行 Harness：后端使用 Spr
 - 本地基础设施 Profile：PostgreSQL + Flyway、Redis 共享治理、RabbitMQ Outbox Worker
 - 健康检查与运行指标：公开存活探针、受 `ops.read` 保护的 `/api/health` 和 Actuator 指标
 - 请求关联追踪：自动生成并回传 `X-Request-Id`、`X-Trace-Id`，错误响应包含 `traceId`
-- Vue 3 聊天工作台：持久化会话、消息气泡、逐轮输入、异步状态轮询和本轮 Run 执行链；原 Run 运维控制台仍可切换进入
+- Vue 3 聊天工作台：持久化会话、消息气泡、逐轮输入、Run 实时 SSE 事件流与轮询兜底；原 Run 运维控制台仍可切换进入
 - Electron 桌面工作区桥接：原生选择本地项目、会话/Run 固定绑定、路径加密存储和受信任桌面令牌校验
 
 ## 启动方式
@@ -79,6 +79,9 @@ npm run dev
 | `MAX_CONTEXT_CHARS` | `4000` | 注入模型的上下文最大字符数 |
 | `RECOVERY_TIMEOUT_MS` | `120000` | Worker 中断后将 RUNNING 任务转为超时的阈值 |
 | `MAX_TOOL_ATTEMPTS` | `3` | 单个只读工具的自动重试次数上限，副作用工具固定为 1 |
+| `RUN_EVENT_STREAM_POLL_MS` | `750` | 已订阅 Run 的持久化快照检查间隔；可跨 Worker 实例推送状态变化 |
+| `RUN_EVENT_STREAM_HEARTBEAT_MS` | `15000` | SSE 空闲连接的保活注释间隔 |
+| `RUN_EVENT_STREAM_MAX_SUBSCRIBERS` | `200` | 单个 Runtime 实例允许的并发 Run 实时订阅上限 |
 | `WORKSPACE_ENABLED` | `false`（`local` 为 `true`） | 是否启用 Agent 工作区工具；生产环境必须显式评估后开启 |
 | `HARNESS_WORKSPACE_ROOT` | `./workspace` | 工作区根目录，所有文件工具都不能访问该目录之外的路径 |
 | `WORKSPACE_MAX_READ_BYTES` / `WORKSPACE_MAX_WRITE_BYTES` | `1000000` / `1000000` | 单次读取/写入的 UTF-8 字节上限 |
@@ -207,6 +210,20 @@ npm run desktop:dev
 上例可作为 `workspace.git.diff` 的输入；`workspace.git.status` 使用 `{}` 输入即可。两者都是只读工具，适合在运行测试前确认 Agent 实际修改内容。
 
 工作区写入只负责可靠地落盘；`workspace.exec` 使用 `ProcessBuilder` 参数列表直接启动白名单命令，不经过 Shell 拼接。命令执行默认关闭，开启后仍需要 `workspace.exec` 权限和人工审批，并会将命令、工作目录、退出码、超时/截断状态和输出摘要写入 Step 与 HMAC 审计链。
+
+### Run 实时事件流
+
+聊天工作台和 Run 详情会订阅 `GET /api/runs/{runId}/events`。连接建立后先收到 `snapshot`，之后只有 Run、Step、结果或错误发生持久化变化时才收到 `run` 事件；任务进入 `SUCCEEDED`、`FAILED`、`CANCELLED` 或 `TIMED_OUT` 后服务端自动关闭连接。每条事件正文与 `GET /api/runs/{runId}` 的既有 `RunDetail` 结构一致，不额外推送审计正文或本机工作区路径。
+
+该接口需要 `run.read` 权限，并沿用 API Key、OIDC 或本地身份请求头。前端通过 `fetch` 而不是浏览器原生 `EventSource` 建立连接，因而能够携带 `Authorization` 等认证头；临时断线会自动重连，原有 HTTP 轮询仍是兜底。跨租户、无权限或其他连接失败会返回既有 JSON 错误结构，即使请求的 `Accept` 为 `text/event-stream` 也不会错误地变为 500。
+
+```bash
+curl -N http://localhost:8080/api/runs/<RUN_ID>/events \
+  -H 'Authorization: Bearer demo-key' \
+  -H 'Accept: text/event-stream'
+```
+
+为了让 Rabbit Worker 位于其他 Runtime 实例时也能更新浏览器，本实现按配置读取数据库快照，而不是依赖单 JVM 内存事件；生产部署无需粘性会话。应结合连接容量设置 `RUN_EVENT_STREAM_MAX_SUBSCRIBERS`，并通过负载均衡把 SSE 长连接合理分散到各实例。
 
 ### 代码 Agent 多轮模式
 

@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.mingharness.runtime.api.CreateRunRequest;
 import org.mingharness.runtime.api.RunController;
 import org.mingharness.runtime.application.RunService;
+import org.mingharness.runtime.application.RunEventStreamService;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockHttpServletRequest;
 
@@ -26,7 +27,7 @@ class RunControllerTests {
     @Test
     void oidcShouldKeepJwtPermissionsWhenCreatingRun() {
         RunService runService = mock(RunService.class);
-        RunController controller = new RunController(runService);
+        RunController controller = new RunController(runService, mock(RunEventStreamService.class));
         HarnessIdentityContext.set(new HarnessIdentity(
                 "tenant-oidc", "oidc-user", Set.of("run.create"), "oidc"));
         MockHttpServletRequest request = new MockHttpServletRequest();

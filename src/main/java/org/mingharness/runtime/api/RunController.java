@@ -4,10 +4,12 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.mingharness.common.BusinessException;
 import org.mingharness.runtime.application.RunService;
+import org.mingharness.runtime.application.RunEventStreamService;
 import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.security.HarnessIdentity;
 import org.mingharness.security.HarnessIdentityContext;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.Locale;
@@ -26,9 +29,11 @@ import java.util.Locale;
 public class RunController {
 
     private final RunService runService;
+    private final RunEventStreamService runEventStreamService;
 
-    public RunController(RunService runService) {
+    public RunController(RunService runService, RunEventStreamService runEventStreamService) {
         this.runService = runService;
+        this.runEventStreamService = runEventStreamService;
     }
 
     @GetMapping
@@ -47,6 +52,12 @@ public class RunController {
     @GetMapping("/{runId}")
     public RunDetail detail(@PathVariable String runId) {
         return runService.getDetail(runId, identity().tenantId());
+    }
+
+    /** 使用带认证请求头的 fetch 建立 SSE，避免 EventSource 无法携带 API Key 的限制。 */
+    @GetMapping(value = "/{runId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter events(@PathVariable String runId) {
+        return runEventStreamService.subscribe(runId, identity().tenantId());
     }
 
     @PostMapping

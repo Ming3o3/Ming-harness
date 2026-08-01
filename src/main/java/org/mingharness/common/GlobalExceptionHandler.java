@@ -3,6 +3,7 @@ package org.mingharness.common;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.validation.FieldError;
@@ -34,7 +35,7 @@ public class GlobalExceptionHandler {
                 Map.of(),
                 Instant.now()
         );
-        return ResponseEntity.status(exception.getStatus()).body(response);
+        return jsonResponse(exception.getStatus(), response);
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -49,7 +50,7 @@ public class GlobalExceptionHandler {
                 details,
                 Instant.now()
         );
-        return ResponseEntity.badRequest().body(response);
+        return jsonResponse(HttpStatus.BAD_REQUEST, response);
     }
 
     /** 并发修改带版本字段的运行或租户策略时，要求客户端重新读取后再提交，不能伪装成服务故障。 */
@@ -62,7 +63,7 @@ public class GlobalExceptionHandler {
                 Map.of(),
                 Instant.now()
         );
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
+        return jsonResponse(HttpStatus.CONFLICT, response);
     }
 
     @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
@@ -73,7 +74,7 @@ public class GlobalExceptionHandler {
                 Map.of(),
                 Instant.now()
         );
-        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(response);
+        return jsonResponse(HttpStatus.UNSUPPORTED_MEDIA_TYPE, response);
     }
 
     @ExceptionHandler(Exception.class)
@@ -90,6 +91,11 @@ public class GlobalExceptionHandler {
                 Map.of(),
                 Instant.now()
         );
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+        return jsonResponse(HttpStatus.INTERNAL_SERVER_ERROR, response);
+    }
+
+    /** SSE 客户端通常只声明 text/event-stream；失败时仍返回可解析的既有 JSON 错误结构。 */
+    private ResponseEntity<ErrorResponse> jsonResponse(HttpStatus status, ErrorResponse response) {
+        return ResponseEntity.status(status).contentType(MediaType.APPLICATION_JSON).body(response);
     }
 }

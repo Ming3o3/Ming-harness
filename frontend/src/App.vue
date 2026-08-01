@@ -59,8 +59,14 @@ const chatDragActive = ref(false)
 const chatAttachmentInput = ref(null)
 const chatFolderInput = ref(null)
 const showChatRun = ref(false)
+// 实时流只订阅当前查看的非终态 Run；HTTP 轮询仍用于网络异常后的兜底校验。
+const runEventStreaming = ref(false)
 let conversationPollTimer
 let chatHighlightTimer
+let runEventAbortController
+let runEventReconnectTimer
+// 记录连接所属 Run，避免聊天轮询读取到同一任务时重复中断并创建 SSE 连接。
+let runEventStreamRunId
 
 function readTheme() {
   if (typeof window === 'undefined') return 'dark'
@@ -748,7 +754,9 @@ async function pollConversation() {
     const detail = await api.getConversation(activeConversationId.value)
     activeConversation.value = detail
     const runId = latestConversationRun(detail)
-    if (runId) await selectRun(runId, false, false)
+    if (runId && selectedRun.value?.run?.id !== runId) {
+      await selectRun(runId, false, false)
+    }
     if (!detail.messages.some((message) => message.status === 'PENDING')) {
       await loadConversations(activeConversationId.value)
     }
@@ -765,7 +773,9 @@ async function refreshActiveConversation() {
   const detail = await api.getConversation(conversationId)
   activeConversation.value = detail
   const runId = latestConversationRun(detail)
-  if (runId) await selectRun(runId, false, false)
+  if (runId && selectedRun.value?.run?.id !== runId) {
+    await selectRun(runId, false, false)
+  }
   conversations.value = await api.listConversations()
   scrollChatToBottom()
 }
@@ -1102,6 +1112,7 @@ async function selectRun(runId, announce = true, showLoading = true) {
     const [detail, events] = await Promise.all([api.getRun(runId), api.listAuditEvents(runId)])
     selectedRun.value = detail
     auditEvents.value = events
+    startRunEventStream(runId)
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
@@ -1109,9 +1120,84 @@ async function selectRun(runId, announce = true, showLoading = true) {
   }
 }
 
+function stopRunEventStream() {
+  window.clearTimeout(runEventReconnectTimer)
+  runEventReconnectTimer = undefined
+  if (runEventAbortController) {
+    runEventAbortController.abort()
+    runEventAbortController = undefined
+  }
+  runEventStreamRunId = undefined
+  runEventStreaming.value = false
+}
+
+/** 只保留一个当前 Run 的实时连接，切换对话或控制台条目时立即关闭旧连接。 */
+function startRunEventStream(runId) {
+  if (!runId || isTerminal(selectedRun.value?.run?.status)) {
+    // 切到终态任务也必须关闭此前其他 Run 的连接。
+    stopRunEventStream()
+    return
+  }
+  // 同一 Run 的 SSE 已建立时保持连接，避免聊天轮询每 1.2 秒触发一次重连。
+  if (runEventStreamRunId === runId && runEventAbortController && !runEventAbortController.signal.aborted) {
+    return
+  }
+  stopRunEventStream()
+  const controller = new AbortController()
+  runEventAbortController = controller
+  runEventStreamRunId = runId
+  runEventStreaming.value = true
+  void api.streamRunEvents(runId, {
+    signal: controller.signal,
+    onEvent: ({ event, data }) => {
+      if ((event !== 'snapshot' && event !== 'run') || data?.run?.id !== runId) return
+      if (selectedRun.value?.run?.id !== runId) return
+      selectedRun.value = data
+      // 审计记录不放入 SSE 正文，按快照变化增量刷新，避免把额外敏感字段扩大到新接口。
+      void api.listAuditEvents(runId).then((events) => {
+        if (selectedRun.value?.run?.id === runId) auditEvents.value = events
+      }).catch(() => {})
+      if (isTerminal(data.run.status)) {
+        stopRunEventStream()
+        void refreshAfterTerminalRunEvent(runId)
+      }
+    },
+  }).catch(() => {
+    // 网络短暂中断时无须打断聊天；下面会自动重连，现有轮询继续作为兜底。
+  }).finally(() => {
+    if (controller.signal.aborted || runEventAbortController !== controller) return
+    runEventStreaming.value = false
+    runEventAbortController = undefined
+    runEventStreamRunId = undefined
+    if (!isTerminal(selectedRun.value?.run?.status) && selectedRun.value?.run?.id === runId) {
+      runEventReconnectTimer = window.setTimeout(() => startRunEventStream(runId), 1000)
+    }
+  })
+}
+
+async function refreshAfterTerminalRunEvent(runId) {
+  try {
+    const work = [loadRunsPage(), api.dashboardSummary()]
+    if (activeConversationId.value && latestConversationRun(activeConversation.value) === runId) {
+      work.push(api.getConversation(activeConversationId.value), api.listConversations())
+    }
+    const results = await Promise.all(work)
+    summary.value = results[1]
+    if (results.length > 2) {
+      activeConversation.value = results[2]
+      conversations.value = results[3]
+      scrollChatToBottom()
+    }
+  } catch {
+    // 下一轮轮询会恢复列表或消息气泡，不覆盖用户当前可见的 Run 详情。
+  }
+}
+
 async function pollSelectedRun() {
   if (!selectedRun.value || isTerminal(selectedStatus.value)) return
   if (runsLoading.value) return
+  // 实时 SSE 正常存在时避免每 1.5 秒重复拉取详情；断线时会自动回到该兜底路径。
+  if (runEventStreaming.value) return
   try {
     await selectRun(selectedRun.value.run.id, false, false)
     const [, summaryData] = await Promise.all([loadRunsPage(), api.dashboardSummary()])
@@ -1240,6 +1326,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  stopRunEventStream()
   window.clearInterval(runPollTimer)
   window.clearInterval(conversationPollTimer)
   window.clearInterval(healthPollTimer)
@@ -1340,6 +1427,7 @@ onBeforeUnmount(() => {
                   {{ desktopWorkspacePicking ? '选择中…' : '选择本地项目' }}
                 </button>
               </div>
+              <span v-if="runEventStreaming && !isTerminal(selectedStatus)" class="chat-live-indicator"><i></i>实时执行</span>
               <span v-if="pendingChatMessage" class="chat-run-pill" :class="statusClass(chatRunStatus)"><i></i>{{ statusLabel(chatRunStatus) }}</span>
               <button v-if="latestConversationRun(activeConversation)" class="secondary-button" type="button" @click="showChatRun = !showChatRun">{{ showChatRun ? '隐藏运行' : '查看运行' }}</button>
             </div>
@@ -1696,6 +1784,7 @@ onBeforeUnmount(() => {
                 <h2>{{ selectedRun.run.title }}</h2>
               </div>
               <div class="detail-actions">
+                <span v-if="runEventStreaming && !isTerminal(selectedStatus)" class="run-live-indicator"><i></i>实时</span>
                 <span class="status-pill" :class="statusClass(selectedStatus)"><i></i>{{ statusLabel(selectedStatus) }}</span>
                 <button v-if="canStart" class="secondary-button" type="button" :disabled="loading" @click="startSelectedRun">启动</button>
                 <button v-if="canApprove" class="secondary-button" type="button" :disabled="loading" @click="approveSelectedRun">审批通过</button>
