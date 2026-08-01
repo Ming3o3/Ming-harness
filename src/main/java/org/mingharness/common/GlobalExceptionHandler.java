@@ -1,5 +1,7 @@
 package org.mingharness.common;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -14,6 +16,8 @@ import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     private final SensitiveDataSanitizer sanitizer;
 
@@ -62,6 +66,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpectedException(Exception exception) {
+        String traceId = HarnessRequestContext.currentTraceId();
+        log.error("未处理的请求异常，traceId={}, exceptionType={}, message={}",
+                traceId,
+                exception.getClass().getName(),
+                sanitizer.sanitize(exception.getMessage()),
+                exception);
         ErrorResponse response = new ErrorResponse(
                 "INTERNAL_ERROR",
                 "服务暂时不可用，请稍后重试",
