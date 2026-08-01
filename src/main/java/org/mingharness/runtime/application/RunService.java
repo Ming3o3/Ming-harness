@@ -18,6 +18,9 @@ import org.mingharness.runtime.domain.TenantPolicyLimits;
 import org.mingharness.model.ModelGateway;
 import org.mingharness.model.ModelRequest;
 import org.mingharness.model.ModelResponse;
+import org.mingharness.model.ModelToolDefinition;
+import org.mingharness.model.ModelToolCall;
+import org.mingharness.model.AgentTurnCodec;
 import org.springframework.beans.factory.annotation.Value;
 import org.mingharness.runtime.repository.RunRepository;
 import org.mingharness.dashboard.RunDashboardSummary;
@@ -88,6 +91,7 @@ public class RunService {
     private final String workerId = "worker-" + UUID.randomUUID();
     private final HarnessMetrics metrics;
     private final SensitiveDataSanitizer sanitizer;
+    private final AgentTurnCodec agentTurnCodec;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -115,7 +119,8 @@ public class RunService {
                       RedisProperties redisProperties,
                       @Value("${harness.execution.mode:sync}") String executionMode,
                       HarnessMetrics metrics,
-                      SensitiveDataSanitizer sanitizer) {
+                      SensitiveDataSanitizer sanitizer,
+                      AgentTurnCodec agentTurnCodec) {
         this.runRepository = runRepository;
         this.auditTrailService = auditTrailService;
         this.toolRegistry = toolRegistry;
@@ -141,16 +146,25 @@ public class RunService {
         this.executionMode = executionMode;
         this.metrics = metrics;
         this.sanitizer = sanitizer;
+        this.agentTurnCodec = agentTurnCodec;
     }
 
     @Transactional
     public RunSummary create(CreateRunRequest request) {
         String sanitizedTitle = sanitizer.sanitize(request.title());
         String sanitizedInput = sanitizer.sanitize(request.input());
+        boolean agentMode = request.isAgentMode();
         String toolName = request.toolName() == null || request.toolName().isBlank()
                 ? "demo.echo" : request.toolName();
-        HarnessTool selectedTool = toolRegistry.get(toolName);
-        toolInputValidator.validate(selectedTool.definition(), sanitizedInput);
+        if (agentMode) {
+            // Agent 输入是自然语言指令，具体工具参数由模型按各工具 schema 生成。
+            toolName = "agent.model";
+        } else {
+            HarnessTool selectedTool = toolRegistry.get(toolName);
+            toolInputValidator.validate(selectedTool.definition(), sanitizedInput);
+        }
+        final boolean effectiveAgentMode = agentMode;
+        final String effectiveToolName = toolName;
 
         if (sanitizer.containsSensitiveData(request.idempotencyKey())) {
             throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "SENSITIVE_IDEMPOTENCY_KEY_REJECTED",
@@ -164,16 +178,16 @@ public class RunService {
                 Optional<Run> existing = runRepository.findByTenantIdAndIdempotencyKey(
                         request.tenantId(), idempotencyKey);
                 if (existing.isPresent()) {
-                    if (!sameCreateRequest(existing.get(), request, toolName, sanitizedTitle, sanitizedInput)) {
+                    if (!sameCreateRequest(existing.get(), request, effectiveToolName, sanitizedTitle, sanitizedInput)) {
                         throw new BusinessException(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED",
                                 "幂等键已经用于其他任务");
                     }
                     return toSummary(existing.get());
                 }
             }
-            if (!tenantLimits.allowsTool(toolName)) {
+            if (!effectiveAgentMode && !tenantLimits.allowsTool(effectiveToolName)) {
                 throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_TOOL_NOT_ALLOWED",
-                        "当前租户策略不允许使用工具: " + toolName);
+                        "当前租户策略不允许使用工具: " + effectiveToolName);
             }
             // 参数/配额校验失败的请求不应消耗 Redis 或内存速率桶中的合法创建额度。
             validateRuntimeLimits(request, tenantLimits);
@@ -189,10 +203,14 @@ public class RunService {
                     sanitizer.sanitize(valueOrDefault(request.promptVersion(), defaultPromptVersion)),
                     sanitizer.sanitize(valueOrDefault(request.policyVersion(), defaultPolicyVersion)),
                     idempotencyKey,
-                    normalizePermissions(request.permissions())
+                    normalizePermissions(request.permissions()),
+                    effectiveAgentMode,
+                    request.effectiveMaxTurns()
             );
             run.addStep(new Step(1, StepType.MODEL, "model.complete", sanitizedInput));
-            run.addStep(new Step(2, StepType.TOOL, toolName, sanitizedInput));
+            if (!effectiveAgentMode) {
+                run.addStep(new Step(2, StepType.TOOL, effectiveToolName, sanitizedInput));
+            }
             if (run.getSteps().size() > tenantLimits.maxStepsPerRun()) {
                 throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "STEP_LIMIT_EXCEEDED",
                         "任务步骤数超过租户运行上限");
@@ -411,39 +429,56 @@ public class RunService {
                                                   RunExecutionLock.LockToken lockToken) {
         String activeStepId = null;
         try {
-            for (RunExecutionStateService.StepExecutionSnapshot step : run.steps()) {
-                if (step.status() == StepStatus.SUCCEEDED) {
+            while (true) {
+                if (run.agentMode()) {
+                    executionStateService.recoverAgentToolSteps(run.id(), run.tenantId(), workerId);
+                }
+                RunExecutionStateService.RunExecutionSnapshot current = run.agentMode()
+                        ? executionStateService.current(run.id(), run.tenantId(), workerId).orElse(null)
+                        : run;
+                if (current == null) return;
+                boolean foundPending = false;
+                for (RunExecutionStateService.StepExecutionSnapshot step : current.steps()) {
+                    if (step.status() == StepStatus.SUCCEEDED) continue;
+                    foundPending = true;
+                    activeStepId = step.id();
+                    ensureNotCancelled(current.id(), current.tenantId());
+                    refreshLease(current, lockToken);
+                    if (step.type() == StepType.TOOL) {
+                        HarnessTool tool = toolRegistry.get(step.name());
+                        ToolDefinition definition = tool.definition();
+                        PolicyDecision decision = policyEngine.evaluate(new PolicyContext(
+                                current.tenantId(), current.userId(), permissions(current.permissionsSnapshot()),
+                                step.approvalGranted()), definition);
+                        if (decision.type() == PolicyDecisionType.DENY) {
+                            if (executionStateService.failRunWithStep(current.id(), current.tenantId(), workerId,
+                                    step.id(), decision.reason(), "POLICY_DENIED")) {
+                                metrics.runFailed();
+                            }
+                            return;
+                        }
+                        if (decision.requiresApproval()) {
+                            executionStateService.requestApproval(current.id(), current.tenantId(), workerId,
+                                    step.id(), decision.reason());
+                            return;
+                        }
+                    }
+                    WorkerStepOutcome outcome = step.type() == StepType.MODEL
+                            ? executeModelStepOutsideTransaction(current, step, lockToken)
+                            : executeToolStepOutsideTransaction(current, step, lockToken);
+                    if (outcome == WorkerStepOutcome.STOP) return;
+                    activeStepId = null;
+                }
+                if (!current.agentMode()) break;
+                RunExecutionStateService.RunExecutionSnapshot latest = executionStateService
+                        .current(current.id(), current.tenantId(), workerId).orElse(null);
+                if (latest == null) return;
+                boolean hasPending = latest.steps().stream().anyMatch(step -> step.status() != StepStatus.SUCCEEDED);
+                if (hasPending || executionStateService.appendNextAgentModel(
+                        latest.id(), latest.tenantId(), workerId)) {
                     continue;
                 }
-                activeStepId = step.id();
-                ensureNotCancelled(run.id(), run.tenantId());
-                refreshLease(run, lockToken);
-                if (step.type() == StepType.TOOL) {
-                    HarnessTool tool = toolRegistry.get(step.name());
-                    ToolDefinition definition = tool.definition();
-                    PolicyDecision decision = policyEngine.evaluate(new PolicyContext(
-                            run.tenantId(), run.userId(), permissions(run.permissionsSnapshot()), step.approvalGranted()),
-                            definition);
-                    if (decision.type() == PolicyDecisionType.DENY) {
-                        if (executionStateService.failRunWithStep(run.id(), run.tenantId(), workerId,
-                                step.id(), decision.reason(), "POLICY_DENIED")) {
-                            metrics.runFailed();
-                        }
-                        return;
-                    }
-                    if (decision.requiresApproval()) {
-                        executionStateService.requestApproval(run.id(), run.tenantId(), workerId,
-                                step.id(), decision.reason());
-                        return;
-                    }
-                }
-                WorkerStepOutcome outcome = step.type() == StepType.MODEL
-                        ? executeModelStepOutsideTransaction(run, step, lockToken)
-                        : executeToolStepOutsideTransaction(run, step, lockToken);
-                if (outcome == WorkerStepOutcome.STOP) {
-                    return;
-                }
-                activeStepId = null;
+                break;
             }
             ensureNotCancelled(run.id(), run.tenantId());
             if (executionStateService.finishSuccess(run.id(), run.tenantId(), workerId)) {
@@ -497,13 +532,23 @@ public class RunService {
                     : started.get().input() + "\n\n参考资料（请保留来源标记）:\n" + context.text();
             ModelResponse response = boundedExecutor.execute("模型调用", runtimeLimits.modelTimeoutMs(),
                     () -> modelGateway.complete(new ModelRequest(
-                            sanitizer.sanitize(modelInput), run.modelName(), run.promptVersion())));
+                            sanitizer.sanitize(modelInput), run.modelName(), run.promptVersion(),
+                            run.agentMode() ? availableModelTools(run.tenantId()) : List.of())));
+            if (run.agentMode()) {
+                validateAgentToolCalls(run, response.toolCalls());
+            }
             // 外部调用期间 Redis 锁和数据库租约都可能接近过期，完成步骤前必须再次确认 Worker 所有权。
             refreshLease(run, lockToken);
+            String persistedOutput = run.agentMode() ? agentTurnCodec.encode(response) : response.content();
             RunExecutionStateService.StepCompletionResult result = executionStateService.completeStep(
-                    run.id(), run.tenantId(), workerId, step.id(), response.content(),
+                    run.id(), run.tenantId(), workerId, step.id(), persistedOutput,
                     response.inputTokens(), response.outputTokens(), response.cost());
             if (result == RunExecutionStateService.StepCompletionResult.COMPLETED) {
+                if (run.agentMode() && !response.toolCalls().isEmpty()
+                        && !executionStateService.appendAgentToolSteps(
+                        run.id(), run.tenantId(), workerId, step.id(), response.toolCalls())) {
+                    return WorkerStepOutcome.STOP;
+                }
                 return WorkerStepOutcome.CONTINUE;
             }
             if (result == RunExecutionStateService.StepCompletionResult.BUDGET_EXCEEDED) {
@@ -653,12 +698,24 @@ public class RunService {
                 String safeModelInput = sanitizer.sanitize(modelInput);
                 ModelResponse response = boundedExecutor.execute("模型调用", runtimeLimits.modelTimeoutMs(),
                         () -> modelGateway.complete(new ModelRequest(
-                                safeModelInput, run.getModelName(), run.getPromptVersion())));
+                                safeModelInput, run.getModelName(), run.getPromptVersion(),
+                                run.isAgentMode() ? availableModelTools(run.getTenantId()) : List.of())));
+                if (run.isAgentMode()) {
+                    validateAgentToolCalls(new RunExecutionStateService.RunExecutionSnapshot(
+                            run.getId(), run.getTenantId(), run.getUserId(), run.getModelName(),
+                            run.getPromptVersion(), run.getInput(), run.getBudget(),
+                            run.getPermissionsSnapshot(), true, run.getMaxTurns(), List.of()), response.toolCalls());
+                }
                 if (exceedsBudget(run, response.cost())) {
                     throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "RUN_BUDGET_EXCEEDED",
                             "模型调用成本超过 Run 预算");
                 }
-                step.succeed(sanitizer.sanitize(response.content()), response.inputTokens(), response.outputTokens(), response.cost());
+                step.succeed(sanitizer.sanitize(run.isAgentMode()
+                                ? agentTurnCodec.encode(response) : response.content()),
+                        response.inputTokens(), response.outputTokens(), response.cost());
+                if (run.isAgentMode() && !response.toolCalls().isEmpty()) {
+                    appendAgentToolStepsInMemory(run, step, response.toolCalls());
+                }
             }
             record(run.getId(), step.getId(), "STEP_SUCCEEDED", "步骤执行成功");
         } catch (ExecutionTimeoutException exception) {
@@ -673,6 +730,62 @@ public class RunService {
             record(run.getId(), step.getId(), eventType, step.getError());
             throw exception;
         }
+    }
+
+    private void appendAgentToolStepsInMemory(Run run, Step modelStep, List<ModelToolCall> calls) {
+        TenantPolicyLimits limits = tenantPolicyService.limitsFor(run.getTenantId());
+        if (run.getSteps().size() + calls.size() > limits.maxStepsPerRun()) {
+            throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "STEP_LIMIT_EXCEEDED",
+                    "Agent 动态步骤超过租户运行上限");
+        }
+        int sequence = run.getSteps().stream().mapToInt(Step::getSequence).max().orElse(0) + 1;
+        for (ModelToolCall call : calls) {
+            Step toolStep = new Step(sequence++, StepType.TOOL, call.name(), sanitizer.sanitize(call.arguments()));
+            run.addStep(toolStep);
+            record(run.getId(), toolStep.getId(), "AGENT_TOOL_CALL_REQUESTED",
+                    "模型请求调用工具: " + call.name());
+        }
+    }
+
+    private boolean appendNextAgentModelInMemory(Run run) {
+        Step latest = run.getSteps().isEmpty() ? null : run.getSteps().get(run.getSteps().size() - 1);
+        if (latest == null || latest.getType() != StepType.TOOL
+                || latest.getStatus() != StepStatus.SUCCEEDED) return false;
+        Step latestModel = run.getSteps().stream()
+                .filter(step -> step.getType() == StepType.MODEL)
+                .reduce((left, right) -> right).orElse(null);
+        if (latestModel == null) return false;
+        AgentTurnCodec.AgentTurn turn = agentTurnCodec.decode(latestModel.getOutput());
+        if (turn.toolCalls().isEmpty()) return false;
+        long modelTurns = run.getSteps().stream().filter(step -> step.getType() == StepType.MODEL).count();
+        if (modelTurns >= run.getMaxTurns()) {
+            String message = "Agent 达到最大轮数限制: " + run.getMaxTurns();
+            record(run.getId(), null, "AGENT_MAX_TURNS_EXCEEDED", message);
+            throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "AGENT_MAX_TURNS_EXCEEDED",
+                    message);
+        }
+        int sequence = run.getSteps().stream().mapToInt(Step::getSequence).max().orElse(0) + 1;
+        Step next = new Step(sequence, StepType.MODEL, "model.complete", agentTranscript(run));
+        run.addStep(next);
+        record(run.getId(), next.getId(), "AGENT_MODEL_TURN_QUEUED", "工具结果已注入下一轮模型上下文");
+        return true;
+    }
+
+    private String agentTranscript(Run run) {
+        StringBuilder value = new StringBuilder(run.getInput());
+        for (Step step : run.getSteps()) {
+            if (step.getStatus() != StepStatus.SUCCEEDED) continue;
+            if (step.getType() == StepType.MODEL) {
+                String content = agentTurnCodec.decode(step.getOutput()).content();
+                if (!content.isBlank()) value.append("\n\n模型: ").append(content);
+            } else if (step.getType() == StepType.TOOL) {
+                value.append("\n\n工具 ").append(step.getName()).append(" 返回: ")
+                        .append(step.getOutput() == null ? "" : step.getOutput());
+            }
+        }
+        String text = sanitizer.sanitize(value.toString());
+        int max = Math.max(1, runtimeLimits.maxContextChars());
+        return text.length() <= max ? text : text.substring(text.length() - max);
     }
 
     private void executeToolStep(Run run, Step step, RunExecutionLock.LockToken lockToken) {
@@ -727,6 +840,9 @@ public class RunService {
     }
 
     private RunDetail executePending(Run run, RunExecutionLock.LockToken lockToken) {
+        if (run.isAgentMode()) {
+            return executeAgentPending(run, lockToken);
+        }
         try {
             for (Step step : List.copyOf(run.getSteps())) {
                 if (run.getStatus() == RunStatus.CANCELLED) {
@@ -792,6 +908,73 @@ public class RunService {
         if (run.getStatus() == RunStatus.SUCCEEDED) {
             metrics.runSucceeded();
         }
+        return toDetail(runRepository.save(run));
+    }
+
+    /** 本地同步模式的 Agent 编排，和 Rabbit Worker 使用同样的动态步骤语义。 */
+    private RunDetail executeAgentPending(Run run, RunExecutionLock.LockToken lockToken) {
+        try {
+            int index = 0;
+            while (true) {
+                while (index < run.getSteps().size()) {
+                    Step step = run.getSteps().get(index++);
+                    if (step.getStatus() == StepStatus.SUCCEEDED) continue;
+                    if (run.getStatus() == RunStatus.CANCELLED) {
+                        run.clearLease();
+                        return toDetail(runRepository.save(run));
+                    }
+                    ensureNotCancelled(run);
+                    refreshLease(run, lockToken);
+                    if (step.getType() == StepType.TOOL) {
+                        PolicyDecision decision = policyEngine.evaluate(
+                                new PolicyContext(run.getTenantId(), run.getUserId(), permissions(run),
+                                        step.isApprovalGranted()), toolRegistry.get(step.getName()).definition());
+                        if (decision.type() == PolicyDecisionType.DENY) {
+                            step.fail(decision.reason());
+                            record(run.getId(), step.getId(), "POLICY_DENIED", decision.reason());
+                            throw new BusinessException(HttpStatus.FORBIDDEN, "POLICY_DENIED", decision.reason());
+                        }
+                        if (decision.requiresApproval()) {
+                            step.requestApproval();
+                            run.waitApproval();
+                            run.clearLease();
+                            runRepository.save(run);
+                            record(run.getId(), step.getId(), "APPROVAL_REQUESTED", decision.reason());
+                            return toDetail(run);
+                        }
+                    }
+                    executeStep(run, step, lockToken);
+                }
+                if (!appendNextAgentModelInMemory(run)) break;
+                index = 0;
+            }
+            ensureNotCancelled(run);
+            String output = run.getSteps().stream()
+                    .filter(step -> step.getStatus() == StepStatus.SUCCEEDED)
+                    .reduce((left, right) -> right)
+                    .map(Step::getOutput)
+                    .map(agentTurnCodec::decode)
+                    .map(AgentTurnCodec.AgentTurn::content)
+                    .orElse("");
+            run.succeed(output);
+            record(run.getId(), null, "RUN_SUCCEEDED", "Agent 任务执行成功");
+        } catch (RunCancellationRequestedException exception) {
+            return toDetail(runRepository.findById(run.getId()).orElseThrow());
+        } catch (ExecutionTimeoutException exception) {
+            run.timeout(safeError(exception, "步骤执行超时"));
+            metrics.runTimedOut();
+            runRepository.save(run);
+            record(run.getId(), null, "RUN_TIMED_OUT", run.getError());
+        } catch (TransientInfrastructureException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            run.fail(safeError(exception, exception.toString()));
+            metrics.runFailed();
+            runRepository.save(run);
+            record(run.getId(), null, "RUN_FAILED", run.getError());
+        }
+        if (lockToken != null) run.clearLease();
+        if (run.getStatus() == RunStatus.SUCCEEDED) metrics.runSucceeded();
         return toDetail(runRepository.save(run));
     }
 
@@ -889,7 +1072,7 @@ public class RunService {
                 run.getOutput(), run.getError(), run.getStatus(), run.getBudget(), run.getCreatedAt(),
                 run.getUpdatedAt(), run.getSteps().size(), run.getIdempotencyKey(), run.getTraceId(),
                 run.getDurationMs(), run.getSteps().stream().map(Step::getCost)
-                        .reduce(BigDecimal.ZERO, BigDecimal::add)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add), run.isAgentMode(), run.getMaxTurns()
         );
     }
 
@@ -957,6 +1140,31 @@ public class RunService {
                 .collect(Collectors.toUnmodifiableSet());
     }
 
+    /** 只把当前租户白名单内的工具契约发给模型，权限/审批字段永远不会泄露给供应商。 */
+    private List<ModelToolDefinition> availableModelTools(String tenantId) {
+        TenantPolicyLimits limits = tenantPolicyService.limitsFor(tenantId);
+        return toolRegistry.definitions().stream()
+                .filter(definition -> limits.allowsTool(definition.name()))
+                .map(definition -> new ModelToolDefinition(
+                        definition.name(), definition.description(), definition.inputSchema()))
+                .toList();
+    }
+
+    /** 模型提出的工具调用先做注册表、租户白名单和 JSON Schema 校验，再进入持久化流程。 */
+    private void validateAgentToolCalls(RunExecutionStateService.RunExecutionSnapshot run,
+                                        List<ModelToolCall> calls) {
+        if (calls == null) return;
+        TenantPolicyLimits limits = tenantPolicyService.limitsFor(run.tenantId());
+        for (ModelToolCall call : calls) {
+            HarnessTool tool = toolRegistry.get(call.name());
+            if (!limits.allowsTool(call.name())) {
+                throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_TOOL_NOT_ALLOWED",
+                        "当前租户策略不允许使用工具: " + call.name());
+            }
+            toolInputValidator.validate(tool.definition(), call.arguments());
+        }
+    }
+
     private boolean sameCreateRequest(Run run, CreateRunRequest request, String toolName,
                                       String sanitizedTitle, String sanitizedInput) {
         String modelName = sanitizer.sanitize(valueOrDefault(request.modelName(), defaultModel));
@@ -968,10 +1176,13 @@ public class RunService {
                 && Objects.equals(run.getModelName(), modelName)
                 && Objects.equals(run.getPromptVersion(), promptVersion)
                 && Objects.equals(run.getPolicyVersion(), policyVersion)
+                && run.isAgentMode() == request.isAgentMode()
+                && (!request.isAgentMode() || run.getMaxTurns() == request.effectiveMaxTurns())
                 // 权限快照属于执行语义的一部分，幂等键不能被低权限/高权限请求混用。
                 && Objects.equals(run.getPermissionsSnapshot(), normalizePermissions(request.permissions()))
                 && run.getBudget().compareTo(request.budget() == null ? BigDecimal.ONE : request.budget()) == 0
-                && run.getSteps().stream().anyMatch(step -> Objects.equals(step.getName(), toolName));
+                && (request.isAgentMode()
+                || run.getSteps().stream().anyMatch(step -> Objects.equals(step.getName(), toolName)));
     }
 
     /** 外部模型、工具和网络库的异常可能携带请求头或连接串，持久化前必须脱敏。 */

@@ -157,6 +157,21 @@ export HARNESS_WORKSPACE_ROOT=/Users/ming/Projects/example
 
 工作区写入只负责可靠地落盘，不会执行 Shell 命令；命令执行沙箱和模型多轮 Tool Call 编排将在此基础能力上继续增加。
 
+### 代码 Agent 多轮模式
+
+创建 Run 时将 `agentMode` 设置为 `true`，Harness 会把模型返回的 Tool Call 持久化为新的工具步骤；每个工具完成后自动追加下一轮模型步骤。模型结果、工具参数、审计事件和当前轮次都保存在数据库中，Rabbit Worker 重启后可以从最后一个已提交步骤恢复，而不会依赖进程内上下文。
+
+```bash
+curl -X POST http://localhost:8080/api/runs \
+  -H 'Content-Type: application/json' \
+  -H 'X-Tenant-Id: tenant-demo' \
+  -d '{"tenantId":"tenant-demo","userId":"operator","title":"分析项目结构","input":"请读取项目并总结入口模块","agentMode":true,"maxTurns":8,"budget":10,"permissions":"workspace.read"}'
+```
+
+Agent 模式下 `toolName` 不参与选择，模型只会收到当前租户工具白名单内的工具契约；工具注册表、JSON Schema、租户策略、权限和审批仍是最终授权边界。`maxTurns` 范围为 1 到 20，超过后 Run 以 `FAILED` 结束并记录 `AGENT_MAX_TURNS_EXCEEDED`。控制台创建表单可以直接开启 Agent 模式，详情页会展示模型轮次、Tool Call、工具输出和审批状态。
+
+当前工作区工具支持浏览、读取、搜索和原子写入代码文件。写入工具需要 `workspace.write` 权限、人工审批以及读取时返回的 `sha256` 并发校验；Agent 不会因为启用多轮模式而获得 Shell 执行权限。命令执行沙箱将在后续模块中单独增加白名单、超时和审计边界。
+
 旧版纯文本工具必须在 schema 中显式声明 `"x-harness-legacy-text": true`，普通文本会先转换成 JSON 字符串节点再执行其余约束；结构化对象工具不会静默降级为纯文本。新工具建议始终传入 JSON，例如：
 
 ```json

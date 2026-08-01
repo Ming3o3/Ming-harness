@@ -15,6 +15,11 @@ import org.mingharness.runtime.repository.RunRepository;
 import org.mingharness.tool.HarnessTool;
 import org.mingharness.tool.RetryableToolException;
 import org.mingharness.tool.ToolDefinition;
+import org.mingharness.model.DemoModelGateway;
+import org.mingharness.model.ModelGateway;
+import org.mingharness.model.ModelRequest;
+import org.mingharness.model.ModelResponse;
+import org.mingharness.model.ModelToolCall;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -31,7 +36,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** 验证 Worker 在短事务状态边界下仍能持久化业务失败和完整审计。 */
 @SpringBootTest
-@Import(RunWorkerExecutionTests.WorkerToolConfiguration.class)
+@Import({RunWorkerExecutionTests.WorkerToolConfiguration.class,
+        RunWorkerExecutionTests.AgentWorkerModelConfiguration.class})
 class RunWorkerExecutionTests {
 
     @Autowired
@@ -89,6 +95,28 @@ class RunWorkerExecutionTests {
         assertEquals(RunStatus.SUCCEEDED, completed.getStatus());
         assertEquals(2, completed.getSteps().get(1).getAttempt());
         assertEquals(2, workerFlakyState.invocations());
+    }
+
+    @Test
+    void shouldResumeAgentToolCallLoopInWorkerAndPersistAllSteps() {
+        RunSummary created = runService.create(new CreateRunRequest(
+                "tenant-agent-worker", "worker-user", "Worker Agent 任务", "请读取项目文件",
+                null, null, "prompt-agent", "policy-v1", BigDecimal.TEN,
+                null, null, true, 3));
+        Run run = runRepository.findById(created.id()).orElseThrow();
+        run.start();
+        runRepository.saveAndFlush(run);
+
+        runService.executeFromWorker(new RunExecutionMessage(
+                "agent-worker-event", run.getId(), run.getTenantId(), run.getTraceId(),
+                "START", Instant.now()));
+
+        Run completed = runRepository.findById(run.getId()).orElseThrow();
+        assertEquals(RunStatus.SUCCEEDED, completed.getStatus(), completed.getError());
+        assertEquals(3, completed.getSteps().size());
+        assertEquals("Worker Agent 最终结果", completed.getOutput());
+        assertTrue(auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(run.getId()).stream()
+                .anyMatch(event -> "AGENT_MODEL_TURN_QUEUED".equals(event.getEventType())));
     }
 
     @Test
@@ -150,6 +178,30 @@ class RunWorkerExecutionTests {
                         throw new RetryableToolException("模拟瞬态工具错误");
                     }
                     return "重试成功: " + input;
+                }
+            };
+        }
+    }
+
+    @TestConfiguration
+    static class AgentWorkerModelConfiguration {
+
+        @Bean
+        @org.springframework.context.annotation.Primary
+        ModelGateway agentWorkerModelGateway() {
+            DemoModelGateway fallback = new DemoModelGateway();
+            return new ModelGateway() {
+                @Override
+                public ModelResponse complete(ModelRequest request) {
+                    if (request.tools().isEmpty()) return fallback.complete(request);
+                    if (request.input().contains("工具 demo.echo 返回")) {
+                        return new ModelResponse("Worker Agent 最终结果", "agent-worker-test",
+                                request.promptVersion(), 5, 3);
+                    }
+                    return new ModelResponse("", "agent-worker-test", request.promptVersion(), 5, 4,
+                            java.math.BigDecimal.ZERO,
+                            java.util.List.of(new ModelToolCall(
+                                    "call-worker-agent-1", "demo.echo", "\"worker agent input\"")));
                 }
             };
         }

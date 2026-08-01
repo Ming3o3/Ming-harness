@@ -10,6 +10,9 @@ import org.mingharness.runtime.domain.Step;
 import org.mingharness.runtime.domain.StepStatus;
 import org.mingharness.runtime.domain.StepType;
 import org.mingharness.runtime.repository.RunRepository;
+import org.mingharness.model.AgentTurnCodec;
+import org.mingharness.model.ModelToolCall;
+import org.mingharness.runtime.application.RuntimeLimits;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,13 +34,22 @@ public class RunExecutionStateService {
     private final RunRepository runRepository;
     private final AuditTrailService auditTrailService;
     private final SensitiveDataSanitizer sanitizer;
+    private final AgentTurnCodec agentTurnCodec;
+    private final RuntimeLimits runtimeLimits;
+    private final TenantPolicyService tenantPolicyService;
 
     public RunExecutionStateService(RunRepository runRepository,
                                     AuditTrailService auditTrailService,
-                                    SensitiveDataSanitizer sanitizer) {
+                                    SensitiveDataSanitizer sanitizer,
+                                    AgentTurnCodec agentTurnCodec,
+                                    RuntimeLimits runtimeLimits,
+                                    TenantPolicyService tenantPolicyService) {
         this.runRepository = runRepository;
         this.auditTrailService = auditTrailService;
         this.sanitizer = sanitizer;
+        this.agentTurnCodec = agentTurnCodec;
+        this.runtimeLimits = runtimeLimits;
+        this.tenantPolicyService = tenantPolicyService;
     }
 
     /** 获取最新 Run 并建立 Worker 租约，事务提交后才开始外部调用。 */
@@ -52,6 +64,16 @@ public class RunExecutionStateService {
         run.claim(workerId, leaseUntil);
         runRepository.save(run);
         append(run, null, "WORKER_CLAIMED", "Worker 已获取执行租约");
+        return Optional.of(snapshot(run));
+    }
+
+    /** Agent 动态追加步骤后重新读取最新步骤列表，避免 Worker 只处理初始快照。 */
+    @Transactional(readOnly = true)
+    public Optional<RunExecutionSnapshot> current(String runId, String tenantId, String workerId) {
+        Run run = runRepository.findById(runId).orElseThrow(() ->
+                new BusinessException(HttpStatus.NOT_FOUND, "RUN_NOT_FOUND", "执行任务不存在: " + runId));
+        assertTenant(run, tenantId);
+        if (!ownsRunningRun(run, workerId)) return Optional.empty();
         return Optional.of(snapshot(run));
     }
 
@@ -156,6 +178,93 @@ public class RunExecutionStateService {
         return StepCompletionResult.COMPLETED;
     }
 
+    /** Agent 模型完成后，将模型提出的工具调用持久化为排队步骤。 */
+    @Transactional
+    public boolean appendAgentToolSteps(String runId, String tenantId, String workerId,
+                                        String modelStepId, List<ModelToolCall> calls) {
+        if (calls == null || calls.isEmpty()) return true;
+        Run run = loadForUpdate(runId);
+        assertTenant(run, tenantId);
+        if (!run.isAgentMode() || !ownsRunningRun(run, workerId)) return false;
+        Step modelStep = findStep(run, modelStepId);
+        if (modelStep.getStatus() != StepStatus.SUCCEEDED) return false;
+        int maxSteps = tenantPolicyService.limitsFor(run.getTenantId()).maxStepsPerRun();
+        List<Step> existing = stepsAfterModel(run, modelStep);
+        validateExistingAgentSteps(existing, calls);
+        int missing = Math.max(0, calls.size() - existing.size());
+        if (run.getSteps().size() + missing > maxSteps) {
+            throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "AGENT_STEP_LIMIT_EXCEEDED",
+                    "Agent 动态步骤超过租户运行上限");
+        }
+        int nextSequence = run.getSteps().stream().mapToInt(Step::getSequence).max().orElse(0) + 1;
+        for (int index = existing.size(); index < calls.size(); index++) {
+            ModelToolCall call = calls.get(index);
+            Step toolStep = new Step(nextSequence++, StepType.TOOL, call.name(),
+                    sanitizer.sanitize(call.arguments()));
+            run.addStep(toolStep);
+            append(run, toolStep, "AGENT_TOOL_CALL_REQUESTED", "模型请求调用工具: " + call.name());
+        }
+        if (missing > 0) runRepository.save(run);
+        return true;
+    }
+
+    /** Worker 在模型结果已提交但进程尚未来得及追加工具步骤时，按已持久化结果补齐后续步骤。 */
+    @Transactional
+    public boolean recoverAgentToolSteps(String runId, String tenantId, String workerId) {
+        Run run = loadForUpdate(runId);
+        assertTenant(run, tenantId);
+        if (!run.isAgentMode() || !ownsRunningRun(run, workerId)) return false;
+        boolean changed = false;
+        for (Step modelStep : run.getSteps().stream()
+                .filter(step -> step.getType() == StepType.MODEL && step.getStatus() == StepStatus.SUCCEEDED)
+                .toList()) {
+            AgentTurnCodec.AgentTurn turn = agentTurnCodec.decode(modelStep.getOutput());
+            if (!turn.toolCalls().isEmpty()) {
+                int before = stepsAfterModel(run, modelStep).size();
+                appendAgentToolStepsInternal(run, modelStep, turn.toolCalls());
+                changed = changed || stepsAfterModel(run, modelStep).size() > before;
+            }
+        }
+        if (changed) runRepository.save(run);
+        return changed;
+    }
+
+    /** 当前一轮工具全部成功后追加下一轮模型步骤；进程重启后可由数据库重新推导。 */
+    @Transactional
+    public boolean appendNextAgentModel(String runId, String tenantId, String workerId) {
+        Run run = loadForUpdate(runId);
+        assertTenant(run, tenantId);
+        if (!run.isAgentMode() || !ownsRunningRun(run, workerId)) return false;
+        if (run.getSteps().stream().anyMatch(step -> step.getStatus() == StepStatus.QUEUED
+                || step.getStatus() == StepStatus.RUNNING
+                || step.getStatus() == StepStatus.WAITING_APPROVAL)) {
+            return false;
+        }
+        Step latest = run.getSteps().stream().reduce((left, right) -> right).orElse(null);
+        if (latest == null || latest.getType() != StepType.TOOL
+                || latest.getStatus() != StepStatus.SUCCEEDED) return false;
+        Step latestModel = run.getSteps().stream()
+                .filter(step -> step.getType() == StepType.MODEL)
+                .reduce((left, right) -> right).orElse(null);
+        if (latestModel == null) return false;
+        AgentTurnCodec.AgentTurn turn = agentTurnCodec.decode(latestModel.getOutput());
+        if (turn.toolCalls().isEmpty()) return false;
+        long modelTurns = run.getSteps().stream().filter(step -> step.getType() == StepType.MODEL).count();
+        if (modelTurns >= run.getMaxTurns()) {
+            run.fail("Agent 达到最大轮数限制: " + run.getMaxTurns());
+            append(run, null, "AGENT_MAX_TURNS_EXCEEDED", run.getError());
+            runRepository.save(run);
+            return false;
+        }
+        int nextSequence = run.getSteps().stream().mapToInt(Step::getSequence).max().orElse(0) + 1;
+        String nextInput = transcript(run);
+        Step nextModel = new Step(nextSequence, StepType.MODEL, "model.complete", nextInput);
+        run.addStep(nextModel);
+        append(run, nextModel, "AGENT_MODEL_TURN_QUEUED", "工具结果已注入下一轮模型上下文");
+        runRepository.save(run);
+        return true;
+    }
+
     /** 失败但仍会自动重试的只读步骤，只落步骤错误，不结束 Run。 */
     @Transactional
     public boolean failStepForRetry(String runId, String tenantId, String workerId,
@@ -243,6 +352,9 @@ public class RunExecutionStateService {
                 .reduce((left, right) -> right)
                 .map(Step::getOutput)
                 .orElse("");
+        if (run.isAgentMode()) {
+            output = agentTurnCodec.decode(output).content();
+        }
         run.succeed(sanitizer.sanitize(output));
         append(run, null, "RUN_SUCCEEDED", "任务执行成功");
         runRepository.save(run);
@@ -328,6 +440,52 @@ public class RunExecutionStateService {
                 .orElseThrow(() -> new IllegalStateException("步骤不存在: " + stepId));
     }
 
+    private List<Step> stepsAfterModel(Run run, Step modelStep) {
+        int nextModelSequence = run.getSteps().stream()
+                .filter(step -> step.getType() == StepType.MODEL
+                        && step.getSequence() > modelStep.getSequence())
+                .mapToInt(Step::getSequence)
+                .min().orElse(Integer.MAX_VALUE);
+        return run.getSteps().stream()
+                .filter(step -> step.getType() == StepType.TOOL
+                        && step.getSequence() > modelStep.getSequence()
+                        && step.getSequence() < nextModelSequence)
+                .sorted(java.util.Comparator.comparingInt(Step::getSequence))
+                .toList();
+    }
+
+    private void appendAgentToolStepsInternal(Run run, Step modelStep, List<ModelToolCall> calls) {
+        List<Step> existing = stepsAfterModel(run, modelStep);
+        validateExistingAgentSteps(existing, calls);
+        int maxSteps = tenantPolicyService.limitsFor(run.getTenantId()).maxStepsPerRun();
+        int missing = Math.max(0, calls.size() - existing.size());
+        if (run.getSteps().size() + missing > maxSteps) {
+            throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "AGENT_STEP_LIMIT_EXCEEDED",
+                    "Agent 动态步骤超过租户运行上限");
+        }
+        int nextSequence = run.getSteps().stream().mapToInt(Step::getSequence).max().orElse(0) + 1;
+        for (int index = existing.size(); index < calls.size(); index++) {
+            ModelToolCall call = calls.get(index);
+            Step toolStep = new Step(nextSequence++, StepType.TOOL, call.name(),
+                    sanitizer.sanitize(call.arguments()));
+            run.addStep(toolStep);
+            append(run, toolStep, "AGENT_TOOL_CALL_REQUESTED", "模型请求调用工具: " + call.name());
+        }
+    }
+
+    private void validateExistingAgentSteps(List<Step> existing, List<ModelToolCall> calls) {
+        int comparable = Math.min(existing.size(), calls.size());
+        for (int index = 0; index < comparable; index++) {
+            Step step = existing.get(index);
+            ModelToolCall call = calls.get(index);
+            if (!step.getName().equals(call.name())
+                    || !step.getInput().equals(sanitizer.sanitize(call.arguments()))) {
+                throw new BusinessException(HttpStatus.CONFLICT, "AGENT_TOOL_STATE_CONFLICT",
+                        "Agent 工具步骤与已持久化模型结果不一致");
+            }
+        }
+    }
+
     private boolean exceedsBudget(Run run, BigDecimal additionalCost) {
         if (run.getBudget() == null || additionalCost == null || additionalCost.signum() <= 0) {
             return false;
@@ -337,6 +495,23 @@ public class RunExecutionStateService {
                 .filter(value -> value != null)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         return currentCost.add(additionalCost).compareTo(run.getBudget()) > 0;
+    }
+
+    private String transcript(Run run) {
+        StringBuilder value = new StringBuilder(run.getInput());
+        for (Step step : run.getSteps()) {
+            if (step.getStatus() != StepStatus.SUCCEEDED) continue;
+            if (step.getType() == StepType.MODEL) {
+                AgentTurnCodec.AgentTurn turn = agentTurnCodec.decode(step.getOutput());
+                if (!turn.content().isBlank()) value.append("\n\n模型: ").append(turn.content());
+            } else if (step.getType() == StepType.TOOL) {
+                value.append("\n\n工具 ").append(step.getName()).append(" 返回: ")
+                        .append(step.getOutput() == null ? "" : step.getOutput());
+            }
+        }
+        String text = sanitizer.sanitize(value.toString());
+        int max = Math.max(1, runtimeLimits.maxContextChars());
+        return text.length() <= max ? text : text.substring(text.length() - max);
     }
 
     private void append(Run run, Step step, String eventType, String message) {
@@ -349,7 +524,8 @@ public class RunExecutionStateService {
     private RunExecutionSnapshot snapshot(Run run) {
         return new RunExecutionSnapshot(run.getId(), run.getTenantId(), run.getUserId(),
                 run.getModelName(), run.getPromptVersion(), run.getInput(), run.getBudget(),
-                run.getPermissionsSnapshot(), run.getSteps().stream().map(this::stepSnapshot).toList());
+                run.getPermissionsSnapshot(), run.isAgentMode(), run.getMaxTurns(),
+                run.getSteps().stream().map(this::stepSnapshot).toList());
     }
 
     private StepExecutionSnapshot stepSnapshot(Step step) {
@@ -372,6 +548,8 @@ public class RunExecutionStateService {
             String input,
             BigDecimal budget,
             String permissionsSnapshot,
+            boolean agentMode,
+            int maxTurns,
             List<StepExecutionSnapshot> steps
     ) {
     }

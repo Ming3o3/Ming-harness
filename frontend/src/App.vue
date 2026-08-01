@@ -88,6 +88,8 @@ const form = reactive({
   budget: 1,
   idempotencyKey: '',
   permissions: '',
+  agentMode: false,
+  maxTurns: 8,
 })
 
 const documentForm = reactive({
@@ -221,6 +223,25 @@ function apiKeyStatusClass(status) {
 
 function stepLabel(type) {
   return { MODEL: '模型', TOOL: '工具', APPROVAL: '审批' }[type] || type
+}
+
+function decodeAgentStep(step) {
+  const fallback = { content: step?.output || '', toolCalls: [] }
+  if (!step || step.type !== 'MODEL' || !selectedRun.value?.run?.agentMode || !step.output) return fallback
+  try {
+    const parsed = JSON.parse(step.output)
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.toolCalls)) return fallback
+    return {
+      content: typeof parsed.content === 'string' ? parsed.content : '',
+      toolCalls: parsed.toolCalls.filter((call) => call && typeof call.name === 'string'),
+    }
+  } catch {
+    return fallback
+  }
+}
+
+function runModeLabel(run) {
+  return run?.agentMode ? `代码 Agent · 最多 ${run.maxTurns || '—'} 轮` : '单轮执行'
 }
 
 function formatDate(value) {
@@ -814,7 +835,7 @@ onBeforeUnmount(() => {
           </label>
           <label class="field">
             <span>工具</span>
-            <select v-model="form.toolName">
+            <select v-model="form.toolName" :disabled="form.agentMode">
               <option v-for="tool in tools" :key="tool.name" :value="tool.name">{{ tool.name }}</option>
             </select>
           </label>
@@ -838,8 +859,22 @@ onBeforeUnmount(() => {
             <span>权限快照（可选）</span>
             <input v-model="form.permissions" maxlength="1000" placeholder="例如：orders.read,orders.write" />
           </label>
+          <div class="field field-wide agent-mode-field">
+            <span>运行模式</span>
+            <div class="agent-mode-controls">
+              <label class="check-field">
+                <input v-model="form.agentMode" type="checkbox" />
+                <span>启用代码 Agent 多轮模式</span>
+              </label>
+              <label v-if="form.agentMode" class="turns-field">
+                <span>最大轮数</span>
+                <input v-model.number="form.maxTurns" type="number" min="1" max="20" required />
+              </label>
+            </div>
+            <small class="form-hint">Agent 会根据模型 Tool Call 动态执行工作区工具；工具白名单和审批策略仍由服务端控制。</small>
+          </div>
           <div class="form-actions field-wide">
-            <span class="form-hint">创建后会依次执行模型步骤和工具步骤，并记录完整审计链。</span>
+            <span class="form-hint">{{ form.agentMode ? '创建后会按模型决策循环执行，并持久化每一轮模型与工具步骤。' : '创建后会依次执行模型步骤和工具步骤，并记录完整审计链。' }}</span>
             <button class="primary-button" type="submit" :disabled="loading">{{ loading ? '执行中…' : '创建并执行' }}</button>
           </div>
         </form>
@@ -884,7 +919,7 @@ onBeforeUnmount(() => {
                 <strong>{{ run.title }}</strong>
                 <small>{{ run.id.slice(0, 8) }} · {{ formatDate(run.createdAt) }}</small>
               </span>
-              <span class="run-row-meta"><em :class="statusClass(run.status)">{{ statusLabel(run.status) }}</em><small>{{ run.stepCount }} steps</small></span>
+              <span class="run-row-meta"><em :class="statusClass(run.status)">{{ statusLabel(run.status) }}</em><small>{{ runModeLabel(run) }} · {{ run.stepCount }} steps</small></span>
             </button>
           </div>
           <div v-if="runPage.totalElements || runStatusFilter" class="run-pagination" aria-label="Run 列表分页">
@@ -923,6 +958,7 @@ onBeforeUnmount(() => {
               <div><span>租户 / 用户</span><strong>{{ selectedRun.run.tenantId }} / {{ selectedRun.run.userId }}</strong></div>
               <div><span>模型</span><strong>{{ selectedRun.run.modelName }}</strong></div>
               <div><span>Prompt / 策略</span><strong>{{ selectedRun.run.promptVersion }} · {{ selectedRun.run.policyVersion }}</strong></div>
+              <div><span>模式 / 轮数</span><strong>{{ runModeLabel(selectedRun.run) }}</strong></div>
               <div><span>Trace / 耗时</span><strong>{{ selectedRun.run.traceId?.slice(0, 12) || '—' }} · {{ selectedRun.run.durationMs || 0 }} ms</strong></div>
             </div>
 
@@ -935,7 +971,12 @@ onBeforeUnmount(() => {
                   <div class="step-rail"><span class="step-marker" :class="statusClass(step.status)">{{ step.sequence }}</span><span class="rail-line"></span></div>
                   <div class="step-body">
                     <div class="step-title-row"><div><span class="step-type">{{ stepLabel(step.type) }}</span><strong>{{ step.name }}</strong></div><span class="step-status" :class="statusClass(step.status)">{{ statusLabel(step.status) }}</span></div>
-                    <p v-if="step.output" class="step-output">{{ step.output }}</p>
+                    <p v-if="decodeAgentStep(step).content" class="step-output">{{ decodeAgentStep(step).content }}</p>
+                    <div v-if="decodeAgentStep(step).toolCalls.length" class="tool-call-list">
+                      <span class="tool-call-heading">Tool Call</span>
+                      <code v-for="call in decodeAgentStep(step).toolCalls" :key="call.id">{{ call.name }} · {{ call.id }}</code>
+                    </div>
+                    <p v-if="step.type !== 'MODEL' && step.output" class="step-output">{{ step.output }}</p>
                     <p v-if="step.error" class="step-error">{{ step.error }}</p>
                     <small>尝试 {{ step.attempt }} 次 · {{ formatDate(step.finishedAt || step.startedAt) }} · {{ step.durationMs || 0 }} ms<span v-if="step.inputTokens"> · {{ step.inputTokens + step.outputTokens }} tokens</span><span v-if="step.cost"> · ${{ step.cost }}</span></small>
                   </div>

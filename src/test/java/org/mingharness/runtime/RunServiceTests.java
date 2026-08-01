@@ -15,6 +15,11 @@ import org.mingharness.runtime.repository.RunRepository;
 import org.mingharness.tool.HarnessTool;
 import org.mingharness.tool.RetryableToolException;
 import org.mingharness.tool.ToolDefinition;
+import org.mingharness.model.ModelGateway;
+import org.mingharness.model.ModelRequest;
+import org.mingharness.model.ModelResponse;
+import org.mingharness.model.ModelToolCall;
+import org.mingharness.model.DemoModelGateway;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -33,7 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
-@Import(RunServiceTests.FailureToolConfiguration.class)
+@Import({RunServiceTests.FailureToolConfiguration.class, RunServiceTests.AgentModelConfiguration.class})
 class RunServiceTests {
 
     @Autowired
@@ -72,6 +77,47 @@ class RunServiceTests {
         assertNotNull(firstResult.run().traceId());
         assertEquals(firstResult.run().traceId(), traceEvent.getTraceId());
         assertEquals("tenant-demo", traceEvent.getTenantId());
+    }
+
+    @Test
+    void shouldExecuteAgentModelToolModelLoopAndPersistDynamicSteps() {
+        CreateRunRequest request = new CreateRunRequest(
+                "tenant-demo", "user-demo", "代码 Agent 任务", "请读取并分析项目入口",
+                null, null, "prompt-agent", "policy-v1", BigDecimal.TEN,
+                null, null, true, 3);
+
+        RunSummary created = runService.create(request);
+        assertEquals(1, created.stepCount());
+        assertTrue(created.agentMode());
+        assertEquals(3, created.maxTurns());
+
+        RunDetail result = runService.start(created.id(), "tenant-demo");
+
+        assertEquals(RunStatus.SUCCEEDED, result.run().status(), result.run().error());
+        assertEquals(3, result.steps().size());
+        assertEquals(StepStatus.SUCCEEDED, result.steps().get(0).status());
+        assertEquals("demo.echo", result.steps().get(1).name());
+        assertEquals(StepStatus.SUCCEEDED, result.steps().get(1).status());
+        assertEquals(StepStatus.SUCCEEDED, result.steps().get(2).status());
+        assertEquals("Agent 最终结果", result.run().output());
+        assertTrue(auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
+                .anyMatch(event -> "AGENT_TOOL_CALL_REQUESTED".equals(event.getEventType())));
+    }
+
+    @Test
+    void shouldFailAgentWhenMaxTurnsIsReached() {
+        CreateRunRequest request = new CreateRunRequest(
+                "tenant-demo", "user-demo", "Agent 最大轮数", "达到最多轮数后仍请求工具",
+                null, null, "prompt-agent", "policy-v1", BigDecimal.TEN,
+                null, null, true, 1);
+
+        RunSummary created = runService.create(request);
+        RunDetail result = runService.start(created.id(), "tenant-demo");
+
+        assertEquals(RunStatus.FAILED, result.run().status());
+        assertTrue(result.run().error().contains("最大轮数"));
+        assertTrue(auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
+                .anyMatch(event -> "AGENT_MAX_TURNS_EXCEEDED".equals(event.getEventType())));
     }
 
     @Test
@@ -438,6 +484,35 @@ class RunServiceTests {
                         Thread.currentThread().interrupt();
                     }
                     return input;
+                }
+            };
+        }
+    }
+
+    @TestConfiguration
+    static class AgentModelConfiguration {
+
+        @Bean
+        @org.springframework.context.annotation.Primary
+        ModelGateway agentModelGateway() {
+            DemoModelGateway fallback = new DemoModelGateway();
+            return new ModelGateway() {
+                @Override
+                public ModelResponse complete(ModelRequest request) {
+                    if (request.tools().isEmpty()) return fallback.complete(request);
+                    if (request.input().contains("达到最多轮数")) {
+                        return new ModelResponse("", "agent-test", request.promptVersion(), 5, 4,
+                                java.math.BigDecimal.ZERO,
+                                java.util.List.of(new ModelToolCall(
+                                        "call-agent-loop", "demo.echo", "\"loop\"")));
+                    }
+                    if (request.input().contains("工具 demo.echo 返回")) {
+                        return new ModelResponse("Agent 最终结果", "agent-test", request.promptVersion(), 5, 3);
+                    }
+                    return new ModelResponse("", "agent-test", request.promptVersion(), 5, 4,
+                            java.math.BigDecimal.ZERO,
+                            java.util.List.of(new ModelToolCall(
+                                    "call-agent-1", "demo.echo", "\"agent input\"")));
                 }
             };
         }

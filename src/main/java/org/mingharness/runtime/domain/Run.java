@@ -54,6 +54,11 @@ public class Run {
     private String workerId;
     private Instant leaseUntil;
     private Instant heartbeatAt;
+    /** Agent 模式会根据模型 Tool Call 动态追加模型和工具步骤。 */
+    @Column(name = "agent_mode", nullable = false)
+    private boolean agentMode;
+    @Column(name = "max_turns", nullable = false)
+    private int maxTurns;
     @Column(name = "audit_event_count", nullable = false)
     private long auditEventCount;
     @Column(name = "audit_head_hash", length = 64)
@@ -83,6 +88,13 @@ public class Run {
     public Run(String tenantId, String userId, String title, String input, BigDecimal budget,
                String modelName, String promptVersion, String policyVersion, String idempotencyKey,
                String permissionsSnapshot) {
+        this(tenantId, userId, title, input, budget, modelName, promptVersion, policyVersion,
+                idempotencyKey, permissionsSnapshot, false, 1);
+    }
+
+    public Run(String tenantId, String userId, String title, String input, BigDecimal budget,
+               String modelName, String promptVersion, String policyVersion, String idempotencyKey,
+               String permissionsSnapshot, boolean agentMode, int maxTurns) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = tenantId;
         this.userId = userId;
@@ -94,6 +106,8 @@ public class Run {
         this.policyVersion = policyVersion;
         this.idempotencyKey = idempotencyKey;
         this.permissionsSnapshot = permissionsSnapshot;
+        this.agentMode = agentMode;
+        this.maxTurns = Math.max(1, maxTurns);
         this.traceId = UUID.randomUUID().toString();
         this.status = RunStatus.QUEUED;
         this.createdAt = Instant.now();
@@ -252,6 +266,8 @@ public class Run {
     public String getWorkerId() { return workerId; }
     public Instant getLeaseUntil() { return leaseUntil; }
     public Instant getHeartbeatAt() { return heartbeatAt; }
+    public boolean isAgentMode() { return agentMode; }
+    public int getMaxTurns() { return maxTurns; }
     public long getAuditEventCount() { return auditEventCount; }
     public String getAuditHeadHash() { return auditHeadHash; }
     public String getAuditHeadSignature() { return auditHeadSignature; }
