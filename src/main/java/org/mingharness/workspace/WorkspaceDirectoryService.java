@@ -13,7 +13,9 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /** 管理本地目录授权记录，并在每次使用前重新校验目录仍然可访问。 */
 @Service
@@ -67,7 +69,20 @@ public class WorkspaceDirectoryService {
                     "本地目录只能通过受信任的桌面桥接登记");
         }
         Path root = validateRoot(rawRootPath);
-        String name = normalizeName(displayName, root);
+        List<LocalWorkspace> existingWorkspaces = repository.findByTenantIdAndUserIdOrderByUpdatedAtDesc(tenantId, userId);
+        for (LocalWorkspace existing : existingWorkspaces) {
+            try {
+                Path existingRoot = validateRoot(pathCipher.decrypt(existing.getRootPathCiphertext()));
+                if (existingRoot.equals(root)) {
+                    // Electron 反复选择同一个项目是常见行为，复用记录才能保持旧会话/Run 的关联可追溯。
+                    existing.touch();
+                    return view(repository.save(existing));
+                }
+            } catch (BusinessException ignored) {
+                // 无法解密或已失效的旧记录不影响新项目登记，也不暴露其真实路径。
+            }
+        }
+        String name = uniqueName(normalizeName(displayName, root), existingWorkspaces);
         LocalWorkspace saved = repository.save(new LocalWorkspace(tenantId, userId, name,
                 pathCipher.encrypt(root.toString())));
         return view(saved);
@@ -132,5 +147,21 @@ public class WorkspaceDirectoryService {
         value = value.replaceAll("[\\p{Cntrl}]", "_").trim();
         if (value.isBlank()) value = "本地工作区";
         return value.substring(0, Math.min(value.length(), 255));
+    }
+
+    /** 同名目录来自不同磁盘或父目录时追加序号，避免数据库唯一约束导致桌面选择失败。 */
+    private String uniqueName(String preferred, List<LocalWorkspace> existingWorkspaces) {
+        Set<String> used = new HashSet<>();
+        for (LocalWorkspace workspace : existingWorkspaces) {
+            used.add(workspace.getDisplayName());
+        }
+        if (!used.contains(preferred)) return preferred;
+        for (int suffixIndex = 2; suffixIndex < Integer.MAX_VALUE; suffixIndex++) {
+            String suffix = " (" + suffixIndex + ")";
+            int baseLength = Math.max(1, 255 - suffix.length());
+            String candidate = preferred.substring(0, Math.min(preferred.length(), baseLength)) + suffix;
+            if (!used.contains(candidate)) return candidate;
+        }
+        throw new BusinessException(HttpStatus.CONFLICT, "WORKSPACE_NAME_EXHAUSTED", "本地工作区名称已达到上限");
     }
 }

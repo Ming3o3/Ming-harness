@@ -48,6 +48,11 @@ public class LocalWorkspace {
         this.updatedAt = this.createdAt;
     }
 
+    /** 用户再次授权同一个目录时仅刷新最近使用时间，保持会话绑定的工作区 ID 稳定。 */
+    public void touch() {
+        this.updatedAt = Instant.now();
+    }
+
     public String getId() { return id; }
     public String getTenantId() { return tenantId; }
     public String getUserId() { return userId; }

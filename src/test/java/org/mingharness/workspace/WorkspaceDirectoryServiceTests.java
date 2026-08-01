@@ -14,6 +14,7 @@ import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** 验证登记路径加密、所属隔离和工具调用的 Run 级目录绑定。 */
@@ -65,5 +66,24 @@ class WorkspaceDirectoryServiceTests {
 
         assertTrue(result.contains("ProjectOnly.txt"));
         assertTrue(!result.contains(tempDir.toString()));
+    }
+
+    @Test
+    void shouldReuseSameDirectoryAndAssignSafeNamesToDifferentSameNamedProjects() throws Exception {
+        Path first = Files.createDirectories(tempDir.resolve("first/project"));
+        Path second = Files.createDirectories(tempDir.resolve("second/project"));
+
+        var initial = workspaceDirectoryService.register("tenant-local", "developer", null, first.toString(),
+                "test-desktop-bridge-token");
+        var reopened = workspaceDirectoryService.register("tenant-local", "developer", "另一个显示名称", first.toString(),
+                "test-desktop-bridge-token");
+        var sameNamedProject = workspaceDirectoryService.register("tenant-local", "developer", null, second.toString(),
+                "test-desktop-bridge-token");
+
+        assertEquals(initial.id(), reopened.id());
+        assertEquals(2, workspaceRepository.count());
+        assertEquals("project", initial.displayName());
+        assertEquals("project (2)", sameNamedProject.displayName());
+        assertNotEquals(initial.id(), sameNamedProject.id());
     }
 }
