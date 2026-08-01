@@ -103,7 +103,8 @@ public class WorkspaceGitDiffTool implements HarnessTool {
                     "Git 差异查询失败: " + detail);
         }
 
-        String diff = support.sanitize(result.output());
+        // 全目录 Diff 可能同时包含 .env 等受保护文件；按 Git 文件区块过滤后再脱敏。
+        String diff = support.sanitize(visibleDiffOnly(result.output()));
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("path", relativePath);
         response.put("staged", staged);
@@ -118,5 +119,41 @@ public class WorkspaceGitDiffTool implements HarnessTool {
     @Override
     public String execute(String input, ToolExecutionContext context) {
         return support.withWorkspace(context, () -> execute(input));
+    }
+
+    /**
+     * Git 默认以每个 {@code diff --git} 区块输出一个文件。无法安全识别文件名的区块宁可隐藏，
+     * 也不能因为 Git 输出格式或异常文件名而绕开工作区隐藏路径规则。
+     */
+    private String visibleDiffOnly(String rawDiff) {
+        if (rawDiff == null || rawDiff.isBlank()) return rawDiff;
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("(?m)^diff --git ").matcher(rawDiff);
+        if (!matcher.find()) return "";
+        List<Integer> starts = new java.util.ArrayList<>();
+        starts.add(matcher.start());
+        while (matcher.find()) starts.add(matcher.start());
+        StringBuilder visible = new StringBuilder(rawDiff.length());
+        for (int index = 0; index < starts.size(); index++) {
+            int start = starts.get(index);
+            int end = index + 1 < starts.size() ? starts.get(index + 1) : rawDiff.length();
+            String section = rawDiff.substring(start, end);
+            if (isVisibleDiffSection(section)) visible.append(section);
+        }
+        return visible.toString();
+    }
+
+    private boolean isVisibleDiffSection(String section) {
+        int lineEnd = section.indexOf('\n');
+        String header = lineEnd < 0 ? section : section.substring(0, lineEnd);
+        if (!header.startsWith("diff --git a/")) return false;
+        int separator = header.lastIndexOf(" b/");
+        if (separator <= "diff --git a/".length()) return false;
+        String path = header.substring("diff --git a/".length(), separator);
+        try {
+            support.resolve(path, true);
+            return true;
+        } catch (BusinessException ignored) {
+            return false;
+        }
     }
 }

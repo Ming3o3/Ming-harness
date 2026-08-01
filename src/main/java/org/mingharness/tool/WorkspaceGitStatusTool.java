@@ -74,6 +74,7 @@ public class WorkspaceGitStatusTool implements HarnessTool {
         }
 
         List<Map<String, Object>> entries = new ArrayList<>();
+        int protectedEntryCount = 0;
         String branch = "—";
         String[] lines = result.output().split("\\R", -1);
         for (String line : lines) {
@@ -82,18 +83,25 @@ public class WorkspaceGitStatusTool implements HarnessTool {
                 continue;
             }
             if (line.length() < 3 || line.charAt(2) != ' ') continue;
+            String path = line.substring(3);
+            if (!isVisiblePath(path)) {
+                // Git 不能绕过工作区工具层的隐藏路径边界；只保留数量以避免误报“干净”。
+                protectedEntryCount++;
+                continue;
+            }
             Map<String, Object> entry = new LinkedHashMap<>();
             entry.put("index", String.valueOf(line.charAt(0)));
             entry.put("worktree", String.valueOf(line.charAt(1)));
-            entry.put("path", support.sanitize(line.substring(3)));
+            entry.put("path", support.sanitize(path));
             entries.add(entry);
         }
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("branch", support.sanitize(branch));
-        response.put("clean", entries.isEmpty() && !result.outputTruncated());
+        response.put("clean", entries.isEmpty() && protectedEntryCount == 0 && !result.outputTruncated());
         response.put("entries", entries);
-        response.put("entryCount", entries.size());
+        response.put("entryCount", entries.size() + protectedEntryCount);
+        response.put("protectedEntryCount", protectedEntryCount);
         response.put("outputTruncated", result.outputTruncated());
         response.put("scope", ".");
         return support.json(response);
@@ -108,5 +116,15 @@ public class WorkspaceGitStatusTool implements HarnessTool {
         String detail = output == null || output.isBlank() ? "当前工作区不是 Git 仓库" : support.sanitize(output);
         return new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "WORKSPACE_GIT_STATUS_FAILED",
                 "Git 状态查询失败: " + detail);
+    }
+
+    /** Git 状态中的文件名也必须通过与读写工具一致的隐藏路径和符号链接校验。 */
+    private boolean isVisiblePath(String path) {
+        try {
+            support.resolve(path, true);
+            return true;
+        } catch (BusinessException ignored) {
+            return false;
+        }
     }
 }

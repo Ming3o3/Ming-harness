@@ -210,22 +210,31 @@ class WorkspaceToolTests {
     void shouldInspectGitStatusAndDiffOnlyInsideWorkspace() throws Exception {
         runGit(tempDir, "init", "-q");
         Path target = tempDir.resolve("App.java");
+        Path hidden = tempDir.resolve(".env");
         Files.writeString(target, "old\n");
-        runGit(tempDir, "add", "App.java");
+        Files.writeString(hidden, "SECRET=initial\n");
+        runGit(tempDir, "add", "App.java", ".env");
         runGit(tempDir, "-c", "user.name=Harness Test", "-c", "user.email=harness@example.com",
                 "commit", "-qm", "initial");
         Files.writeString(target, "new\n");
+        Files.writeString(hidden, "SECRET=changed\n");
 
         WorkspaceToolSupport support = support();
         String status = new WorkspaceGitStatusTool(support).execute("{}");
         assertTrue(status.contains("App.java"));
         assertTrue(status.contains("\"clean\":false"));
+        assertFalse(status.contains(".env"));
 
         WorkspaceGitDiffTool diffTool = new WorkspaceGitDiffTool(support);
         String diff = diffTool.execute("{\"path\":\"App.java\"}");
         assertTrue(diff.contains("-old"));
         assertTrue(diff.contains("+new"));
         assertTrue(diff.contains("\"hasChanges\":true"));
+
+        String allVisibleDiff = diffTool.execute("{}");
+        assertTrue(allVisibleDiff.contains("App.java"));
+        assertFalse(allVisibleDiff.contains(".env"));
+        assertFalse(allVisibleDiff.contains("SECRET=changed"));
 
         runGit(tempDir, "add", "App.java");
         String stagedDiff = diffTool.execute("{\"path\":\"App.java\",\"staged\":true}");
@@ -235,6 +244,10 @@ class WorkspaceToolTests {
         BusinessException traversal = assertThrows(BusinessException.class,
                 () -> diffTool.execute("{\"path\":\"../outside.txt\"}"));
         assertEquals("WORKSPACE_PATH_DENIED", traversal.getCode());
+
+        BusinessException hiddenPath = assertThrows(BusinessException.class,
+                () -> diffTool.execute("{\"path\":\".env\"}"));
+        assertEquals("WORKSPACE_HIDDEN_PATH_DENIED", hiddenPath.getCode());
     }
 
     @Test

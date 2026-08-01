@@ -119,6 +119,17 @@ export const api = {
     if (workspaceId) params.set('workspaceId', workspaceId)
     return request(`/workspace/files/content?${params.toString()}`)
   },
+  // Git 审阅同样只通过 workspaceId 定位本机目录，页面不会接触绝对路径或任意 Git 参数。
+  workspaceGitStatus: ({ workspaceId = '' } = {}) => {
+    const params = new URLSearchParams()
+    if (workspaceId) params.set('workspaceId', workspaceId)
+    return request(`/workspace/git/status?${params.toString()}`)
+  },
+  workspaceGitDiff: ({ workspaceId = '', path = '.', staged = false, contextLines = 3 } = {}) => {
+    const params = new URLSearchParams({ path, staged: String(staged), contextLines: String(contextLines) })
+    if (workspaceId) params.set('workspaceId', workspaceId)
+    return request(`/workspace/git/diff?${params.toString()}`)
+  },
   listLocalWorkspaces: () => request('/workspaces'),
   /**
    * 目录选择和绝对路径登记都在 Electron 主进程完成；此处只传递当前用户身份。

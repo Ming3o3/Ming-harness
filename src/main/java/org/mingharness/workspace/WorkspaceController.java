@@ -3,6 +3,8 @@ package org.mingharness.workspace;
 import org.mingharness.workspace.api.WorkspaceStatusView;
 import org.mingharness.workspace.api.WorkspaceExplorerView;
 import org.mingharness.workspace.api.WorkspaceFileContentView;
+import org.mingharness.workspace.api.WorkspaceGitDiffView;
+import org.mingharness.workspace.api.WorkspaceGitStatusView;
 import org.mingharness.security.HarnessIdentity;
 import org.mingharness.security.HarnessIdentityContext;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -46,5 +48,23 @@ public class WorkspaceController {
                                             @RequestParam String path) {
         HarnessIdentity identity = HarnessIdentityContext.require();
         return workspaceExplorerService.read(workspaceId, identity.tenantId(), identity.userId(), path);
+    }
+
+    /** 返回受当前身份和工作区范围限制的 Git 变更列表。 */
+    @GetMapping("/git/status")
+    public WorkspaceGitStatusView gitStatus(@RequestParam(required = false) String workspaceId) {
+        HarnessIdentity identity = HarnessIdentityContext.require();
+        return workspaceExplorerService.gitStatus(workspaceId, identity.tenantId(), identity.userId());
+    }
+
+    /** 返回单个相对路径的只读 Diff；不接收任意 Git 参数或绝对路径。 */
+    @GetMapping("/git/diff")
+    public WorkspaceGitDiffView gitDiff(@RequestParam(required = false) String workspaceId,
+                                        @RequestParam(defaultValue = ".") String path,
+                                        @RequestParam(defaultValue = "false") boolean staged,
+                                        @RequestParam(defaultValue = "3") int contextLines) {
+        HarnessIdentity identity = HarnessIdentityContext.require();
+        return workspaceExplorerService.gitDiff(workspaceId, identity.tenantId(), identity.userId(),
+                path, staged, contextLines);
     }
 }

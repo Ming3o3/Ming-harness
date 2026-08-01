@@ -67,6 +67,12 @@ const workspaceExplorer = ref(null)
 const workspaceExplorerLoading = ref(false)
 const workspaceFilePreview = ref(null)
 const workspaceFilePreviewLoading = ref(false)
+// Git 审阅沿用当前会话的工作区绑定，避免把磁盘路径或自由 Git 参数暴露给页面。
+const workspaceGitReviewVisible = ref(false)
+const workspaceGitStatus = ref(null)
+const workspaceGitStatusLoading = ref(false)
+const workspaceGitDiff = ref(null)
+const workspaceGitDiffLoading = ref(false)
 // 实时流只订阅当前查看的非终态 Run；HTTP 轮询仍用于网络异常后的兜底校验。
 const runEventStreaming = ref(false)
 let conversationPollTimer
@@ -75,6 +81,8 @@ let runEventAbortController
 let runEventReconnectTimer
 let workspaceExplorerLoadToken = 0
 let workspacePreviewLoadToken = 0
+let workspaceGitStatusLoadToken = 0
+let workspaceGitDiffLoadToken = 0
 // 记录连接所属 Run，避免聊天轮询读取到同一任务时重复中断并创建 SSE 连接。
 let runEventStreamRunId
 
@@ -239,6 +247,7 @@ const workspaceDetail = computed(() => {
 const workspaceStatusClass = computed(() => workspaceConnected.value ? 'workspace-connected' : 'workspace-disconnected')
 const workspaceExplorerAvailable = computed(() => workspaceConnected.value && Boolean(activeConversationId.value))
 const workspaceExplorerPath = computed(() => workspaceExplorer.value?.path || '.')
+const workspaceGitAvailable = computed(() => Boolean(workspaceExplorer.value?.git?.available))
 const runPageLabel = computed(() => {
   if (!runPage.totalElements) return '0 条记录'
   return `第 ${runPage.page + 1} / ${runPage.totalPages} 页 · 共 ${runPage.totalElements} 条`
@@ -658,11 +667,7 @@ async function createChatConversation() {
     stopRunEventStream()
     selectedRun.value = null
     auditEvents.value = []
-    workspaceExplorerLoadToken += 1
-    workspacePreviewLoadToken += 1
-    workspaceExplorer.value = null
-    workspaceFilePreview.value = null
-    showChatWorkspace.value = false
+    resetWorkspaceExplorerState()
     return created
   } catch (error) {
     errorMessage.value = errorText(error)
@@ -742,6 +747,14 @@ async function toggleWorkspaceExplorer() {
   await loadWorkspaceDirectory('.')
 }
 
+/** 展开 Git 审阅时才请求变更明细，普通目录浏览不会额外运行 Git 命令。 */
+async function toggleWorkspaceGitReview() {
+  if (!workspaceExplorerAvailable.value || !workspaceGitAvailable.value) return
+  workspaceGitReviewVisible.value = !workspaceGitReviewVisible.value
+  if (!workspaceGitReviewVisible.value) return
+  await loadWorkspaceGitStatus()
+}
+
 /** 请求始终携带当前会话绑定的 workspaceId，后端会再次验证所属租户和用户。 */
 async function loadWorkspaceDirectory(path = '.') {
   if (!workspaceExplorerAvailable.value) return
@@ -764,6 +777,83 @@ async function loadWorkspaceDirectory(path = '.') {
   } finally {
     if (requestToken === workspaceExplorerLoadToken) workspaceExplorerLoading.value = false
   }
+}
+
+/** 只读状态接口用于列出变更文件；请求 token 防止切换会话后展示旧项目结果。 */
+async function loadWorkspaceGitStatus() {
+  if (!workspaceExplorerAvailable.value || !workspaceGitAvailable.value) return
+  const requestToken = ++workspaceGitStatusLoadToken
+  workspaceGitStatusLoading.value = true
+  workspaceGitDiffLoadToken += 1
+  workspaceGitDiff.value = null
+  try {
+    const result = await api.workspaceGitStatus({ workspaceId: activeConversationWorkspaceId.value })
+    if (requestToken === workspaceGitStatusLoadToken) workspaceGitStatus.value = result
+  } catch (error) {
+    if (requestToken === workspaceGitStatusLoadToken) {
+      workspaceGitStatus.value = null
+      errorMessage.value = errorText(error)
+    }
+  } finally {
+    if (requestToken === workspaceGitStatusLoadToken) workspaceGitStatusLoading.value = false
+  }
+}
+
+/** 在文件级别查看已暂存或工作区 Diff，后端会继续限制上下文行数和输出大小。 */
+async function loadWorkspaceGitDiff(path, staged = false) {
+  if (!workspaceExplorerAvailable.value || !workspaceGitAvailable.value || !path) return
+  const requestToken = ++workspaceGitDiffLoadToken
+  workspaceGitDiffLoading.value = true
+  try {
+    const result = await api.workspaceGitDiff({
+      workspaceId: activeConversationWorkspaceId.value,
+      path,
+      staged,
+      contextLines: 3,
+    })
+    if (requestToken === workspaceGitDiffLoadToken) workspaceGitDiff.value = result
+  } catch (error) {
+    if (requestToken === workspaceGitDiffLoadToken) errorMessage.value = errorText(error)
+  } finally {
+    if (requestToken === workspaceGitDiffLoadToken) workspaceGitDiffLoading.value = false
+  }
+}
+
+/** 未跟踪文件没有标准 Git diff；仍可使用既有的受限文本预览核验内容。 */
+function previewUntrackedWorkspaceFile(change) {
+  if (!change?.path) return
+  previewWorkspaceFile({ path: change.path, directory: false })
+}
+
+function resetWorkspaceExplorerState({ keepPanel = false } = {}) {
+  workspaceExplorerLoadToken += 1
+  workspacePreviewLoadToken += 1
+  workspaceGitStatusLoadToken += 1
+  workspaceGitDiffLoadToken += 1
+  workspaceExplorer.value = null
+  workspaceFilePreview.value = null
+  workspaceGitStatus.value = null
+  workspaceGitDiff.value = null
+  workspaceGitReviewVisible.value = false
+  if (!keepPanel) showChatWorkspace.value = false
+}
+
+function gitChangeLabel(change) {
+  const index = change?.index || ' '
+  const worktree = change?.worktree || ' '
+  if (index === '?' && worktree === '?') return '未跟踪'
+  if (index === 'D' || worktree === 'D') return '删除'
+  if (index === 'A' || worktree === 'A') return '新增'
+  if (index === 'R' || worktree === 'R') return '改名'
+  if (index !== ' ' && worktree !== ' ') return '已暂存 + 修改'
+  return index !== ' ' ? '已暂存' : '已修改'
+}
+
+function gitChangeClass(change) {
+  const label = gitChangeLabel(change)
+  if (label === '删除') return 'git-change-delete'
+  if (label === '新增' || label === '未跟踪') return 'git-change-add'
+  return 'git-change-modified'
 }
 
 async function previewWorkspaceFile(entry) {
@@ -800,10 +890,8 @@ async function selectConversation(conversationId, announce = true) {
       selectedRun.value = null
       auditEvents.value = []
     }
-    workspaceExplorerLoadToken += 1
-    workspacePreviewLoadToken += 1
-    workspaceExplorer.value = null
-    workspaceFilePreview.value = null
+    const shouldReloadWorkspace = showChatWorkspace.value
+    resetWorkspaceExplorerState({ keepPanel: shouldReloadWorkspace })
     if (showChatWorkspace.value) void loadWorkspaceDirectory('.')
     scrollChatToBottom()
   } catch (error) {
@@ -1657,7 +1745,36 @@ onBeforeUnmount(() => {
               <span>Git</span>
               <strong>{{ workspaceExplorer.git?.available ? workspaceExplorer.git.branch : '非 Git 项目' }}</strong>
               <em v-if="workspaceExplorer.git?.available">{{ workspaceExplorer.git.clean ? '工作区干净' : `${workspaceExplorer.git.changeCount} 项变更` }}</em>
+              <button v-if="workspaceGitAvailable" type="button" @click="toggleWorkspaceGitReview">{{ workspaceGitReviewVisible ? '收起审阅' : '审阅变更' }}</button>
             </div>
+            <section v-if="workspaceGitReviewVisible" class="workspace-git-review" aria-label="Git 代码变更审阅">
+              <div class="workspace-git-review-heading">
+                <strong>代码变更</strong>
+                <button class="icon-button" type="button" aria-label="刷新 Git 变更" :disabled="workspaceGitStatusLoading" @click="loadWorkspaceGitStatus">↻</button>
+              </div>
+              <p v-if="workspaceGitStatusLoading && !workspaceGitStatus" class="workspace-git-review-empty">正在读取 Git 变更…</p>
+              <template v-else-if="workspaceGitStatus">
+                <p v-if="workspaceGitStatus.clean" class="workspace-git-review-empty">当前工作区没有未提交变更。</p>
+                <div v-else class="workspace-git-change-list">
+                  <article v-for="change in workspaceGitStatus.entries" :key="`${change.index}-${change.worktree}-${change.path}`">
+                    <div><span :class="gitChangeClass(change)">{{ gitChangeLabel(change) }}</span><strong :title="change.path">{{ change.path }}</strong></div>
+                    <nav>
+                      <button v-if="change.worktree !== ' ' && !(change.worktree === '?' && change.index === '?')" type="button" @click="loadWorkspaceGitDiff(change.path, false)">工作区</button>
+                      <button v-if="change.index !== ' ' && change.index !== '?'" type="button" @click="loadWorkspaceGitDiff(change.path, true)">暂存</button>
+                      <button v-if="change.worktree === '?' && change.index === '?'" type="button" @click="previewUntrackedWorkspaceFile(change)">预览</button>
+                    </nav>
+                  </article>
+                </div>
+                <p v-if="workspaceGitStatus.protectedChangeCount" class="workspace-git-review-warning">有 {{ workspaceGitStatus.protectedChangeCount }} 项受保护的隐藏文件变更，已按工作区安全策略隐藏。</p>
+                <p v-if="workspaceGitStatus.outputTruncated" class="workspace-git-review-warning">变更列表已按安全上限截断，请逐步处理项目中的文件。</p>
+              </template>
+              <p v-else class="workspace-git-review-empty">无法读取 Git 变更。</p>
+              <section v-if="workspaceGitDiff || workspaceGitDiffLoading" class="workspace-git-diff" aria-label="Git 差异内容">
+                <div><strong>{{ workspaceGitDiff ? `${workspaceGitDiff.path} · ${workspaceGitDiff.staged ? '已暂存' : '工作区'}` : '正在读取差异…' }}</strong><span v-if="workspaceGitDiff?.outputTruncated">已截断</span></div>
+                <pre v-if="workspaceGitDiff?.hasChanges">{{ workspaceGitDiff.diff }}</pre>
+                <p v-else-if="workspaceGitDiff">当前范围没有可显示的 Diff；新增未跟踪文件请使用“预览”。</p>
+              </section>
+            </section>
             <div class="workspace-explorer-path">
               <button class="secondary-button" type="button" :disabled="workspaceExplorerPath === '.' || workspaceExplorerLoading" @click="loadWorkspaceDirectory(workspaceExplorer.parentPath)">↑</button>
               <code>{{ workspaceExplorerPath }}</code>

@@ -155,6 +155,28 @@ class HarnessAuthWebTests {
         assertFalse(content.body().contains("sk-1234567890abcdef"));
         assertFalse(content.body().contains(tempDir.toString()));
 
+        HttpResponse<String> gitStatus = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/workspace/git/status?workspaceId=" + workspaceId))
+                        .header("Authorization", "Bearer web-test-key").GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, gitStatus.statusCode(), gitStatus.body());
+        assertTrue(gitStatus.body().contains("\"path\":\"src/App.java\""));
+        assertTrue(gitStatus.body().contains("\"changeCount\":2"));
+        assertTrue(gitStatus.body().contains("\"protectedChangeCount\":1"));
+        assertFalse(gitStatus.body().contains(".env"));
+        assertFalse(gitStatus.body().contains(tempDir.toString()));
+
+        HttpResponse<String> gitDiff = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/workspace/git/diff?workspaceId=" + workspaceId
+                                + "&path=src/App.java&contextLines=1"))
+                        .header("Authorization", "Bearer web-test-key").GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, gitDiff.statusCode(), gitDiff.body());
+        assertTrue(gitDiff.body().contains("\"hasChanges\":true"));
+        assertTrue(gitDiff.body().contains("\"contextLines\":1"));
+        assertFalse(gitDiff.body().contains("sk-1234567890abcdef"));
+        assertFalse(gitDiff.body().contains(tempDir.toString()));
+
         HttpResponse<String> crossTenant = httpClient.send(
                 HttpRequest.newBuilder(URI.create(baseUrl() + "/api/workspace/files?workspaceId=" + workspaceId
                                 + "&path=."))

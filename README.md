@@ -197,6 +197,10 @@ npm run desktop:dev
 
 浏览器使用 `GET /api/workspace/files` 和 `GET /api/workspace/files/content`，均需要 `workspace.read` 权限，并通过 `workspaceId` 重新校验租户和用户归属。它只接受工作区内的相对路径，复用工具层的隐藏文件、符号链接、大小和行数限制；预览中的疑似凭证会显示为 `[REDACTED]`，不会返回本机绝对路径。文件浏览器仅提供查看能力，代码修改仍必须由 Agent 调用 `workspace.edit` / `workspace.write` 并经过既有审批策略。
 
+### Git 变更审阅
+
+已绑定 Git 项目的“项目文件”面板可展开“审阅变更”，查看当前工作区的变更文件，并按“工作区”或“暂存”查看单文件 Diff。对应接口是 `GET /api/workspace/git/status` 和 `GET /api/workspace/git/diff`，只运行固定的只读 Git 命令，不接受自由命令行参数；输出沿用工作区路径、大小和凭证脱敏保护。未跟踪文件没有 Git Diff 时可使用既有的受限文件预览检查内容。
+
 工具输入使用 JSON，例如读取文件：
 
 ```json
