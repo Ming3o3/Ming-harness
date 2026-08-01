@@ -435,7 +435,7 @@ h3 { margin: 0; font-size: 13px; }
 .chat-attachment-button { padding: 8px 10px; font-size: 10px; }
 .chat-send-button { padding: 8px 12px; font-size: 10px; }
 .chat-send-button span { margin-left: 4px; font-size: 13px; }
-.chat-run-panel { min-width: 0; overflow: auto; border-left: 1px solid var(--line); background: var(--sidebar-bg); padding: 25px 20px; }
+.chat-run-panel, .chat-workspace-panel { min-width: 0; overflow: auto; border-left: 1px solid var(--line); background: var(--sidebar-bg); padding: 25px 20px; }
 .chat-run-panel-heading { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }
 .chat-run-panel-heading .eyebrow { margin-bottom: 5px; }
 .chat-run-summary { justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--line); padding-bottom: 14px; }
@@ -476,13 +476,36 @@ h3 { margin: 0; font-size: 13px; }
 .chat-step-row small { display: block; margin-top: 4px; color: var(--muted); font: 9px "DM Mono", monospace; }
 .chat-step-row p { margin: 6px 0 0; color: var(--red); font-size: 10px; line-height: 1.4; }
 .chat-run-empty { color: var(--muted); font-size: 10px; line-height: 1.6; }
+.workspace-explorer-git { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 5px 8px; border: 1px solid rgba(85,214,138,.2); border-radius: 8px; background: rgba(85,214,138,.045); padding: 9px; color: var(--soft); font: 9px "DM Mono", monospace; }
+.workspace-explorer-git > span { color: var(--green); }
+.workspace-explorer-git strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-explorer-git em { grid-column: 2; color: var(--muted); font-style: normal; }
+.workspace-explorer-git.unavailable { border-color: var(--line); background: var(--hover-bg); }
+.workspace-explorer-git.unavailable > span { color: var(--muted); }
+.workspace-explorer-path { display: grid; grid-template-columns: 30px minmax(0, 1fr) 29px; align-items: center; gap: 7px; border-bottom: 1px solid var(--line); padding: 12px 0; }
+.workspace-explorer-path .secondary-button { min-width: 0; padding: 6px; }
+.workspace-explorer-path .icon-button { width: 28px; height: 28px; border-radius: 7px; font-size: 15px; }
+.workspace-explorer-path code { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; font: 9px "DM Mono", monospace; }
+.workspace-explorer-list { display: grid; gap: 3px; max-height: 38vh; overflow: auto; padding: 12px 0; }
+.workspace-explorer-list button { display: grid; grid-template-columns: 13px minmax(0, 1fr) auto; align-items: center; gap: 6px; width: 100%; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--muted); padding: 7px 6px; text-align: left; font: 9px "DM Mono", monospace; }
+.workspace-explorer-list button:hover, .workspace-explorer-list button.active { border-color: var(--line); background: var(--hover-bg); color: var(--soft); }
+.workspace-explorer-list button.directory i { color: var(--accent-light); }
+.workspace-explorer-list button > i { color: var(--cyan); font-style: normal; }
+.workspace-explorer-list button strong { overflow: hidden; color: inherit; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.workspace-explorer-list button em { color: var(--muted); font-style: normal; white-space: nowrap; }
+.workspace-explorer-list p { margin: 9px 0; color: var(--muted); text-align: center; font-size: 10px; }
+.workspace-file-preview { border-top: 1px solid var(--line); padding-top: 12px; }
+.workspace-file-preview > div { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.workspace-file-preview strong { overflow: hidden; min-width: 0; max-width: 100%; color: var(--soft); text-overflow: ellipsis; white-space: nowrap; font: 9px "DM Mono", monospace; }
+.workspace-file-preview span { border: 1px solid rgba(255,182,95,.25); border-radius: 10px; color: var(--orange); padding: 3px 5px; font: 8px "DM Mono", monospace; }
+.workspace-file-preview pre { overflow: auto; max-height: 35vh; margin: 9px 0 0; border: 1px solid rgba(153,174,218,.12); border-radius: 6px; background: var(--input-bg); padding: 9px; color: var(--soft); white-space: pre; font: 9px/1.55 "DM Mono", monospace; }
 
 :root[data-theme="light"] .chat-bubble { box-shadow: 0 8px 24px rgba(45,62,90,.06); }
 :root[data-theme="light"] .chat-heading-meta { color: #75839b; }
 
 @media (max-width: 1080px) {
   .chat-layout { grid-template-columns: 220px minmax(0, 1fr); }
-  .chat-run-panel { position: fixed; z-index: 5; inset: 72px 0 0 auto; width: min(340px, 88vw); box-shadow: -18px 0 40px rgba(0,0,0,.18); }
+  .chat-run-panel, .chat-workspace-panel { position: fixed; z-index: 5; inset: 72px 0 0 auto; width: min(340px, 88vw); box-shadow: -18px 0 40px rgba(0,0,0,.18); }
 }
 
 @media (max-width: 720px) {

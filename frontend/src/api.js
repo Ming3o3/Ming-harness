@@ -108,6 +108,17 @@ export const api = {
   health: () => request('/health'),
   // 仅返回工作区名称和能力摘要，绝对路径始终只保留在本地后端进程。
   workspace: () => request('/workspace'),
+  // 工作区浏览接口只接受相对路径；后端会按当前租户、用户和 workspaceId 再次解析根目录。
+  browseWorkspaceFiles: ({ workspaceId = '', path = '.' } = {}) => {
+    const params = new URLSearchParams({ path })
+    if (workspaceId) params.set('workspaceId', workspaceId)
+    return request(`/workspace/files?${params.toString()}`)
+  },
+  readWorkspaceFile: ({ workspaceId = '', path } = {}) => {
+    const params = new URLSearchParams({ path: path || '' })
+    if (workspaceId) params.set('workspaceId', workspaceId)
+    return request(`/workspace/files/content?${params.toString()}`)
+  },
   listLocalWorkspaces: () => request('/workspaces'),
   /**
    * 目录选择和绝对路径登记都在 Electron 主进程完成；此处只传递当前用户身份。

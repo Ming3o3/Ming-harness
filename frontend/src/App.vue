@@ -61,12 +61,20 @@ const chatDragActive = ref(false)
 const chatAttachmentInput = ref(null)
 const chatFolderInput = ref(null)
 const showChatRun = ref(false)
+// 项目文件面板仅浏览当前会话已绑定的工作区，不会把绝对路径带到前端。
+const showChatWorkspace = ref(false)
+const workspaceExplorer = ref(null)
+const workspaceExplorerLoading = ref(false)
+const workspaceFilePreview = ref(null)
+const workspaceFilePreviewLoading = ref(false)
 // 实时流只订阅当前查看的非终态 Run；HTTP 轮询仍用于网络异常后的兜底校验。
 const runEventStreaming = ref(false)
 let conversationPollTimer
 let chatHighlightTimer
 let runEventAbortController
 let runEventReconnectTimer
+let workspaceExplorerLoadToken = 0
+let workspacePreviewLoadToken = 0
 // 记录连接所属 Run，避免聊天轮询读取到同一任务时重复中断并创建 SSE 连接。
 let runEventStreamRunId
 
@@ -229,6 +237,8 @@ const workspaceDetail = computed(() => {
   return parts.join(' · ')
 })
 const workspaceStatusClass = computed(() => workspaceConnected.value ? 'workspace-connected' : 'workspace-disconnected')
+const workspaceExplorerAvailable = computed(() => workspaceConnected.value && Boolean(activeConversationId.value))
+const workspaceExplorerPath = computed(() => workspaceExplorer.value?.path || '.')
 const runPageLabel = computed(() => {
   if (!runPage.totalElements) return '0 条记录'
   return `第 ${runPage.page + 1} / ${runPage.totalPages} 页 · 共 ${runPage.totalElements} 条`
@@ -648,8 +658,15 @@ async function createChatConversation() {
     stopRunEventStream()
     selectedRun.value = null
     auditEvents.value = []
+    workspaceExplorerLoadToken += 1
+    workspacePreviewLoadToken += 1
+    workspaceExplorer.value = null
+    workspaceFilePreview.value = null
+    showChatWorkspace.value = false
+    return created
   } catch (error) {
     errorMessage.value = errorText(error)
+    return null
   }
 }
 
@@ -683,7 +700,10 @@ async function chooseDesktopWorkspace() {
     if (!result?.workspace?.id) throw new Error('桌面桥接没有返回工作区摘要')
     await loadLocalWorkspaces()
     newConversationWorkspaceId.value = result.workspace.id
-    await createChatConversation()
+    const created = await createChatConversation()
+    if (!created) return
+    showChatWorkspace.value = true
+    await loadWorkspaceDirectory('.')
     noticeMessage.value = `已授权本地项目“${result.workspace.displayName}”，已创建独立会话。`
   } catch (error) {
     errorMessage.value = errorText(error)
@@ -703,10 +723,63 @@ async function handleDesktopWorkspaceDropped(result) {
   try {
     await loadLocalWorkspaces()
     newConversationWorkspaceId.value = result.workspace.id
-    await createChatConversation()
+    const created = await createChatConversation()
+    if (!created) return
+    showChatWorkspace.value = true
+    await loadWorkspaceDirectory('.')
     noticeMessage.value = `已授权拖入的本地项目“${result.workspace.displayName}”，已创建独立会话。`
   } catch (error) {
     errorMessage.value = errorText(error)
+  }
+}
+
+/** 打开或关闭当前会话的只读项目浏览器；运行详情与文件浏览共用右侧检查面板。 */
+async function toggleWorkspaceExplorer() {
+  if (!workspaceExplorerAvailable.value) return
+  showChatWorkspace.value = !showChatWorkspace.value
+  if (!showChatWorkspace.value) return
+  showChatRun.value = false
+  await loadWorkspaceDirectory('.')
+}
+
+/** 请求始终携带当前会话绑定的 workspaceId，后端会再次验证所属租户和用户。 */
+async function loadWorkspaceDirectory(path = '.') {
+  if (!workspaceExplorerAvailable.value) return
+  const requestToken = ++workspaceExplorerLoadToken
+  // 切换目录时使旧文件预览失效，避免异步响应把其他目录或会话的内容覆盖到面板。
+  workspacePreviewLoadToken += 1
+  workspaceExplorerLoading.value = true
+  workspaceFilePreview.value = null
+  try {
+    const result = await api.browseWorkspaceFiles({
+      workspaceId: activeConversationWorkspaceId.value,
+      path,
+    })
+    if (requestToken === workspaceExplorerLoadToken) workspaceExplorer.value = result
+  } catch (error) {
+    if (requestToken === workspaceExplorerLoadToken) {
+      workspaceExplorer.value = null
+      errorMessage.value = errorText(error)
+    }
+  } finally {
+    if (requestToken === workspaceExplorerLoadToken) workspaceExplorerLoading.value = false
+  }
+}
+
+async function previewWorkspaceFile(entry) {
+  if (!entry || entry.directory || !workspaceExplorerAvailable.value) return
+  const requestToken = ++workspacePreviewLoadToken
+  workspaceFilePreviewLoading.value = true
+  try {
+    const result = await api.readWorkspaceFile({
+      workspaceId: activeConversationWorkspaceId.value,
+      path: entry.path,
+    })
+    if (requestToken === workspacePreviewLoadToken) workspaceFilePreview.value = result
+  } catch (error) {
+    if (requestToken === workspacePreviewLoadToken) errorMessage.value = errorText(error)
+  } finally {
+    if (requestToken === workspacePreviewLoadToken) workspaceFilePreviewLoading.value = false
   }
 }
 
@@ -722,6 +795,16 @@ async function selectConversation(conversationId, announce = true) {
     activeConversation.value = detail
     const runId = latestConversationRun(detail)
     if (runId) await selectRun(runId, false, false)
+    else {
+      stopRunEventStream()
+      selectedRun.value = null
+      auditEvents.value = []
+    }
+    workspaceExplorerLoadToken += 1
+    workspacePreviewLoadToken += 1
+    workspaceExplorer.value = null
+    workspaceFilePreview.value = null
+    if (showChatWorkspace.value) void loadWorkspaceDirectory('.')
     scrollChatToBottom()
   } catch (error) {
     errorMessage.value = errorText(error)
@@ -1471,7 +1554,8 @@ onBeforeUnmount(() => {
               </div>
               <span v-if="runEventStreaming && !isTerminal(selectedStatus)" class="chat-live-indicator"><i></i>实时执行</span>
               <span v-if="pendingChatMessage" class="chat-run-pill" :class="statusClass(chatRunStatus)"><i></i>{{ statusLabel(chatRunStatus) }}</span>
-              <button v-if="latestConversationRun(activeConversation)" class="secondary-button" type="button" @click="showChatRun = !showChatRun">{{ showChatRun ? '隐藏运行' : '查看运行' }}</button>
+              <button v-if="workspaceExplorerAvailable" class="secondary-button" type="button" @click="toggleWorkspaceExplorer">{{ showChatWorkspace ? '隐藏文件' : '项目文件' }}</button>
+              <button v-if="latestConversationRun(activeConversation)" class="secondary-button" type="button" @click="showChatWorkspace = false; showChatRun = !showChatRun">{{ showChatRun ? '隐藏运行' : '查看运行' }}</button>
             </div>
           </div>
 
@@ -1561,6 +1645,43 @@ onBeforeUnmount(() => {
             </div>
           </form>
         </main>
+
+        <aside v-if="showChatWorkspace" class="chat-workspace-panel">
+          <div class="chat-run-panel-heading">
+            <div><p class="eyebrow">PROJECT EXPLORER</p><h2>项目文件</h2></div>
+            <button class="icon-button" type="button" aria-label="关闭项目文件" @click="showChatWorkspace = false">×</button>
+          </div>
+          <div v-if="workspaceExplorerLoading && !workspaceExplorer" class="chat-run-empty">正在读取工作区目录…</div>
+          <template v-else-if="workspaceExplorer">
+            <div class="workspace-explorer-git" :class="{ unavailable: !workspaceExplorer.git?.available }">
+              <span>Git</span>
+              <strong>{{ workspaceExplorer.git?.available ? workspaceExplorer.git.branch : '非 Git 项目' }}</strong>
+              <em v-if="workspaceExplorer.git?.available">{{ workspaceExplorer.git.clean ? '工作区干净' : `${workspaceExplorer.git.changeCount} 项变更` }}</em>
+            </div>
+            <div class="workspace-explorer-path">
+              <button class="secondary-button" type="button" :disabled="workspaceExplorerPath === '.' || workspaceExplorerLoading" @click="loadWorkspaceDirectory(workspaceExplorer.parentPath)">↑</button>
+              <code>{{ workspaceExplorerPath }}</code>
+              <button class="icon-button" type="button" aria-label="刷新目录" :disabled="workspaceExplorerLoading" @click="loadWorkspaceDirectory(workspaceExplorerPath)">↻</button>
+            </div>
+            <div class="workspace-explorer-list" aria-label="工作区目录列表">
+              <button
+                v-for="entry in workspaceExplorer.entries"
+                :key="entry.path"
+                type="button"
+                :class="{ directory: entry.directory, active: workspaceFilePreview?.path === entry.path }"
+                @click="entry.directory ? loadWorkspaceDirectory(entry.path) : previewWorkspaceFile(entry)"
+              >
+                <i>{{ entry.directory ? '▸' : '⌁' }}</i><strong>{{ entry.name }}</strong><em>{{ entry.directory ? '目录' : formatFileSize(entry.size) }}</em>
+              </button>
+              <p v-if="!workspaceExplorer.entries.length">当前目录没有可显示的文件。</p>
+            </div>
+            <section v-if="workspaceFilePreview || workspaceFilePreviewLoading" class="workspace-file-preview" aria-label="文件预览">
+              <div><strong>{{ workspaceFilePreview?.path || '正在读取文件…' }}</strong><span v-if="workspaceFilePreview?.redacted">已脱敏</span><span v-if="workspaceFilePreview?.truncated">已截断</span></div>
+              <pre v-if="workspaceFilePreview">{{ workspaceFilePreview.content }}</pre>
+            </section>
+          </template>
+          <div v-else class="chat-run-empty">当前会话未连接可访问的本地项目。</div>
+        </aside>
 
         <aside v-if="showChatRun" class="chat-run-panel">
           <div class="chat-run-panel-heading"><div><p class="eyebrow">RUN TRACE</p><h2>本轮执行</h2></div><button class="icon-button" type="button" aria-label="关闭运行详情" @click="showChatRun = false">×</button></div>

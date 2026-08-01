@@ -1,6 +1,7 @@
 package org.mingharness.security;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
@@ -13,16 +14,19 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** 验证认证拦截器已经接入真实 Spring MVC 请求链。 */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(properties = {
         "harness.auth.mode=api-key",
-        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,run.create,ops.read,workspace.read,workspace.manage,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage;web-other-key|tenant-other|other-user|run.read",
+        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,run.create,ops.read,workspace.read,workspace.manage,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage;web-other-key|tenant-other|other-user|run.read,workspace.read",
         "harness.workspace.enabled=true",
         "harness.workspace.local-registration-enabled=true",
         "management.endpoint.health.show-details=when_authorized",
@@ -32,6 +36,9 @@ class HarnessAuthWebTests {
 
     @LocalServerPort
     private int port;
+
+    @TempDir
+    Path tempDir;
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
@@ -110,6 +117,51 @@ class HarnessAuthWebTests {
 
         assertEquals(403, response.statusCode(), response.body());
         assertTrue(response.body().contains("DESKTOP_BRIDGE_DENIED"));
+    }
+
+    @Test
+    void shouldBrowseOnlyOwnWorkspaceWithRelativePathsAndRedactedPreview() throws Exception {
+        Path projectRoot = Files.createDirectories(tempDir.resolve("desktop-project"));
+        Path project = Files.createDirectories(projectRoot.resolve("src"));
+        Files.writeString(project.resolve("App.java"), "class App { String api_key = \"sk-1234567890abcdef\"; }\n");
+        runGit(projectRoot, "init", "-q");
+        runGit(projectRoot, "add", "src/App.java");
+        runGit(projectRoot, "-c", "user.name=Harness Test", "-c", "user.email=harness@example.com",
+                "commit", "-qm", "initial");
+        Files.writeString(project.resolve("App.java"), "class App { String api_key = \"sk-1234567890abcdef\"; // changed\n}\n");
+        Files.writeString(projectRoot.resolve(".env"), "SECRET=do-not-show\n");
+        String workspaceId = registerWorkspace(projectRoot, "浏览项目");
+
+        HttpResponse<String> directory = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/workspace/files?workspaceId=" + workspaceId
+                                + "&path=."))
+                        .header("Authorization", "Bearer web-test-key").GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, directory.statusCode(), directory.body());
+        assertTrue(directory.body().contains("\"path\":\"src\""));
+        assertTrue(directory.body().contains("\"available\":true"));
+        assertTrue(directory.body().contains("\"clean\":false"));
+        assertFalse(directory.body().contains(".env"));
+        assertFalse(directory.body().contains(tempDir.toString()));
+
+        HttpResponse<String> content = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/workspace/files/content?workspaceId=" + workspaceId
+                                + "&path=src/App.java"))
+                        .header("Authorization", "Bearer web-test-key").GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, content.statusCode(), content.body());
+        assertTrue(content.body().contains("App.java"));
+        assertTrue(content.body().contains("\"redacted\":true"));
+        assertFalse(content.body().contains("sk-1234567890abcdef"));
+        assertFalse(content.body().contains(tempDir.toString()));
+
+        HttpResponse<String> crossTenant = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/workspace/files?workspaceId=" + workspaceId
+                                + "&path=."))
+                        .header("Authorization", "Bearer web-other-key").GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(404, crossTenant.statusCode(), crossTenant.body());
+        assertTrue(crossTenant.body().contains("WORKSPACE_NOT_FOUND"));
     }
 
     @Test
@@ -334,5 +386,33 @@ class HarnessAuthWebTests {
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(201, response.statusCode(), response.body());
         return response.body().replaceFirst(".*\\\"id\\\":\\\"([^\\\"]+).*", "$1");
+    }
+
+    /** 用桌面桥接令牌登记临时项目，测试不会让接口响应携带本机临时目录。 */
+    private String registerWorkspace(Path root, String displayName) throws Exception {
+        String jsonRoot = root.toRealPath().toString().replace("\\", "\\\\").replace("\"", "\\\"");
+        String jsonName = displayName.replace("\\", "\\\\").replace("\"", "\\\"");
+        HttpResponse<String> response = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/workspaces"))
+                        .header("Authorization", "Bearer web-test-key")
+                        .header("Content-Type", "application/json")
+                        .header("X-Harness-Desktop-Bridge", "test-desktop-bridge-token")
+                        .POST(HttpRequest.BodyPublishers.ofString("{\"displayName\":\"" + jsonName
+                                + "\",\"rootPath\":\"" + jsonRoot + "\"}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(201, response.statusCode(), response.body());
+        return response.body().replaceFirst(".*\\\"id\\\":\\\"([^\\\"]+).*", "$1");
+    }
+
+    /** 使用临时 Git 仓库验证项目浏览摘要，无需依赖开发机的全局 Git 用户配置。 */
+    private void runGit(Path directory, String... args) throws Exception {
+        String[] command = new String[args.length + 1];
+        command[0] = "git";
+        System.arraycopy(args, 0, command, 1, args.length);
+        Process process = new ProcessBuilder(command).directory(directory.toFile())
+                .redirectErrorStream(true).start();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertEquals(0, process.waitFor(), output);
     }
 }
