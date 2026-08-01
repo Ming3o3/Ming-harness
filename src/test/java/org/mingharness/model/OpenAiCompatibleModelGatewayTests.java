@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -120,6 +121,34 @@ class OpenAiCompatibleModelGatewayTests {
 
         assertFalse(exception.retryable());
         assertEquals(1, calls.get());
+    }
+
+    @Test
+    void shouldSendToolDefinitionsAndParseNativeToolCalls() throws IOException {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        HttpServer server = server(exchange -> {
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            respond(exchange, 200, """
+                    {"model":"provider-model","choices":[{"message":{"content":null,
+                    "tool_calls":[{"id":"call-1","type":"function","function":{"name":"workspace.read",
+                    "arguments":"{\\"path\\":\\"src/App.java\\"}"}}]}}],
+                    "usage":{"input_tokens":30,"output_tokens":12}}
+                    """);
+        });
+        OpenAiCompatibleModelGateway gateway = gateway(config(url(server), 1, null, null));
+
+        ModelResponse response = gateway.complete(new ModelRequest(
+                "读取项目入口", "", "prompt-agent",
+                List.of(new ModelToolDefinition("workspace.read", "读取文件",
+                        java.util.Map.of("type", "object")))));
+
+        assertTrue(requestBody.get().contains("workspace.read"));
+        assertTrue(requestBody.get().contains("tool_choice"));
+        assertTrue(response.hasToolCalls());
+        assertEquals("call-1", response.toolCalls().get(0).id());
+        assertEquals("workspace.read", response.toolCalls().get(0).name());
+        assertEquals("{\"path\":\"src/App.java\"}", response.toolCalls().get(0).arguments());
+        assertEquals("", response.content());
     }
 
     private OpenAiCompatibleModelGateway gateway(ModelConfig config) {

@@ -11,6 +11,8 @@ import org.springframework.web.client.RestClientResponseException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -94,12 +96,22 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
 
     @SuppressWarnings("unchecked")
     private ModelResponse invokeOnce(Provider provider, ModelRequest request) {
-        Map<String, Object> body = Map.of(
-                "model", request.model() == null || request.model().isBlank() ? provider.model() : request.model(),
-                "messages", List.of(Map.of("role", "user", "content",
-                        sanitizer.sanitize(request.input() == null ? "" : request.input()))),
-                "temperature", 0.2
-        );
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", request.model() == null || request.model().isBlank() ? provider.model() : request.model());
+        body.put("messages", List.of(Map.of("role", "user", "content",
+                sanitizer.sanitize(request.input() == null ? "" : request.input()))));
+        body.put("temperature", 0.2);
+        if (!request.tools().isEmpty()) {
+            body.put("tools", request.tools().stream().map(tool -> Map.of(
+                    "type", "function",
+                    "function", Map.of(
+                            "name", tool.name(),
+                            "description", tool.description() == null ? "" : tool.description(),
+                            "parameters", tool.inputSchema()
+                    )
+            )).toList());
+            body.put("tool_choice", "auto");
+        }
         try {
             Map<String, Object> response = provider.client().post()
                     .uri("/chat/completions")
@@ -130,9 +142,10 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
         if (!(messageValue instanceof Map<?, ?> message)) {
             throw new ModelGatewayException(provider.name(), false, "模型响应缺少 message");
         }
-        Object contentValue = message.get("content");
-        if (!(contentValue instanceof String content) || content.isBlank()) {
-            throw new ModelGatewayException(provider.name(), false, "模型响应 content 为空或格式不支持");
+        String content = message.get("content") instanceof String value ? value : "";
+        List<ModelToolCall> toolCalls = parseToolCalls(message.get("tool_calls"), provider.name());
+        if (content.isBlank() && toolCalls.isEmpty()) {
+            throw new ModelGatewayException(provider.name(), false, "模型响应缺少 content 或 tool_calls");
         }
         if (content.length() > config.maxResponseChars()) {
             throw new ModelGatewayException(provider.name(), false, "模型响应超过字符上限");
@@ -142,7 +155,40 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
                 ? value : provider.model();
         BigDecimal cost = usageCost(usage.inputTokens(), usage.outputTokens());
         return new ModelResponse(sanitizer.sanitize(content), responseModel,
-                request.promptVersion(), usage.inputTokens(), usage.outputTokens(), cost);
+                request.promptVersion(), usage.inputTokens(), usage.outputTokens(), cost, toolCalls);
+    }
+
+    /** 严格解析供应商 tool_calls，未知结构直接失败，避免把未经校验的参数交给工具。 */
+    private List<ModelToolCall> parseToolCalls(Object rawValue, String providerName) {
+        if (rawValue == null) return List.of();
+        if (!(rawValue instanceof List<?> values)) {
+            throw new ModelGatewayException(providerName, false, "模型响应 tool_calls 格式无效");
+        }
+        List<ModelToolCall> calls = new ArrayList<>();
+        for (Object value : values) {
+            if (!(value instanceof Map<?, ?> call)) {
+                throw new ModelGatewayException(providerName, false, "模型响应 tool_call 项格式无效");
+            }
+            String id = stringValue(call.get("id"));
+            Object functionValue = call.get("function");
+            if (id == null || !(functionValue instanceof Map<?, ?> function)) {
+                throw new ModelGatewayException(providerName, false, "模型响应 tool_call 缺少 id 或 function");
+            }
+            String name = stringValue(function.get("name"));
+            String arguments = stringValue(function.get("arguments"));
+            if (name == null || arguments == null || name.isBlank() || arguments.isBlank()) {
+                throw new ModelGatewayException(providerName, false, "模型响应 tool_call 缺少工具名称或参数");
+            }
+            if (arguments.length() > config.maxResponseChars()) {
+                throw new ModelGatewayException(providerName, false, "模型 tool_call 参数超过字符上限");
+            }
+            calls.add(new ModelToolCall(id, name, arguments));
+        }
+        return List.copyOf(calls);
+    }
+
+    private String stringValue(Object value) {
+        return value instanceof String text && !text.isBlank() ? text : null;
     }
 
     @SuppressWarnings("unchecked")
