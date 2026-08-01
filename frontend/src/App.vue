@@ -637,6 +637,25 @@ function latestConversationRun(detail) {
   return detail?.messages?.slice().reverse().find((message) => message.runId)?.runId || ''
 }
 
+function pendingConversationAssistant(detail, runId) {
+  return detail?.messages?.find((message) => message.runId === runId && message.role === 'ASSISTANT') || null
+}
+
+function latestStreamingModelContent(detail) {
+  const step = detail?.steps?.slice().reverse().find((item) => item.type === 'MODEL' && item.status === 'RUNNING')
+  if (!step?.output) return ''
+  if (!detail?.run?.agentMode) return step.output
+  return decodeAgentStep(step).content
+}
+
+function applyStreamingAssistantContent(runId, detail) {
+  if (!activeConversation.value || latestConversationRun(activeConversation.value) !== runId) return
+  const content = latestStreamingModelContent(detail)
+  if (!content) return
+  const message = pendingConversationAssistant(activeConversation.value, runId)
+  if (message) message.content = content
+}
+
 async function loadConversations(preferredId = '') {
   chatLoading.value = true
   try {
@@ -745,6 +764,21 @@ async function toggleWorkspaceExplorer() {
   if (!showChatWorkspace.value) return
   showChatRun.value = false
   await loadWorkspaceDirectory('.')
+}
+
+/** 运行详情与文件浏览共用右侧检查位，打开执行步骤时收起项目文件，避免布局挤压到下一行。 */
+async function toggleRunPanel() {
+  const nextVisible = !showChatRun.value
+  showChatWorkspace.value = false
+  showChatRun.value = nextVisible
+}
+
+/** 从消息跳转到某个 Run 时强制占用右侧检查位，避免和项目文件面板同时渲染。 */
+async function openRunPanel(runId, announce = false) {
+  if (!runId) return
+  showChatWorkspace.value = false
+  showChatRun.value = true
+  await selectRun(runId, announce, false)
 }
 
 /** 展开 Git 审阅时才请求变更明细，普通目录浏览不会额外运行 Git 命令。 */
@@ -920,8 +954,54 @@ async function sendChatMessage() {
   const files = attachments.flatMap((attachment) => attachment.files)
   let uploadedAttachments = []
   let messageSubmitted = false
+  const clientMessageId = `local-user-${crypto.randomUUID?.() || Date.now()}`
+  const clientAssistantId = `local-assistant-${crypto.randomUUID?.() || Date.now()}`
+  const sentAt = new Date().toISOString()
+  const clientAttachments = attachments.map((attachment, index) => ({
+    id: `local-attachment-${index}`,
+    originalName: attachment.name,
+    workspacePath: '',
+    mediaType: '',
+    directory: attachment.directory,
+    sizeBytes: attachment.size,
+    fileCount: attachment.fileCount || 1,
+    createdAt: sentAt,
+  }))
   chatInput.value = ''
   clearChatAttachments()
+  if (activeConversation.value) {
+    activeConversation.value = {
+      ...activeConversation.value,
+      messages: [
+        ...activeConversation.value.messages,
+        {
+          id: clientMessageId,
+          runId: '',
+          role: 'USER',
+          status: 'COMPLETED',
+          sequence: activeConversation.value.messages.length + 1,
+          content,
+          attachments: clientAttachments,
+          createdAt: sentAt,
+          updatedAt: sentAt,
+          local: true,
+        },
+        {
+          id: clientAssistantId,
+          runId: '',
+          role: 'ASSISTANT',
+          status: 'PENDING',
+          sequence: activeConversation.value.messages.length + 2,
+          content: '',
+          attachments: [],
+          createdAt: sentAt,
+          updatedAt: sentAt,
+          local: true,
+        },
+      ],
+    }
+    scrollChatToBottom()
+  }
   try {
     if (files.length) {
       chatUploading.value = true
@@ -936,8 +1016,8 @@ async function sendChatMessage() {
     messageSubmitted = true
     activeConversation.value = detail
     const runId = latestConversationRun(detail)
-    if (runId) await selectRun(runId, false, false)
-    await loadConversations(conversationId)
+    if (runId) void selectRun(runId, false, false)
+    void loadConversations(conversationId)
     scrollChatToBottom()
   } catch (error) {
     if (!messageSubmitted) {
@@ -946,6 +1026,13 @@ async function sendChatMessage() {
         api.deleteConversationAttachment(conversationId, attachment.id)))
       chatInput.value = typedContent
       chatAttachments.value = attachments
+      if (activeConversation.value?.conversation?.id === conversationId) {
+        activeConversation.value = {
+          ...activeConversation.value,
+          messages: activeConversation.value.messages.filter((message) =>
+            message.id !== clientMessageId && message.id !== clientAssistantId),
+        }
+      }
     }
     errorMessage.value = errorText(error)
   } finally {
@@ -1359,6 +1446,8 @@ function startRunEventStream(runId) {
       if ((event !== 'snapshot' && event !== 'run') || data?.run?.id !== runId) return
       if (selectedRun.value?.run?.id !== runId) return
       selectedRun.value = data
+      applyStreamingAssistantContent(runId, data)
+      if (latestStreamingModelContent(data)) scrollChatToBottom()
       // 审计记录不放入 SSE 正文，按快照变化增量刷新，避免把额外敏感字段扩大到新接口。
       void api.listAuditEvents(runId).then((events) => {
         if (selectedRun.value?.run?.id === runId) auditEvents.value = events
@@ -1665,7 +1754,7 @@ onBeforeUnmount(() => {
               <div class="chat-bubble-wrap">
                 <div class="chat-message-meta"><strong>{{ message.role === 'USER' ? '你' : 'Ming Agent' }}</strong><span>{{ formatDate(message.createdAt) }}</span></div>
                 <div class="chat-bubble" :class="messageStatusClass(message.status)">
-                  <template v-if="message.role === 'ASSISTANT' && message.status === 'PENDING'">
+                  <template v-if="message.role === 'ASSISTANT' && message.status === 'PENDING' && !message.content">
                     <span class="chat-thinking"><i></i><i></i><i></i>{{ messageStatusLabel(message.status) }}</span>
                   </template>
                   <template v-else>
@@ -1678,7 +1767,7 @@ onBeforeUnmount(() => {
                     </span>
                   </div>
                 </div>
-                <button v-if="message.runId && message.role === 'ASSISTANT'" class="message-run-link" type="button" @click="showChatRun = true; selectRun(message.runId, false)">查看执行步骤 · {{ message.runId.slice(0, 8) }}</button>
+                <button v-if="message.runId && message.role === 'ASSISTANT'" class="message-run-link" type="button" @click="openRunPanel(message.runId)">查看执行步骤 · {{ message.runId.slice(0, 8) }}</button>
               </div>
             </article>
           </div>

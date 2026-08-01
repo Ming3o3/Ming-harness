@@ -91,6 +91,8 @@ public class RunService {
     private final TenantRunQuotaGuard tenantRunQuotaGuard;
     private final RedisProperties redisProperties;
     private final String executionMode;
+    private final boolean localAsyncExecution;
+    private final LocalRunDispatcher localRunDispatcher;
     private final String workerId = "worker-" + UUID.randomUUID();
     private final HarnessMetrics metrics;
     private final SensitiveDataSanitizer sanitizer;
@@ -123,6 +125,8 @@ public class RunService {
                       TenantRunQuotaGuard tenantRunQuotaGuard,
                       RedisProperties redisProperties,
                       @Value("${harness.execution.mode:sync}") String executionMode,
+                      @Value("${harness.local-execution.async:false}") boolean localAsyncExecution,
+                      LocalRunDispatcher localRunDispatcher,
                       HarnessMetrics metrics,
                       SensitiveDataSanitizer sanitizer,
                       AgentTurnCodec agentTurnCodec,
@@ -151,6 +155,8 @@ public class RunService {
         this.tenantRunQuotaGuard = tenantRunQuotaGuard;
         this.redisProperties = redisProperties;
         this.executionMode = executionMode;
+        this.localAsyncExecution = localAsyncExecution;
+        this.localRunDispatcher = localRunDispatcher;
         this.metrics = metrics;
         this.sanitizer = sanitizer;
         this.agentTurnCodec = agentTurnCodec;
@@ -549,10 +555,7 @@ public class RunService {
             String modelInput = context.isEmpty()
                     ? started.get().input()
                     : started.get().input() + "\n\n参考资料（请保留来源标记）:\n" + context.text();
-            ModelResponse response = boundedExecutor.execute("模型调用", runtimeLimits.modelTimeoutMs(),
-                    () -> modelGateway.complete(new ModelRequest(
-                            sanitizer.sanitize(modelInput), run.modelName(), run.promptVersion(),
-                            run.agentMode() ? availableModelTools(run.tenantId()) : List.of())));
+            ModelResponse response = executeStreamingModelCall(run, started.get(), modelInput, workerId);
             if (run.agentMode()) {
                 validateAgentToolCalls(run, response.toolCalls());
             }
@@ -716,11 +719,7 @@ public class RunService {
                 String modelInput = context.isEmpty()
                         ? step.getInput()
                         : step.getInput() + "\n\n参考资料（请保留来源标记）:\n" + context.text();
-                String safeModelInput = sanitizer.sanitize(modelInput);
-                ModelResponse response = boundedExecutor.execute("模型调用", runtimeLimits.modelTimeoutMs(),
-                        () -> modelGateway.complete(new ModelRequest(
-                                safeModelInput, run.getModelName(), run.getPromptVersion(),
-                                run.isAgentMode() ? availableModelTools(run.getTenantId()) : List.of())));
+                ModelResponse response = executeModelCall(run, step, modelInput, workerId, false);
                 if (run.isAgentMode()) {
                     validateAgentToolCalls(new RunExecutionStateService.RunExecutionSnapshot(
                             run.getId(), run.getTenantId(), run.getUserId(), run.getModelName(),
@@ -1017,7 +1016,66 @@ public class RunService {
             outboxService.enqueue(run, command);
             return toDetail(runRepository.save(run));
         }
-        return executePending(run);
+        if (!localAsyncExecution) {
+            return executePending(run);
+        }
+        Run persisted = runRepository.save(run);
+        localRunDispatcher.dispatch(new RunExecutionMessage(
+                UUID.randomUUID().toString(), persisted.getId(), persisted.getTenantId(), persisted.getTraceId(),
+                command, Instant.now()));
+        return toDetail(persisted);
+    }
+
+    /**
+     * 模型输出按完整文本快照落库。Run SSE 会观察到 Step 和助手气泡的这些更新并推给页面，
+     * 因此客户端断线或刷新后仍能恢复已经生成的内容。
+     */
+    private ModelResponse executeStreamingModelCall(RunExecutionStateService.RunExecutionSnapshot run,
+                                                    RunExecutionStateService.StepExecutionSnapshot step,
+                                                    String modelInput, String workerId) {
+        return executeModelCall(new StreamingRunContext(run.id(), run.tenantId(), run.modelName(),
+                run.promptVersion(), run.agentMode()), step.id(), modelInput, workerId, true);
+    }
+
+    private ModelResponse executeModelCall(Run run, Step step, String modelInput, String workerId,
+                                           boolean streamToChat) {
+        return executeModelCall(new StreamingRunContext(run.getId(), run.getTenantId(), run.getModelName(),
+                run.getPromptVersion(), run.isAgentMode()), step.getId(), modelInput, workerId, streamToChat);
+    }
+
+    private ModelResponse executeModelCall(StreamingRunContext run, String stepId,
+                                           String modelInput, String workerId, boolean streamToChat) {
+        String safeInput = sanitizer.sanitize(modelInput);
+        if (!streamToChat) {
+            return boundedExecutor.execute("模型调用", runtimeLimits.modelTimeoutMs(), () ->
+                    modelGateway.complete(new ModelRequest(safeInput, run.modelName(), run.promptVersion(),
+                            run.agentMode() ? availableModelTools(run.tenantId()) : List.of())));
+        }
+        StringBuilder previousContent = new StringBuilder();
+        return boundedExecutor.execute("模型调用", runtimeLimits.modelTimeoutMs(), () ->
+                modelGateway.completeStreaming(new ModelRequest(safeInput, run.modelName(), run.promptVersion(),
+                                run.agentMode() ? availableModelTools(run.tenantId()) : List.of()),
+                        content -> persistStreamingModelContent(run, stepId, workerId, previousContent, content)));
+    }
+
+    private void persistStreamingModelContent(StreamingRunContext run, String stepId, String workerId,
+                                              StringBuilder previousContent, String content) {
+        String safeContent = sanitizer.sanitize(content == null ? "" : content);
+        if (safeContent.isBlank() || safeContent.equals(previousContent.toString())) {
+            return;
+        }
+        previousContent.setLength(0);
+        previousContent.append(safeContent);
+        String persistedOutput = run.agentMode()
+                ? agentTurnCodec.encode(new ModelResponse(safeContent, run.modelName(), run.promptVersion(),
+                0, 0, BigDecimal.ZERO, List.of()))
+                : safeContent;
+        executionStateService.updateStreamingModelOutput(run.id(), run.tenantId(), workerId, stepId,
+                persistedOutput, safeContent);
+    }
+
+    private record StreamingRunContext(String id, String tenantId, String modelName,
+                                       String promptVersion, boolean agentMode) {
     }
 
     private void refreshLease(Run run, RunExecutionLock.LockToken lockToken) {

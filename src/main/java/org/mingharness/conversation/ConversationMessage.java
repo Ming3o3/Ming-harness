@@ -70,6 +70,15 @@ public class ConversationMessage {
         this.updatedAt = Instant.now();
     }
 
+    /** 保持执行中状态，同时写入可恢复的模型生成快照。 */
+    public void updatePendingContent(String content) {
+        if (status != ConversationMessageStatus.PENDING) {
+            return;
+        }
+        this.content = content == null ? "" : content;
+        this.updatedAt = Instant.now();
+    }
+
     public void complete(String content) {
         this.status = ConversationMessageStatus.COMPLETED;
         this.content = content == null ? "" : content;

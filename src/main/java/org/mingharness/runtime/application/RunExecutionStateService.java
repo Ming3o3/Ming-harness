@@ -196,6 +196,28 @@ public class RunExecutionStateService {
         return StepCompletionResult.COMPLETED;
     }
 
+    /**
+     * 将正在生成的模型输出落为短事务快照。模型调用本身仍在事务外，避免持有 Run 行锁。
+     */
+    @Transactional
+    public boolean updateStreamingModelOutput(String runId, String tenantId, String workerId,
+                                              String stepId, String persistedOutput,
+                                              String conversationContent) {
+        Run run = loadForUpdate(runId);
+        assertTenant(run, tenantId);
+        if (!ownsRunningRun(run, workerId)) {
+            return false;
+        }
+        Step step = findStep(run, stepId);
+        if (step.getType() != StepType.MODEL || step.getStatus() != StepStatus.RUNNING) {
+            return false;
+        }
+        step.updateRunningOutput(sanitizer.sanitize(persistedOutput));
+        conversationMessageWriter.updatePendingContent(run, conversationContent);
+        runRepository.save(run);
+        return true;
+    }
+
     /** Agent 模型完成后，将模型提出的工具调用持久化为排队步骤。 */
     @Transactional
     public boolean appendAgentToolSteps(String runId, String tenantId, String workerId,

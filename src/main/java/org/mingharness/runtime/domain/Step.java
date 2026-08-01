@@ -93,6 +93,14 @@ public class Step {
         this.durationMs = elapsedMs();
     }
 
+    /** 外部模型仍在生成时保存最新输出快照，最终状态仍须通过 {@link #succeed} 写入。 */
+    public void updateRunningOutput(String output) {
+        if (status != StepStatus.RUNNING) {
+            return;
+        }
+        this.output = output == null ? "" : output;
+    }
+
     public void fail(String error) {
         this.error = error;
         this.status = StepStatus.FAILED;
