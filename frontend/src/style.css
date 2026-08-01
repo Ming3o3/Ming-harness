@@ -404,6 +404,27 @@ h3 { margin: 0; font-size: 13px; }
 .chat-run-summary .status-pill { flex-shrink: 0; padding: 5px 8px; font-size: 9px; }
 .chat-run-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 13px 0; }
 .chat-run-actions button { padding: 7px 9px; font-size: 9px; }
+.chat-change-review { margin: 1px 0 15px; border: 1px solid rgba(141,124,255,.24); border-radius: 9px; background: rgba(141,124,255,.045); padding: 11px; }
+.chat-change-review-heading, .chat-change-card-meta { display: flex; align-items: center; justify-content: space-between; gap: 7px; }
+.chat-change-review-heading { margin-bottom: 10px; }
+.chat-change-review-heading span { display: block; color: var(--accent-light); font: 8px "DM Mono", monospace; letter-spacing: .1em; }
+.chat-change-review-heading strong { display: block; margin-top: 3px; color: var(--soft); font-size: 10px; }
+.chat-change-review-heading em { flex-shrink: 0; border: 1px solid rgba(255,182,95,.28); border-radius: 12px; color: var(--orange); padding: 4px 6px; font: 8px "DM Mono", monospace; font-style: normal; }
+.chat-change-card { border-top: 1px solid var(--line); padding: 10px 0 0; }
+.chat-change-card + .chat-change-card { margin-top: 10px; }
+.chat-change-card-meta { align-items: flex-start; }
+.chat-change-card-meta > span { flex-shrink: 0; color: var(--muted); font: 8px "DM Mono", monospace; }
+.chat-change-card-meta code { min-width: 0; flex: 1; overflow: hidden; color: var(--soft); font: 9px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.chat-change-card-meta em { flex-shrink: 0; font: 8px "DM Mono", monospace; font-style: normal; }
+.chat-change-card-meta em.status-waiting_approval { color: var(--orange); }
+.chat-change-card-meta em.status-succeeded { color: var(--green); }
+.chat-change-card-meta em.status-failed { color: var(--red); }
+.chat-inline-diff { display: grid; overflow: auto; max-height: 210px; margin: 8px 0 0; border: 1px solid rgba(153,174,218,.12); border-radius: 6px; background: var(--input-bg); padding: 8px; color: var(--soft); white-space: pre-wrap; word-break: break-word; font: 9px/1.55 "DM Mono", monospace; }
+.chat-inline-diff span { display: block; }
+.chat-inline-diff .diff-remove { color: #ff9ca3; background: rgba(255,114,123,.06); }
+.chat-inline-diff .diff-add { color: var(--green); background: rgba(85,214,138,.06); }
+.chat-inline-diff small { margin-top: 7px; color: var(--muted); font: 8px "DM Mono", monospace; }
+.chat-change-truncated { margin: 8px 0 0; color: var(--muted); font-size: 9px; }
 .chat-run-meta { display: grid; grid-template-columns: 45px 1fr; gap: 7px 9px; border-bottom: 1px solid var(--line); padding: 0 0 15px; color: var(--muted); font: 9px "DM Mono", monospace; }
 .chat-run-meta code { overflow: hidden; color: var(--soft); text-overflow: ellipsis; white-space: nowrap; }
 .chat-step-list { display: grid; gap: 13px; padding-top: 17px; }

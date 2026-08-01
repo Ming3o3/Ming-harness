@@ -199,6 +199,12 @@ const chatRunStatus = computed(() => {
 const canSendChat = computed(() => Boolean(activeConversationId.value) && !chatSending.value
   && !pendingChatMessage.value
   && chatInput.value.trim().length > 0)
+// 变更预览只读取已经持久化到 Step 的工具参数，不向后端额外发送代码正文。
+const workspaceChangePreviews = computed(() => (selectedRun.value?.steps || [])
+  .map(workspaceChangePreview)
+  .filter(Boolean))
+const pendingWorkspaceChangePreviews = computed(() => workspaceChangePreviews.value
+  .filter((change) => change.status === 'WAITING_APPROVAL'))
 
 function isTerminal(status) {
   return ['SUCCEEDED', 'FAILED', 'CANCELLED', 'TIMED_OUT'].includes(status)
@@ -303,6 +309,54 @@ function decodeWorkspaceGitDiff(step) {
     return parsed && typeof parsed === 'object' ? parsed : null
   } catch {
     return null
+  }
+}
+
+function decodeToolInput(step) {
+  if (!step?.input) return null
+  try {
+    const parsed = JSON.parse(step.input)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function clipCodePreview(value, maximum = 900) {
+  if (typeof value !== 'string') return ''
+  if (value.length <= maximum) return value
+  return `${value.slice(0, maximum)}\n…（已截断 ${value.length - maximum} 个字符）`
+}
+
+// 编辑工具在真正执行前就会保存参数，因此 WAITING_APPROVAL 阶段也能安全预览。
+function workspaceChangePreview(step) {
+  if (!step || !['workspace.edit', 'workspace.write'].includes(step.name)) return null
+  const input = decodeToolInput(step)
+  if (!input || typeof input.path !== 'string' || !input.path) return null
+  if (step.name === 'workspace.edit') {
+    const requestedEdits = Array.isArray(input.edits) ? input.edits : []
+    const visibleEdits = requestedEdits.slice(0, 6).map((edit) => ({
+      oldText: clipCodePreview(edit?.oldText, 500),
+      newText: clipCodePreview(edit?.newText, 500),
+      replaceAll: Boolean(edit?.replaceAll),
+    }))
+    return {
+      stepId: step.id,
+      status: step.status,
+      path: input.path,
+      typeLabel: '精确编辑',
+      kind: 'edit',
+      edits: visibleEdits,
+      hiddenEditCount: Math.max(0, requestedEdits.length - visibleEdits.length),
+    }
+  }
+  return {
+    stepId: step.id,
+    status: step.status,
+    path: input.path,
+    typeLabel: '整文件写入',
+    kind: 'write',
+    content: clipCodePreview(input.content, 1800),
   }
 }
 
@@ -1032,6 +1086,22 @@ onBeforeUnmount(() => {
               <button v-if="canRetry" class="secondary-button" type="button" :disabled="loading" @click="retrySelectedRun">重试</button>
               <button v-if="canCancel" class="danger-button" type="button" :disabled="loading" @click="cancelSelectedRun">取消</button>
             </div>
+            <section v-if="workspaceChangePreviews.length" class="chat-change-review" aria-label="代码变更预览">
+              <div class="chat-change-review-heading">
+                <div><span>CHANGE REVIEW</span><strong>{{ pendingWorkspaceChangePreviews.length ? '请先检查待审批变更' : '本轮代码变更' }}</strong></div>
+                <em v-if="pendingWorkspaceChangePreviews.length">{{ pendingWorkspaceChangePreviews.length }} 项待审批</em>
+              </div>
+              <article v-for="change in workspaceChangePreviews" :key="change.stepId" class="chat-change-card">
+                <div class="chat-change-card-meta">
+                  <span>{{ change.typeLabel }}</span><code>{{ change.path }}</code><em :class="statusClass(change.status)">{{ statusLabel(change.status) }}</em>
+                </div>
+                <template v-if="change.kind === 'edit'">
+                  <pre v-for="(edit, index) in change.edits" :key="index" class="chat-inline-diff"><span class="diff-remove">− {{ edit.oldText }}</span><span class="diff-add">＋ {{ edit.newText }}</span><small v-if="edit.replaceAll">替换全部匹配项</small></pre>
+                  <p v-if="change.hiddenEditCount" class="chat-change-truncated">另有 {{ change.hiddenEditCount }} 个编辑已折叠。</p>
+                </template>
+                <pre v-else class="chat-inline-diff"><span class="diff-add">＋ {{ change.content }}</span></pre>
+              </article>
+            </section>
             <div class="chat-run-meta"><span>Run</span><code>{{ selectedRun.run.id.slice(0, 12) }}</code><span>Trace</span><code>{{ selectedRun.run.traceId?.slice(0, 12) || '—' }}</code></div>
             <div class="chat-step-list">
               <div v-for="step in selectedRun.steps" :key="step.id" class="chat-step-row"><span class="chat-step-dot" :class="statusClass(step.status)"></span><div><strong>{{ step.name }}</strong><small>{{ stepLabel(step.type) }} · {{ statusLabel(step.status) }}</small><p v-if="step.error">{{ step.error }}</p></div></div>
