@@ -10,14 +10,25 @@ import org.mingharness.conversation.api.SendConversationMessageRequest;
 import org.mingharness.runtime.repository.RunRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.mock.web.MockMultipartFile;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** 验证多轮消息、上下文延续和租户/用户边界。 */
 @SpringBootTest
 class ConversationServiceTests {
+
+    private static final Path WORKSPACE_ROOT = createWorkspaceRoot();
 
     @Autowired
     private ConversationService conversationService;
@@ -26,12 +37,21 @@ class ConversationServiceTests {
     @Autowired
     private ConversationMessageRepository messageRepository;
     @Autowired
+    private ConversationAttachmentRepository attachmentRepository;
+    @Autowired
     private RunRepository runRepository;
     @Autowired
     private AuditEventRepository auditEventRepository;
 
+    @DynamicPropertySource
+    static void configureWorkspace(DynamicPropertyRegistry registry) {
+        registry.add("harness.workspace.enabled", () -> true);
+        registry.add("harness.workspace.root", () -> WORKSPACE_ROOT.toString());
+    }
+
     @BeforeEach
     void cleanDatabase() {
+        attachmentRepository.deleteAll();
         messageRepository.deleteAll();
         auditEventRepository.deleteAll();
         runRepository.deleteAll();
@@ -88,5 +108,73 @@ class ConversationServiceTests {
                 created.conversation().id(), "tenant-other", "operator"));
         assertThrows(RuntimeException.class, () -> conversationService.detail(
                 created.conversation().id(), "tenant-chat", "other-user"));
+    }
+
+    @Test
+    void shouldImportTextAttachmentAndPassWorkspacePathToAgent() throws IOException {
+        ConversationDetail created = conversationService.create(
+                "tenant-chat", "operator", new CreateConversationRequest("附件测试"));
+        MockMultipartFile source = new MockMultipartFile("files", "Example.java", "text/plain",
+                "class Example { }".getBytes());
+
+        var uploaded = conversationService.upload(created.conversation().id(), "tenant-chat", "operator",
+                List.of(source));
+        assertEquals(1, uploaded.size());
+        assertEquals("Example.java", uploaded.get(0).originalName());
+        assertTrue(Files.readString(WORKSPACE_ROOT.resolve(uploaded.get(0).workspacePath()))
+                .contains("class Example"));
+
+        ConversationDetail detail = conversationService.send(created.conversation().id(), "tenant-chat", "operator",
+                new SendConversationMessageRequest("请读取附件", null, 2,
+                        List.of(uploaded.get(0).id())),
+                "chat-attachment-1", "run.create,run.execute,workspace.read");
+        var userMessage = detail.messages().get(0);
+        assertEquals(1, userMessage.attachments().size());
+        assertEquals(uploaded.get(0).workspacePath(), userMessage.attachments().get(0).workspacePath());
+        assertTrue(runRepository.findById(userMessage.runId()).orElseThrow().getInput()
+                .contains(uploaded.get(0).workspacePath()));
+    }
+
+    @Test
+    void shouldRejectCrossConversationAndBinaryAttachment() {
+        ConversationDetail first = conversationService.create(
+                "tenant-chat", "operator", new CreateConversationRequest("附件归属"));
+        ConversationDetail second = conversationService.create(
+                "tenant-chat", "other-user", new CreateConversationRequest("其他用户"));
+        var uploaded = conversationService.upload(first.conversation().id(), "tenant-chat", "operator",
+                List.of(new MockMultipartFile("files", "note.txt", "text/plain", "内容".getBytes())));
+
+        assertThrows(BusinessException.class, () -> conversationService.send(
+                second.conversation().id(), "tenant-chat", "other-user",
+                new SendConversationMessageRequest("请读取附件", null, 2, List.of(uploaded.get(0).id())),
+                "chat-cross-attachment", "run.create"));
+        assertThrows(BusinessException.class, () -> conversationService.upload(
+                first.conversation().id(), "tenant-chat", "operator",
+                List.of(new MockMultipartFile("files", "binary.bin", "application/octet-stream",
+                        new byte[]{1, 0, 2}))));
+    }
+
+    @Test
+    void shouldDiscardUnboundAttachmentAfterMessageSubmissionFailure() {
+        ConversationDetail created = conversationService.create(
+                "tenant-chat", "operator", new CreateConversationRequest("附件回收"));
+        var uploaded = conversationService.upload(created.conversation().id(), "tenant-chat", "operator",
+                List.of(new MockMultipartFile("files", "temporary.txt", "text/plain", "临时内容".getBytes())));
+
+        conversationService.discardPendingAttachment(created.conversation().id(), uploaded.get(0).id(),
+                "tenant-chat", "operator");
+        assertFalse(Files.exists(WORKSPACE_ROOT.resolve(uploaded.get(0).workspacePath())));
+        assertThrows(BusinessException.class, () -> conversationService.send(
+                created.conversation().id(), "tenant-chat", "operator",
+                new SendConversationMessageRequest("已回收附件", null, 2, List.of(uploaded.get(0).id())),
+                "chat-discarded-attachment", "run.create"));
+    }
+
+    private static Path createWorkspaceRoot() {
+        try {
+            return Files.createTempDirectory("ming-harness-conversation-test-");
+        } catch (IOException exception) {
+            throw new ExceptionInInitializerError(exception);
+        }
     }
 }

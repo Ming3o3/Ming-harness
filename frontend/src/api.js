@@ -6,10 +6,12 @@ const defaultChatPermissions = import.meta.env.VITE_HARNESS_CHAT_PERMISSIONS
 
 async function request(path, options = {}) {
   const { headers: requestHeaders, ...requestOptions } = options
+  // multipart 的 boundary 必须由浏览器生成，不能手动设置 JSON Content-Type。
+  const isFormData = typeof FormData !== 'undefined' && requestOptions.body instanceof FormData
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...requestOptions,
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(configuredApiKey
         ? { Authorization: `Bearer ${configuredApiKey}` }
         : {
@@ -61,6 +63,18 @@ export const api = {
     body: JSON.stringify(payload),
   }),
   getConversation: (conversationId) => request(`/conversations/${encodeURIComponent(conversationId)}`),
+  uploadConversationAttachments: (conversationId, files) => {
+    const body = new FormData()
+    Array.from(files || []).forEach((file) => body.append('files', file))
+    return request(`/conversations/${encodeURIComponent(conversationId)}/attachments`, {
+      method: 'POST',
+      body,
+    })
+  },
+  deleteConversationAttachment: (conversationId, attachmentId) => request(
+    `/conversations/${encodeURIComponent(conversationId)}/attachments/${encodeURIComponent(attachmentId)}`,
+    { method: 'DELETE' },
+  ),
   sendConversationMessage: (conversationId, payload, idempotencyKey) => request(
     `/conversations/${encodeURIComponent(conversationId)}/messages`, {
       method: 'POST',

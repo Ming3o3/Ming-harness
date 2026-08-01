@@ -200,9 +200,25 @@ curl -X POST http://localhost:8080/api/conversations/{conversationId}/messages \
   -H 'X-User-Id: operator' \
   -H 'Idempotency-Key: chat-round-1' \
   -d '{"content":"请读取项目入口并总结模块","maxTurns":8}'
+
+# 先将本地 UTF-8 文本文件导入受控工作区，再把返回的附件 ID 传给消息接口。
+# 浏览器和 Agent 都不会获得原始本机绝对路径。
+curl -X POST http://localhost:8080/api/conversations/{conversationId}/attachments \
+  -H 'X-Tenant-Id: tenant-demo' \
+  -H 'X-User-Id: operator' \
+  -F 'files=@src/main/java/App.java;type=text/plain'
+
+curl -X POST http://localhost:8080/api/conversations/{conversationId}/messages \
+  -H 'Content-Type: application/json' \
+  -H 'X-Tenant-Id: tenant-demo' \
+  -H 'X-User-Id: operator' \
+  -H 'Idempotency-Key: chat-round-with-file' \
+  -d '{"content":"请阅读并修改已附加的文件","maxTurns":8,"attachmentIds":["<attachment-id>"]}'
 ```
 
-相关接口：`GET /api/conversations`、`GET /api/conversations/{id}`、`POST /api/conversations/{id}/messages`。会话按租户和用户隔离，消息中的 `runId` 可以继续调用原有 Run 详情、审批、取消和重试接口。
+相关接口：`GET /api/conversations`、`GET /api/conversations/{id}`、`POST /api/conversations/{id}/attachments`、`DELETE /api/conversations/{id}/attachments/{attachmentId}`、`POST /api/conversations/{id}/messages`。附件仅接受 UTF-8 文本，先存入 `HARNESS_WORKSPACE_ROOT/attachments/<conversation-id>/`，返回的 `workspacePath` 是 Agent 唯一可见、并受工作区安全边界保护的路径；文件会在消息发送成功时绑定到该轮记录，发送失败时前端会尽力回收未绑定文件。会话按租户和用户隔离，消息中的 `runId` 可以继续调用原有 Run 详情、审批、取消和重试接口。
+
+`local` 与 `local-infra` Profile 默认启用受控工作区；若在其他环境启用聊天附件，请显式配置 `WORKSPACE_ENABLED=true` 与专用的 `HARNESS_WORKSPACE_ROOT`。不要把工作区配置成用户主目录或其他宽泛目录。
 
 创建 Run 时将 `agentMode` 设置为 `true`，Harness 会把模型返回的 Tool Call 持久化为新的工具步骤；每个工具完成后自动追加下一轮模型步骤。模型结果、工具参数、审计事件和当前轮次都保存在数据库中，Rabbit Worker 重启后可以从最后一个已提交步骤恢复，而不会依赖进程内上下文。
 

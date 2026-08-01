@@ -209,8 +209,8 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
         if (path.equals("/api/conversations")) {
             return "GET".equalsIgnoreCase(method) ? "run.read" : "run.create";
         }
+        if (path.matches("/api/conversations/[^/]+/(messages|attachments)(?:/[^/]+)?")) return "run.create";
         if (path.matches("/api/conversations/[^/]+")) return "run.read";
-        if (path.matches("/api/conversations/[^/]+/messages")) return "run.create";
         if (path.equals("/api/dashboard/summary")) return "run.read";
         if (path.matches("/api/context/(documents|memories)(/[^/]+)?")) {
             return "GET".equalsIgnoreCase(method) ? "context.read" : "context.write";

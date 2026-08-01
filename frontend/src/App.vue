@@ -46,8 +46,14 @@ const activeConversation = ref(null)
 const chatInput = ref('')
 const chatLoading = ref(false)
 const chatSending = ref(false)
+// 文件仅在点击发送时才上传，切换会话不会在后端留下未绑定的附件。
+const chatAttachments = ref([])
+const chatUploading = ref(false)
+const chatDragActive = ref(false)
+const chatAttachmentInput = ref(null)
 const showChatRun = ref(false)
 let conversationPollTimer
+let chatHighlightTimer
 
 function readTheme() {
   if (typeof window === 'undefined') return 'dark'
@@ -196,9 +202,11 @@ const chatRunStatus = computed(() => {
   if (runId && selectedRun.value?.run?.id === runId) return selectedRun.value.run.status
   return pendingChatMessage.value ? 'RUNNING' : ''
 })
-const canSendChat = computed(() => Boolean(activeConversationId.value) && !chatSending.value
+const chatUserMessages = computed(() => chatMessages.value
+  .filter((message) => message.role === 'USER'))
+const canSendChat = computed(() => Boolean(activeConversationId.value) && !chatSending.value && !chatUploading.value
   && !pendingChatMessage.value
-  && chatInput.value.trim().length > 0)
+  && (chatInput.value.trim().length > 0 || chatAttachments.value.length > 0))
 // 变更预览只读取已经持久化到 Step 的工具参数，不向后端额外发送代码正文。
 const workspaceChangePreviews = computed(() => (selectedRun.value?.steps || [])
   .map(workspaceChangePreview)
@@ -393,6 +401,76 @@ function messageStatusClass(status) {
   return `message-status-${String(status || 'unknown').toLowerCase()}`
 }
 
+function attachmentLabel(attachment) {
+  if (!attachment) return '已附加文件'
+  return attachment.originalName || attachment.workspacePath || '已附加文件'
+}
+
+function messageNavigationLabel(message) {
+  const content = String(message?.content || '').trim()
+  if (content) return content.length > 30 ? `${content.slice(0, 30)}…` : content
+  return attachmentLabel(message?.attachments?.[0])
+}
+
+function formatFileSize(size) {
+  const value = Number(size || 0)
+  if (value < 1024) return `${value} B`
+  if (value < 1024 * 1024) return `${Math.ceil(value / 1024)} KB`
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function clearChatAttachments() {
+  chatAttachments.value = []
+  chatDragActive.value = false
+  if (chatAttachmentInput.value) chatAttachmentInput.value.value = ''
+}
+
+function addChatAttachments(files) {
+  const incoming = Array.from(files || []).filter((file) => file instanceof File && file.size > 0)
+  if (!incoming.length) return
+  const current = [...chatAttachments.value]
+  const previousCount = current.length
+  for (const file of incoming) {
+    const duplicate = current.some((item) => item.name === file.name
+      && item.size === file.size && item.lastModified === file.lastModified)
+    if (!duplicate && current.length < 8) current.push(file)
+  }
+  chatAttachments.value = current
+  if (current.length < previousCount + incoming.length) {
+    noticeMessage.value = '每轮最多附加 8 个文本文件，超出的文件未加入。'
+  }
+}
+
+function openChatAttachmentPicker() {
+  if (!activeConversationId.value || chatSending.value || chatUploading.value) return
+  chatAttachmentInput.value?.click()
+}
+
+function handleChatAttachmentInput(event) {
+  addChatAttachments(event.target?.files)
+  // 允许移除后再次选择同一个文件。
+  event.target.value = ''
+}
+
+function handleChatDrop(event) {
+  chatDragActive.value = false
+  if (!activeConversationId.value || chatSending.value || chatUploading.value) return
+  addChatAttachments(event.dataTransfer?.files)
+}
+
+function removeChatAttachment(index) {
+  chatAttachments.value = chatAttachments.value.filter((_, itemIndex) => itemIndex !== index)
+}
+
+function jumpToChatMessage(messageId) {
+  const target = document.getElementById(`chat-message-${messageId}`)
+  if (!target) return
+  target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  target.classList.add('chat-message-highlighted')
+  window.clearTimeout(chatHighlightTimer)
+  chatHighlightTimer = window.setTimeout(() => target.classList.remove('chat-message-highlighted'), 1600)
+}
+
 function latestConversationRun(detail) {
   return detail?.messages?.slice().reverse().find((message) => message.runId)?.runId || ''
 }
@@ -423,6 +501,7 @@ async function createChatConversation() {
     conversations.value = [created.conversation, ...conversations.value.filter((item) => item.id !== created.conversation.id)]
     activeConversation.value = created
     chatInput.value = ''
+    clearChatAttachments()
     selectedRun.value = null
     auditEvents.value = []
   } catch (error) {
@@ -433,6 +512,9 @@ async function createChatConversation() {
 async function selectConversation(conversationId, announce = true) {
   if (!conversationId) return
   if (announce) clearMessages()
+  if (conversationId !== activeConversationId.value) {
+    clearChatAttachments()
+  }
   chatLoading.value = true
   try {
     const detail = await api.getConversation(conversationId)
@@ -459,22 +541,42 @@ async function sendChatMessage() {
   if (!canSendChat.value) return
   clearMessages()
   chatSending.value = true
-  const content = chatInput.value.trim()
+  const conversationId = activeConversationId.value
+  const typedContent = chatInput.value.trim()
+  const content = typedContent || '请读取并处理已附加到工作区的文件。'
+  const files = [...chatAttachments.value]
+  let uploadedAttachments = []
+  let messageSubmitted = false
   chatInput.value = ''
+  clearChatAttachments()
   try {
-    const detail = await api.sendConversationMessage(activeConversationId.value, {
+    if (files.length) {
+      chatUploading.value = true
+      uploadedAttachments = await api.uploadConversationAttachments(conversationId, files)
+      chatUploading.value = false
+    }
+    const detail = await api.sendConversationMessage(conversationId, {
       content,
       maxTurns: 8,
+      attachmentIds: uploadedAttachments.map((attachment) => attachment.id),
     }, `chat-${crypto.randomUUID?.() || Date.now()}`)
+    messageSubmitted = true
     activeConversation.value = detail
     const runId = latestConversationRun(detail)
     if (runId) await selectRun(runId, false, false)
-    await loadConversations(activeConversationId.value)
+    await loadConversations(conversationId)
     scrollChatToBottom()
   } catch (error) {
-    chatInput.value = content
+    if (!messageSubmitted) {
+      // 消息提交失败时尽力回收未绑定附件；回收失败不掩盖原始请求错误。
+      await Promise.allSettled(uploadedAttachments.map((attachment) =>
+        api.deleteConversationAttachment(conversationId, attachment.id)))
+      chatInput.value = typedContent
+      chatAttachments.value = files
+    }
     errorMessage.value = errorText(error)
   } finally {
+    chatUploading.value = false
     chatSending.value = false
   }
 }
@@ -964,6 +1066,7 @@ onBeforeUnmount(() => {
   window.clearInterval(runPollTimer)
   window.clearInterval(conversationPollTimer)
   window.clearInterval(healthPollTimer)
+  window.clearTimeout(chatHighlightTimer)
 })
 </script>
 
@@ -992,7 +1095,7 @@ onBeforeUnmount(() => {
         <aside class="conversation-sidebar">
           <div class="conversation-sidebar-heading">
             <div><p class="eyebrow">CONVERSATIONS</p><h2>对话</h2></div>
-            <button class="icon-button" type="button" aria-label="新建对话" title="新建对话" :disabled="chatLoading" @click="createChatConversation">＋</button>
+            <button class="icon-button" type="button" aria-label="新建对话" title="新建对话" :disabled="chatLoading || chatSending || chatUploading" @click="createChatConversation">＋</button>
           </div>
           <div v-if="chatLoading && !conversations.length" class="chat-sidebar-empty">正在读取对话…</div>
           <div v-else-if="!conversations.length" class="chat-sidebar-empty">还没有对话</div>
@@ -1003,6 +1106,7 @@ onBeforeUnmount(() => {
               class="conversation-row"
               :class="{ active: conversation.id === activeConversationId }"
               type="button"
+              :disabled="chatSending || chatUploading"
               @click="selectConversation(conversation.id)"
             >
               <span class="conversation-row-icon">⌁</span>
@@ -1014,6 +1118,21 @@ onBeforeUnmount(() => {
               <span v-if="conversation.activeRunId" class="conversation-running-dot" title="Agent 执行中"></span>
             </button>
           </div>
+          <section v-if="chatUserMessages.length" class="chat-turn-navigation" aria-label="本轮消息导航">
+            <p class="eyebrow">MESSAGE NAVIGATION</p>
+            <strong>本轮导航</strong>
+            <div class="chat-turn-navigation-list">
+              <button
+                v-for="message in chatUserMessages"
+                :key="message.id"
+                type="button"
+                :title="messageNavigationLabel(message)"
+                @click="jumpToChatMessage(message.id)"
+              >
+                <span>#{{ Math.ceil(message.sequence / 2) }}</span>{{ messageNavigationLabel(message) }}
+              </button>
+            </div>
+          </section>
           <div class="conversation-sidebar-foot">
             <span class="pulse" :class="{ offline: !infraOnline }"></span>
             <span>{{ workerLabel }}</span>
@@ -1041,7 +1160,13 @@ onBeforeUnmount(() => {
               <strong>从一个问题开始</strong>
               <span>Agent 会读取工作区、运行工具并把每轮结果留在这里。</span>
             </div>
-            <article v-for="message in chatMessages" :key="message.id" class="chat-message" :class="`chat-message-${message.role.toLowerCase()}`">
+            <article
+              v-for="message in chatMessages"
+              :id="`chat-message-${message.id}`"
+              :key="message.id"
+              class="chat-message"
+              :class="`chat-message-${message.role.toLowerCase()}`"
+            >
               <div class="chat-avatar">{{ message.role === 'USER' ? '你' : 'MH' }}</div>
               <div class="chat-bubble-wrap">
                 <div class="chat-message-meta"><strong>{{ message.role === 'USER' ? '你' : 'Ming Agent' }}</strong><span>{{ formatDate(message.createdAt) }}</span></div>
@@ -1053,24 +1178,54 @@ onBeforeUnmount(() => {
                     <p>{{ message.content || messageStatusLabel(message.status) }}</p>
                     <small v-if="message.role === 'ASSISTANT' && message.status !== 'COMPLETED'">{{ messageStatusLabel(message.status) }}</small>
                   </template>
+                  <div v-if="message.attachments?.length" class="chat-attachment-list" aria-label="已导入的工作区文件">
+                    <span v-for="attachment in message.attachments" :key="attachment.id" :title="attachment.workspacePath">
+                      <i>⌁</i><strong>{{ attachment.originalName }}</strong><code>{{ attachment.workspacePath }}</code>
+                    </span>
+                  </div>
                 </div>
                 <button v-if="message.runId && message.role === 'ASSISTANT'" class="message-run-link" type="button" @click="showChatRun = true; selectRun(message.runId, false)">查看执行步骤 · {{ message.runId.slice(0, 8) }}</button>
               </div>
             </article>
           </div>
 
-          <form class="chat-composer" @submit.prevent="sendChatMessage">
+          <form
+            class="chat-composer"
+            :class="{ 'chat-composer-dragging': chatDragActive }"
+            @submit.prevent="sendChatMessage"
+            @dragenter.prevent="chatDragActive = Boolean(activeConversationId)"
+            @dragover.prevent="chatDragActive = Boolean(activeConversationId)"
+            @dragleave.prevent="chatDragActive = false"
+            @drop.prevent="handleChatDrop"
+          >
+            <input
+              ref="chatAttachmentInput"
+              class="chat-attachment-input"
+              type="file"
+              multiple
+              accept="text/*,.java,.kt,.kts,.js,.jsx,.ts,.tsx,.vue,.html,.css,.scss,.json,.yaml,.yml,.xml,.sql,.md,.txt,.properties,.gradle,.sh,.py,.go,.rs,.c,.cpp,.h"
+              @change="handleChatAttachmentInput"
+            />
+            <div v-if="chatAttachments.length" class="chat-composer-attachments" aria-label="待发送附件">
+              <span v-for="(file, index) in chatAttachments" :key="`${file.name}-${file.size}-${file.lastModified}`">
+                <i>⌁</i><strong>{{ file.name }}</strong><em>{{ formatFileSize(file.size) }}</em>
+                <button type="button" :aria-label="`移除 ${file.name}`" :disabled="chatSending || chatUploading" @click="removeChatAttachment(index)">×</button>
+              </span>
+            </div>
             <textarea
               v-model="chatInput"
               rows="3"
-              :disabled="chatSending || !activeConversationId"
-              placeholder="描述你要完成的代码任务…"
+              :disabled="chatSending || chatUploading || !activeConversationId"
+              placeholder="描述你要完成的代码任务，或拖入文本文件…"
               aria-label="输入消息"
               @keydown.enter.exact.prevent="sendChatMessage"
             ></textarea>
             <div class="chat-composer-footer">
-              <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行</span>
-              <button class="primary-button chat-send-button" type="submit" :disabled="!canSendChat">{{ chatSending ? '提交中…' : '发送' }} <span>↗</span></button>
+              <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行 · 仅 UTF-8 文本</span>
+              <div class="chat-composer-actions">
+                <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatAttachmentPicker">⌁ 附件</button>
+                <button class="primary-button chat-send-button" type="submit" :disabled="!canSendChat">{{ chatUploading ? '导入中…' : chatSending ? '提交中…' : '发送' }} <span>↗</span></button>
+              </div>
             </div>
           </form>
         </main>
