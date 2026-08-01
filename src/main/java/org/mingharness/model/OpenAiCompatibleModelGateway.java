@@ -1,8 +1,12 @@
 package org.mingharness.model;
 
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.observability.HarnessMetrics;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -12,9 +16,11 @@ import org.springframework.web.client.RestClientResponseException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * OpenAI 兼容模型网关，负责供应商级重试、熔断、备用路由、响应契约校验和成本解析。
@@ -29,14 +35,25 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
     private final ModelConfig config;
     private final SensitiveDataSanitizer sanitizer;
     private final HarnessMetrics metrics;
+    private final ObjectMapper objectMapper;
 
+    OpenAiCompatibleModelGateway(RestClient.Builder restClientBuilder,
+                                 ModelConfig config,
+                                 SensitiveDataSanitizer sanitizer,
+                                 HarnessMetrics metrics) {
+        this(restClientBuilder, config, sanitizer, metrics, new ObjectMapper());
+    }
+
+    @Autowired
     public OpenAiCompatibleModelGateway(RestClient.Builder restClientBuilder,
                                         ModelConfig config,
                                         SensitiveDataSanitizer sanitizer,
-                                        HarnessMetrics metrics) {
+                                        HarnessMetrics metrics,
+                                        ObjectMapper objectMapper) {
         this.config = config;
         this.sanitizer = sanitizer;
         this.metrics = metrics;
+        this.objectMapper = objectMapper;
         this.primary = provider(restClientBuilder, "primary", config.baseUrl(), config.apiKey(), config.name());
         this.fallback = config.fallbackEnabled()
                 ? provider(restClientBuilder, "fallback", config.fallbackBaseUrl(), config.fallbackApiKey(), config.fallbackName())
@@ -96,20 +113,14 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
 
     @SuppressWarnings("unchecked")
     private ModelResponse invokeOnce(Provider provider, ModelRequest request) {
+        PreparedTools preparedTools = prepareTools(request.tools());
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", request.model() == null || request.model().isBlank() ? provider.model() : request.model());
         body.put("messages", List.of(Map.of("role", "user", "content",
                 sanitizer.sanitize(request.input() == null ? "" : request.input()))));
         body.put("temperature", 0.2);
-        if (!request.tools().isEmpty()) {
-            body.put("tools", request.tools().stream().map(tool -> Map.of(
-                    "type", "function",
-                    "function", Map.of(
-                            "name", tool.name(),
-                            "description", tool.description() == null ? "" : tool.description(),
-                            "parameters", tool.inputSchema()
-                    )
-            )).toList());
+        if (!preparedTools.definitions().isEmpty()) {
+            body.put("tools", preparedTools.definitions());
             body.put("tool_choice", "auto");
         }
         try {
@@ -119,7 +130,7 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
                     .body(body)
                     .retrieve()
                     .body(Map.class);
-            return parseResponse(provider, request, response);
+            return parseResponse(provider, request, response, preparedTools);
         } catch (RestClientResponseException exception) {
             throw new ModelGatewayException(provider.name(), isRetryableStatus(exception.getStatusCode().value()),
                     "模型供应商返回 HTTP " + exception.getStatusCode().value(), exception);
@@ -129,7 +140,8 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
     }
 
     @SuppressWarnings("unchecked")
-    private ModelResponse parseResponse(Provider provider, ModelRequest request, Map<String, Object> response) {
+    private ModelResponse parseResponse(Provider provider, ModelRequest request, Map<String, Object> response,
+                                        PreparedTools preparedTools) {
         if (response == null) {
             throw new ModelGatewayException(provider.name(), false, "模型响应为空");
         }
@@ -143,7 +155,7 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
             throw new ModelGatewayException(provider.name(), false, "模型响应缺少 message");
         }
         String content = message.get("content") instanceof String value ? value : "";
-        List<ModelToolCall> toolCalls = parseToolCalls(message.get("tool_calls"), provider.name());
+        List<ModelToolCall> toolCalls = parseToolCalls(message.get("tool_calls"), provider.name(), preparedTools);
         if (content.isBlank() && toolCalls.isEmpty()) {
             throw new ModelGatewayException(provider.name(), false, "模型响应缺少 content 或 tool_calls");
         }
@@ -159,7 +171,8 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
     }
 
     /** 严格解析供应商 tool_calls，未知结构直接失败，避免把未经校验的参数交给工具。 */
-    private List<ModelToolCall> parseToolCalls(Object rawValue, String providerName) {
+    private List<ModelToolCall> parseToolCalls(Object rawValue, String providerName,
+                                               PreparedTools preparedTools) {
         if (rawValue == null) return List.of();
         if (!(rawValue instanceof List<?> values)) {
             throw new ModelGatewayException(providerName, false, "模型响应 tool_calls 格式无效");
@@ -174,21 +187,137 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
             if (id == null || !(functionValue instanceof Map<?, ?> function)) {
                 throw new ModelGatewayException(providerName, false, "模型响应 tool_call 缺少 id 或 function");
             }
-            String name = stringValue(function.get("name"));
+            String providerToolName = stringValue(function.get("name"));
             String arguments = stringValue(function.get("arguments"));
-            if (name == null || arguments == null || name.isBlank() || arguments.isBlank()) {
+            if (providerToolName == null || arguments == null
+                    || providerToolName.isBlank() || arguments.isBlank()) {
                 throw new ModelGatewayException(providerName, false, "模型响应 tool_call 缺少工具名称或参数");
             }
             if (arguments.length() > config.maxResponseChars()) {
                 throw new ModelGatewayException(providerName, false, "模型 tool_call 参数超过字符上限");
             }
-            calls.add(new ModelToolCall(id, name, arguments));
+            String internalToolName = preparedTools.internalName(providerToolName);
+            if (internalToolName == null) {
+                throw new ModelGatewayException(providerName, false,
+                        "模型响应 tool_call 使用未声明的工具: " + providerToolName);
+            }
+            calls.add(new ModelToolCall(id, internalToolName,
+                    preparedTools.normalizeArguments(providerToolName, arguments, objectMapper, providerName)));
         }
         return List.copyOf(calls);
     }
 
+    private PreparedTools prepareTools(List<ModelToolDefinition> tools) {
+        if (tools == null || tools.isEmpty()) {
+            return PreparedTools.empty();
+        }
+        List<Map<String, Object>> definitions = new ArrayList<>();
+        Map<String, String> providerToInternal = new LinkedHashMap<>();
+        Map<String, Boolean> legacyTextTools = new LinkedHashMap<>();
+        Set<String> usedProviderNames = new HashSet<>();
+        for (ModelToolDefinition tool : tools) {
+            String internalName = tool.name();
+            if (internalName == null || internalName.isBlank()) {
+                throw new ModelGatewayException("model", false, "模型工具定义缺少工具名称");
+            }
+            String providerToolName = providerToolName(internalName, usedProviderNames);
+            boolean legacyText = isLegacyTextSchema(tool.inputSchema());
+            Map<String, Object> parameters = legacyText
+                    ? legacyTextParameters() : tool.inputSchema();
+            definitions.add(Map.of(
+                    "type", "function",
+                    "function", Map.of(
+                            "name", providerToolName,
+                            "description", tool.description() == null ? "" : tool.description(),
+                            "parameters", parameters
+                    )
+            ));
+            providerToInternal.put(providerToolName, internalName);
+            legacyTextTools.put(providerToolName, legacyText);
+        }
+        return new PreparedTools(List.copyOf(definitions), Map.copyOf(providerToInternal),
+                Map.copyOf(legacyTextTools), tools.stream().map(ModelToolDefinition::name).collect(java.util.stream.Collectors.toUnmodifiableSet()));
+    }
+
+    private String providerToolName(String internalName, Set<String> usedNames) {
+        StringBuilder normalized = new StringBuilder();
+        for (int index = 0; index < internalName.length(); index++) {
+            char character = internalName.charAt(index);
+            normalized.append(isProviderNameCharacter(character) ? character : '_');
+        }
+        String base = normalized.isEmpty() ? "tool" : normalized.toString();
+        base = base.substring(0, Math.min(base.length(), 64));
+        String candidate = base;
+        int suffix = 2;
+        while (!usedNames.add(candidate)) {
+            String suffixText = "_" + suffix++;
+            int prefixLength = Math.max(1, 64 - suffixText.length());
+            candidate = base.substring(0, Math.min(base.length(), prefixLength)) + suffixText;
+        }
+        return candidate;
+    }
+
+    private boolean isProviderNameCharacter(char character) {
+        return character >= 'A' && character <= 'Z'
+                || character >= 'a' && character <= 'z'
+                || character >= '0' && character <= '9'
+                || character == '_' || character == '-';
+    }
+
+    private boolean isLegacyTextSchema(Map<String, Object> schema) {
+        return schema != null && "string".equals(schema.get("type"));
+    }
+
+    private Map<String, Object> legacyTextParameters() {
+        return Map.of(
+                "type", "object",
+                "required", List.of("input"),
+                "additionalProperties", false,
+                "properties", Map.of("input", Map.of("type", "string", "minLength", 1))
+        );
+    }
+
     private String stringValue(Object value) {
         return value instanceof String text && !text.isBlank() ? text : null;
+    }
+
+    private record PreparedTools(
+            List<Map<String, Object>> definitions,
+            Map<String, String> providerToInternal,
+            Map<String, Boolean> legacyTextTools,
+            Set<String> internalNames
+    ) {
+
+        private static PreparedTools empty() {
+            return new PreparedTools(List.of(), Map.of(), Map.of(), Set.of());
+        }
+
+        private String internalName(String providerName) {
+            String mapped = providerToInternal.get(providerName);
+            return mapped != null ? mapped : internalNames.contains(providerName) ? providerName : null;
+        }
+
+        private String normalizeArguments(String providerName, String arguments,
+                                          ObjectMapper objectMapper, String modelProvider) {
+            if (!Boolean.TRUE.equals(legacyTextTools.get(providerName))) {
+                return arguments;
+            }
+            try {
+                JsonNode value = objectMapper.reader().readTree(arguments);
+                if (value != null && value.isTextual()) {
+                    return value.asText();
+                }
+                if (value == null || !value.isObject() || value.size() != 1
+                        || value.get("input") == null || !value.get("input").isTextual()) {
+                    throw new ModelGatewayException(modelProvider, false,
+                            "模型响应 legacy tool_call 参数必须是 {input: string}");
+                }
+                return value.get("input").asText();
+            } catch (JacksonException exception) {
+                throw new ModelGatewayException(modelProvider, false,
+                        "模型响应 legacy tool_call 参数不是有效 JSON", exception);
+            }
+        }
     }
 
     @SuppressWarnings("unchecked")

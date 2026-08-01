@@ -124,14 +124,15 @@ class OpenAiCompatibleModelGatewayTests {
     }
 
     @Test
-    void shouldSendToolDefinitionsAndParseNativeToolCalls() throws IOException {
+    void shouldAdaptToolNamesAndLegacyTextContractsForStrictProviders() throws IOException {
         AtomicReference<String> requestBody = new AtomicReference<>();
         HttpServer server = server(exchange -> {
             requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             respond(exchange, 200, """
                     {"model":"provider-model","choices":[{"message":{"content":null,
-                    "tool_calls":[{"id":"call-1","type":"function","function":{"name":"workspace.read",
-                    "arguments":"{\\"path\\":\\"src/App.java\\"}"}}]}}],
+                    "tool_calls":[{"id":"call-1","type":"function","function":{"name":"workspace_read",
+                    "arguments":"{\\"path\\":\\"src/App.java\\"}"}},{"id":"call-2","type":"function",
+                    "function":{"name":"demo_echo","arguments":"{\\"input\\":\\"hello\\"}"}}]}}],
                     "usage":{"input_tokens":30,"output_tokens":12}}
                     """);
         });
@@ -139,15 +140,23 @@ class OpenAiCompatibleModelGatewayTests {
 
         ModelResponse response = gateway.complete(new ModelRequest(
                 "读取项目入口", "", "prompt-agent",
-                List.of(new ModelToolDefinition("workspace.read", "读取文件",
-                        java.util.Map.of("type", "object")))));
+                List.of(
+                        new ModelToolDefinition("workspace.read", "读取文件",
+                                java.util.Map.of("type", "object")),
+                        new ModelToolDefinition("demo.echo", "返回输入",
+                                java.util.Map.of("type", "string", "x-harness-legacy-text", true))
+                )));
 
-        assertTrue(requestBody.get().contains("workspace.read"));
+        assertTrue(requestBody.get().contains("workspace_read"));
+        assertTrue(requestBody.get().contains("demo_echo"));
+        assertTrue(requestBody.get().contains("\"input\""));
         assertTrue(requestBody.get().contains("tool_choice"));
         assertTrue(response.hasToolCalls());
         assertEquals("call-1", response.toolCalls().get(0).id());
         assertEquals("workspace.read", response.toolCalls().get(0).name());
         assertEquals("{\"path\":\"src/App.java\"}", response.toolCalls().get(0).arguments());
+        assertEquals("demo.echo", response.toolCalls().get(1).name());
+        assertEquals("hello", response.toolCalls().get(1).arguments());
         assertEquals("", response.content());
     }
 
