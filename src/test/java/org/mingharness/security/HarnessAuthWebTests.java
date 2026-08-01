@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(properties = {
         "harness.auth.mode=api-key",
-        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,ops.read,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage",
+        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,ops.read,workspace.read,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage",
         "management.endpoint.health.show-details=when_authorized",
         "management.endpoint.health.show-components=when_authorized"
 })
@@ -52,6 +52,20 @@ class HarnessAuthWebTests {
 
         assertEquals(200, response.statusCode());
         assertTrue(response.headers().firstValue("X-Trace-Id").isPresent());
+    }
+
+    @Test
+    void shouldExposeSafeLocalWorkspaceSummaryWithoutAbsolutePath() throws Exception {
+        HttpResponse<String> response = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/workspace"))
+                        .header("Authorization", "Bearer web-test-key")
+                        .GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(200, response.statusCode(), response.body());
+        assertTrue(response.body().contains("\"absolutePathHidden\":true"));
+        assertTrue(!response.body().contains("\"rootPath\""));
+        assertTrue(!response.body().contains("jdbc:h2"));
     }
 
     @Test

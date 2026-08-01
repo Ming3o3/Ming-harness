@@ -23,6 +23,8 @@ const noticeMessage = ref('')
 const showCreateForm = ref(true)
 const showGovernance = ref(false)
 const health = ref(null)
+// 工作区状态用于告知用户 Agent 是否直接连接到本地项目；接口不会返回绝对路径。
+const workspace = ref(null)
 const runStatusFilter = ref('')
 const runsLoading = ref(false)
 const runPage = reactive({
@@ -134,7 +136,7 @@ const tenantPolicyForm = reactive({
 const apiKeyForm = reactive({
   tenantId: form.tenantId,
   userId: form.userId,
-  permissions: 'run.read, run.create, run.execute, run.approve, run.cancel, audit.read, context.read, context.write, evaluation.read, evaluation.run, tool.read, ops.read, tenant.policy.read, tenant.policy.write, auth.key.read, auth.key.manage',
+  permissions: 'run.read, run.create, run.execute, run.approve, run.cancel, audit.read, context.read, context.write, evaluation.read, evaluation.run, tool.read, workspace.read, ops.read, tenant.policy.read, tenant.policy.write, auth.key.read, auth.key.manage',
   expiresAt: '',
 })
 
@@ -187,6 +189,22 @@ const runtimeAlerts = computed(() => {
     runtime.timedOutRunCount > 0 && { level: 'warning', label: `运行超时 ${runtime.timedOutRunCount}` },
   ].filter(Boolean)
 })
+const workspaceConnected = computed(() => Boolean(workspace.value?.enabled && workspace.value?.accessible))
+const workspaceLabel = computed(() => {
+  if (!workspace.value) return '正在检查本地工作区'
+  return workspace.value.displayName || (workspaceConnected.value ? '本地工作区' : '未连接本地工作区')
+})
+const workspaceDetail = computed(() => {
+  if (!workspace.value) return '正在验证本地 Agent 权限'
+  if (!workspace.value.enabled) return '工作区工具未启用'
+  if (!workspace.value.accessible) return '目录不可访问，请检查本地配置'
+  const parts = [workspace.value.gitRepository ? 'Git 项目' : '本地目录']
+  parts.push(workspace.value.commandExecutionEnabled
+    ? `命令已启用（${workspace.value.allowedCommandCount || 0} 项白名单）`
+    : '命令已关闭')
+  return parts.join(' · ')
+})
+const workspaceStatusClass = computed(() => workspaceConnected.value ? 'workspace-connected' : 'workspace-disconnected')
 const runPageLabel = computed(() => {
   if (!runPage.totalElements) return '0 条记录'
   return `第 ${runPage.page + 1} / ${runPage.totalPages} 页 · 共 ${runPage.totalElements} 条`
@@ -799,6 +817,21 @@ async function loadHealth() {
   }
 }
 
+/** 工作区状态失败不影响聊天；权限不足时仍可使用不依赖本地文件的 Agent 能力。 */
+async function loadWorkspace() {
+  try {
+    workspace.value = await api.workspace()
+  } catch {
+    workspace.value = {
+      enabled: false,
+      accessible: false,
+      displayName: '本地工作区状态不可读取',
+      commandExecutionEnabled: false,
+      allowedCommandCount: 0,
+    }
+  }
+}
+
 async function loadTenantPolicy() {
   tenantPolicyError.value = ''
   try {
@@ -1144,7 +1177,7 @@ async function cancelSelectedRun() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadDashboard(), loadHealth(), loadTenantPolicy(), loadApiKeys(), loadConversations()])
+  await Promise.all([loadDashboard(), loadHealth(), loadWorkspace(), loadTenantPolicy(), loadApiKeys(), loadConversations()])
   runPollTimer = window.setInterval(pollSelectedRun, 1500)
   conversationPollTimer = window.setInterval(pollConversation, 1200)
   healthPollTimer = window.setInterval(loadHealth, 10000)
@@ -1236,6 +1269,10 @@ onBeforeUnmount(() => {
               <p class="chat-heading-meta">每一轮输入都会创建可追踪 Run，Agent 会在同一会话中继续理解上下文。</p>
             </div>
             <div class="chat-heading-actions">
+              <div class="chat-workspace-chip" :class="workspaceStatusClass" :title="workspaceDetail">
+                <i></i>
+                <span><small>LOCAL WORKSPACE</small><strong>{{ workspaceLabel }}</strong></span>
+              </div>
               <span v-if="pendingChatMessage" class="chat-run-pill" :class="statusClass(chatRunStatus)"><i></i>{{ statusLabel(chatRunStatus) }}</span>
               <button v-if="latestConversationRun(activeConversation)" class="secondary-button" type="button" @click="showChatRun = !showChatRun">{{ showChatRun ? '隐藏运行' : '查看运行' }}</button>
             </div>
@@ -1318,7 +1355,7 @@ onBeforeUnmount(() => {
               @keydown.enter.exact.prevent="sendChatMessage"
             ></textarea>
             <div class="chat-composer-footer">
-              <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行 · 文件夹保留层级</span>
+              <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行 · {{ workspaceConnected ? 'Agent 可直接操作当前本地工作区' : '文件夹导入后保留层级' }}</span>
               <div class="chat-composer-actions">
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatAttachmentPicker">⌁ 附件</button>
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatFolderPicker">▣ 文件夹</button>

@@ -74,6 +74,8 @@ class ConversationServiceTests {
         assertEquals(ConversationMessageRole.ASSISTANT, first.messages().get(1).role());
         assertEquals(ConversationMessageStatus.COMPLETED, first.messages().get(1).status());
         assertTrue(first.messages().get(1).content().contains("请检查项目入口"));
+        assertTrue(runRepository.findById(first.messages().get(0).runId()).orElseThrow().getInput()
+                .contains("当前会话已连接到本地代码工作区"));
 
         ConversationDetail second = conversationService.send(
                 created.conversation().id(), "tenant-chat", "operator",

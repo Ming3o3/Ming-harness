@@ -39,6 +39,8 @@ async function request(path, options = {}) {
 export const api = {
   // 控制台使用受 ops.read 保护的摘要接口，避免直接暴露 Actuator 组件详情。
   health: () => request('/health'),
+  // 仅返回工作区名称和能力摘要，绝对路径始终只保留在本地后端进程。
+  workspace: () => request('/workspace'),
   listRuns: () => request('/runs'),
   // 分页接口不改变旧的数组接口，供历史列表按需增量加载。
   listRunsPage: ({ page = 0, size = 20, status } = {}) => {
