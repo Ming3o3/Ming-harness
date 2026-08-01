@@ -21,6 +21,9 @@ public class Conversation {
     private String userId;
     @Column(nullable = false, length = 255)
     private String title;
+    /** 会话固定绑定一个本地项目，运行中切换其他项目不会影响已创建的 Run。 */
+    @Column(name = "workspace_id", length = 128)
+    private String workspaceId;
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
     @Column(name = "updated_at", nullable = false)
@@ -30,10 +33,15 @@ public class Conversation {
     }
 
     public Conversation(String tenantId, String userId, String title) {
+        this(tenantId, userId, title, null);
+    }
+
+    public Conversation(String tenantId, String userId, String title, String workspaceId) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = tenantId;
         this.userId = userId;
         this.title = title;
+        this.workspaceId = workspaceId;
         this.createdAt = Instant.now();
         this.updatedAt = this.createdAt;
     }
@@ -53,6 +61,7 @@ public class Conversation {
     public String getTenantId() { return tenantId; }
     public String getUserId() { return userId; }
     public String getTitle() { return title; }
+    public String getWorkspaceId() { return workspaceId; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

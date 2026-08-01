@@ -139,6 +139,11 @@ public class WorkspaceEditFileTool implements HarnessTool {
     }
 
     @Override
+    public String execute(String input, ToolExecutionContext context) {
+        return support.withWorkspace(context, () -> execute(input));
+    }
+
+    @Override
     public ToolAudit audit(String input, String output) {
         JsonNode result = support.parseObject(output, definition().name());
         String path = support.optionalText(result, "path");

@@ -17,7 +17,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(properties = {
         "harness.auth.mode=api-key",
-        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,ops.read,workspace.read,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage",
+        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,ops.read,workspace.read,workspace.manage,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage",
+        "harness.workspace.enabled=true",
+        "harness.workspace.local-registration-enabled=true",
         "management.endpoint.health.show-details=when_authorized",
         "management.endpoint.health.show-components=when_authorized"
 })
@@ -66,6 +68,25 @@ class HarnessAuthWebTests {
         assertTrue(response.body().contains("\"absolutePathHidden\":true"));
         assertTrue(!response.body().contains("\"rootPath\""));
         assertTrue(!response.body().contains("jdbc:h2"));
+    }
+
+    @Test
+    void shouldRegisterDesktopWorkspaceWithoutReturningItsAbsolutePath() throws Exception {
+        String root = java.nio.file.Paths.get(System.getProperty("java.io.tmpdir")).toRealPath().toString();
+        String jsonPath = root.replace("\\", "\\\\");
+        HttpResponse<String> response = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/workspaces"))
+                        .header("Authorization", "Bearer web-test-key")
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString(
+                                "{\"displayName\":\"桌面测试项目\",\"rootPath\":\"" + jsonPath + "\"}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(201, response.statusCode(), response.body());
+        assertTrue(response.body().contains("\"displayName\":\"桌面测试项目\""));
+        assertTrue(!response.body().contains(root));
+        assertTrue(!response.body().contains("rootPath"));
     }
 
     @Test

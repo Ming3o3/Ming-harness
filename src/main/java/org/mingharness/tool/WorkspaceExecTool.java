@@ -127,6 +127,11 @@ public class WorkspaceExecTool implements HarnessTool {
     }
 
     @Override
+    public String execute(String input, ToolExecutionContext context) {
+        return support.withWorkspace(context, () -> execute(input));
+    }
+
+    @Override
     public ToolAudit audit(String input, String output) {
         JsonNode result = support.parseObject(output, definition().name());
         String command = support.optionalText(result, "command");

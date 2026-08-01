@@ -3,6 +3,8 @@ package org.mingharness.tool;
 import org.mingharness.common.BusinessException;
 import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.config.WorkspaceProperties;
+import org.mingharness.workspace.WorkspaceDirectoryResolver;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
@@ -27,6 +29,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 /**
@@ -41,15 +44,27 @@ public class WorkspaceToolSupport {
     private final WorkspaceProperties properties;
     private final ObjectMapper objectMapper;
     private final SensitiveDataSanitizer sanitizer;
-    private final Path root;
+    private final WorkspaceDirectoryResolver workspaceDirectoryResolver;
+    private final Path configuredRoot;
+    /** 每个 Worker 线程在一次工具调用中绑定专属根目录，绝不修改其他 Run 的工作区。 */
+    private final ThreadLocal<Path> executionRoot = new ThreadLocal<>();
 
     public WorkspaceToolSupport(WorkspaceProperties properties,
                                 ObjectMapper objectMapper,
                                 SensitiveDataSanitizer sanitizer) {
+        this(properties, objectMapper, sanitizer, null);
+    }
+
+    @Autowired
+    public WorkspaceToolSupport(WorkspaceProperties properties,
+                                ObjectMapper objectMapper,
+                                SensitiveDataSanitizer sanitizer,
+                                WorkspaceDirectoryResolver workspaceDirectoryResolver) {
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.sanitizer = sanitizer;
-        this.root = Path.of(properties.root()).toAbsolutePath().normalize();
+        this.workspaceDirectoryResolver = workspaceDirectoryResolver;
+        this.configuredRoot = Path.of(properties.root()).toAbsolutePath().normalize();
     }
 
     public WorkspaceProperties properties() {
@@ -57,7 +72,28 @@ public class WorkspaceToolSupport {
     }
 
     public Path root() {
-        return root;
+        Path scoped = executionRoot.get();
+        return scoped == null ? configuredRoot : scoped;
+    }
+
+    /** 在当前工具调用线程内临时绑定 Run 所属的工作区，完成后必须恢复原上下文。 */
+    public <T> T withWorkspace(ToolExecutionContext context, Supplier<T> action) {
+        Path root = workspaceDirectoryResolver == null
+                ? configuredRoot : workspaceDirectoryResolver.resolve(context);
+        return withRoot(root, action);
+    }
+
+    /** 聊天附件导入等非工具流程复用同一条路径边界，不会影响并行 Run。 */
+    public <T> T withRoot(Path requestedRoot, Supplier<T> action) {
+        Path normalized = requestedRoot.toAbsolutePath().normalize();
+        Path previous = executionRoot.get();
+        executionRoot.set(normalized);
+        try {
+            return action.get();
+        } finally {
+            if (previous == null) executionRoot.remove();
+            else executionRoot.set(previous);
+        }
     }
 
     public void requireEnabled() {
@@ -82,6 +118,7 @@ public class WorkspaceToolSupport {
      */
     public Path requireGitDirectory() {
         requireEnabled();
+        Path root = root();
         Path gitDirectory = root.resolve(".git");
         if (Files.isSymbolicLink(gitDirectory)
                 || !Files.isDirectory(gitDirectory, LinkOption.NOFOLLOW_LINKS)) {
@@ -94,6 +131,7 @@ public class WorkspaceToolSupport {
     /** 解析工作区内的路径，并对已有路径的真实位置做二次校验。 */
     public Path resolve(String rawPath, boolean allowMissing) {
         requireEnabled();
+        Path root = root();
         String value = rawPath == null || rawPath.isBlank() ? "." : rawPath.trim();
         Path requested;
         try {
@@ -109,7 +147,7 @@ public class WorkspaceToolSupport {
             throw invalidPath(value);
         }
         checkHiddenSegments(candidate);
-        ensureRootDirectory();
+        ensureRootDirectory(root);
         checkNoSymlinkSegments(candidate, value);
         if (Files.exists(candidate, LinkOption.NOFOLLOW_LINKS)) {
             ensureWithinRoot(realPath(candidate, value));
@@ -292,7 +330,7 @@ public class WorkspaceToolSupport {
             return;
         }
         Map<String, Object> entry = new LinkedHashMap<>();
-        entry.put("path", root.relativize(path).toString().replace(path.getFileSystem().getSeparator(), "/"));
+        entry.put("path", root().relativize(path).toString().replace(path.getFileSystem().getSeparator(), "/"));
         entry.put("type", Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS) ? "directory" : "file");
         if (Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
             try {
@@ -334,7 +372,7 @@ public class WorkspaceToolSupport {
                 String haystack = caseSensitive ? line : line.toLowerCase(java.util.Locale.ROOT);
                 if (haystack.contains(needle)) {
                     Map<String, Object> match = new LinkedHashMap<>();
-                    match.put("path", root.relativize(path).toString().replace(path.getFileSystem().getSeparator(), "/"));
+                    match.put("path", root().relativize(path).toString().replace(path.getFileSystem().getSeparator(), "/"));
                     match.put("line", index + 1);
                     match.put("text", sanitizer.sanitize(line));
                     result.add(match);
@@ -358,10 +396,10 @@ public class WorkspaceToolSupport {
     }
 
     public String relative(Path path) {
-        return root.relativize(path).toString().replace(path.getFileSystem().getSeparator(), "/");
+        return root().relativize(path).toString().replace(path.getFileSystem().getSeparator(), "/");
     }
 
-    private void ensureRootDirectory() {
+    private void ensureRootDirectory(Path root) {
         try {
             if (!Files.exists(root, LinkOption.NOFOLLOW_LINKS)) {
                 Files.createDirectories(root);
@@ -384,7 +422,7 @@ public class WorkspaceToolSupport {
 
     private void ensureWithinRoot(Path realPath) {
         try {
-            Path realRoot = root.toRealPath();
+            Path realRoot = root().toRealPath();
             if (!realPath.startsWith(realRoot)) {
                 throw invalidPath(realPath.toString());
             }
@@ -410,7 +448,7 @@ public class WorkspaceToolSupport {
 
     private boolean isAllowedPath(Path path) {
         if (properties.allowHiddenFiles()) return true;
-        for (Path part : root.relativize(path)) {
+        for (Path part : root().relativize(path)) {
             if (part.toString().startsWith(".")) return false;
         }
         return true;
@@ -418,7 +456,7 @@ public class WorkspaceToolSupport {
 
     private void checkHiddenSegments(Path path) {
         if (properties.allowHiddenFiles()) return;
-        for (Path part : root.relativize(path)) {
+        for (Path part : root().relativize(path)) {
             String value = part.toString();
             if (value.startsWith(".")) {
                 throw new BusinessException(HttpStatus.FORBIDDEN, "WORKSPACE_HIDDEN_PATH_DENIED",
@@ -428,6 +466,7 @@ public class WorkspaceToolSupport {
     }
 
     private void checkNoSymlinkSegments(Path path, String displayPath) {
+        Path root = root();
         Path current = root;
         for (Path part : root.relativize(path)) {
             current = current.resolve(part);

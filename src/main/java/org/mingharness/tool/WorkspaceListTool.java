@@ -59,4 +59,9 @@ public class WorkspaceListTool implements HarnessTool {
         result.put("entries", support.list(directory, rawPath, recursive));
         return support.json(result);
     }
+
+    @Override
+    public String execute(String input, ToolExecutionContext context) {
+        return support.withWorkspace(context, () -> execute(input));
+    }
 }

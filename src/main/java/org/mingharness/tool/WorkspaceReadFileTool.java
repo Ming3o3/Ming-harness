@@ -75,4 +75,9 @@ public class WorkspaceReadFileTool implements HarnessTool {
         result.put("truncated", from > 0 || to < lines.length);
         return support.json(result);
     }
+
+    @Override
+    public String execute(String input, ToolExecutionContext context) {
+        return support.withWorkspace(context, () -> execute(input));
+    }
 }

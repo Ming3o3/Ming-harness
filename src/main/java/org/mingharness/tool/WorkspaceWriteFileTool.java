@@ -76,4 +76,9 @@ public class WorkspaceWriteFileTool implements HarnessTool {
         result.put("created", created);
         return support.json(result);
     }
+
+    @Override
+    public String execute(String input, ToolExecutionContext context) {
+        return support.withWorkspace(context, () -> execute(input));
+    }
 }

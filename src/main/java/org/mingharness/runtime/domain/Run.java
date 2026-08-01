@@ -36,6 +36,9 @@ public class Run {
     /** 可选的聊天会话归属；独立 Run 保持为空以兼容旧接口。 */
     @Column(name = "conversation_id", length = 128)
     private String conversationId;
+    /** Run 创建时冻结工作区，防止用户后来切换项目而让旧 Worker 写入新目录。 */
+    @Column(name = "workspace_id", length = 128)
+    private String workspaceId;
     @Column(name = "idempotency_key", length = 128)
     private String idempotencyKey;
     @Column(name = "permissions_snapshot", columnDefinition = "text")
@@ -106,6 +109,14 @@ public class Run {
     public Run(String tenantId, String userId, String title, String input, BigDecimal budget,
                String modelName, String promptVersion, String policyVersion, String idempotencyKey,
                String permissionsSnapshot, boolean agentMode, int maxTurns, String conversationId) {
+        this(tenantId, userId, title, input, budget, modelName, promptVersion, policyVersion,
+                idempotencyKey, permissionsSnapshot, agentMode, maxTurns, conversationId, null);
+    }
+
+    public Run(String tenantId, String userId, String title, String input, BigDecimal budget,
+               String modelName, String promptVersion, String policyVersion, String idempotencyKey,
+               String permissionsSnapshot, boolean agentMode, int maxTurns, String conversationId,
+               String workspaceId) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = tenantId;
         this.userId = userId;
@@ -118,6 +129,7 @@ public class Run {
         this.idempotencyKey = idempotencyKey;
         this.permissionsSnapshot = permissionsSnapshot;
         this.conversationId = conversationId;
+        this.workspaceId = workspaceId;
         this.agentMode = agentMode;
         this.maxTurns = Math.max(1, maxTurns);
         this.traceId = UUID.randomUUID().toString();
@@ -264,6 +276,7 @@ public class Run {
     public String getPromptVersion() { return promptVersion; }
     public String getPolicyVersion() { return policyVersion; }
     public String getConversationId() { return conversationId; }
+    public String getWorkspaceId() { return workspaceId; }
     public String getIdempotencyKey() { return idempotencyKey; }
     public String getPermissionsSnapshot() { return permissionsSnapshot; }
     public String getTraceId() { return traceId; }

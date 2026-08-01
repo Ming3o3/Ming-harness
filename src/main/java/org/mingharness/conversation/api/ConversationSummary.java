@@ -7,6 +7,7 @@ public record ConversationSummary(
         String tenantId,
         String userId,
         String title,
+        String workspaceId,
         Instant createdAt,
         Instant updatedAt,
         int messageCount,

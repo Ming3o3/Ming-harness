@@ -15,6 +15,7 @@ import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.runtime.repository.RunRepository;
 import org.mingharness.tool.WorkspaceToolSupport;
+import org.mingharness.workspace.WorkspaceDirectoryService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -60,6 +61,7 @@ public class ConversationService {
     private final RunService runService;
     private final SensitiveDataSanitizer sanitizer;
     private final WorkspaceToolSupport workspace;
+    private final WorkspaceDirectoryService workspaceDirectoryService;
 
     public ConversationService(ConversationRepository conversationRepository,
                                ConversationMessageRepository messageRepository,
@@ -67,7 +69,8 @@ public class ConversationService {
                                RunRepository runRepository,
                                RunService runService,
                                SensitiveDataSanitizer sanitizer,
-                               WorkspaceToolSupport workspace) {
+                               WorkspaceToolSupport workspace,
+                               WorkspaceDirectoryService workspaceDirectoryService) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.attachmentRepository = attachmentRepository;
@@ -75,13 +78,18 @@ public class ConversationService {
         this.runService = runService;
         this.sanitizer = sanitizer;
         this.workspace = workspace;
+        this.workspaceDirectoryService = workspaceDirectoryService;
     }
 
     @Transactional
     public ConversationDetail create(String tenantId, String userId, CreateConversationRequest request) {
         String title = request == null ? null : request.title();
+        String workspaceId = request == null ? null : normalizeWorkspaceId(request.workspaceId());
+        if (workspaceId != null) {
+            workspaceDirectoryService.requireRoot(workspaceId, tenantId, userId);
+        }
         Conversation conversation = new Conversation(tenantId, userId,
-                sanitizer.sanitize(title == null || title.isBlank() ? "新的对话" : title.trim()));
+                sanitizer.sanitize(title == null || title.isBlank() ? "新的对话" : title.trim()), workspaceId);
         conversationRepository.save(conversation);
         return detail(conversation);
     }
@@ -133,6 +141,14 @@ public class ConversationService {
                     "每条消息最多可携带 " + MAX_ATTACHMENTS_PER_MESSAGE + " 个文件或文件夹");
         }
 
+        Path workspaceRoot = workspaceDirectoryService.requireRoot(conversation.getWorkspaceId(), tenantId, userId);
+        return workspace.withRoot(workspaceRoot, () -> savePreparedAttachments(conversation, tenantId, userId, groups));
+    }
+
+    /** 附件存储沿用会话绑定的工作区，避免切换项目后把旧会话文件写入新的目录。 */
+    private List<ConversationAttachmentView> savePreparedAttachments(Conversation conversation,
+                                                                       String tenantId, String userId,
+                                                                       Map<String, AttachmentGroup> groups) {
         List<Path> cleanupRoots = new ArrayList<>();
         List<ConversationAttachment> attachments = new ArrayList<>();
         try {
@@ -180,13 +196,17 @@ public class ConversationService {
             throw new BusinessException(HttpStatus.CONFLICT, "ATTACHMENT_ALREADY_USED", "已发送的聊天附件不能撤回");
         }
         // 文件可能已被运维清理；此时仍删除元数据，避免留下无法再次绑定的孤儿附件记录。
-        Path storedFile = workspace.resolve(attachment.getWorkspacePath(), true);
-        try {
-            deleteImportedPath(storedFile);
-        } catch (IOException exception) {
-            throw new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR, "ATTACHMENT_DELETE_FAILED",
-                    "删除工作区附件失败");
-        }
+        Path workspaceRoot = workspaceDirectoryService.requireRoot(conversation.getWorkspaceId(), tenantId, userId);
+        workspace.withRoot(workspaceRoot, () -> {
+            Path storedFile = workspace.resolve(attachment.getWorkspacePath(), true);
+            try {
+                deleteImportedPath(storedFile);
+            } catch (IOException exception) {
+                throw new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR, "ATTACHMENT_DELETE_FAILED",
+                        "删除工作区附件失败");
+            }
+            return null;
+        });
         attachmentRepository.delete(attachment);
     }
 
@@ -218,7 +238,7 @@ public class ConversationService {
                 tenantId, userId, conversation.getTitle(), runInput,
                 null, sanitizer.sanitize(request.modelName()), "prompt-v1", "policy-v1",
                 BigDecimal.ONE, effectiveIdempotencyKey, permissions, true, request.effectiveMaxTurns(),
-                conversation.getId());
+                conversation.getId(), conversation.getWorkspaceId());
         RunSummary run = runService.create(runRequest);
 
         ConversationMessage userMessage = messageRepository.findByRunIdAndRole(run.id(), ConversationMessageRole.USER)
@@ -272,6 +292,10 @@ public class ConversationService {
     }
 
     private String normalizeIdempotencyKey(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private String normalizeWorkspaceId(String value) {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
@@ -637,7 +661,7 @@ public class ConversationService {
         String preview = last == null ? "" : last.getContent();
         if (preview != null && preview.length() > 80) preview = preview.substring(0, 80) + "…";
         return new ConversationSummary(conversation.getId(), conversation.getTenantId(), conversation.getUserId(),
-                conversation.getTitle(), conversation.getCreatedAt(), conversation.getUpdatedAt(),
+                conversation.getTitle(), conversation.getWorkspaceId(), conversation.getCreatedAt(), conversation.getUpdatedAt(),
                 messages.size(), preview, activeRunId);
     }
 }

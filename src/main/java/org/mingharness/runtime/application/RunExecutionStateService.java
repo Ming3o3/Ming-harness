@@ -552,6 +552,7 @@ public class RunExecutionStateService {
         return new RunExecutionSnapshot(run.getId(), run.getTenantId(), run.getUserId(),
                 run.getModelName(), run.getPromptVersion(), run.getInput(), run.getBudget(),
                 run.getPermissionsSnapshot(), run.isAgentMode(), run.getMaxTurns(),
+                run.getWorkspaceId(),
                 run.getSteps().stream().map(this::stepSnapshot).toList());
     }
 
@@ -577,6 +578,7 @@ public class RunExecutionStateService {
             String permissionsSnapshot,
             boolean agentMode,
             int maxTurns,
+            String workspaceId,
             List<StepExecutionSnapshot> steps
     ) {
     }

@@ -68,4 +68,9 @@ public class WorkspaceSearchTool implements HarnessTool {
         result.put("truncated", matches.size() >= maxResults);
         return support.json(result);
     }
+
+    @Override
+    public String execute(String input, ToolExecutionContext context) {
+        return support.withWorkspace(context, () -> execute(input));
+    }
 }

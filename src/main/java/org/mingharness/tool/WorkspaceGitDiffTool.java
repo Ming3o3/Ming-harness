@@ -114,4 +114,9 @@ public class WorkspaceGitDiffTool implements HarnessTool {
         response.put("diff", diff);
         return support.json(response);
     }
+
+    @Override
+    public String execute(String input, ToolExecutionContext context) {
+        return support.withWorkspace(context, () -> execute(input));
+    }
 }

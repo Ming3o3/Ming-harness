@@ -43,6 +43,7 @@ import org.mingharness.tool.ToolExecutionContext;
 import org.mingharness.tool.ToolAudit;
 import org.mingharness.observability.HarnessMetrics;
 import org.mingharness.conversation.ConversationMessageWriter;
+import org.mingharness.workspace.WorkspaceDirectoryService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -95,6 +96,7 @@ public class RunService {
     private final SensitiveDataSanitizer sanitizer;
     private final AgentTurnCodec agentTurnCodec;
     private final ConversationMessageWriter conversationMessageWriter;
+    private final WorkspaceDirectoryService workspaceDirectoryService;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -124,7 +126,8 @@ public class RunService {
                       HarnessMetrics metrics,
                       SensitiveDataSanitizer sanitizer,
                       AgentTurnCodec agentTurnCodec,
-                      ConversationMessageWriter conversationMessageWriter) {
+                      ConversationMessageWriter conversationMessageWriter,
+                      WorkspaceDirectoryService workspaceDirectoryService) {
         this.runRepository = runRepository;
         this.auditTrailService = auditTrailService;
         this.toolRegistry = toolRegistry;
@@ -152,12 +155,18 @@ public class RunService {
         this.sanitizer = sanitizer;
         this.agentTurnCodec = agentTurnCodec;
         this.conversationMessageWriter = conversationMessageWriter;
+        this.workspaceDirectoryService = workspaceDirectoryService;
     }
 
     @Transactional
     public RunSummary create(CreateRunRequest request) {
         String sanitizedTitle = sanitizer.sanitize(request.title());
         String sanitizedInput = sanitizer.sanitize(request.input());
+        String workspaceId = normalizeWorkspaceId(request.workspaceId());
+        if (workspaceId != null) {
+            // 创建时确认归属且根目录可用，Worker 后续仍会再次校验，防止授权被目录移动后失效。
+            workspaceDirectoryService.requireRoot(workspaceId, request.tenantId(), request.userId());
+        }
         boolean agentMode = request.isAgentMode();
         String toolName = request.toolName() == null || request.toolName().isBlank()
                 ? "demo.echo" : request.toolName();
@@ -211,7 +220,8 @@ public class RunService {
                     normalizePermissions(request.permissions()),
                     effectiveAgentMode,
                     request.effectiveMaxTurns(),
-                    request.conversationId()
+                    request.conversationId(),
+                    workspaceId
             );
             run.addStep(new Step(1, StepType.MODEL, "model.complete", sanitizedInput));
             if (!effectiveAgentMode) {
@@ -588,7 +598,8 @@ public class RunService {
         HarnessTool tool = toolRegistry.get(step.name());
         ToolDefinition definition = tool.definition();
         ToolExecutionContext executionContext = new ToolExecutionContext(
-                run.id(), step.id(), run.tenantId(), run.id() + ":" + step.id() + ":" + step.name());
+                run.id(), step.id(), run.tenantId(), run.userId(), run.workspaceId(),
+                run.id() + ":" + step.id() + ":" + step.name());
         // 有副作用的工具禁止自动重试；只读工具也必须显式声明瞬态错误才会重试。
         int maxAttempts = definition.readOnly()
                 ? Math.min(definition.maxAttempts(), runtimeLimits.maxToolAttempts()) : 1;
@@ -714,7 +725,7 @@ public class RunService {
                     validateAgentToolCalls(new RunExecutionStateService.RunExecutionSnapshot(
                             run.getId(), run.getTenantId(), run.getUserId(), run.getModelName(),
                             run.getPromptVersion(), run.getInput(), run.getBudget(),
-                            run.getPermissionsSnapshot(), true, run.getMaxTurns(), List.of()), response.toolCalls());
+                            run.getPermissionsSnapshot(), true, run.getMaxTurns(), run.getWorkspaceId(), List.of()), response.toolCalls());
                 }
                 if (exceedsBudget(run, response.cost())) {
                     throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "RUN_BUDGET_EXCEEDED",
@@ -802,7 +813,7 @@ public class RunService {
         HarnessTool tool = toolRegistry.get(step.getName());
         ToolDefinition definition = tool.definition();
         ToolExecutionContext executionContext = new ToolExecutionContext(
-                run.getId(), step.getId(), run.getTenantId(),
+                run.getId(), step.getId(), run.getTenantId(), run.getUserId(), run.getWorkspaceId(),
                 run.getId() + ":" + step.getId() + ":" + step.getName());
         // 有副作用的工具禁止自动重试；只读工具也必须显式声明瞬态错误才会重试。
         int maxAttempts = definition.readOnly()
@@ -1095,7 +1106,8 @@ public class RunService {
                 run.getOutput(), run.getError(), run.getStatus(), run.getBudget(), run.getCreatedAt(),
                 run.getUpdatedAt(), run.getSteps().size(), run.getIdempotencyKey(), run.getTraceId(),
                 run.getDurationMs(), run.getSteps().stream().map(Step::getCost)
-                        .reduce(BigDecimal.ZERO, BigDecimal::add), run.isAgentMode(), run.getMaxTurns()
+                        .reduce(BigDecimal.ZERO, BigDecimal::add), run.isAgentMode(), run.getMaxTurns(),
+                run.getWorkspaceId()
         );
     }
 
@@ -1201,6 +1213,7 @@ public class RunService {
                 && Objects.equals(run.getPromptVersion(), promptVersion)
                 && Objects.equals(run.getPolicyVersion(), policyVersion)
                 && Objects.equals(run.getConversationId(), request.conversationId())
+                && Objects.equals(run.getWorkspaceId(), normalizeWorkspaceId(request.workspaceId()))
                 && run.isAgentMode() == request.isAgentMode()
                 && (!request.isAgentMode() || run.getMaxTurns() == request.effectiveMaxTurns())
                 // 权限快照属于执行语义的一部分，幂等键不能被低权限/高权限请求混用。
@@ -1208,6 +1221,10 @@ public class RunService {
                 && run.getBudget().compareTo(request.budget() == null ? BigDecimal.ONE : request.budget()) == 0
                 && (request.isAgentMode()
                 || run.getSteps().stream().anyMatch(step -> Objects.equals(step.getName(), toolName)));
+    }
+
+    private String normalizeWorkspaceId(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     /** 外部模型、工具和网络库的异常可能携带请求头或连接串，持久化前必须脱敏。 */

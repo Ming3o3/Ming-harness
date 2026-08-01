@@ -99,6 +99,11 @@ public class WorkspaceGitStatusTool implements HarnessTool {
         return support.json(response);
     }
 
+    @Override
+    public String execute(String input, ToolExecutionContext context) {
+        return support.withWorkspace(context, () -> execute(input));
+    }
+
     private BusinessException gitFailure(String output) {
         String detail = output == null || output.isBlank() ? "当前工作区不是 Git 仓库" : support.sanitize(output);
         return new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "WORKSPACE_GIT_STATUS_FAILED",
