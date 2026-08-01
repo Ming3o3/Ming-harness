@@ -13,7 +13,7 @@ public record SendConversationMessageRequest(
         @Size(max = 10000, message = "消息内容不能超过 10000 个字符") String content,
         String modelName,
         @Min(value = 1, message = "Agent 最大轮数必须至少为 1")
-        @Max(value = 20, message = "Agent 最大轮数不能超过 20") Integer maxTurns,
+        @Max(value = 1000, message = "Agent 最大轮数不能超过 1000") Integer maxTurns,
         @Size(max = 8, message = "每条消息最多可携带 8 个附件")
         List<@Size(max = 128, message = "附件 ID 长度不能超过 128 个字符") String> attachmentIds
 ) {
@@ -24,7 +24,7 @@ public record SendConversationMessageRequest(
     }
 
     public int effectiveMaxTurns() {
-        return maxTurns == null ? 8 : Math.max(1, Math.min(20, maxTurns));
+        return maxTurns == null ? 1_000 : Math.max(1, Math.min(1_000, maxTurns));
     }
 
     /** 附件 ID 去重并保留调用方顺序，最多允许一轮携带 8 个文本文件。 */

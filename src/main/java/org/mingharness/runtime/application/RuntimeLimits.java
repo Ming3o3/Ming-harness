@@ -21,7 +21,7 @@ public record RuntimeLimits(
             maxActiveRunsPerTenant = 20;
         }
         if (maxStepsPerRun < 1) {
-            maxStepsPerRun = 20;
+            maxStepsPerRun = 1_000;
         }
         if (maxInputLength < 1) {
             maxInputLength = 10_000;

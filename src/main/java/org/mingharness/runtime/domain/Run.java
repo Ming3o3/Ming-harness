@@ -293,7 +293,7 @@ public class Run {
     public Instant getLeaseUntil() { return leaseUntil; }
     public Instant getHeartbeatAt() { return heartbeatAt; }
     public boolean isAgentMode() { return Boolean.TRUE.equals(agentMode); }
-    public int getMaxTurns() { return maxTurns == null ? 8 : Math.max(1, maxTurns); }
+    public int getMaxTurns() { return maxTurns == null ? 1_000 : Math.max(1, maxTurns); }
     public long getAuditEventCount() { return auditEventCount; }
     public String getAuditHeadHash() { return auditHeadHash; }
     public String getAuditHeadSignature() { return auditHeadSignature; }

@@ -145,7 +145,7 @@ const form = reactive({
   idempotencyKey: '',
   permissions: '',
   agentMode: false,
-  maxTurns: 8,
+  maxTurns: 1000,
 })
 
 const documentForm = reactive({
@@ -163,7 +163,7 @@ const evaluationForm = reactive({
 
 const tenantPolicyForm = reactive({
   maxActiveRuns: 20,
-  maxStepsPerRun: 20,
+  maxStepsPerRun: 1000,
   maxInputLength: 10000,
   maxBudget: 1000,
   maxCreatesPerMinute: 60,
@@ -1020,7 +1020,7 @@ async function sendChatMessage() {
     }
     const detail = await api.sendConversationMessage(conversationId, {
       content,
-      maxTurns: 8,
+      maxTurns: 1000,
       attachmentIds: uploadedAttachments.map((attachment) => attachment.id),
     }, `chat-${crypto.randomUUID?.() || Date.now()}`)
     messageSubmitted = true
@@ -2089,7 +2089,7 @@ onBeforeUnmount(() => {
               </label>
               <label v-if="form.agentMode" class="turns-field">
                 <span>最大轮数</span>
-                <input v-model.number="form.maxTurns" type="number" min="1" max="20" required />
+                <input v-model.number="form.maxTurns" type="number" min="1" max="1000" required />
               </label>
             </div>
             <small class="form-hint">Agent 会根据模型 Tool Call 动态执行工作区工具；工具白名单和审批策略仍由服务端控制。</small>

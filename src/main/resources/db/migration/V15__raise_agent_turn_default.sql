@@ -1,0 +1,1 @@
+ALTER TABLE harness_runs ALTER COLUMN max_turns SET DEFAULT 1000;

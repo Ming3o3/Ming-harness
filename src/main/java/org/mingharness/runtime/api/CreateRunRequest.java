@@ -22,7 +22,7 @@ public record CreateRunRequest(
         @Size(max = 1000, message = "权限快照长度不能超过 1000 个字符") String permissions,
         Boolean agentMode,
         @Min(value = 1, message = "Agent 最大轮数必须至少为 1")
-        @Max(value = 20, message = "Agent 最大轮数不能超过 20") Integer maxTurns,
+        @Max(value = 1000, message = "Agent 最大轮数不能超过 1000") Integer maxTurns,
         @Size(max = 128, message = "会话 ID 长度不能超过 128 个字符") String conversationId,
         @Size(max = 128, message = "工作区 ID 长度不能超过 128 个字符") String workspaceId
 ) {
@@ -93,6 +93,6 @@ public record CreateRunRequest(
     }
 
     public int effectiveMaxTurns() {
-        return maxTurns == null ? 8 : Math.max(1, Math.min(20, maxTurns));
+        return maxTurns == null ? 1_000 : Math.max(1, Math.min(1_000, maxTurns));
     }
 }
