@@ -3,8 +3,29 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0b1020" />
+    <meta name="theme-color" content="#080d1a" />
     <title>Ming Harness 控制台</title>
+    <script>
+      // 在 Vue 加载前恢复主题，避免刷新时先显示错误的背景色。
+      (() => {
+        const storageKey = 'harnessTheme'
+        let theme = ''
+        try {
+          const storedTheme = window.localStorage.getItem(storageKey)
+          if (storedTheme === 'light' || storedTheme === 'dark') theme = storedTheme
+        } catch {
+          // 本地存储不可用时继续使用系统偏好。
+        }
+        if (!theme) {
+          theme = window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+        }
+        document.documentElement.dataset.theme = theme
+        document.querySelector('meta[name="theme-color"]').setAttribute(
+          'content',
+          theme === 'light' ? '#f5f7fb' : '#080d1a',
+        )
+      })()
+    </script>
   </head>
   <body>
     <div id="app"></div>
