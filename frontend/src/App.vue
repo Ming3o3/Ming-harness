@@ -39,6 +39,15 @@ const THEME_STORAGE_KEY = 'harnessTheme'
 const theme = ref(readTheme())
 let runPollTimer
 let healthPollTimer
+// 聊天工作台状态：每轮消息对应一个后端 Run，助手气泡由 Run 终态回写。
+const chatMode = ref(true)
+const conversations = ref([])
+const activeConversation = ref(null)
+const chatInput = ref('')
+const chatLoading = ref(false)
+const chatSending = ref(false)
+const showChatRun = ref(false)
+let conversationPollTimer
 
 function readTheme() {
   if (typeof window === 'undefined') return 'dark'
@@ -177,6 +186,19 @@ const runPageLabel = computed(() => {
 })
 const canPreviousRunPage = computed(() => runPage.page > 0)
 const canNextRunPage = computed(() => runPage.hasNext)
+const chatMessages = computed(() => activeConversation.value?.messages || [])
+const activeConversationId = computed(() => activeConversation.value?.conversation?.id || '')
+const pendingChatMessage = computed(() => chatMessages.value
+  .slice().reverse()
+  .find((message) => message.role === 'ASSISTANT' && message.status === 'PENDING'))
+const chatRunStatus = computed(() => {
+  const runId = pendingChatMessage.value?.runId
+  if (runId && selectedRun.value?.run?.id === runId) return selectedRun.value.run.status
+  return pendingChatMessage.value ? 'RUNNING' : ''
+})
+const canSendChat = computed(() => Boolean(activeConversationId.value) && !chatSending.value
+  && !pendingChatMessage.value
+  && chatInput.value.trim().length > 0)
 
 function isTerminal(status) {
   return ['SUCCEEDED', 'FAILED', 'CANCELLED', 'TIMED_OUT'].includes(status)
@@ -302,6 +324,133 @@ function clearMessages() {
 function errorText(error) {
   if (!error) return '请求失败'
   return error.traceId ? `${error.message}（追踪 ID：${error.traceId}）` : error.message
+}
+
+function messageStatusLabel(status) {
+  return {
+    PENDING: 'Agent 执行中',
+    COMPLETED: '已完成',
+    FAILED: '执行失败',
+    CANCELLED: '已取消',
+  }[status] || status || ''
+}
+
+function messageStatusClass(status) {
+  return `message-status-${String(status || 'unknown').toLowerCase()}`
+}
+
+function latestConversationRun(detail) {
+  return detail?.messages?.slice().reverse().find((message) => message.runId)?.runId || ''
+}
+
+async function loadConversations(preferredId = '') {
+  chatLoading.value = true
+  try {
+    conversations.value = await api.listConversations()
+    if (!conversations.value.length) {
+      const created = await api.createConversation({ title: '新的对话' })
+      conversations.value = [created.conversation]
+      activeConversation.value = created
+      return
+    }
+    const targetId = preferredId || activeConversationId.value || conversations.value[0].id
+    await selectConversation(targetId, false)
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    chatLoading.value = false
+  }
+}
+
+async function createChatConversation() {
+  clearMessages()
+  try {
+    const created = await api.createConversation({ title: '新的对话' })
+    conversations.value = [created.conversation, ...conversations.value.filter((item) => item.id !== created.conversation.id)]
+    activeConversation.value = created
+    chatInput.value = ''
+    selectedRun.value = null
+    auditEvents.value = []
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  }
+}
+
+async function selectConversation(conversationId, announce = true) {
+  if (!conversationId) return
+  if (announce) clearMessages()
+  chatLoading.value = true
+  try {
+    const detail = await api.getConversation(conversationId)
+    activeConversation.value = detail
+    const runId = latestConversationRun(detail)
+    if (runId) await selectRun(runId, false, false)
+    scrollChatToBottom()
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    chatLoading.value = false
+  }
+}
+
+function scrollChatToBottom() {
+  if (typeof window === 'undefined') return
+  window.requestAnimationFrame(() => {
+    const element = document.querySelector('.chat-messages')
+    if (element) element.scrollTop = element.scrollHeight
+  })
+}
+
+async function sendChatMessage() {
+  if (!canSendChat.value) return
+  clearMessages()
+  chatSending.value = true
+  const content = chatInput.value.trim()
+  chatInput.value = ''
+  try {
+    const detail = await api.sendConversationMessage(activeConversationId.value, {
+      content,
+      maxTurns: 8,
+    }, `chat-${crypto.randomUUID?.() || Date.now()}`)
+    activeConversation.value = detail
+    const runId = latestConversationRun(detail)
+    if (runId) await selectRun(runId, false, false)
+    await loadConversations(activeConversationId.value)
+    scrollChatToBottom()
+  } catch (error) {
+    chatInput.value = content
+    errorMessage.value = errorText(error)
+  } finally {
+    chatSending.value = false
+  }
+}
+
+async function pollConversation() {
+  if (!activeConversationId.value || chatSending.value || !pendingChatMessage.value) return
+  try {
+    const detail = await api.getConversation(activeConversationId.value)
+    activeConversation.value = detail
+    const runId = latestConversationRun(detail)
+    if (runId) await selectRun(runId, false, false)
+    if (!detail.messages.some((message) => message.status === 'PENDING')) {
+      await loadConversations(activeConversationId.value)
+    }
+    scrollChatToBottom()
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  }
+}
+
+// 审批、取消或重试从运行面板触发后，主动刷新会话，确保助手气泡与 Run 终态同步。
+async function refreshActiveConversation() {
+  const conversationId = activeConversationId.value
+  if (!conversationId) return
+  const detail = await api.getConversation(conversationId)
+  activeConversation.value = detail
+  const runId = latestConversationRun(detail)
+  if (runId) await selectRun(runId, false, false)
+  conversations.value = await api.listConversations()
+  scrollChatToBottom()
 }
 
 async function loadDashboard() {
@@ -677,6 +826,7 @@ async function approveSelectedRun() {
     await api.approveRun(selectedRun.value.run.id)
     noticeMessage.value = '审批已通过，Run 已继续执行'
     await loadDashboard()
+    await refreshActiveConversation()
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
@@ -692,6 +842,7 @@ async function rejectSelectedRun() {
     await api.rejectRun(selectedRun.value.run.id, '控制台人工拒绝')
     noticeMessage.value = '审批已拒绝，Run 已结束'
     await loadDashboard()
+    await refreshActiveConversation()
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
@@ -709,6 +860,7 @@ async function retrySelectedRun() {
       ? '重试已进入人工审批'
       : '重试已完成'
     await loadDashboard()
+    await refreshActiveConversation()
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
@@ -739,6 +891,7 @@ async function cancelSelectedRun() {
     await api.cancelRun(selectedRun.value.run.id)
     noticeMessage.value = 'Run 已取消'
     await loadDashboard()
+    await refreshActiveConversation()
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
@@ -747,18 +900,148 @@ async function cancelSelectedRun() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadDashboard(), loadHealth(), loadTenantPolicy(), loadApiKeys()])
+  await Promise.all([loadDashboard(), loadHealth(), loadTenantPolicy(), loadApiKeys(), loadConversations()])
   runPollTimer = window.setInterval(pollSelectedRun, 1500)
+  conversationPollTimer = window.setInterval(pollConversation, 1200)
   healthPollTimer = window.setInterval(loadHealth, 10000)
 })
 
 onBeforeUnmount(() => {
   window.clearInterval(runPollTimer)
+  window.clearInterval(conversationPollTimer)
   window.clearInterval(healthPollTimer)
 })
 </script>
 
 <template>
+  <template v-if="chatMode">
+    <div class="chat-app">
+      <header class="chat-topbar">
+        <div class="chat-brand">
+          <div class="brand-mark">MH</div>
+          <div><strong>Ming Harness</strong><span>CODE AGENT WORKSPACE</span></div>
+        </div>
+        <div class="chat-topbar-actions">
+          <span class="chat-identity">{{ form.tenantId }} / {{ form.userId }}</span>
+          <span class="chat-health" :class="infraOnline ? 'health-up' : 'health-warning'"><i></i>{{ infraLabel }}</span>
+          <button class="theme-toggle" type="button" :aria-label="theme === 'dark' ? '切换到白天模式' : '切换到黑夜模式'" @click="toggleTheme">
+            <span aria-hidden="true">{{ theme === 'dark' ? '☼' : '☾' }}</span>{{ theme === 'dark' ? '白天' : '黑夜' }}
+          </button>
+          <button class="secondary-button chat-console-button" type="button" @click="chatMode = false">运行控制台</button>
+        </div>
+      </header>
+
+      <div v-if="errorMessage" class="message error-message chat-message-banner">{{ errorMessage }}</div>
+      <div v-if="noticeMessage" class="message notice-message chat-message-banner">{{ noticeMessage }}</div>
+
+      <div class="chat-layout">
+        <aside class="conversation-sidebar">
+          <div class="conversation-sidebar-heading">
+            <div><p class="eyebrow">CONVERSATIONS</p><h2>对话</h2></div>
+            <button class="icon-button" type="button" aria-label="新建对话" title="新建对话" :disabled="chatLoading" @click="createChatConversation">＋</button>
+          </div>
+          <div v-if="chatLoading && !conversations.length" class="chat-sidebar-empty">正在读取对话…</div>
+          <div v-else-if="!conversations.length" class="chat-sidebar-empty">还没有对话</div>
+          <div v-else class="conversation-list">
+            <button
+              v-for="conversation in conversations"
+              :key="conversation.id"
+              class="conversation-row"
+              :class="{ active: conversation.id === activeConversationId }"
+              type="button"
+              @click="selectConversation(conversation.id)"
+            >
+              <span class="conversation-row-icon">⌁</span>
+              <span class="conversation-row-body">
+                <strong>{{ conversation.title }}</strong>
+                <small>{{ conversation.lastMessagePreview || '开始一轮新的 Agent 对话' }}</small>
+                <em>{{ conversation.messageCount }} 条消息 · {{ formatDate(conversation.updatedAt) }}</em>
+              </span>
+              <span v-if="conversation.activeRunId" class="conversation-running-dot" title="Agent 执行中"></span>
+            </button>
+          </div>
+          <div class="conversation-sidebar-foot">
+            <span class="pulse" :class="{ offline: !infraOnline }"></span>
+            <span>{{ workerLabel }}</span>
+            <small>{{ queueLabel }}</small>
+          </div>
+        </aside>
+
+        <main class="chat-main">
+          <div class="chat-heading">
+            <div>
+              <p class="eyebrow">CONTINUOUS AGENT SESSION</p>
+              <h1>{{ activeConversation?.conversation?.title || '新的对话' }}</h1>
+              <p class="chat-heading-meta">每一轮输入都会创建可追踪 Run，Agent 会在同一会话中继续理解上下文。</p>
+            </div>
+            <div class="chat-heading-actions">
+              <span v-if="pendingChatMessage" class="chat-run-pill" :class="statusClass(chatRunStatus)"><i></i>{{ statusLabel(chatRunStatus) }}</span>
+              <button v-if="latestConversationRun(activeConversation)" class="secondary-button" type="button" @click="showChatRun = !showChatRun">{{ showChatRun ? '隐藏运行' : '查看运行' }}</button>
+            </div>
+          </div>
+
+          <div class="chat-messages" aria-live="polite">
+            <div v-if="chatLoading && !chatMessages.length" class="chat-empty-state">正在加载会话…</div>
+            <div v-else-if="!chatMessages.length" class="chat-empty-state">
+              <div class="chat-empty-mark">⌘</div>
+              <strong>从一个问题开始</strong>
+              <span>Agent 会读取工作区、运行工具并把每轮结果留在这里。</span>
+            </div>
+            <article v-for="message in chatMessages" :key="message.id" class="chat-message" :class="`chat-message-${message.role.toLowerCase()}`">
+              <div class="chat-avatar">{{ message.role === 'USER' ? '你' : 'MH' }}</div>
+              <div class="chat-bubble-wrap">
+                <div class="chat-message-meta"><strong>{{ message.role === 'USER' ? '你' : 'Ming Agent' }}</strong><span>{{ formatDate(message.createdAt) }}</span></div>
+                <div class="chat-bubble" :class="messageStatusClass(message.status)">
+                  <template v-if="message.role === 'ASSISTANT' && message.status === 'PENDING'">
+                    <span class="chat-thinking"><i></i><i></i><i></i>{{ messageStatusLabel(message.status) }}</span>
+                  </template>
+                  <template v-else>
+                    <p>{{ message.content || messageStatusLabel(message.status) }}</p>
+                    <small v-if="message.role === 'ASSISTANT' && message.status !== 'COMPLETED'">{{ messageStatusLabel(message.status) }}</small>
+                  </template>
+                </div>
+                <button v-if="message.runId && message.role === 'ASSISTANT'" class="message-run-link" type="button" @click="showChatRun = true; selectRun(message.runId, false)">查看执行步骤 · {{ message.runId.slice(0, 8) }}</button>
+              </div>
+            </article>
+          </div>
+
+          <form class="chat-composer" @submit.prevent="sendChatMessage">
+            <textarea
+              v-model="chatInput"
+              rows="3"
+              :disabled="chatSending || !activeConversationId"
+              placeholder="描述你要完成的代码任务…"
+              aria-label="输入消息"
+              @keydown.enter.exact.prevent="sendChatMessage"
+            ></textarea>
+            <div class="chat-composer-footer">
+              <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行</span>
+              <button class="primary-button chat-send-button" type="submit" :disabled="!canSendChat">{{ chatSending ? '提交中…' : '发送' }} <span>↗</span></button>
+            </div>
+          </form>
+        </main>
+
+        <aside v-if="showChatRun" class="chat-run-panel">
+          <div class="chat-run-panel-heading"><div><p class="eyebrow">RUN TRACE</p><h2>本轮执行</h2></div><button class="icon-button" type="button" aria-label="关闭运行详情" @click="showChatRun = false">×</button></div>
+          <div v-if="!selectedRun" class="chat-run-empty">选择一条助手消息查看执行链。</div>
+          <template v-else>
+            <div class="chat-run-summary"><strong>{{ selectedRun.run.title }}</strong><span class="status-pill" :class="statusClass(selectedRun.run.status)"><i></i>{{ statusLabel(selectedRun.run.status) }}</span></div>
+            <div class="chat-run-actions">
+              <button v-if="canApprove" class="secondary-button" type="button" :disabled="loading" @click="approveSelectedRun">审批通过</button>
+              <button v-if="canApprove" class="danger-button" type="button" :disabled="loading" @click="rejectSelectedRun">拒绝</button>
+              <button v-if="canRetry" class="secondary-button" type="button" :disabled="loading" @click="retrySelectedRun">重试</button>
+              <button v-if="canCancel" class="danger-button" type="button" :disabled="loading" @click="cancelSelectedRun">取消</button>
+            </div>
+            <div class="chat-run-meta"><span>Run</span><code>{{ selectedRun.run.id.slice(0, 12) }}</code><span>Trace</span><code>{{ selectedRun.run.traceId?.slice(0, 12) || '—' }}</code></div>
+            <div class="chat-step-list">
+              <div v-for="step in selectedRun.steps" :key="step.id" class="chat-step-row"><span class="chat-step-dot" :class="statusClass(step.status)"></span><div><strong>{{ step.name }}</strong><small>{{ stepLabel(step.type) }} · {{ statusLabel(step.status) }}</small><p v-if="step.error">{{ step.error }}</p></div></div>
+            </div>
+          </template>
+        </aside>
+      </div>
+    </div>
+  </template>
+  <template v-else>
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand">
@@ -788,6 +1071,7 @@ onBeforeUnmount(() => {
           <h1>运行中心</h1>
         </div>
         <div class="topbar-actions">
+          <button class="secondary-button" type="button" @click="chatMode = true">聊天工作台</button>
           <button
             class="theme-toggle"
             type="button"
@@ -1165,4 +1449,5 @@ onBeforeUnmount(() => {
       <footer class="footer">Ming Harness · 每次执行都可恢复、可解释、可审计、可限制</footer>
     </main>
   </div>
+  </template>
 </template>

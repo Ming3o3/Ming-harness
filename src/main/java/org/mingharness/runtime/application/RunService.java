@@ -42,6 +42,7 @@ import org.mingharness.tool.RetryableToolException;
 import org.mingharness.tool.ToolExecutionContext;
 import org.mingharness.tool.ToolAudit;
 import org.mingharness.observability.HarnessMetrics;
+import org.mingharness.conversation.ConversationMessageWriter;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -93,6 +94,7 @@ public class RunService {
     private final HarnessMetrics metrics;
     private final SensitiveDataSanitizer sanitizer;
     private final AgentTurnCodec agentTurnCodec;
+    private final ConversationMessageWriter conversationMessageWriter;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -121,7 +123,8 @@ public class RunService {
                       @Value("${harness.execution.mode:sync}") String executionMode,
                       HarnessMetrics metrics,
                       SensitiveDataSanitizer sanitizer,
-                      AgentTurnCodec agentTurnCodec) {
+                      AgentTurnCodec agentTurnCodec,
+                      ConversationMessageWriter conversationMessageWriter) {
         this.runRepository = runRepository;
         this.auditTrailService = auditTrailService;
         this.toolRegistry = toolRegistry;
@@ -148,6 +151,7 @@ public class RunService {
         this.metrics = metrics;
         this.sanitizer = sanitizer;
         this.agentTurnCodec = agentTurnCodec;
+        this.conversationMessageWriter = conversationMessageWriter;
     }
 
     @Transactional
@@ -206,7 +210,8 @@ public class RunService {
                     idempotencyKey,
                     normalizePermissions(request.permissions()),
                     effectiveAgentMode,
-                    request.effectiveMaxTurns()
+                    request.effectiveMaxTurns(),
+                    request.conversationId()
             );
             run.addStep(new Step(1, StepType.MODEL, "model.complete", sanitizedInput));
             if (!effectiveAgentMode) {
@@ -315,6 +320,7 @@ public class RunService {
         run.cancel();
         runRepository.save(run);
         record(run.getId(), null, "RUN_CANCELLED", "取消执行任务");
+        conversationMessageWriter.updateForTerminalRun(run);
     }
 
     @Transactional
@@ -366,6 +372,7 @@ public class RunService {
         record(run.getId(), step.getId(), "APPROVAL_REJECTED", rejectReason, actorId,
                 approvalSnapshot(step));
         record(run.getId(), null, "RUN_FAILED", rejectReason);
+        conversationMessageWriter.updateForTerminalRun(run);
         return toDetail(run);
     }
 
@@ -379,6 +386,7 @@ public class RunService {
         run.getSteps().forEach(Step::retry);
         run.retry();
         runRepository.save(run);
+        conversationMessageWriter.markPending(run);
         record(run.getId(), null, "RUN_RETRY_QUEUED", "任务进入重试队列");
         run.start();
         record(run.getId(), null, "RUN_STARTED", "开始执行重试任务");
@@ -900,6 +908,7 @@ public class RunService {
             metrics.runTimedOut();
             runRepository.save(run);
             record(run.getId(), null, "RUN_TIMED_OUT", run.getError());
+            conversationMessageWriter.updateForTerminalRun(run);
         } catch (TransientInfrastructureException exception) {
             metrics.workerInfrastructureFailed();
             throw exception;
@@ -908,6 +917,7 @@ public class RunService {
             metrics.runFailed();
             runRepository.save(run);
             record(run.getId(), null, "RUN_FAILED", run.getError());
+            conversationMessageWriter.updateForTerminalRun(run);
         }
         if (lockToken != null) {
             run.clearLease();
@@ -915,7 +925,9 @@ public class RunService {
         if (run.getStatus() == RunStatus.SUCCEEDED) {
             metrics.runSucceeded();
         }
-        return toDetail(runRepository.save(run));
+        Run persisted = runRepository.save(run);
+        conversationMessageWriter.updateForTerminalRun(persisted);
+        return toDetail(persisted);
     }
 
     /** 本地同步模式的 Agent 编排，和 Rabbit Worker 使用同样的动态步骤语义。 */
@@ -972,6 +984,7 @@ public class RunService {
             metrics.runTimedOut();
             runRepository.save(run);
             record(run.getId(), null, "RUN_TIMED_OUT", run.getError());
+            conversationMessageWriter.updateForTerminalRun(run);
         } catch (TransientInfrastructureException exception) {
             throw exception;
         } catch (RuntimeException exception) {
@@ -979,10 +992,13 @@ public class RunService {
             metrics.runFailed();
             runRepository.save(run);
             record(run.getId(), null, "RUN_FAILED", run.getError());
+            conversationMessageWriter.updateForTerminalRun(run);
         }
         if (lockToken != null) run.clearLease();
         if (run.getStatus() == RunStatus.SUCCEEDED) metrics.runSucceeded();
-        return toDetail(runRepository.save(run));
+        Run persisted = runRepository.save(run);
+        conversationMessageWriter.updateForTerminalRun(persisted);
+        return toDetail(persisted);
     }
 
     private RunDetail dispatch(Run run, String command) {
@@ -1184,6 +1200,7 @@ public class RunService {
                 && Objects.equals(run.getModelName(), modelName)
                 && Objects.equals(run.getPromptVersion(), promptVersion)
                 && Objects.equals(run.getPolicyVersion(), policyVersion)
+                && Objects.equals(run.getConversationId(), request.conversationId())
                 && run.isAgentMode() == request.isAgentMode()
                 && (!request.isAgentMode() || run.getMaxTurns() == request.effectiveMaxTurns())
                 // 权限快照属于执行语义的一部分，幂等键不能被低权限/高权限请求混用。

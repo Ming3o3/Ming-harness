@@ -14,6 +14,7 @@ import org.mingharness.model.AgentTurnCodec;
 import org.mingharness.model.ModelToolCall;
 import org.mingharness.runtime.application.RuntimeLimits;
 import org.mingharness.tool.ToolAudit;
+import org.mingharness.conversation.ConversationMessageWriter;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,19 +39,22 @@ public class RunExecutionStateService {
     private final AgentTurnCodec agentTurnCodec;
     private final RuntimeLimits runtimeLimits;
     private final TenantPolicyService tenantPolicyService;
+    private final ConversationMessageWriter conversationMessageWriter;
 
     public RunExecutionStateService(RunRepository runRepository,
                                     AuditTrailService auditTrailService,
                                     SensitiveDataSanitizer sanitizer,
                                     AgentTurnCodec agentTurnCodec,
                                     RuntimeLimits runtimeLimits,
-                                    TenantPolicyService tenantPolicyService) {
+                                    TenantPolicyService tenantPolicyService,
+                                    ConversationMessageWriter conversationMessageWriter) {
         this.runRepository = runRepository;
         this.auditTrailService = auditTrailService;
         this.sanitizer = sanitizer;
         this.agentTurnCodec = agentTurnCodec;
         this.runtimeLimits = runtimeLimits;
         this.tenantPolicyService = tenantPolicyService;
+        this.conversationMessageWriter = conversationMessageWriter;
     }
 
     /** 获取最新 Run 并建立 Worker 租约，事务提交后才开始外部调用。 */
@@ -177,6 +181,7 @@ public class RunExecutionStateService {
             run.fail(step.getError());
             append(run, null, "RUN_FAILED", run.getError());
             runRepository.save(run);
+            conversationMessageWriter.updateForTerminalRun(run);
             return StepCompletionResult.BUDGET_EXCEEDED;
         }
         if (step.getStatus() != StepStatus.RUNNING) {
@@ -267,6 +272,7 @@ public class RunExecutionStateService {
             run.fail("Agent 达到最大轮数限制: " + run.getMaxTurns());
             append(run, null, "AGENT_MAX_TURNS_EXCEEDED", run.getError());
             runRepository.save(run);
+            conversationMessageWriter.updateForTerminalRun(run);
             return false;
         }
         int nextSequence = run.getSteps().stream().mapToInt(Step::getSequence).max().orElse(0) + 1;
@@ -329,6 +335,7 @@ public class RunExecutionStateService {
         run.fail(sanitizer.sanitize(error));
         append(run, null, "RUN_FAILED", run.getError());
         runRepository.save(run);
+        conversationMessageWriter.updateForTerminalRun(run);
         return true;
     }
 
@@ -349,6 +356,7 @@ public class RunExecutionStateService {
         run.timeout(sanitizer.sanitize(error));
         append(run, null, "RUN_TIMED_OUT", run.getError());
         runRepository.save(run);
+        conversationMessageWriter.updateForTerminalRun(run);
         return true;
     }
 
@@ -371,6 +379,7 @@ public class RunExecutionStateService {
         run.succeed(sanitizer.sanitize(output));
         append(run, null, "RUN_SUCCEEDED", "任务执行成功");
         runRepository.save(run);
+        conversationMessageWriter.updateForTerminalRun(run);
         return true;
     }
 
@@ -426,6 +435,7 @@ public class RunExecutionStateService {
         append(run, null, "RUN_DISPATCH_FAILED", safeError);
         append(run, null, "RUN_FAILED", safeError);
         runRepository.save(run);
+        conversationMessageWriter.updateForTerminalRun(run);
         return true;
     }
 

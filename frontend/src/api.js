@@ -1,5 +1,8 @@
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '/api'
 const configuredApiKey = import.meta.env.VITE_HARNESS_API_KEY || ''
+// 本地聊天工作台默认开放工作区读写权限；写入和命令执行仍由后端策略要求人工审批。
+const defaultChatPermissions = import.meta.env.VITE_HARNESS_CHAT_PERMISSIONS
+  || 'workspace.read,workspace.write,workspace.exec'
 
 async function request(path, options = {}) {
   const response = await fetch(`${apiBaseUrl}${path}`, {
@@ -51,6 +54,23 @@ export const api = {
   }),
   retryRun: (runId) => request(`/runs/${runId}/retry`, { method: 'POST' }),
   cancelRun: (runId) => request(`/runs/${runId}`, { method: 'DELETE' }),
+  listConversations: () => request('/conversations'),
+  createConversation: (payload = {}) => request('/conversations', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+  getConversation: (conversationId) => request(`/conversations/${encodeURIComponent(conversationId)}`),
+  sendConversationMessage: (conversationId, payload, idempotencyKey) => request(
+    `/conversations/${encodeURIComponent(conversationId)}/messages`, {
+      method: 'POST',
+      headers: {
+        ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+        // api-key/OIDC 模式下后端会忽略该请求头，使用认证身份中的可信权限。
+        ...(configuredApiKey ? {} : { 'X-Permissions': localStorage.getItem('harnessChatPermissions') || defaultChatPermissions }),
+      },
+      body: JSON.stringify(payload),
+    },
+  ),
   listTools: () => request('/tools'),
   listAuditEvents: (runId) => request(`/runs/${runId}/audit-events`),
   listDocuments: () => request('/context/documents'),

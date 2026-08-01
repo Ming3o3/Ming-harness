@@ -21,7 +21,7 @@ Ming Harness 是一个面向企业 Agent 的可运行 Harness：后端使用 Spr
 - 本地基础设施 Profile：PostgreSQL + Flyway、Redis 共享治理、RabbitMQ Outbox Worker
 - 健康检查与运行指标：公开存活探针、受 `ops.read` 保护的 `/api/health` 和 Actuator 指标
 - 请求关联追踪：自动生成并回传 `X-Request-Id`、`X-Trace-Id`，错误响应包含 `traceId`
-- Vue 3 控制台：Run 创建、执行、取消、审批、重试、工具注册、上下文和快速评测
+- Vue 3 聊天工作台：持久化会话、消息气泡、逐轮输入、异步状态轮询和本轮 Run 执行链；原 Run 运维控制台仍可切换进入
 
 ## 启动方式
 
@@ -180,6 +180,29 @@ export HARNESS_WORKSPACE_ROOT=/Users/ming/Projects/example
 工作区写入只负责可靠地落盘；`workspace.exec` 使用 `ProcessBuilder` 参数列表直接启动白名单命令，不经过 Shell 拼接。命令执行默认关闭，开启后仍需要 `workspace.exec` 权限和人工审批，并会将命令、工作目录、退出码、超时/截断状态和输出摘要写入 Step 与 HMAC 审计链。
 
 ### 代码 Agent 多轮模式
+
+### 持久化聊天会话
+
+聊天工作台使用会话接口将每轮用户消息和助手结果持久化到数据库。每条用户消息都会创建一个关联 Run，下一轮会把同一会话中已完成的消息拼入模型输入；Rabbit 异步模式下助手气泡先显示“Agent 执行中”，Worker 完成后自动回写最终内容。
+
+```bash
+# 创建会话
+curl -X POST http://localhost:8080/api/conversations \
+  -H 'Content-Type: application/json' \
+  -H 'X-Tenant-Id: tenant-demo' \
+  -H 'X-User-Id: operator' \
+  -d '{"title":"代码工作台"}'
+
+# 发送一轮消息，conversationId 替换为上一步返回值
+curl -X POST http://localhost:8080/api/conversations/{conversationId}/messages \
+  -H 'Content-Type: application/json' \
+  -H 'X-Tenant-Id: tenant-demo' \
+  -H 'X-User-Id: operator' \
+  -H 'Idempotency-Key: chat-round-1' \
+  -d '{"content":"请读取项目入口并总结模块","maxTurns":8}'
+```
+
+相关接口：`GET /api/conversations`、`GET /api/conversations/{id}`、`POST /api/conversations/{id}/messages`。会话按租户和用户隔离，消息中的 `runId` 可以继续调用原有 Run 详情、审批、取消和重试接口。
 
 创建 Run 时将 `agentMode` 设置为 `true`，Harness 会把模型返回的 Tool Call 持久化为新的工具步骤；每个工具完成后自动追加下一轮模型步骤。模型结果、工具参数、审计事件和当前轮次都保存在数据库中，Rabbit Worker 重启后可以从最后一个已提交步骤恢复，而不会依赖进程内上下文。
 

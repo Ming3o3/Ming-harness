@@ -33,6 +33,9 @@ public class Run {
     private String modelName;
     private String promptVersion;
     private String policyVersion;
+    /** 可选的聊天会话归属；独立 Run 保持为空以兼容旧接口。 */
+    @Column(name = "conversation_id", length = 128)
+    private String conversationId;
     @Column(name = "idempotency_key", length = 128)
     private String idempotencyKey;
     @Column(name = "permissions_snapshot", columnDefinition = "text")
@@ -55,10 +58,11 @@ public class Run {
     private Instant leaseUntil;
     private Instant heartbeatAt;
     /** Agent 模式会根据模型 Tool Call 动态追加模型和工具步骤。 */
-    @Column(name = "agent_mode", nullable = false)
-    private boolean agentMode;
-    @Column(name = "max_turns", nullable = false)
-    private int maxTurns;
+    // local H2 可能已经存在旧 Run，允许 Hibernate update 先新增可空列，再由 getter 提供兼容默认值。
+    @Column(name = "agent_mode")
+    private Boolean agentMode;
+    @Column(name = "max_turns")
+    private Integer maxTurns;
     @Column(name = "audit_event_count", nullable = false)
     private long auditEventCount;
     @Column(name = "audit_head_hash", length = 64)
@@ -95,6 +99,13 @@ public class Run {
     public Run(String tenantId, String userId, String title, String input, BigDecimal budget,
                String modelName, String promptVersion, String policyVersion, String idempotencyKey,
                String permissionsSnapshot, boolean agentMode, int maxTurns) {
+        this(tenantId, userId, title, input, budget, modelName, promptVersion, policyVersion,
+                idempotencyKey, permissionsSnapshot, agentMode, maxTurns, null);
+    }
+
+    public Run(String tenantId, String userId, String title, String input, BigDecimal budget,
+               String modelName, String promptVersion, String policyVersion, String idempotencyKey,
+               String permissionsSnapshot, boolean agentMode, int maxTurns, String conversationId) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = tenantId;
         this.userId = userId;
@@ -106,6 +117,7 @@ public class Run {
         this.policyVersion = policyVersion;
         this.idempotencyKey = idempotencyKey;
         this.permissionsSnapshot = permissionsSnapshot;
+        this.conversationId = conversationId;
         this.agentMode = agentMode;
         this.maxTurns = Math.max(1, maxTurns);
         this.traceId = UUID.randomUUID().toString();
@@ -251,6 +263,7 @@ public class Run {
     public String getModelName() { return modelName; }
     public String getPromptVersion() { return promptVersion; }
     public String getPolicyVersion() { return policyVersion; }
+    public String getConversationId() { return conversationId; }
     public String getIdempotencyKey() { return idempotencyKey; }
     public String getPermissionsSnapshot() { return permissionsSnapshot; }
     public String getTraceId() { return traceId; }
@@ -266,8 +279,8 @@ public class Run {
     public String getWorkerId() { return workerId; }
     public Instant getLeaseUntil() { return leaseUntil; }
     public Instant getHeartbeatAt() { return heartbeatAt; }
-    public boolean isAgentMode() { return agentMode; }
-    public int getMaxTurns() { return maxTurns; }
+    public boolean isAgentMode() { return Boolean.TRUE.equals(agentMode); }
+    public int getMaxTurns() { return maxTurns == null ? 8 : Math.max(1, maxTurns); }
     public long getAuditEventCount() { return auditEventCount; }
     public String getAuditHeadHash() { return auditHeadHash; }
     public String getAuditHeadSignature() { return auditHeadSignature; }

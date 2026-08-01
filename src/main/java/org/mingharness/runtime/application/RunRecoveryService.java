@@ -6,6 +6,7 @@ import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.runtime.repository.RunRepository;
 import org.mingharness.observability.HarnessMetrics;
+import org.mingharness.conversation.ConversationMessageWriter;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -23,15 +24,18 @@ public class RunRecoveryService {
     private final AuditTrailService auditTrailService;
     private final RuntimeLimits runtimeLimits;
     private final HarnessMetrics metrics;
+    private final ConversationMessageWriter conversationMessageWriter;
 
     public RunRecoveryService(RunRepository runRepository,
                               AuditTrailService auditTrailService,
                               RuntimeLimits runtimeLimits,
-                              HarnessMetrics metrics) {
+                              HarnessMetrics metrics,
+                              ConversationMessageWriter conversationMessageWriter) {
         this.runRepository = runRepository;
         this.auditTrailService = auditTrailService;
         this.runtimeLimits = runtimeLimits;
         this.metrics = metrics;
+        this.conversationMessageWriter = conversationMessageWriter;
     }
 
     @Scheduled(
@@ -53,6 +57,7 @@ public class RunRecoveryService {
             run.timeout("Worker 执行中断，任务已转为超时状态，请人工重试");
             metrics.runTimedOut();
             runRepository.save(run);
+            conversationMessageWriter.updateForTerminalRun(run);
             auditTrailService.append(new AuditEvent(
                     run.getTenantId(), run.getUserId(), run.getTraceId(), run.getId(), null,
                     "RUN_RECOVERED_AS_TIMED_OUT", run.getError(), "recovery=stale-running"));
