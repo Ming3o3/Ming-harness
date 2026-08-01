@@ -8,7 +8,9 @@ public record ConversationAttachmentView(
         String originalName,
         String workspacePath,
         String mediaType,
+        boolean directory,
         long sizeBytes,
+        int fileCount,
         Instant createdAt
 ) {
 }

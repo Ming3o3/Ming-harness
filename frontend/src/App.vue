@@ -51,6 +51,7 @@ const chatAttachments = ref([])
 const chatUploading = ref(false)
 const chatDragActive = ref(false)
 const chatAttachmentInput = ref(null)
+const chatFolderInput = ref(null)
 const showChatRun = ref(false)
 let conversationPollTimer
 let chatHighlightTimer
@@ -423,21 +424,51 @@ function clearChatAttachments() {
   chatAttachments.value = []
   chatDragActive.value = false
   if (chatAttachmentInput.value) chatAttachmentInput.value.value = ''
+  if (chatFolderInput.value) chatFolderInput.value.value = ''
 }
 
-function addChatAttachments(files) {
-  const incoming = Array.from(files || []).filter((file) => file instanceof File && file.size > 0)
+function isBrowserFile(file) {
+  return typeof File !== 'undefined' && file instanceof File
+}
+
+function normalizeChatAttachmentPath(path, fallbackName) {
+  const value = String(path || fallbackName || '').replaceAll('\\', '/').replace(/^\/+/, '')
+  const segments = value.split('/').filter((segment) => segment && segment !== '.' && segment !== '..')
+  return segments.join('/') || fallbackName
+}
+
+function createChatAttachmentGroups(entries) {
+  const groups = new Map()
+  for (const entry of entries || []) {
+    if (!isBrowserFile(entry?.file) || entry.file.size <= 0) continue
+    const path = normalizeChatAttachmentPath(entry.path || entry.file.webkitRelativePath, entry.file.name)
+    const root = path.split('/')[0]
+    if (!root) continue
+    const group = groups.get(root) || { name: root, directory: false, files: [], size: 0, key: '' }
+    group.directory = group.directory || path.includes('/')
+    group.files.push({ file: entry.file, path })
+    group.size += entry.file.size
+    groups.set(root, group)
+  }
+  return Array.from(groups.values()).map((group) => ({
+    ...group,
+    fileCount: group.files.length,
+    key: group.files.map((item) => `${item.path}:${item.file.size}:${item.file.lastModified}`).sort().join('|'),
+  }))
+}
+
+function addChatAttachments(entries) {
+  const incoming = createChatAttachmentGroups(entries)
   if (!incoming.length) return
   const current = [...chatAttachments.value]
   const previousCount = current.length
-  for (const file of incoming) {
-    const duplicate = current.some((item) => item.name === file.name
-      && item.size === file.size && item.lastModified === file.lastModified)
-    if (!duplicate && current.length < 8) current.push(file)
+  for (const attachment of incoming) {
+    const duplicate = current.some((item) => item.key === attachment.key)
+    if (!duplicate && current.length < 8) current.push(attachment)
   }
   chatAttachments.value = current
   if (current.length < previousCount + incoming.length) {
-    noticeMessage.value = '每轮最多附加 8 个文本文件，超出的文件未加入。'
+    noticeMessage.value = '每轮最多附加 8 个文件或文件夹，超出的内容未加入。'
   }
 }
 
@@ -446,16 +477,72 @@ function openChatAttachmentPicker() {
   chatAttachmentInput.value?.click()
 }
 
+function openChatFolderPicker() {
+  if (!activeConversationId.value || chatSending.value || chatUploading.value) return
+  chatFolderInput.value?.click()
+}
+
 function handleChatAttachmentInput(event) {
-  addChatAttachments(event.target?.files)
+  addChatAttachments(Array.from(event.target?.files || []).map((file) => ({ file, path: file.name })))
   // 允许移除后再次选择同一个文件。
   event.target.value = ''
 }
 
-function handleChatDrop(event) {
+function handleChatFolderInput(event) {
+  addChatAttachments(Array.from(event.target?.files || []).map((file) => ({
+    file,
+    path: file.webkitRelativePath || file.name,
+  })))
+  event.target.value = ''
+}
+
+async function handleChatDrop(event) {
   chatDragActive.value = false
   if (!activeConversationId.value || chatSending.value || chatUploading.value) return
-  addChatAttachments(event.dataTransfer?.files)
+  try {
+    addChatAttachments(await readDroppedChatEntries(event.dataTransfer))
+  } catch {
+    errorMessage.value = '读取拖入的文件夹失败，请使用“文件夹”按钮选择。'
+  }
+}
+
+async function readDroppedChatEntries(dataTransfer) {
+  const items = Array.from(dataTransfer?.items || [])
+  const entries = items.map((item) => item.webkitGetAsEntry?.()).filter(Boolean)
+  if (!entries.length) {
+    return Array.from(dataTransfer?.files || []).map((file) => ({
+      file,
+      path: file.webkitRelativePath || file.name,
+    }))
+  }
+  const groups = await Promise.all(entries.map((entry) => readDroppedEntry(entry)))
+  return groups.flat()
+}
+
+async function readDroppedEntry(entry, parentPath = '') {
+  const path = `${parentPath}${entry.name}`
+  if (entry.isFile) {
+    const file = await new Promise((resolve, reject) => entry.file(resolve, reject))
+    return [{ file, path }]
+  }
+  if (!entry.isDirectory) return []
+  const children = await readAllDirectoryEntries(entry.createReader())
+  const groups = await Promise.all(children.map((child) => readDroppedEntry(child, `${path}/`)))
+  return groups.flat()
+}
+
+function readAllDirectoryEntries(reader, entries = []) {
+  return new Promise((resolve, reject) => {
+    const readNext = () => reader.readEntries((batch) => {
+      if (!batch.length) {
+        resolve(entries)
+        return
+      }
+      entries.push(...batch)
+      readNext()
+    }, reject)
+    readNext()
+  })
 }
 
 function removeChatAttachment(index) {
@@ -544,7 +631,8 @@ async function sendChatMessage() {
   const conversationId = activeConversationId.value
   const typedContent = chatInput.value.trim()
   const content = typedContent || '请读取并处理已附加到工作区的文件。'
-  const files = [...chatAttachments.value]
+  const attachments = [...chatAttachments.value]
+  const files = attachments.flatMap((attachment) => attachment.files)
   let uploadedAttachments = []
   let messageSubmitted = false
   chatInput.value = ''
@@ -572,7 +660,7 @@ async function sendChatMessage() {
       await Promise.allSettled(uploadedAttachments.map((attachment) =>
         api.deleteConversationAttachment(conversationId, attachment.id)))
       chatInput.value = typedContent
-      chatAttachments.value = files
+      chatAttachments.value = attachments
     }
     errorMessage.value = errorText(error)
   } finally {
@@ -1180,7 +1268,7 @@ onBeforeUnmount(() => {
                   </template>
                   <div v-if="message.attachments?.length" class="chat-attachment-list" aria-label="已导入的工作区文件">
                     <span v-for="attachment in message.attachments" :key="attachment.id" :title="attachment.workspacePath">
-                      <i>⌁</i><strong>{{ attachment.originalName }}</strong><code>{{ attachment.workspacePath }}</code>
+                      <i>{{ attachment.directory ? '▣' : '⌁' }}</i><strong>{{ attachment.originalName }}</strong><em v-if="attachment.directory">{{ attachment.fileCount }} 文件</em><code>{{ attachment.workspacePath }}</code>
                     </span>
                   </div>
                 </div>
@@ -1206,24 +1294,34 @@ onBeforeUnmount(() => {
               accept="text/*,.java,.kt,.kts,.js,.jsx,.ts,.tsx,.vue,.html,.css,.scss,.json,.yaml,.yml,.xml,.sql,.md,.txt,.properties,.gradle,.sh,.py,.go,.rs,.c,.cpp,.h"
               @change="handleChatAttachmentInput"
             />
+            <input
+              ref="chatFolderInput"
+              class="chat-attachment-input"
+              type="file"
+              multiple
+              webkitdirectory
+              directory
+              @change="handleChatFolderInput"
+            />
             <div v-if="chatAttachments.length" class="chat-composer-attachments" aria-label="待发送附件">
-              <span v-for="(file, index) in chatAttachments" :key="`${file.name}-${file.size}-${file.lastModified}`">
-                <i>⌁</i><strong>{{ file.name }}</strong><em>{{ formatFileSize(file.size) }}</em>
-                <button type="button" :aria-label="`移除 ${file.name}`" :disabled="chatSending || chatUploading" @click="removeChatAttachment(index)">×</button>
+              <span v-for="(attachment, index) in chatAttachments" :key="attachment.key">
+                <i>{{ attachment.directory ? '▣' : '⌁' }}</i><strong>{{ attachment.name }}</strong><em>{{ attachment.directory ? `${attachment.fileCount} 文件` : formatFileSize(attachment.size) }}</em>
+                <button type="button" :aria-label="`移除 ${attachment.name}`" :disabled="chatSending || chatUploading" @click="removeChatAttachment(index)">×</button>
               </span>
             </div>
             <textarea
               v-model="chatInput"
               rows="3"
               :disabled="chatSending || chatUploading || !activeConversationId"
-              placeholder="描述你要完成的代码任务，或拖入文本文件…"
+              placeholder="描述你要完成的代码任务，或拖入文本文件、文件夹…"
               aria-label="输入消息"
               @keydown.enter.exact.prevent="sendChatMessage"
             ></textarea>
             <div class="chat-composer-footer">
-              <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行 · 仅 UTF-8 文本</span>
+              <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行 · 文件夹保留层级</span>
               <div class="chat-composer-actions">
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatAttachmentPicker">⌁ 附件</button>
+                <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatFolderPicker">▣ 文件夹</button>
                 <button class="primary-button chat-send-button" type="submit" :disabled="!canSendChat">{{ chatUploading ? '导入中…' : chatSending ? '提交中…' : '发送' }} <span>↗</span></button>
               </div>
             </div>

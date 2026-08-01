@@ -13,6 +13,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -136,6 +137,32 @@ class ConversationServiceTests {
     }
 
     @Test
+    void shouldImportFolderAsOneAttachmentAndPreserveRelativePaths() throws IOException {
+        ConversationDetail created = conversationService.create(
+                "tenant-chat", "operator", new CreateConversationRequest("目录附件测试"));
+        List<MultipartFile> files = List.of(
+                new MockMultipartFile("files", "App.java", "text/plain", "class App { }".getBytes()),
+                new MockMultipartFile("files", "README.md", "text/markdown", "# Demo".getBytes()));
+
+        var uploaded = conversationService.upload(created.conversation().id(), "tenant-chat", "operator", files,
+                List.of("demo-project/src/App.java", "demo-project/README.md"));
+        assertEquals(1, uploaded.size());
+        assertEquals("demo-project", uploaded.get(0).originalName());
+        assertTrue(uploaded.get(0).directory());
+        assertEquals(2, uploaded.get(0).fileCount());
+        Path importedRoot = WORKSPACE_ROOT.resolve(uploaded.get(0).workspacePath());
+        assertTrue(Files.readString(importedRoot.resolve("src/App.java")).contains("class App"));
+        assertTrue(Files.readString(importedRoot.resolve("README.md")).contains("# Demo"));
+
+        ConversationDetail detail = conversationService.send(created.conversation().id(), "tenant-chat", "operator",
+                new SendConversationMessageRequest("请分析导入的项目", null, 2, List.of(uploaded.get(0).id())),
+                "chat-folder-attachment", "run.create,run.execute,workspace.read");
+        String runInput = runRepository.findById(detail.messages().get(0).runId()).orElseThrow().getInput();
+        assertTrue(runInput.contains(uploaded.get(0).workspacePath()));
+        assertTrue(runInput.contains("workspace.list"));
+    }
+
+    @Test
     void shouldRejectCrossConversationAndBinaryAttachment() {
         ConversationDetail first = conversationService.create(
                 "tenant-chat", "operator", new CreateConversationRequest("附件归属"));
@@ -159,7 +186,8 @@ class ConversationServiceTests {
         ConversationDetail created = conversationService.create(
                 "tenant-chat", "operator", new CreateConversationRequest("附件回收"));
         var uploaded = conversationService.upload(created.conversation().id(), "tenant-chat", "operator",
-                List.of(new MockMultipartFile("files", "temporary.txt", "text/plain", "临时内容".getBytes())));
+                List.of(new MockMultipartFile("files", "temporary.txt", "text/plain", "临时内容".getBytes())),
+                List.of("temporary-folder/temporary.txt"));
 
         conversationService.discardPendingAttachment(created.conversation().id(), uploaded.get(0).id(),
                 "tenant-chat", "operator");

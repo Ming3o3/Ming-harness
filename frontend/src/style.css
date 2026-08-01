@@ -388,9 +388,10 @@ h3 { margin: 0; font-size: 13px; }
 .chat-bubble.message-status-failed { border-color: rgba(255,114,123,.3); }
 .chat-bubble.message-status-cancelled { border-color: rgba(255,182,95,.28); }
 .chat-attachment-list { display: grid; gap: 6px; margin-top: 10px; text-align: left; }
-.chat-attachment-list > span { display: grid; grid-template-columns: 11px minmax(0, auto) minmax(0, 1fr); align-items: center; gap: 6px; min-width: 0; border: 1px solid rgba(141,124,255,.22); border-radius: 6px; background: rgba(141,124,255,.055); padding: 7px 8px; color: var(--soft); font: 9px "DM Mono", monospace; }
+.chat-attachment-list > span { display: grid; grid-template-columns: 11px minmax(0, auto) auto minmax(0, 1fr); align-items: center; gap: 6px; min-width: 0; border: 1px solid rgba(141,124,255,.22); border-radius: 6px; background: rgba(141,124,255,.055); padding: 7px 8px; color: var(--soft); font: 9px "DM Mono", monospace; }
 .chat-attachment-list i { color: var(--accent-light); font-style: normal; }
 .chat-attachment-list strong { overflow: hidden; max-width: 145px; color: var(--soft); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.chat-attachment-list em { color: var(--cyan); font-style: normal; white-space: nowrap; }
 .chat-attachment-list code { overflow: hidden; color: var(--muted); text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .chat-message-user .chat-attachment-list { margin-left: auto; }
 .chat-thinking { display: inline-flex; align-items: center; gap: 5px; color: var(--cyan); font: 10px "DM Mono", monospace; }

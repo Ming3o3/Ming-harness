@@ -36,8 +36,12 @@ public class ConversationAttachment {
     private String workspacePath;
     @Column(name = "media_type", length = 255)
     private String mediaType;
+    @Column(name = "directory", nullable = false)
+    private boolean directory;
     @Column(name = "size_bytes", nullable = false)
     private long sizeBytes;
+    @Column(name = "file_count", nullable = false)
+    private int fileCount;
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -47,6 +51,14 @@ public class ConversationAttachment {
     public ConversationAttachment(String conversationId, String tenantId, String userId,
                                   String originalName, String workspacePath,
                                   String mediaType, long sizeBytes) {
+        this(conversationId, tenantId, userId, originalName, workspacePath, mediaType,
+                sizeBytes, false, 1);
+    }
+
+    public ConversationAttachment(String conversationId, String tenantId, String userId,
+                                  String originalName, String workspacePath,
+                                  String mediaType, long sizeBytes,
+                                  boolean directory, int fileCount) {
         this.id = UUID.randomUUID().toString();
         this.conversationId = conversationId;
         this.tenantId = tenantId;
@@ -54,7 +66,9 @@ public class ConversationAttachment {
         this.originalName = originalName;
         this.workspacePath = workspacePath;
         this.mediaType = mediaType;
+        this.directory = directory;
         this.sizeBytes = Math.max(0, sizeBytes);
+        this.fileCount = Math.max(1, fileCount);
         this.createdAt = Instant.now();
     }
 
@@ -77,6 +91,8 @@ public class ConversationAttachment {
     public String getOriginalName() { return originalName; }
     public String getWorkspacePath() { return workspacePath; }
     public String getMediaType() { return mediaType; }
+    public boolean isDirectory() { return directory; }
     public long getSizeBytes() { return sizeBytes; }
+    public int getFileCount() { return fileCount; }
     public Instant getCreatedAt() { return createdAt; }
 }

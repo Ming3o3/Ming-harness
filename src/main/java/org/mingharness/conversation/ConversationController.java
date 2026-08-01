@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -65,15 +66,14 @@ public class ConversationController {
                 httpRequest.getHeader("Idempotency-Key"), permissions);
     }
 
-    /**
-     * 将拖入聊天框的文本文件导入受控工作区。浏览器不会上传或泄露本机绝对路径。
-     */
+    /** 将拖入的 UTF-8 文本文件或文件夹导入受控工作区，paths 用于保留文件夹相对层级。 */
     @PostMapping(path = "/{conversationId}/attachments", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public List<ConversationAttachmentView> upload(@PathVariable String conversationId,
-                                                   @RequestPart("files") List<MultipartFile> files) {
+                                                   @RequestPart("files") List<MultipartFile> files,
+                                                   @RequestParam(value = "paths", required = false) List<String> paths) {
         HarnessIdentity identity = identity();
-        return conversationService.upload(conversationId, identity.tenantId(), identity.userId(), files);
+        return conversationService.upload(conversationId, identity.tenantId(), identity.userId(), files, paths);
     }
 
     /** 删除尚未发送的临时附件，已绑定到聊天记录的文件不能通过该接口撤回。 */

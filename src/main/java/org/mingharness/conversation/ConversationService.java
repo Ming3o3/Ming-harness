@@ -26,14 +26,21 @@ import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /** 聊天会话应用服务：每条用户消息创建一个可审计、可恢复的 Agent Run。 */
@@ -42,6 +49,9 @@ public class ConversationService {
 
     private static final int MAX_CONTEXT_CHARS = 12000;
     private static final int MAX_ATTACHMENTS_PER_MESSAGE = 8;
+    /** 文件夹按文件数限制，避免一次拖入大型项目占满服务内存和工作区。 */
+    private static final int MAX_FILES_PER_UPLOAD = 200;
+    private static final long MAX_UPLOAD_BYTES = 20L * 1024 * 1024;
 
     private final ConversationRepository conversationRepository;
     private final ConversationMessageRepository messageRepository;
@@ -96,37 +106,55 @@ public class ConversationService {
     @Transactional
     public List<ConversationAttachmentView> upload(String conversationId, String tenantId, String userId,
                                                     List<MultipartFile> files) {
+        return upload(conversationId, tenantId, userId, files, List.of());
+    }
+
+    /**
+     * 导入文件或文件夹。{@code relativePaths} 与文件顺序一一对应，文件夹会保留其相对层级，
+     * 并以一个目录附件根路径暴露给 Agent。
+     */
+    @Transactional
+    public List<ConversationAttachmentView> upload(String conversationId, String tenantId, String userId,
+                                                    List<MultipartFile> files, List<String> relativePaths) {
         Conversation conversation = loadForMessage(conversationId, tenantId, userId);
         if (files == null || files.isEmpty()) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "ATTACHMENT_REQUIRED", "至少需要上传一个文件");
         }
-        if (files.size() > MAX_ATTACHMENTS_PER_MESSAGE) {
+        if (files.size() > MAX_FILES_PER_UPLOAD) {
             throw new BusinessException(HttpStatus.PAYLOAD_TOO_LARGE, "ATTACHMENT_LIMIT_EXCEEDED",
-                    "一次最多上传 " + MAX_ATTACHMENTS_PER_MESSAGE + " 个文件");
+                    "一次最多导入 " + MAX_FILES_PER_UPLOAD + " 个文本文件");
         }
         workspace.requireEnabled();
 
-        List<PreparedAttachment> prepared = files.stream()
-                .map(this::prepareAttachment)
-                .toList();
-        List<Path> writtenPaths = new ArrayList<>();
+        List<PreparedAttachment> prepared = prepareAttachments(files, relativePaths);
+        Map<String, AttachmentGroup> groups = groupAttachments(prepared);
+        if (groups.size() > MAX_ATTACHMENTS_PER_MESSAGE) {
+            throw new BusinessException(HttpStatus.PAYLOAD_TOO_LARGE, "ATTACHMENT_LIMIT_EXCEEDED",
+                    "每条消息最多可携带 " + MAX_ATTACHMENTS_PER_MESSAGE + " 个文件或文件夹");
+        }
+
+        List<Path> cleanupRoots = new ArrayList<>();
         List<ConversationAttachment> attachments = new ArrayList<>();
         try {
-            for (PreparedAttachment item : prepared) {
-                String workspacePath = attachmentWorkspacePath(conversation, item.storageName());
-                Path target = workspace.resolve(workspacePath, true);
-                workspace.writeText(target, workspacePath, item.content(), null);
-                writtenPaths.add(target);
+            for (AttachmentGroup group : groups.values()) {
+                String workspacePath = attachmentWorkspacePath(conversation, storageFileName(group.rootName));
+                cleanupRoots.add(workspace.resolve(workspacePath, true));
+                for (PreparedAttachment item : group.files) {
+                    String targetPath = group.workspacePathFor(workspacePath, item);
+                    Path target = workspace.resolve(targetPath, true);
+                    workspace.writeText(target, targetPath, item.content(), null);
+                }
                 attachments.add(new ConversationAttachment(conversation.getId(), tenantId, userId,
-                        item.originalName(), workspacePath, item.mediaType(), item.sizeBytes()));
+                        group.rootName, workspacePath, group.mediaType(), group.totalBytes(),
+                        group.isDirectory(), group.files.size()));
             }
             attachmentRepository.saveAll(attachments);
             return attachments.stream().map(this::toAttachmentView).toList();
         } catch (RuntimeException exception) {
-            // 数据库存储失败时尽力删除刚导入的文件，避免工作区遗留不可引用的附件。
-            for (Path path : writtenPaths) {
+            // 数据库存储失败时尽力删除刚导入的文件或目录，避免工作区遗留不可引用的附件。
+            for (Path path : cleanupRoots) {
                 try {
-                    Files.deleteIfExists(path);
+                    deleteImportedPath(path);
                 } catch (IOException ignored) {
                     // 原始异常更能说明请求失败原因，清理失败不覆盖它。
                 }
@@ -154,7 +182,7 @@ public class ConversationService {
         // 文件可能已被运维清理；此时仍删除元数据，避免留下无法再次绑定的孤儿附件记录。
         Path storedFile = workspace.resolve(attachment.getWorkspacePath(), true);
         try {
-            Files.deleteIfExists(storedFile);
+            deleteImportedPath(storedFile);
         } catch (IOException exception) {
             throw new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR, "ATTACHMENT_DELETE_FAILED",
                     "删除工作区附件失败");
@@ -352,9 +380,16 @@ public class ConversationService {
 
     private void appendAttachmentReferences(StringBuilder prompt, List<ConversationAttachment> attachments) {
         if (attachments.isEmpty()) return;
-        prompt.append("附件已导入工作区；需要阅读时请调用 workspace.read：\n");
+        prompt.append("附件已导入工作区：\n");
         for (ConversationAttachment attachment : attachments) {
-            prompt.append("- ").append(attachment.getWorkspacePath()).append("\n");
+            if (attachment.isDirectory()) {
+                prompt.append("- 文件夹 ").append(attachment.getWorkspacePath())
+                        .append("（包含 ").append(attachment.getFileCount())
+                        .append(" 个文本文件）；请先调用 workspace.list，再按需 workspace.read。\n");
+            } else {
+                prompt.append("- 文件 ").append(attachment.getWorkspacePath())
+                        .append("；需要阅读时请调用 workspace.read。\n");
+            }
         }
         prompt.append("\n");
     }
@@ -385,11 +420,54 @@ public class ConversationService {
 
     private ConversationAttachmentView toAttachmentView(ConversationAttachment attachment) {
         return new ConversationAttachmentView(attachment.getId(), attachment.getOriginalName(),
-                attachment.getWorkspacePath(), attachment.getMediaType(), attachment.getSizeBytes(),
-                attachment.getCreatedAt());
+                attachment.getWorkspacePath(), attachment.getMediaType(), attachment.isDirectory(),
+                attachment.getSizeBytes(), attachment.getFileCount(), attachment.getCreatedAt());
     }
 
-    private PreparedAttachment prepareAttachment(MultipartFile file) {
+    private List<PreparedAttachment> prepareAttachments(List<MultipartFile> files, List<String> relativePaths) {
+        if (relativePaths != null && !relativePaths.isEmpty() && relativePaths.size() != files.size()) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "ATTACHMENT_PATHS_INVALID",
+                    "文件与相对路径数量不一致");
+        }
+        long totalBytes = 0;
+        Set<String> uniquePaths = new LinkedHashSet<>();
+        List<PreparedAttachment> result = new ArrayList<>();
+        for (int index = 0; index < files.size(); index++) {
+            String providedPath = relativePaths == null || relativePaths.isEmpty()
+                    ? null : relativePaths.get(index);
+            PreparedAttachment attachment = prepareAttachment(files.get(index), providedPath);
+            if (!uniquePaths.add(attachment.relativePath())) {
+                throw new BusinessException(HttpStatus.CONFLICT, "ATTACHMENT_PATH_DUPLICATED",
+                        "文件夹中存在重复的相对路径: " + attachment.relativePath());
+            }
+            totalBytes += attachment.sizeBytes();
+            if (totalBytes > MAX_UPLOAD_BYTES) {
+                throw new BusinessException(HttpStatus.PAYLOAD_TOO_LARGE, "ATTACHMENT_BATCH_TOO_LARGE",
+                        "一次导入的文件总大小不能超过 20 MB");
+            }
+            result.add(attachment);
+        }
+        return List.copyOf(result);
+    }
+
+    private Map<String, AttachmentGroup> groupAttachments(List<PreparedAttachment> prepared) {
+        Map<String, AttachmentGroup> result = new LinkedHashMap<>();
+        for (PreparedAttachment item : prepared) {
+            String rootName = item.relativePath().contains("/")
+                    ? item.relativePath().substring(0, item.relativePath().indexOf('/'))
+                    : item.relativePath();
+            result.computeIfAbsent(rootName, AttachmentGroup::new).add(item);
+        }
+        for (AttachmentGroup group : result.values()) {
+            if (group.hasFileAndChildWithSameRoot()) {
+                throw new BusinessException(HttpStatus.CONFLICT, "ATTACHMENT_PATH_CONFLICT",
+                        "文件和文件夹不能使用相同路径: " + group.rootName);
+            }
+        }
+        return result;
+    }
+
+    private PreparedAttachment prepareAttachment(MultipartFile file, String relativePath) {
         if (file == null || file.isEmpty()) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "ATTACHMENT_EMPTY", "不能上传空文件");
         }
@@ -418,8 +496,34 @@ public class ConversationService {
                     "当前只支持 UTF-8 文本文件，请先转换文件编码");
         }
         String originalName = displayFileName(file.getOriginalFilename());
-        return new PreparedAttachment(originalName, storageFileName(originalName), content,
+        return new PreparedAttachment(originalName, normalizeRelativePath(relativePath, originalName), content,
                 file.getContentType(), bytes.length);
+    }
+
+    private String normalizeRelativePath(String rawPath, String fallbackName) {
+        String value = rawPath == null || rawPath.isBlank() ? fallbackName : rawPath.replace('\\', '/');
+        if (value.length() > 512 || value.startsWith("/") || value.indexOf('\0') >= 0) {
+            throw invalidAttachmentPath();
+        }
+        String[] segments = value.split("/", -1);
+        List<String> cleaned = new ArrayList<>();
+        for (String segment : segments) {
+            if (segment.isBlank() || ".".equals(segment) || "..".equals(segment)
+                    || !segment.equals(segment.trim()) || containsControlCharacter(segment)) {
+                throw invalidAttachmentPath();
+            }
+            cleaned.add(segment);
+        }
+        return String.join("/", cleaned);
+    }
+
+    private BusinessException invalidAttachmentPath() {
+        return new BusinessException(HttpStatus.BAD_REQUEST, "ATTACHMENT_PATH_INVALID",
+                "文件夹相对路径不合法");
+    }
+
+    private boolean containsControlCharacter(String value) {
+        return value.codePoints().anyMatch(Character::isISOControl);
     }
 
     private String attachmentWorkspacePath(Conversation conversation, String storageName) {
@@ -449,8 +553,62 @@ public class ConversationService {
         return false;
     }
 
-    private record PreparedAttachment(String originalName, String storageName, String content,
+    private void deleteImportedPath(Path path) throws IOException {
+        if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) return;
+        Files.walkFileTree(path, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) throws IOException {
+                Files.deleteIfExists(file);
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult postVisitDirectory(Path directory, IOException exception) throws IOException {
+                if (exception != null) throw exception;
+                Files.deleteIfExists(directory);
+                return FileVisitResult.CONTINUE;
+            }
+        });
+    }
+
+    private record PreparedAttachment(String originalName, String relativePath, String content,
                                       String mediaType, long sizeBytes) {
+    }
+
+    /** 单个顶层文件或文件夹；目录内文件保留用户提供的安全相对路径。 */
+    private static final class AttachmentGroup {
+        private final String rootName;
+        private final List<PreparedAttachment> files = new ArrayList<>();
+
+        private AttachmentGroup(String rootName) {
+            this.rootName = rootName;
+        }
+
+        private void add(PreparedAttachment item) {
+            files.add(item);
+        }
+
+        private boolean isDirectory() {
+            return files.size() > 1 || files.stream().anyMatch(item -> item.relativePath().contains("/"));
+        }
+
+        private boolean hasFileAndChildWithSameRoot() {
+            boolean rootFile = files.stream().anyMatch(item -> item.relativePath().equals(rootName));
+            return rootFile && files.size() > 1;
+        }
+
+        private String workspacePathFor(String workspaceRoot, PreparedAttachment item) {
+            if (!isDirectory()) return workspaceRoot;
+            return workspaceRoot + item.relativePath().substring(rootName.length());
+        }
+
+        private long totalBytes() {
+            return files.stream().mapToLong(PreparedAttachment::sizeBytes).sum();
+        }
+
+        private String mediaType() {
+            return isDirectory() ? "inode/directory" : files.get(0).mediaType();
+        }
     }
 
     private ConversationSummary summary(Conversation conversation) {

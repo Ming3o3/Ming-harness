@@ -208,6 +208,15 @@ curl -X POST http://localhost:8080/api/conversations/{conversationId}/attachment
   -H 'X-User-Id: operator' \
   -F 'files=@src/main/java/App.java;type=text/plain'
 
+# 目录上传时 files 和 paths 的顺序必须一致；前端会自动完成该组装。
+curl -X POST http://localhost:8080/api/conversations/{conversationId}/attachments \
+  -H 'X-Tenant-Id: tenant-demo' \
+  -H 'X-User-Id: operator' \
+  -F 'files=@demo-project/src/App.java;type=text/plain' \
+  -F 'paths=demo-project/src/App.java' \
+  -F 'files=@demo-project/README.md;type=text/markdown' \
+  -F 'paths=demo-project/README.md'
+
 curl -X POST http://localhost:8080/api/conversations/{conversationId}/messages \
   -H 'Content-Type: application/json' \
   -H 'X-Tenant-Id: tenant-demo' \
@@ -216,7 +225,7 @@ curl -X POST http://localhost:8080/api/conversations/{conversationId}/messages \
   -d '{"content":"请阅读并修改已附加的文件","maxTurns":8,"attachmentIds":["<attachment-id>"]}'
 ```
 
-相关接口：`GET /api/conversations`、`GET /api/conversations/{id}`、`POST /api/conversations/{id}/attachments`、`DELETE /api/conversations/{id}/attachments/{attachmentId}`、`POST /api/conversations/{id}/messages`。附件仅接受 UTF-8 文本，先存入 `HARNESS_WORKSPACE_ROOT/attachments/<conversation-id>/`，返回的 `workspacePath` 是 Agent 唯一可见、并受工作区安全边界保护的路径；文件会在消息发送成功时绑定到该轮记录，发送失败时前端会尽力回收未绑定文件。会话按租户和用户隔离，消息中的 `runId` 可以继续调用原有 Run 详情、审批、取消和重试接口。
+相关接口：`GET /api/conversations`、`GET /api/conversations/{id}`、`POST /api/conversations/{id}/attachments`、`DELETE /api/conversations/{id}/attachments/{attachmentId}`、`POST /api/conversations/{id}/messages`。聊天框可拖入文件或文件夹，也可点击“文件夹”选择本地目录；文件夹会保留相对层级，以一个目录附件写入 `HARNESS_WORKSPACE_ROOT/attachments/<conversation-id>/`，Agent 会先通过 `workspace.list` 获取目录信息，再按需 `workspace.read` 或编写代码。附件仅接受 UTF-8 文本，单次最多 200 个文件、20 MB，单条消息最多 8 个文件或文件夹。浏览器不会暴露本机绝对路径，返回的 `workspacePath` 是 Agent 唯一可见、并受工作区安全边界保护的路径；文件会在消息发送成功时绑定到该轮记录，发送失败时前端会尽力回收未绑定文件。会话按租户和用户隔离，消息中的 `runId` 可以继续调用原有 Run 详情、审批、取消和重试接口。
 
 `local` 与 `local-infra` Profile 默认启用受控工作区；若在其他环境启用聊天附件，请显式配置 `WORKSPACE_ENABLED=true` 与专用的 `HARNESS_WORKSPACE_ROOT`。不要把工作区配置成用户主目录或其他宽泛目录。
 

@@ -63,9 +63,13 @@ export const api = {
     body: JSON.stringify(payload),
   }),
   getConversation: (conversationId) => request(`/conversations/${encodeURIComponent(conversationId)}`),
-  uploadConversationAttachments: (conversationId, files) => {
+  // entries 的 path 是浏览器可提供的相对路径，后端会再次校验，绝不接受本机绝对路径。
+  uploadConversationAttachments: (conversationId, entries) => {
     const body = new FormData()
-    Array.from(files || []).forEach((file) => body.append('files', file))
+    Array.from(entries || []).forEach(({ file, path }) => {
+      body.append('files', file)
+      body.append('paths', path)
+    })
     return request(`/conversations/${encodeURIComponent(conversationId)}/attachments`, {
       method: 'POST',
       body,
