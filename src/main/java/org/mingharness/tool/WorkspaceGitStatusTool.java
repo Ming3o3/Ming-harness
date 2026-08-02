@@ -35,7 +35,7 @@ public class WorkspaceGitStatusTool implements HarnessTool {
     public ToolDefinition definition() {
         return new ToolDefinition(
                 "workspace.git.status",
-                "查看工作区范围内的 Git 分支和文件变更状态",
+                "查看工作区范围内的 Git 分支和文件变更状态；非 Git 工作区会返回可恢复的 available=false 结果，可改用 workspace.read",
                 true,
                 "LOW",
                 false,

@@ -29,7 +29,7 @@ public class WorkspaceGitDiffTool implements HarnessTool {
     public ToolDefinition definition() {
         return new ToolDefinition(
                 "workspace.git.diff",
-                "查看工作区范围内的 Git 未暂存或已暂存差异",
+                "查看工作区范围内的 Git 未暂存或已暂存差异；非 Git 工作区会返回可恢复的 available=false 结果，不能作为修改核验",
                 true,
                 "LOW",
                 false,

@@ -125,6 +125,7 @@ class RunServiceTests {
         assertTrue(agentModelToolsState.firstToolNames().contains("demo.echo"));
         assertTrue(agentModelToolsState.firstSystemPrompt().contains("sha256"));
         assertTrue(agentModelToolsState.firstSystemPrompt().contains("workspace.git.diff"));
+        assertTrue(agentModelToolsState.firstSystemPrompt().contains("available=false"));
         assertTrue(agentModelToolsState.firstSystemPrompt().contains("不要声称未运行的测试"));
     }
 
