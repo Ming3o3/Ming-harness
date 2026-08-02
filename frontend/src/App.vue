@@ -1833,6 +1833,18 @@ async function cancelChatRun() {
   }
 }
 
+function syncSelectedRunAfterAction(detail) {
+  if (!detail?.run?.id) return
+  selectedRun.value = detail
+  if (isTerminal(detail.run.status)) stopRunEventStream()
+  else startRunEventStream(detail.run.id)
+  void api.listAuditEvents(detail.run.id).then((events) => {
+    if (selectedRun.value?.run?.id === detail.run.id) auditEvents.value = events
+  }).catch(() => {
+    // 主动作已经完成，审计列表等待下一次刷新即可，不覆盖当前状态反馈。
+  })
+}
+
 async function pollConversation() {
   if (!networkOnline.value || !activeConversationId.value || chatSending.value || !pendingChatMessage.value) return
   const conversationId = activeConversationId.value
@@ -2520,7 +2532,8 @@ async function approveSelectedRun() {
   clearMessages()
   loading.value = true
   try {
-    await api.approveRun(selectedRun.value.run.id)
+    const approved = await api.approveRun(selectedRun.value.run.id)
+    syncSelectedRunAfterAction(approved)
     noticeMessage.value = '审批已通过，Run 已继续执行'
     await loadDashboard()
     await refreshActiveConversation()
@@ -2554,7 +2567,8 @@ async function rejectSelectedRun() {
   loading.value = true
   try {
     const reason = rejectReason.value.trim() || '控制台人工拒绝'
-    await api.rejectRun(selectedRun.value.run.id, reason)
+    const rejected = await api.rejectRun(selectedRun.value.run.id, reason)
+    syncSelectedRunAfterAction(rejected)
     showRejectDialog.value = false
     rejectReason.value = ''
     noticeMessage.value = '审批已拒绝，Run 已结束'
@@ -2573,6 +2587,7 @@ async function retrySelectedRun() {
   loading.value = true
   try {
     const retried = await api.retryRun(selectedRun.value.run.id)
+    syncSelectedRunAfterAction(retried)
     noticeMessage.value = retried.run.status === 'WAITING_APPROVAL'
       ? '重试已进入人工审批'
       : '重试已完成'
@@ -2590,7 +2605,8 @@ async function startSelectedRun() {
   clearMessages()
   loading.value = true
   try {
-    await api.startRun(selectedRun.value.run.id)
+    const started = await api.startRun(selectedRun.value.run.id)
+    syncSelectedRunAfterAction(started)
     noticeMessage.value = 'Run 已启动'
     await loadDashboard()
   } catch (error) {
@@ -2605,8 +2621,11 @@ async function cancelSelectedRun() {
   clearMessages()
   loading.value = true
   try {
-    await api.cancelRun(selectedRun.value.run.id)
-    noticeMessage.value = selectedStatus.value === 'WAITING_APPROVAL' ? '审批请求已撤回' : 'Run 已取消'
+    const runId = selectedRun.value.run.id
+    const wasWaitingForApproval = selectedStatus.value === 'WAITING_APPROVAL'
+    await api.cancelRun(runId)
+    await selectRun(runId, false, false)
+    noticeMessage.value = wasWaitingForApproval ? '审批请求已撤回' : 'Run 已取消'
     await loadDashboard()
     await refreshActiveConversation()
   } catch (error) {
