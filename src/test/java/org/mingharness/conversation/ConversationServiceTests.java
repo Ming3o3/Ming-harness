@@ -22,6 +22,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -38,6 +39,8 @@ class ConversationServiceTests {
     @Autowired
     private ConversationMessageRepository messageRepository;
     @Autowired
+    private ConversationContextRepository contextRepository;
+    @Autowired
     private ConversationAttachmentRepository attachmentRepository;
     @Autowired
     private RunRepository runRepository;
@@ -53,10 +56,44 @@ class ConversationServiceTests {
     @BeforeEach
     void cleanDatabase() {
         attachmentRepository.deleteAll();
+        contextRepository.deleteAll();
         messageRepository.deleteAll();
         auditEventRepository.deleteAll();
         runRepository.deleteAll();
         conversationRepository.deleteAll();
+    }
+
+    @Test
+    void shouldCompactOldConversationHistoryBeforeCreatingNextRun() {
+        Conversation conversation = conversationRepository.save(
+                new Conversation("tenant-chat", "operator", "上下文压缩测试"));
+        String longAnswer = "这是需要保留在完整消息历史中的旧事实。".repeat(450);
+        for (int round = 0; round < 4; round++) {
+            int userSequence = round * 2 + 1;
+            messageRepository.save(new ConversationMessage(
+                    conversation.getId(), null, "tenant-chat", "operator",
+                    ConversationMessageRole.USER, ConversationMessageStatus.COMPLETED,
+                    userSequence, "第 " + round + " 轮用户问题：" + longAnswer));
+            messageRepository.save(new ConversationMessage(
+                    conversation.getId(), null, "tenant-chat", "operator",
+                    ConversationMessageRole.ASSISTANT, ConversationMessageStatus.COMPLETED,
+                    userSequence + 1, "第 " + round + " 轮助手结论：" + longAnswer));
+        }
+
+        ConversationDetail detail = conversationService.send(
+                conversation.getId(), "tenant-chat", "operator",
+                new SendConversationMessageRequest("请基于前面的结论继续处理当前问题", null, 2),
+                "chat-compaction-1", "run.create,run.execute,workspace.read");
+
+        String runInput = runRepository.findById(detail.messages().get(8).runId())
+                .orElseThrow().getInput();
+        ConversationContext context = contextRepository.findById(conversation.getId()).orElse(null);
+        assertNotNull(context);
+        assertTrue(context.getCompactedThroughSequence() > 0);
+        assertTrue(context.getSummary().contains("用户#") || context.getSummary().contains("助手#"));
+        assertTrue(runInput.length() <= 10_000);
+        assertTrue(runInput.contains("对话历史摘要"));
+        assertTrue(runInput.contains("请基于前面的结论继续处理当前问题"));
     }
 
     @Test

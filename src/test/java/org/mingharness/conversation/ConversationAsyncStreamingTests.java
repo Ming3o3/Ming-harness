@@ -41,6 +41,8 @@ class ConversationAsyncStreamingTests {
     @Autowired
     private ConversationRepository conversationRepository;
     @Autowired
+    private ConversationContextRepository contextRepository;
+    @Autowired
     private ConversationMessageRepository messageRepository;
     @Autowired
     private RunRepository runRepository;
@@ -49,6 +51,7 @@ class ConversationAsyncStreamingTests {
 
     @BeforeEach
     void cleanDatabase() {
+        contextRepository.deleteAll();
         messageRepository.deleteAll();
         auditEventRepository.deleteAll();
         runRepository.deleteAll();

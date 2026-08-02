@@ -11,6 +11,7 @@ import org.mingharness.conversation.api.SendConversationMessageRequest;
 import org.mingharness.runtime.api.CreateRunRequest;
 import org.mingharness.runtime.api.RunSummary;
 import org.mingharness.runtime.application.RunService;
+import org.mingharness.runtime.application.TenantPolicyService;
 import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.runtime.repository.RunRepository;
@@ -48,7 +49,10 @@ import java.util.UUID;
 @Service
 public class ConversationService {
 
-    private static final int MAX_CONTEXT_CHARS = 12000;
+    /** 单条历史消息进入摘要时保留的短片段长度；完整正文仍保存在消息表中。 */
+    private static final int MESSAGE_SUMMARY_CHARS = 240;
+    /** 摘要目标约占一次运行输入预算的四分之一，为最近消息和当前问题留出空间。 */
+    private static final int SUMMARY_BUDGET_DIVISOR = 4;
     private static final int MAX_ATTACHMENTS_PER_MESSAGE = 8;
     /** 文件夹按文件数限制，避免一次拖入大型项目占满服务内存和工作区。 */
     private static final int MAX_FILES_PER_UPLOAD = 200;
@@ -56,26 +60,32 @@ public class ConversationService {
 
     private final ConversationRepository conversationRepository;
     private final ConversationMessageRepository messageRepository;
+    private final ConversationContextRepository contextRepository;
     private final ConversationAttachmentRepository attachmentRepository;
     private final RunRepository runRepository;
     private final RunService runService;
+    private final TenantPolicyService tenantPolicyService;
     private final SensitiveDataSanitizer sanitizer;
     private final WorkspaceToolSupport workspace;
     private final WorkspaceDirectoryService workspaceDirectoryService;
 
     public ConversationService(ConversationRepository conversationRepository,
                                ConversationMessageRepository messageRepository,
+                               ConversationContextRepository contextRepository,
                                ConversationAttachmentRepository attachmentRepository,
                                RunRepository runRepository,
                                RunService runService,
+                               TenantPolicyService tenantPolicyService,
                                SensitiveDataSanitizer sanitizer,
                                WorkspaceToolSupport workspace,
                                WorkspaceDirectoryService workspaceDirectoryService) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
+        this.contextRepository = contextRepository;
         this.attachmentRepository = attachmentRepository;
         this.runRepository = runRepository;
         this.runService = runService;
+        this.tenantPolicyService = tenantPolicyService;
         this.sanitizer = sanitizer;
         this.workspace = workspace;
         this.workspaceDirectoryService = workspaceDirectoryService;
@@ -233,7 +243,7 @@ public class ConversationService {
 
         List<ConversationAttachment> attachments = loadPendingAttachments(
                 conversation, tenantId, userId, attachmentIds);
-        String runInput = buildPrompt(conversation.getId(), content, attachments);
+        String runInput = buildPrompt(conversation.getId(), tenantId, content, attachments);
         CreateRunRequest runRequest = new CreateRunRequest(
                 tenantId, userId, conversation.getTitle(), runInput,
                 null, sanitizer.sanitize(request.modelName()), "prompt-v1", "policy-v1",
@@ -370,17 +380,115 @@ public class ConversationService {
                 role, status, sequence, content));
     }
 
-    private String buildPrompt(String conversationId, String currentContent,
+    private String buildPrompt(String conversationId, String tenantId, String currentContent,
                                List<ConversationAttachment> currentAttachments) {
         List<ConversationMessage> messages = messageRepository.findByConversationIdOrderBySequenceAsc(conversationId);
         Map<String, List<ConversationAttachment>> attachmentsByMessage = attachmentsByMessage(messages);
-        StringBuilder prompt = new StringBuilder();
-        appendDirectWorkspaceReference(prompt);
-        for (ConversationMessage message : messages) {
-            if (message.getStatus() != ConversationMessageStatus.COMPLETED
-                    || message.getContent() == null || message.getContent().isBlank()) {
-                continue;
+        ConversationContext context = contextRepository.findById(conversationId).orElse(null);
+        int maxInputLength = tenantPolicyService.limitsFor(tenantId).maxInputLength();
+        List<ConversationMessage> completed = messages.stream()
+                .filter(message -> message.getStatus() == ConversationMessageStatus.COMPLETED)
+                .filter(message -> message.getContent() != null && !message.getContent().isBlank())
+                .toList();
+        int compactedThrough = context == null ? 0 : context.getCompactedThroughSequence();
+        String existingSummary = context == null ? "" : context.getSummary();
+        List<ConversationMessage> uncompressed = completed.stream()
+                .filter(message -> message.getSequence() > compactedThrough)
+                .toList();
+        String workspaceReference = directWorkspaceReference();
+        String currentOnly = composePrompt(workspaceReference, "", List.of(), currentContent,
+                currentAttachments, attachmentsByMessage);
+        if (currentOnly.length() > maxInputLength) {
+            throw inputTooLarge();
+        }
+
+        String prompt = composePrompt(workspaceReference, existingSummary, uncompressed,
+                currentContent, currentAttachments, attachmentsByMessage);
+        if (prompt.length() <= maxInputLength) {
+            return prompt;
+        }
+
+        int summaryBudget = Math.max(128, maxInputLength / SUMMARY_BUDGET_DIVISOR);
+        String summary = existingSummary;
+        int cutoff = compactedThrough;
+        for (ConversationMessage message : uncompressed) {
+            summary = summarize(summary, message, summaryBudget);
+            cutoff = message.getSequence();
+            int currentCutoff = cutoff;
+            List<ConversationMessage> remaining = uncompressed.stream()
+                    .filter(candidate -> candidate.getSequence() > currentCutoff)
+                    .toList();
+            prompt = composePrompt(workspaceReference, summary, remaining, currentContent,
+                    currentAttachments, attachmentsByMessage);
+            if (prompt.length() <= maxInputLength) {
+                saveContext(context, conversationId, summary, cutoff);
+                return prompt;
             }
+        }
+
+        // 摘要本身也必须服从预算；旧摘要过大时继续压缩其两端，避免历史上下文再次撑爆请求。
+        int availableForSummary = maxInputLength - currentOnly.length();
+        if (availableForSummary >= 0) {
+            summary = boundSummary(summary, availableForSummary);
+            prompt = composePrompt(workspaceReference, summary, List.of(), currentContent,
+                    currentAttachments, attachmentsByMessage);
+            if (prompt.length() <= maxInputLength) {
+                saveContext(context, conversationId, summary, cutoff);
+                return prompt;
+            }
+        }
+        throw inputTooLarge();
+    }
+
+    private BusinessException inputTooLarge() {
+        return new BusinessException(HttpStatus.PAYLOAD_TOO_LARGE, "INPUT_TOO_LARGE",
+                "任务输入超过允许的最大长度");
+    }
+
+    private void saveContext(ConversationContext context, String conversationId,
+                             String summary, int compactedThrough) {
+        ConversationContext target = context == null
+                ? new ConversationContext(conversationId) : context;
+        target.update(summary, compactedThrough);
+        contextRepository.save(target);
+    }
+
+    private String summarize(String existingSummary, ConversationMessage message, int budget) {
+        StringBuilder value = new StringBuilder(existingSummary == null ? "" : existingSummary);
+        if (value.length() > 0) value.append('\n');
+        value.append(message.getRole() == ConversationMessageRole.USER ? "用户" : "助手")
+                .append('#').append(message.getSequence()).append(':')
+                .append(compactMessage(message.getContent()));
+        return boundSummary(value.toString(), budget);
+    }
+
+    private String compactMessage(String value) {
+        String normalized = value == null ? "" : value.replaceAll("\\s+", " ").trim();
+        if (normalized.length() <= MESSAGE_SUMMARY_CHARS) return normalized;
+        int head = MESSAGE_SUMMARY_CHARS / 2;
+        int tail = MESSAGE_SUMMARY_CHARS - head - 1;
+        return normalized.substring(0, head) + "…" + normalized.substring(normalized.length() - tail);
+    }
+
+    private String boundSummary(String value, int maximum) {
+        if (maximum <= 0 || value == null || value.isBlank()) return "";
+        if (value.length() <= maximum) return value;
+        if (maximum < 8) return value.substring(value.length() - maximum);
+        int head = Math.max(1, maximum / 2 - 1);
+        int tail = maximum - head - 1;
+        return value.substring(0, head) + "…" + value.substring(value.length() - tail);
+    }
+
+    private String composePrompt(String workspaceReference, String summary,
+                                 List<ConversationMessage> history, String currentContent,
+                                 List<ConversationAttachment> currentAttachments,
+                                 Map<String, List<ConversationAttachment>> attachmentsByMessage) {
+        StringBuilder prompt = new StringBuilder(workspaceReference == null ? "" : workspaceReference);
+        if (summary != null && !summary.isBlank()) {
+            prompt.append("对话历史摘要（较早消息已压缩，完整记录仍保存在会话历史中）：\n")
+                    .append(summary).append("\n\n");
+        }
+        for (ConversationMessage message : history) {
             prompt.append(message.getRole() == ConversationMessageRole.USER ? "用户: " : "助手: ")
                     .append(message.getContent()).append("\n\n");
             appendAttachmentReferences(prompt, attachmentsByMessage.getOrDefault(message.getId(), List.of()));
@@ -388,21 +496,19 @@ public class ConversationService {
         prompt.append("用户: ").append(currentContent).append("\n");
         appendAttachmentReferences(prompt, currentAttachments);
         prompt.append("\n助手:");
-        String value = sanitizer.sanitize(prompt.toString());
-        return value.length() <= MAX_CONTEXT_CHARS
-                ? value : value.substring(value.length() - MAX_CONTEXT_CHARS);
+        return sanitizer.sanitize(prompt.toString());
     }
 
     /**
      * 明确告诉模型：本轮可以直接操作本机后端已授权的项目目录，而不是只能处理上传附件。
      * 根目录的绝对路径不会写入 Run、聊天记录或模型输入。
      */
-    private void appendDirectWorkspaceReference(StringBuilder prompt) {
-        if (!workspace.properties().enabled()) return;
-        prompt.append("当前会话已连接到本地代码工作区。所有 workspace.* 工具的 path 都相对于该工作区根目录，")
-                .append("读取、编辑和受审批命令会直接作用于用户已授权的本地项目。")
-                .append("首次处理代码任务时调用 workspace.list（path 为 .）了解项目结构；目录结果已经提供后不要重复调用，")
-                .append("也不要请求或输出工作区的绝对路径。\n\n");
+    private String directWorkspaceReference() {
+        if (!workspace.properties().enabled()) return "";
+        return "当前会话已连接到本地代码工作区。所有 workspace.* 工具的 path 都相对于该工作区根目录，"
+                + "读取、编辑和受审批命令会直接作用于用户已授权的本地项目。"
+                + "首次处理代码任务时调用 workspace.list（path 为 .）了解项目结构；目录结果已经提供后不要重复调用，"
+                + "也不要请求或输出工作区的绝对路径。\n\n";
     }
 
     private Map<String, List<ConversationAttachment>> attachmentsByMessage(Collection<ConversationMessage> messages) {
