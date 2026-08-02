@@ -160,6 +160,33 @@ class OpenAiCompatibleModelGatewayTests {
         assertEquals("", response.content());
     }
 
+    @Test
+    void shouldSendStructuredAssistantAndToolMessages() throws IOException {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        HttpServer server = server(exchange -> {
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            respond(exchange, 200, success("目录已经读取完成"));
+        });
+        OpenAiCompatibleModelGateway gateway = gateway(config(url(server), 1, null, null));
+        ModelToolCall call = new ModelToolCall("call-list", "workspace.read", "{\"path\":\"README.md\"}");
+
+        ModelResponse response = gateway.complete(new ModelRequest(
+                "忽略此兼容输入", "", "prompt-agent",
+                List.of(new ModelToolDefinition("workspace.read", "读取文件", java.util.Map.of("type", "object"))),
+                List.of(
+                        ModelMessage.system("工具历史是有状态的"),
+                        ModelMessage.user("请理解项目"),
+                        ModelMessage.assistant("", List.of(call)),
+                        ModelMessage.tool(call.id(), "{\"entries\":[]}"))));
+
+        assertEquals("目录已经读取完成", response.content());
+        assertTrue(requestBody.get().contains("\"role\":\"assistant\""));
+        assertTrue(requestBody.get().contains("\"tool_calls\""));
+        assertTrue(requestBody.get().contains("\"name\":\"workspace_read\""));
+        assertTrue(requestBody.get().contains("\"tool_call_id\":\"call-list\""));
+        assertTrue(requestBody.get().contains("\"role\":\"tool\""));
+    }
+
     private OpenAiCompatibleModelGateway gateway(ModelConfig config) {
         return new OpenAiCompatibleModelGateway(RestClient.builder(), config, sanitizer,
                 new HarnessMetrics(new SimpleMeterRegistry()));

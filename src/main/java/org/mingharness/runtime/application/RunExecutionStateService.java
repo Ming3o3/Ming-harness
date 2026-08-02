@@ -230,6 +230,9 @@ public class RunExecutionStateService {
         if (modelStep.getStatus() != StepStatus.SUCCEEDED) return false;
         int maxSteps = tenantPolicyService.limitsFor(run.getTenantId()).maxStepsPerRun();
         List<Step> existing = stepsAfterModel(run, modelStep);
+        if (existing.isEmpty()) {
+            rejectRepeatedToolCalls(run, modelStep, calls);
+        }
         validateExistingAgentSteps(existing, calls);
         int missing = Math.max(0, calls.size() - existing.size());
         if (run.getSteps().size() + missing > maxSteps) {
@@ -501,6 +504,9 @@ public class RunExecutionStateService {
 
     private void appendAgentToolStepsInternal(Run run, Step modelStep, List<ModelToolCall> calls) {
         List<Step> existing = stepsAfterModel(run, modelStep);
+        if (existing.isEmpty()) {
+            rejectRepeatedToolCalls(run, modelStep, calls);
+        }
         validateExistingAgentSteps(existing, calls);
         int maxSteps = tenantPolicyService.limitsFor(run.getTenantId()).maxStepsPerRun();
         int missing = Math.max(0, calls.size() - existing.size());
@@ -527,6 +533,29 @@ public class RunExecutionStateService {
                     || !step.getInput().equals(sanitizer.sanitize(call.arguments()))) {
                 throw new BusinessException(HttpStatus.CONFLICT, "AGENT_TOOL_STATE_CONFLICT",
                         "Agent 工具步骤与已持久化模型结果不一致");
+            }
+        }
+    }
+
+    /** 同一轮已经成功执行过的完全相同工具调用不能再次消耗 Agent 轮数。 */
+    private void rejectRepeatedToolCalls(Run run, Step modelStep, List<ModelToolCall> calls) {
+        Step previousModel = run.getSteps().stream()
+                .filter(step -> step.getType() == StepType.MODEL
+                        && step.getSequence() < modelStep.getSequence()
+                        && step.getStatus() == StepStatus.SUCCEEDED)
+                .max(java.util.Comparator.comparingInt(Step::getSequence))
+                .orElse(null);
+        if (previousModel == null) return;
+        List<Step> previousTools = stepsAfterModel(run, previousModel).stream()
+                .filter(step -> step.getStatus() == StepStatus.SUCCEEDED)
+                .toList();
+        for (ModelToolCall call : calls) {
+            String arguments = sanitizer.sanitize(call.arguments());
+            boolean repeated = previousTools.stream().anyMatch(step -> step.getName().equals(call.name())
+                    && java.util.Objects.equals(step.getInput(), arguments));
+            if (repeated) {
+                throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "AGENT_DUPLICATE_TOOL_CALL",
+                        "模型重复请求已成功执行的工具: " + call.name());
             }
         }
     }
@@ -580,7 +609,7 @@ public class RunExecutionStateService {
 
     private StepExecutionSnapshot stepSnapshot(Step step) {
         return new StepExecutionSnapshot(step.getId(), step.getSequence(), step.getType(),
-                step.getName(), step.getInput(), step.getStatus(), step.isApprovalGranted());
+                step.getName(), step.getInput(), step.getOutput(), step.getStatus(), step.isApprovalGranted());
     }
 
     public enum StepCompletionResult {
@@ -611,6 +640,7 @@ public class RunExecutionStateService {
             StepType type,
             String name,
             String input,
+            String output,
             StepStatus status,
             boolean approvalGranted
     ) {

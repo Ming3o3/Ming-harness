@@ -220,14 +220,38 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
     private Map<String, Object> requestBody(Provider provider, ModelRequest request, PreparedTools preparedTools) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", request.model() == null || request.model().isBlank() ? provider.model() : request.model());
-        body.put("messages", List.of(Map.of("role", "user", "content",
-                sanitizer.sanitize(request.input() == null ? "" : request.input()))));
+        body.put("messages", request.messages().isEmpty()
+                ? List.of(Map.of("role", "user", "content",
+                sanitizer.sanitize(request.input() == null ? "" : request.input())))
+                : request.messages().stream().map(message -> messageBody(message, preparedTools)).toList());
         body.put("temperature", 0.2);
         if (!preparedTools.definitions().isEmpty()) {
             body.put("tools", preparedTools.definitions());
             body.put("tool_choice", "auto");
         }
         return body;
+    }
+
+    private Map<String, Object> messageBody(ModelMessage message, PreparedTools preparedTools) {
+        Map<String, Object> value = new LinkedHashMap<>();
+        value.put("role", message.role());
+        if ("tool".equals(message.role())) {
+            value.put("tool_call_id", message.toolCallId());
+            value.put("content", sanitizer.sanitize(message.content()));
+            return value;
+        }
+        if ("assistant".equals(message.role()) && !message.toolCalls().isEmpty()) {
+            value.put("content", message.content().isBlank() ? null : sanitizer.sanitize(message.content()));
+            value.put("tool_calls", message.toolCalls().stream().map(call -> Map.of(
+                            "id", call.id(),
+                            "type", "function",
+                            "function", Map.of(
+                            "name", preparedTools.providerName(call.name()),
+                            "arguments", sanitizer.sanitize(call.arguments())))).toList());
+            return value;
+        }
+        value.put("content", sanitizer.sanitize(message.content()));
+        return value;
     }
 
     private ModelResponse parseStreamingResponse(Provider provider, ModelRequest request, PreparedTools preparedTools,
@@ -465,6 +489,14 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
         private String internalName(String providerName) {
             String mapped = providerToInternal.get(providerName);
             return mapped != null ? mapped : internalNames.contains(providerName) ? providerName : null;
+        }
+
+        private String providerName(String internalName) {
+            return providerToInternal.entrySet().stream()
+                    .filter(entry -> entry.getValue().equals(internalName))
+                    .map(Map.Entry::getKey)
+                    .findFirst()
+                    .orElse(internalName);
         }
 
         private String normalizeArguments(String providerName, String arguments,

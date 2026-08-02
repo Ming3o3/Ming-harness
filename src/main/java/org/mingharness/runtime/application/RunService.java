@@ -21,6 +21,7 @@ import org.mingharness.model.ModelResponse;
 import org.mingharness.model.ModelToolDefinition;
 import org.mingharness.model.ModelToolCall;
 import org.mingharness.model.AgentTurnCodec;
+import org.mingharness.model.ModelMessage;
 import org.springframework.beans.factory.annotation.Value;
 import org.mingharness.runtime.repository.RunRepository;
 import org.mingharness.dashboard.RunDashboardSummary;
@@ -57,6 +58,7 @@ import jakarta.persistence.PersistenceContext;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -754,6 +756,10 @@ public class RunService {
 
     private void appendAgentToolStepsInMemory(Run run, Step modelStep, List<ModelToolCall> calls) {
         TenantPolicyLimits limits = tenantPolicyService.limitsFor(run.getTenantId());
+        if (run.getSteps().stream().noneMatch(step -> step.getType() == StepType.TOOL
+                && step.getSequence() > modelStep.getSequence())) {
+            rejectRepeatedToolCalls(run, modelStep, calls);
+        }
         if (run.getSteps().size() + calls.size() > limits.maxStepsPerRun()) {
             throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "STEP_LIMIT_EXCEEDED",
                     "Agent 动态步骤超过租户运行上限");
@@ -764,6 +770,34 @@ public class RunService {
             run.addStep(toolStep);
             record(run.getId(), toolStep.getId(), "AGENT_TOOL_CALL_REQUESTED",
                     "模型请求调用工具: " + call.name());
+        }
+    }
+
+    /** 同步执行路径也必须阻止模型重复请求上一轮已经成功的工具调用。 */
+    private void rejectRepeatedToolCalls(Run run, Step modelStep, List<ModelToolCall> calls) {
+        Step previousModel = run.getSteps().stream()
+                .filter(step -> step.getType() == StepType.MODEL
+                        && step.getSequence() < modelStep.getSequence()
+                        && step.getStatus() == StepStatus.SUCCEEDED)
+                .max(java.util.Comparator.comparingInt(Step::getSequence))
+                .orElse(null);
+        if (previousModel == null) return;
+        List<Step> previousTools = run.getSteps().stream()
+                .filter(step -> step.getType() == StepType.TOOL
+                        && step.getSequence() > previousModel.getSequence()
+                        && step.getSequence() < modelStep.getSequence()
+                        && step.getStatus() == StepStatus.SUCCEEDED)
+                .toList();
+        for (ModelToolCall call : calls) {
+            String arguments = sanitizer.sanitize(call.arguments());
+            boolean repeated = previousTools.stream().anyMatch(step -> step.getName().equals(call.name())
+                    && Objects.equals(step.getInput(), arguments));
+            if (repeated) {
+                String message = "模型重复请求已成功执行的工具: " + call.name();
+                record(run.getId(), modelStep.getId(), "AGENT_DUPLICATE_TOOL_CALL", message);
+                throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "AGENT_DUPLICATE_TOOL_CALL", message);
+            }
         }
     }
 
@@ -1034,28 +1068,75 @@ public class RunService {
                                                     RunExecutionStateService.StepExecutionSnapshot step,
                                                     String modelInput, String workerId) {
         return executeModelCall(new StreamingRunContext(run.id(), run.tenantId(), run.modelName(),
-                run.promptVersion(), run.agentMode()), step.id(), modelInput, workerId, true);
+                run.promptVersion(), run.input(), run.agentMode(), historyFromSnapshots(run.steps(), step.sequence())),
+                step.id(), modelInput, workerId, true);
     }
 
     private ModelResponse executeModelCall(Run run, Step step, String modelInput, String workerId,
                                            boolean streamToChat) {
         return executeModelCall(new StreamingRunContext(run.getId(), run.getTenantId(), run.getModelName(),
-                run.getPromptVersion(), run.isAgentMode()), step.getId(), modelInput, workerId, streamToChat);
+                run.getPromptVersion(), run.getInput(), run.isAgentMode(), historyFromEntities(run.getSteps(), step.getSequence())),
+                step.getId(), modelInput, workerId, streamToChat);
     }
 
     private ModelResponse executeModelCall(StreamingRunContext run, String stepId,
                                            String modelInput, String workerId, boolean streamToChat) {
         String safeInput = sanitizer.sanitize(modelInput);
+        List<ModelToolDefinition> tools = run.agentMode() ? availableModelTools(run.tenantId()) : List.of();
+        List<ModelMessage> messages = run.agentMode()
+                ? agentMessages(run.input(), safeInput, run.history()) : List.of();
+        ModelRequest request = new ModelRequest(
+                safeInput, run.modelName(), run.promptVersion(), tools, messages);
         if (!streamToChat) {
             return boundedExecutor.execute("模型调用", runtimeLimits.modelTimeoutMs(), () ->
-                    modelGateway.complete(new ModelRequest(safeInput, run.modelName(), run.promptVersion(),
-                            run.agentMode() ? availableModelTools(run.tenantId()) : List.of())));
+                    modelGateway.complete(request));
         }
         StringBuilder previousContent = new StringBuilder();
         return boundedExecutor.execute("模型调用", runtimeLimits.modelTimeoutMs(), () ->
-                modelGateway.completeStreaming(new ModelRequest(safeInput, run.modelName(), run.promptVersion(),
-                                run.agentMode() ? availableModelTools(run.tenantId()) : List.of()),
+                modelGateway.completeStreaming(request,
                         content -> persistStreamingModelContent(run, stepId, workerId, previousContent, content)));
+    }
+
+    private List<AgentHistoryStep> historyFromSnapshots(List<RunExecutionStateService.StepExecutionSnapshot> steps,
+                                                        int currentSequence) {
+        return steps.stream()
+                .filter(step -> step.sequence() < currentSequence && step.status() == StepStatus.SUCCEEDED)
+                .map(step -> new AgentHistoryStep(step.sequence(), step.type(), step.name(), step.output()))
+                .toList();
+    }
+
+    private List<AgentHistoryStep> historyFromEntities(List<Step> steps, int currentSequence) {
+        return steps.stream()
+                .filter(step -> step.getSequence() < currentSequence && step.getStatus() == StepStatus.SUCCEEDED)
+                .map(step -> new AgentHistoryStep(step.getSequence(), step.getType(), step.getName(), step.getOutput()))
+                .toList();
+    }
+
+    /** 将已完成的 Agent 轮次转换为供应商理解的 assistant/tool 消息。 */
+    private List<ModelMessage> agentMessages(String runInput, String currentInput,
+                                             List<AgentHistoryStep> history) {
+        List<ModelMessage> messages = new ArrayList<>();
+        messages.add(ModelMessage.system(
+                "你是代码 Agent。工具结果已经按结构化 tool 消息提供；同一个工具和完全相同的参数已经成功执行后，不得再次调用。"
+                        + "获得足够信息后必须停止调用工具，直接用中文给出结论和依据。"));
+        boolean hasPreviousModel = history.stream().anyMatch(step -> step.type() == StepType.MODEL);
+        messages.add(ModelMessage.user(hasPreviousModel ? runInput : currentInput));
+
+        for (int index = 0; index < history.size(); index++) {
+            AgentHistoryStep model = history.get(index);
+            if (model.type() != StepType.MODEL) continue;
+            AgentTurnCodec.AgentTurn turn = agentTurnCodec.decode(model.output());
+            messages.add(ModelMessage.assistant(turn.content(), turn.toolCalls()));
+            int callIndex = 0;
+            for (int next = index + 1; next < history.size(); next++) {
+                AgentHistoryStep tool = history.get(next);
+                if (tool.type() == StepType.MODEL) break;
+                if (tool.type() != StepType.TOOL || callIndex >= turn.toolCalls().size()) continue;
+                messages.add(ModelMessage.tool(turn.toolCalls().get(callIndex).id(), tool.output()));
+                callIndex++;
+            }
+        }
+        return List.copyOf(messages);
     }
 
     private void persistStreamingModelContent(StreamingRunContext run, String stepId, String workerId,
@@ -1075,7 +1156,11 @@ public class RunService {
     }
 
     private record StreamingRunContext(String id, String tenantId, String modelName,
-                                       String promptVersion, boolean agentMode) {
+                                       String promptVersion, String input, boolean agentMode,
+                                       List<AgentHistoryStep> history) {
+    }
+
+    private record AgentHistoryStep(int sequence, StepType type, String name, String output) {
     }
 
     private void refreshLease(Run run, RunExecutionLock.LockToken lockToken) {

@@ -121,6 +121,21 @@ class RunServiceTests {
     }
 
     @Test
+    void shouldStopAgentWhenItRepeatsThePreviousToolCall() {
+        RunSummary created = runService.create(new CreateRunRequest(
+                "tenant-demo", "user-demo", "重复工具调用", "重复工具调用测试",
+                null, null, "prompt-agent", "policy-v1", BigDecimal.TEN,
+                null, null, true, 1_000));
+
+        RunDetail result = runService.start(created.id(), "tenant-demo");
+
+        assertEquals(RunStatus.FAILED, result.run().status());
+        assertTrue(result.run().error().contains("重复请求"));
+        assertTrue(auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
+                .anyMatch(event -> "AGENT_DUPLICATE_TOOL_CALL".equals(event.getEventType())));
+    }
+
+    @Test
     void shouldPersistFailureStateAndAuditEvent() {
         RunSummary created = runService.create(request("test.failure", "触发失败"));
         RunDetail result = runService.start(created.id(), "tenant-demo");
@@ -500,6 +515,12 @@ class RunServiceTests {
                 @Override
                 public ModelResponse complete(ModelRequest request) {
                     if (request.tools().isEmpty()) return fallback.complete(request);
+                    if (request.input().contains("重复工具调用")) {
+                        return new ModelResponse("", "agent-test", request.promptVersion(), 5, 4,
+                                java.math.BigDecimal.ZERO,
+                                java.util.List.of(new ModelToolCall(
+                                        "call-agent-repeat", "demo.echo", "\"重复\"")));
+                    }
                     if (request.input().contains("达到最多轮数")) {
                         return new ModelResponse("", "agent-test", request.promptVersion(), 5, 4,
                                 java.math.BigDecimal.ZERO,

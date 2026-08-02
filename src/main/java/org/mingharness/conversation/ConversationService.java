@@ -401,7 +401,7 @@ public class ConversationService {
         if (!workspace.properties().enabled()) return;
         prompt.append("当前会话已连接到本地代码工作区。所有 workspace.* 工具的 path 都相对于该工作区根目录，")
                 .append("读取、编辑和受审批命令会直接作用于用户已授权的本地项目。")
-                .append("处理代码任务前，先调用 workspace.list（path 为 .）了解项目结构；不要猜测文件内容，")
+                .append("首次处理代码任务时调用 workspace.list（path 为 .）了解项目结构；目录结果已经提供后不要重复调用，")
                 .append("也不要请求或输出工作区的绝对路径。\n\n");
     }
 
@@ -422,7 +422,7 @@ public class ConversationService {
             if (attachment.isDirectory()) {
                 prompt.append("- 文件夹 ").append(attachment.getWorkspacePath())
                         .append("（包含 ").append(attachment.getFileCount())
-                        .append(" 个文本文件）；请先调用 workspace.list，再按需 workspace.read。\n");
+                        .append(" 个文本文件）；首次需要了解它时调用 workspace.list，再按需 workspace.read。\n");
             } else {
                 prompt.append("- 文件 ").append(attachment.getWorkspacePath())
                         .append("；需要阅读时请调用 workspace.read。\n");
