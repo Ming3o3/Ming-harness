@@ -353,6 +353,13 @@ h3 { margin: 0; font-size: 13px; }
 .conversation-sidebar-heading .eyebrow { margin-bottom: 5px; }
 .conversation-sidebar-heading h2 { color: var(--heading); }
 .conversation-sidebar-heading .icon-button { width: 31px; height: 31px; border-radius: 8px; font-size: 17px; }
+.conversation-search { display: flex; align-items: center; gap: 5px; margin: 0 5px 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--input-bg); padding: 0 7px 0 9px; }
+.conversation-search:focus-within { border-color: rgba(141,124,255,.7); box-shadow: 0 0 0 3px rgba(141,124,255,.1); }
+.conversation-search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--text); padding: 8px 0; font-size: 10px; }
+.conversation-search input::placeholder { color: var(--muted); }
+.conversation-search button { width: 18px; height: 18px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); padding: 0; font-size: 14px; line-height: 1; }
+.conversation-search button:hover { background: rgba(141,124,255,.14); color: var(--accent-light); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 .conversation-list { display: grid; min-height: 0; flex: 1 1 auto; gap: 4px; overflow: auto; overscroll-behavior: contain; padding-right: 2px; scrollbar-gutter: stable; }
 .conversation-row { display: grid; position: relative; grid-template-columns: 24px minmax(0, 1fr) 7px; gap: 8px; width: 100%; border: 1px solid transparent; border-radius: 8px; background: transparent; color: inherit; padding: 11px 9px; text-align: left; transition: .2s ease; }
 .conversation-row:hover { border-color: var(--line); background: var(--hover-bg); }
@@ -365,6 +372,7 @@ h3 { margin: 0; font-size: 13px; }
 .conversation-row-body em { display: block; margin-top: 5px; color: var(--muted); font: 8px "DM Mono", monospace; font-style: normal; }
 .conversation-running-dot { align-self: start; width: 6px; height: 6px; margin-top: 3px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 10px rgba(76,226,213,.8); }
 .chat-sidebar-empty { display: grid; min-height: 150px; place-items: center; color: var(--muted); font-size: 10px; text-align: center; }
+.chat-sidebar-empty small { color: var(--muted); font-size: 9px; }
 .conversation-sidebar-foot { display: grid; grid-template-columns: 8px 1fr; gap: 6px 8px; margin-top: auto; border-top: 1px solid var(--line); padding: 15px 9px 0; color: var(--soft); font: 9px "DM Mono", monospace; }
 .conversation-sidebar-foot .pulse { width: 7px; height: 7px; margin-top: 2px; }
 .conversation-sidebar-foot small { grid-column: 2; color: var(--muted); }

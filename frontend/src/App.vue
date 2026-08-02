@@ -68,6 +68,7 @@ let healthPollTimer
 const chatMode = ref(true)
 const activeConsoleSection = ref('runtime')
 const conversations = ref([])
+const conversationQuery = ref('')
 const activeConversation = ref(null)
 const chatInput = ref('')
 const chatInputRef = ref(null)
@@ -339,6 +340,12 @@ const canPreviousRunPage = computed(() => runPage.page > 0)
 const canNextRunPage = computed(() => runPage.hasNext)
 const chatMessages = computed(() => activeConversation.value?.messages || [])
 const activeConversationId = computed(() => activeConversation.value?.conversation?.id || '')
+const filteredConversations = computed(() => {
+  const query = conversationQuery.value.trim().toLowerCase()
+  if (!query) return conversations.value
+  return conversations.value.filter((conversation) => [conversation.title, conversation.lastMessagePreview]
+    .some((value) => String(value || '').toLowerCase().includes(query)))
+})
 const pendingChatMessage = computed(() => chatMessages.value
   .slice().reverse()
   .find((message) => message.role === 'ASSISTANT' && message.status === 'PENDING'))
@@ -2606,11 +2613,17 @@ onBeforeUnmount(() => {
             <div><p class="eyebrow">CONVERSATIONS</p><h2>对话</h2></div>
             <button class="icon-button" type="button" aria-label="新建对话" title="新建对话" :disabled="chatLoading || chatSending || chatUploading" @click="createChatConversation">＋</button>
           </div>
+          <label class="conversation-search">
+            <span class="sr-only">搜索对话</span>
+            <input v-model="conversationQuery" type="search" placeholder="搜索对话…" aria-label="搜索对话" @keydown.esc="conversationQuery = ''" />
+            <button v-if="conversationQuery" type="button" aria-label="清除对话搜索" @click="conversationQuery = ''">×</button>
+          </label>
           <div v-if="chatLoading && !conversations.length" class="chat-sidebar-empty">正在读取对话…</div>
           <div v-else-if="!conversations.length" class="chat-sidebar-empty">还没有对话</div>
+          <div v-else-if="!filteredConversations.length" class="chat-sidebar-empty">没有匹配的对话<br /><small>试试标题或最近消息中的关键词</small></div>
           <div v-else class="conversation-list">
             <button
-              v-for="conversation in conversations"
+              v-for="conversation in filteredConversations"
               :key="conversation.id"
               class="conversation-row"
               :class="{ active: conversation.id === activeConversationId }"
