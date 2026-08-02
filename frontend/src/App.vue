@@ -109,6 +109,10 @@ let chatHighlightTimer
 let runEventAbortController
 let runEventReconnectTimer
 let runEventReconnectAttempt = 0
+let auditEventsRefreshTimer
+let auditEventsRefreshToken = 0
+let auditEventsRefreshInFlight = false
+let auditEventsRefreshQueuedRunId = ''
 let workspaceExplorerLoadToken = 0
 let workspacePreviewLoadToken = 0
 let workspaceGitStatusLoadToken = 0
@@ -1963,6 +1967,7 @@ async function runQuickEvaluation() {
 
 async function selectRun(runId, announce = true, showLoading = true) {
   const requestToken = ++runDetailRequestToken
+  cancelScheduledAuditEventsRefresh()
   if (showLoading) detailLoading.value = true
   if (announce) clearMessages()
   try {
@@ -1998,6 +2003,41 @@ function handleNetworkOnline() {
   if (runEventStreaming.value) return
   runEventReconnectAttempt = 0
   startRunEventStream(selectedRun.value.run.id, true)
+}
+
+/** SSE 快照可能高频到达；合并审计读取并校验请求序号，避免旧响应覆盖当前 Run。 */
+function cancelScheduledAuditEventsRefresh() {
+  auditEventsRefreshToken += 1
+  window.clearTimeout(auditEventsRefreshTimer)
+  auditEventsRefreshTimer = undefined
+  auditEventsRefreshQueuedRunId = ''
+}
+
+function scheduleAuditEventsRefresh(runId, immediate = false) {
+  if (!runId) return
+  const requestToken = ++auditEventsRefreshToken
+  window.clearTimeout(auditEventsRefreshTimer)
+  if (auditEventsRefreshInFlight) {
+    auditEventsRefreshQueuedRunId = runId
+    return
+  }
+  auditEventsRefreshTimer = window.setTimeout(async () => {
+    if (requestToken !== auditEventsRefreshToken || selectedRun.value?.run?.id !== runId) return
+    auditEventsRefreshInFlight = true
+    try {
+      const events = await api.listAuditEvents(runId)
+      if (requestToken === auditEventsRefreshToken && selectedRun.value?.run?.id === runId) {
+        auditEvents.value = events
+      }
+    } catch {
+      // 运行详情仍可继续使用；下一次快照或 HTTP 轮询会再次尝试读取审计。
+    } finally {
+      auditEventsRefreshInFlight = false
+      const queuedRunId = auditEventsRefreshQueuedRunId
+      auditEventsRefreshQueuedRunId = ''
+      if (queuedRunId) scheduleAuditEventsRefresh(queuedRunId, true)
+    }
+  }, immediate ? 0 : 250)
 }
 
 function stopRunEventStream() {
@@ -2046,9 +2086,7 @@ function startRunEventStream(runId, reconnecting = false) {
       applyStreamingAssistantContent(runId, data)
       if (latestStreamingModelContent(data)) scrollChatToBottom()
       // 审计记录不放入 SSE 正文，按快照变化增量刷新，避免把额外敏感字段扩大到新接口。
-      void api.listAuditEvents(runId).then((events) => {
-        if (selectedRun.value?.run?.id === runId) auditEvents.value = events
-      }).catch(() => {})
+      scheduleAuditEventsRefresh(runId, isTerminal(data.run.status))
       if (isTerminal(data.run.status)) {
         stopRunEventStream()
         void refreshAfterTerminalRunEvent(runId)
@@ -2254,6 +2292,7 @@ onBeforeUnmount(() => {
   window.clearInterval(conversationPollTimer)
   window.clearInterval(healthPollTimer)
   window.clearTimeout(chatHighlightTimer)
+  cancelScheduledAuditEventsRefresh()
 })
 </script>
 
