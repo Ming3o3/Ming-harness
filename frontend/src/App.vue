@@ -557,6 +557,19 @@ function handleChatKeydown(event) {
   void sendChatMessage()
 }
 
+function handleChatGlobalKeydown(event) {
+  if (!chatMode.value || event.isComposing || event.key !== 'Escape') return
+  if (workspaceGitReviewOpen.value) {
+    event.preventDefault()
+    closeWorkspaceGitReviewDialog()
+    return
+  }
+  if (canCancelChat.value) {
+    event.preventDefault()
+    void cancelChatRun()
+  }
+}
+
 function errorText(error) {
   if (!error) return '请求失败'
   return error.traceId ? `${error.message}（追踪 ID：${error.traceId}）` : error.message
@@ -1959,6 +1972,7 @@ async function cancelSelectedRun() {
 
 onMounted(async () => {
   window.addEventListener('beforeunload', handleWorkspaceBeforeUnload)
+  window.addEventListener('keydown', handleChatGlobalKeydown)
   syncActiveConsoleSectionFromHash()
   window.addEventListener('hashchange', syncActiveConsoleSectionFromHash)
   if (desktopWorkspaceAvailable.value) {
@@ -1976,6 +1990,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', handleWorkspaceBeforeUnload)
+  window.removeEventListener('keydown', handleChatGlobalKeydown)
   window.removeEventListener('hashchange', syncActiveConsoleSectionFromHash)
   stopRunEventStream()
   api.clearDesktopWorkspaceDropListener()
@@ -2175,7 +2190,7 @@ onBeforeUnmount(() => {
               @keydown="handleChatKeydown"
             ></textarea>
             <div class="chat-composer-footer">
-              <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行 · 草稿自动保存 · {{ desktopWorkspaceDropping ? '正在授权拖入的本地项目…' : workspaceConnected ? 'Agent 可直接操作本会话绑定的本地项目' : '文件夹导入后保留层级' }}</span>
+              <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行<span v-if="canCancelChat"> · <kbd>Esc</kbd> 停止</span> · 草稿自动保存 · {{ desktopWorkspaceDropping ? '正在授权拖入的本地项目…' : workspaceConnected ? 'Agent 可直接操作本会话绑定的本地项目' : '文件夹导入后保留层级' }}</span>
               <div class="chat-composer-actions">
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatAttachmentPicker">⌁ 附件</button>
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatFolderPicker">▣ 文件夹</button>
