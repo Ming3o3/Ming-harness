@@ -41,6 +41,14 @@ const modelConfigForm = reactive({
   apiKey: '',
   clearApiKey: false,
 })
+const modelProviderPreset = ref('custom')
+const modelProviderPresets = [
+  { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', modelName: 'gpt-4o-mini' },
+  { id: 'deepseek', label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', modelName: 'deepseek-chat' },
+  { id: 'qwen', label: '通义千问（兼容模式）', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', modelName: 'qwen-plus' },
+  { id: 'ollama', label: '本机 Ollama', baseUrl: 'http://localhost:11434/v1', modelName: 'qwen2.5-coder' },
+  { id: 'custom', label: '自定义 OpenAI 兼容服务', baseUrl: '', modelName: '' },
+]
 const modelConfigEditable = computed(() => !modelConfigError.value.startsWith('当前身份没有 model.configure'))
 // 工作区状态用于告知用户 Agent 是否直接连接到本地项目；接口不会返回绝对路径。
 const workspace = ref(null)
@@ -2079,6 +2087,7 @@ async function loadModelConfig() {
       apiKey: '',
       clearApiKey: false,
     })
+    modelProviderPreset.value = matchingModelProviderPreset(value?.baseUrl, value?.modelName)
     modelConfigTestResult.value = null
   } catch (error) {
     modelConfigError.value = error.code === 'PERMISSION_DENIED'
@@ -2087,6 +2096,27 @@ async function loadModelConfig() {
   } finally {
     modelConfigLoading.value = false
   }
+}
+
+function matchingModelProviderPreset(baseUrl, modelName) {
+  const normalizedUrl = String(baseUrl || '').replace(/\/+$/, '')
+  return modelProviderPresets.find((preset) => preset.id !== 'custom'
+    && preset.baseUrl === normalizedUrl
+    && (!modelName || preset.modelName === modelName))?.id || 'custom'
+}
+
+function applyModelProviderPreset() {
+  const preset = modelProviderPresets.find((item) => item.id === modelProviderPreset.value)
+  if (!preset || preset.id === 'custom') return
+  modelConfigForm.baseUrl = preset.baseUrl
+  modelConfigForm.modelName = preset.modelName
+  modelConfigForm.clearApiKey = false
+  modelConfigTestResult.value = null
+  modelConfigError.value = ''
+}
+
+function useCustomModelProvider() {
+  modelProviderPreset.value = 'custom'
 }
 
 async function saveModelConfig() {
@@ -2158,6 +2188,7 @@ async function resetModelConfig() {
       apiKey: '',
       clearApiKey: false,
     })
+    modelProviderPreset.value = matchingModelProviderPreset(value?.baseUrl, value?.modelName)
     noticeMessage.value = '已恢复环境默认模型设置。'
     showModelSettings.value = false
   } catch (error) {
@@ -3723,13 +3754,14 @@ onBeforeUnmount(() => {
       </header>
       <div v-if="modelConfigLoading" class="model-settings-state">正在读取当前模型配置…</div>
       <template v-else>
-        <p class="model-settings-help">支持 OpenAI 兼容的 Chat Completions 地址，例如 <code>https://api.openai.com/v1</code> 或本机 Ollama 地址。API Key 只会提交给当前 Runtime，服务端加密保存，刷新页面不会回填明文。</p>
+        <p class="model-settings-help">支持 OpenAI 兼容的 Chat Completions 地址。可先选择常见服务预设自动填充，也可以改成任意兼容地址；API Key 只会提交给当前 Runtime，服务端加密保存，刷新页面不会回填明文。</p>
         <label class="check-field model-settings-toggle">
           <input v-model="modelConfigForm.enabled" type="checkbox" :disabled="!modelConfigEditable" />
           <span>使用外部模型，不使用本地演示模型</span>
         </label>
-        <label class="field"><span>模型 API 地址</span><input v-model="modelConfigForm.baseUrl" :disabled="!modelConfigEditable || !modelConfigForm.enabled" :required="modelConfigForm.enabled" maxlength="512" placeholder="https://api.openai.com/v1" /></label>
-        <label class="field"><span>模型名称</span><input v-model="modelConfigForm.modelName" :disabled="!modelConfigEditable || !modelConfigForm.enabled" :required="modelConfigForm.enabled" maxlength="128" placeholder="例如：gpt-4o-mini、deepseek-chat、qwen2.5-coder" /></label>
+        <label class="field"><span>服务预设</span><select v-model="modelProviderPreset" :disabled="!modelConfigEditable || !modelConfigForm.enabled" @change="applyModelProviderPreset"><option v-for="preset in modelProviderPresets" :key="preset.id" :value="preset.id">{{ preset.label }}</option></select></label>
+        <label class="field"><span>模型 API 地址</span><input v-model="modelConfigForm.baseUrl" :disabled="!modelConfigEditable || !modelConfigForm.enabled" :required="modelConfigForm.enabled" maxlength="512" placeholder="https://api.openai.com/v1" @input="useCustomModelProvider" /></label>
+        <label class="field"><span>模型名称</span><input v-model="modelConfigForm.modelName" :disabled="!modelConfigEditable || !modelConfigForm.enabled" :required="modelConfigForm.enabled" maxlength="128" placeholder="例如：gpt-4o-mini、deepseek-chat、qwen2.5-coder" @input="useCustomModelProvider" /></label>
         <label class="field"><span>API Key（留空保留当前密钥）</span><input v-model="modelConfigForm.apiKey" :disabled="!modelConfigEditable" type="password" autocomplete="new-password" maxlength="1000" placeholder="不会回显已保存的密钥" /></label>
         <label v-if="modelConfig?.apiKeyConfigured" class="check-field model-settings-clear-key">
           <input v-model="modelConfigForm.clearApiKey" type="checkbox" :disabled="!modelConfigEditable" />
