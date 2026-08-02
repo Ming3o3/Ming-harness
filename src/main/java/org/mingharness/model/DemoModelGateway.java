@@ -36,8 +36,8 @@ public class DemoModelGateway implements ModelGateway {
 
     /**
      * 默认演示模型也跑一遍确定性的 Agent 代码理解闭环，便于本地未配置外部模型时验证工具、步骤和审计体验。
-     * 真实模型接入后仍由 OpenAI 兼容网关负责自然语言决策；演示路径最多浏览一层源码目录并读取一个代表性文本文件，
-     * 或在工作区工具不可用时退回安全的回显工具。
+     * 真实模型接入后仍由 OpenAI 兼容网关负责自然语言决策；演示路径最多浏览一层源码目录，
+     * 通过搜索定位并读取一个代表性文本文件，或在工作区工具不可用时退回安全的回显工具。
      */
     private ModelResponse completeAgentDemo(ModelRequest request, String input) {
         Optional<ModelMessage> latestToolMessage = latestToolMessage(request.messages());
@@ -74,7 +74,32 @@ public class DemoModelGateway implements ModelGateway {
                 }
                 Optional<String> candidate = firstReadableFile(toolResult);
                 if (candidate.isPresent()) {
+                    Optional<ModelToolDefinition> workspaceSearch = request.tools().stream()
+                            .filter(tool -> "workspace.search".equals(tool.name()))
+                            .findFirst();
+                    if (workspaceSearch.isPresent()) {
+                        return response(request, input, "演示 Agent 正在搜索相关代码位置…",
+                                List.of(new ModelToolCall("demo-workspace-search", "workspace.search",
+                                        jsonObject(Map.of("query", searchQuery(candidate.get()),
+                                                "path", parentDirectory(candidate.get()), "maxResults", 8)))));
+                    }
                     return response(request, input, "演示 Agent 正在读取关键文件…",
+                            List.of(new ModelToolCall("demo-workspace-read", "workspace.read",
+                                    jsonObject(Map.of("path", candidate.get(), "startLine", 1,
+                                            "endLine", READ_PREVIEW_LINES)))));
+                }
+            }
+        }
+
+        if ("workspace.search".equals(latestToolName)) {
+            Optional<ModelToolDefinition> workspaceRead = request.tools().stream()
+                    .filter(tool -> "workspace.read".equals(tool.name()))
+                    .findFirst();
+            if (workspaceRead.isPresent()) {
+                Optional<String> candidate = firstSearchMatch(toolResult)
+                        .or(() -> firstReadableFile(latestToolResult(request.messages(), "workspace.list")));
+                if (candidate.isPresent()) {
+                    return response(request, input, "演示 Agent 正在读取搜索到的关键文件…",
                             List.of(new ModelToolCall("demo-workspace-read", "workspace.read",
                                     jsonObject(Map.of("path", candidate.get(), "startLine", 1,
                                             "endLine", READ_PREVIEW_LINES)))));
@@ -123,6 +148,27 @@ public class DemoModelGateway implements ModelGateway {
         return "";
     }
 
+    private String latestToolResult(List<ModelMessage> messages, String toolName) {
+        if (messages == null || toolName == null || toolName.isBlank()) return "";
+        for (int index = messages.size() - 1; index >= 0; index--) {
+            ModelMessage message = messages.get(index);
+            if (message == null || !"tool".equals(message.role())) continue;
+            String toolCallId = message.toolCallId();
+            for (int previous = index - 1; previous >= 0; previous--) {
+                ModelMessage assistantMessage = messages.get(previous);
+                if (assistantMessage == null || !"assistant".equals(assistantMessage.role())) continue;
+                for (int callIndex = assistantMessage.toolCalls().size() - 1; callIndex >= 0; callIndex--) {
+                    ModelToolCall call = assistantMessage.toolCalls().get(callIndex);
+                    if ((toolCallId == null || toolCallId.isBlank() || toolCallId.equals(call.id()))
+                            && toolName.equals(call.name())) {
+                        return message.content();
+                    }
+                }
+            }
+        }
+        return "";
+    }
+
     /** 根目录下存在典型源码目录时，先深入一层，避免递归扫描依赖目录吞掉安全上限。 */
     private Optional<String> nextSourceDirectory(String rawResult) {
         JsonNode root = parseJson(rawResult);
@@ -150,6 +196,27 @@ public class DemoModelGateway implements ModelGateway {
                 .filter(this::looksReadable)
                 .sorted(Comparator.comparingInt(this::fileRank).thenComparing(String::length))
                 .findFirst();
+    }
+
+    private Optional<String> firstSearchMatch(String rawResult) {
+        JsonNode root = parseJson(rawResult);
+        if (root == null || !root.path("matches").isArray()) return Optional.empty();
+        return streamEntries(root.path("matches")).stream()
+                .map(match -> match.path("path").asText())
+                .filter(path -> !path.isBlank() && !isIgnoredPath(path) && looksReadable(path))
+                .findFirst();
+    }
+
+    private String searchQuery(String path) {
+        String fileName = path.substring(path.lastIndexOf('/') + 1);
+        int extensionIndex = fileName.lastIndexOf('.');
+        String stem = extensionIndex > 0 ? fileName.substring(0, extensionIndex) : fileName;
+        return stem.isBlank() ? "TODO" : stem;
+    }
+
+    private String parentDirectory(String path) {
+        int separator = path.lastIndexOf('/');
+        return separator > 0 ? path.substring(0, separator) : ".";
     }
 
     private List<JsonNode> streamEntries(JsonNode entries) {

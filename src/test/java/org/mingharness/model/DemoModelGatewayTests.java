@@ -54,9 +54,11 @@ class DemoModelGatewayTests {
     void shouldInspectARepresentativeSourceFileInWorkspaceDemoFlow() {
         ModelToolDefinition list = new ModelToolDefinition(
                 "workspace.list", "列出工作区目录结构", Map.of("type", "object"));
+        ModelToolDefinition search = new ModelToolDefinition(
+                "workspace.search", "搜索工作区代码", Map.of("type", "object"));
         ModelToolDefinition read = new ModelToolDefinition(
                 "workspace.read", "读取工作区文件", Map.of("type", "object"));
-        List<ModelToolDefinition> tools = List.of(list, read);
+        List<ModelToolDefinition> tools = List.of(list, search, read);
         ModelRequest initial = new ModelRequest(
                 "请理解项目入口", "demo-model", "prompt-agent", tools,
                 List.of(ModelMessage.system("你是代码 Agent"), ModelMessage.user("请理解项目入口")));
@@ -77,16 +79,24 @@ class DemoModelGatewayTests {
         String sourceListing = "{\"path\":\"src\",\"entries\":["
                 + "{\"path\":\"src/main/App.java\",\"type\":\"file\"},"
                 + "{\"path\":\"src/main\",\"type\":\"directory\"}]}";
-        ModelRequest readRequest = withToolResult(sourceListingRequest, second, sourceListing);
-        ModelResponse third = gateway.complete(readRequest);
-        assertEquals("workspace.read", third.toolCalls().get(0).name());
-        assertTrue(third.toolCalls().get(0).arguments().contains("\"path\":\"src/main/App.java\""));
-        assertTrue(third.toolCalls().get(0).arguments().contains("\"endLine\":120"));
+        ModelRequest searchRequest = withToolResult(sourceListingRequest, second, sourceListing);
+        ModelResponse third = gateway.complete(searchRequest);
+        assertEquals("workspace.search", third.toolCalls().get(0).name());
+        assertTrue(third.toolCalls().get(0).arguments().contains("\"query\":\"App\""));
+        assertTrue(third.toolCalls().get(0).arguments().contains("\"path\":\"src/main\""));
+
+        String searchResult = "{\"query\":\"App\",\"path\":\"src/main\",\"matches\":["
+                + "{\"path\":\"src/main/App.java\",\"line\":1,\"text\":\"public class App {}\"}]}";
+        ModelRequest readRequest = withToolResult(searchRequest, third, searchResult);
+        ModelResponse fourth = gateway.complete(readRequest);
+        assertEquals("workspace.read", fourth.toolCalls().get(0).name());
+        assertTrue(fourth.toolCalls().get(0).arguments().contains("\"path\":\"src/main/App.java\""));
+        assertTrue(fourth.toolCalls().get(0).arguments().contains("\"endLine\":120"));
 
         String readResult = "{\"path\":\"src/main/App.java\",\"totalLines\":3,"
                 + "\"sha256\":\"abc123\",\"content\":\"public class App {}\\n"
                 + "static void run() {}\"}";
-        ModelResponse finalResponse = gateway.complete(withToolResult(readRequest, third, readResult));
+        ModelResponse finalResponse = gateway.complete(withToolResult(readRequest, fourth, readResult));
         assertTrue(finalResponse.toolCalls().isEmpty());
         assertTrue(finalResponse.content().contains("src/main/App.java"));
         assertTrue(finalResponse.content().contains("static void run()"));
