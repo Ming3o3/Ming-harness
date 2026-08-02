@@ -140,6 +140,26 @@ class ConversationServiceTests {
     }
 
     @Test
+    void shouldAutoTitleDefaultConversationFromFirstMessageWithoutOverwritingCustomTitle() {
+        ConversationDetail defaultConversation = conversationService.create(
+                "tenant-chat", "operator", new CreateConversationRequest(null));
+        ConversationDetail titled = conversationService.send(
+                defaultConversation.conversation().id(), "tenant-chat", "operator",
+                new SendConversationMessageRequest("请修复登录页提交按钮在移动端溢出的问题", null, 2),
+                "chat-auto-title-1", "run.create,run.execute");
+
+        assertEquals("请修复登录页提交按钮在移动端溢出的问题", titled.conversation().title());
+
+        ConversationDetail customConversation = conversationService.create(
+                "tenant-chat", "operator", new CreateConversationRequest("我自己的标题"));
+        ConversationDetail preserved = conversationService.send(
+                customConversation.conversation().id(), "tenant-chat", "operator",
+                new SendConversationMessageRequest("这条消息不应覆盖已有标题", null, 2),
+                "chat-auto-title-2", "run.create,run.execute");
+        assertEquals("我自己的标题", preserved.conversation().title());
+    }
+
+    @Test
     void shouldRejectOtherUserAndTenantAccess() {
         ConversationDetail created = conversationService.create(
                 "tenant-chat", "operator", new CreateConversationRequest("隔离测试"));

@@ -13,6 +13,8 @@ import java.util.UUID;
 @Table(name = "harness_conversations")
 public class Conversation {
 
+    public static final String DEFAULT_TITLE = "新的对话";
+
     @Id
     private String id;
     @Column(name = "tenant_id", nullable = false, length = 128)
@@ -55,6 +57,14 @@ public class Conversation {
             this.title = title;
             touch();
         }
+    }
+
+    /** 首条消息只为默认标题生成摘要；用户已经重命名过时绝不覆盖。 */
+    public void autoTitleFromFirstMessage(String message) {
+        if (!DEFAULT_TITLE.equals(title) || message == null || message.isBlank()) return;
+        String candidate = message.replaceAll("\\s+", " ").trim();
+        if (candidate.length() > 48) candidate = candidate.substring(0, 47).trim() + "…";
+        rename(candidate);
     }
 
     public String getId() { return id; }

@@ -99,7 +99,7 @@ public class ConversationService {
             workspaceDirectoryService.requireRoot(workspaceId, tenantId, userId);
         }
         Conversation conversation = new Conversation(tenantId, userId,
-                sanitizer.sanitize(title == null || title.isBlank() ? "新的对话" : title.trim()), workspaceId);
+                sanitizer.sanitize(title == null || title.isBlank() ? Conversation.DEFAULT_TITLE : title.trim()), workspaceId);
         conversationRepository.save(conversation);
         return detail(conversation);
     }
@@ -240,6 +240,7 @@ public class ConversationService {
                                    String permissions) {
         Conversation conversation = loadForMessage(conversationId, tenantId, userId);
         String content = sanitizer.sanitize(request.content().trim());
+        conversation.autoTitleFromFirstMessage(content);
         List<String> attachmentIds = request.effectiveAttachmentIds();
         String effectiveIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
         if (sanitizer.containsSensitiveData(effectiveIdempotencyKey)) {
