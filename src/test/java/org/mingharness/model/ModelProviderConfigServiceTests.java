@@ -77,6 +77,33 @@ class ModelProviderConfigServiceTests {
     }
 
     @Test
+    void shouldPreviewConnectionConfigWithoutPersistingIt() {
+        ModelProviderConfigService.ResolvedModelConfig preview = service.preview("tenant-model", "operator",
+                new UpdateModelProviderConfigRequest(true, "http://localhost:11434/v1",
+                        "qwen2.5-coder", "preview-secret", false));
+
+        assertTrue(preview.enabled());
+        assertEquals("http://localhost:11434/v1", preview.baseUrl());
+        assertEquals("qwen2.5-coder", preview.modelName());
+        assertEquals("preview-secret", preview.apiKey());
+        assertTrue(repository.findByTenantIdAndUserId("tenant-model", "operator").isEmpty());
+    }
+
+    @Test
+    void shouldPreviewExplicitlyClearedKeyWithoutUsingSavedSecret() {
+        service.update("tenant-model", "operator",
+                new UpdateModelProviderConfigRequest(true, "http://localhost:11434/v1",
+                        "qwen2.5-coder", "saved-secret", false));
+
+        ModelProviderConfigService.ResolvedModelConfig preview = service.preview("tenant-model", "operator",
+                new UpdateModelProviderConfigRequest(true, "http://localhost:11434/v1",
+                        "qwen2.5-coder", "", true));
+
+        assertEquals("", preview.apiKey());
+        assertEquals("saved-secret", service.resolve("tenant-model", "operator").apiKey());
+    }
+
+    @Test
     void shouldRejectUnsafeBaseUrlAndMissingModelWhenEnabled() {
         assertThrows(RuntimeException.class, () -> service.update("tenant-model", "operator",
                 new UpdateModelProviderConfigRequest(true, "file:///tmp/model", "model-a", "", false)));

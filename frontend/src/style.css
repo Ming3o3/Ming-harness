@@ -652,7 +652,10 @@ h3 { margin: 0; font-size: 13px; }
 .model-settings-toggle { border: 1px solid rgba(141,124,255,.24); border-radius: 7px; background: rgba(141,124,255,.07); padding: 10px; }
 .model-settings-clear-key { color: var(--orange); }
 .model-settings-hint, .model-settings-state { margin: -4px 0 0; color: var(--muted); font: 9px/1.5 "DM Mono", monospace; }
-.model-settings-actions { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
+.model-settings-test-result { margin: -4px 0 0; border-radius: 6px; padding: 8px 10px; font: 9px/1.5 "DM Mono", monospace; }
+.model-settings-test-result.success { background: rgba(85,214,138,.08); color: var(--green); }
+.model-settings-test-result.failed { background: rgba(255,114,123,.08); color: var(--red); }
+.model-settings-actions { display: grid; grid-template-columns: auto 1fr auto auto auto; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
 .command-palette-overlay { position: fixed; z-index: 60; inset: 0; display: grid; place-items: start center; background: rgba(5,9,18,.6); padding: min(17vh, 150px) 20px 20px; backdrop-filter: blur(7px); }
 .command-palette-dialog { width: min(620px, calc(100vw - 32px)); overflow: hidden; border: 1px solid rgba(153,174,218,.24); border-radius: 13px; background: var(--panel); box-shadow: 0 30px 100px rgba(0,0,0,.48); }
 .command-palette-header { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); padding: 13px 15px; }

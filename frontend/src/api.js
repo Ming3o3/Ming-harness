@@ -112,6 +112,10 @@ export const api = {
     method: 'PUT',
     body: JSON.stringify(payload),
   }),
+  testModelConfig: (payload) => request('/model-config/test', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
   resetModelConfig: () => request('/model-config', { method: 'DELETE' }),
   // 仅返回工作区名称和能力摘要，绝对路径始终只保留在本地后端进程。
   workspace: () => request('/workspace'),

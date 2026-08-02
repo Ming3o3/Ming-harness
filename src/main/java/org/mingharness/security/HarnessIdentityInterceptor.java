@@ -182,7 +182,7 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
             return "ops.read";
         }
         if (path.equals("/api/health")) return "ops.read";
-        if (path.equals("/api/model-config")) return "model.configure";
+        if (path.equals("/api/model-config") || path.equals("/api/model-config/test")) return "model.configure";
         if (path.matches("/api/admin/api-keys(?:/audits)?")) {
             return "GET".equalsIgnoreCase(method) ? "auth.key.read" : "auth.key.manage";
         }

@@ -39,42 +39,40 @@ public class ModelProviderConfigService {
     @Transactional
     public ModelProviderConfigView update(String tenantId, String userId,
                                           UpdateModelProviderConfigRequest request) {
-        if (request == null) {
-            throw new BusinessException(HttpStatus.BAD_REQUEST, "MODEL_CONFIG_REQUIRED", "模型配置不能为空");
-        }
-        boolean enabled = Boolean.TRUE.equals(request.enabled());
-        boolean blankBaseUrl = request.baseUrl() == null || request.baseUrl().isBlank();
-        if (enabled && blankBaseUrl) {
-            throw new BusinessException(HttpStatus.BAD_REQUEST, "MODEL_BASE_URL_REQUIRED", "模型 API 地址不能为空");
-        }
-        String baseUrl = blankBaseUrl ? defaultConfig.baseUrl() : normalizeBaseUrl(request.baseUrl());
-        boolean blankModelName = request.modelName() == null || request.modelName().isBlank();
-        if (enabled && blankModelName) {
-            throw new BusinessException(HttpStatus.BAD_REQUEST, "MODEL_NAME_REQUIRED", "启用外部模型时必须填写模型名称");
-        }
-        String modelName = blankModelName ? defaultConfig.name() : normalizeModelName(request.modelName());
-
-        String suppliedApiKey = request.apiKey() == null ? "" : request.apiKey().trim();
-        if (suppliedApiKey.length() > MAX_API_KEY_LENGTH) {
-            throw new BusinessException(HttpStatus.BAD_REQUEST, "MODEL_API_KEY_TOO_LONG", "模型 API Key 不能超过 1000 个字符");
-        }
+        NormalizedModelConfig normalized = normalize(request);
         ModelProviderConfig existing = repository.findByTenantIdAndUserId(tenantId, userId).orElse(null);
         String ciphertext = existing == null ? null : existing.getApiKeyCiphertext();
         String hint = existing == null ? null : existing.getApiKeyHint();
-        if (Boolean.TRUE.equals(request.clearApiKey())) {
+        if (normalized.clearApiKey()) {
             ciphertext = null;
             hint = null;
-        } else if (!suppliedApiKey.isBlank()) {
-            ciphertext = secretCipher.encrypt(suppliedApiKey);
-            hint = maskApiKey(suppliedApiKey);
+        } else if (!normalized.suppliedApiKey().isBlank()) {
+            ciphertext = secretCipher.encrypt(normalized.suppliedApiKey());
+            hint = maskApiKey(normalized.suppliedApiKey());
         }
 
         if (existing == null) {
-            existing = new ModelProviderConfig(tenantId, userId, enabled, baseUrl, modelName, ciphertext, hint);
+            existing = new ModelProviderConfig(tenantId, userId, normalized.enabled(), normalized.baseUrl(),
+                    normalized.modelName(), ciphertext, hint);
         } else {
-            existing.update(enabled, baseUrl, modelName, ciphertext, hint);
+            existing.update(normalized.enabled(), normalized.baseUrl(), normalized.modelName(), ciphertext, hint);
         }
         return toUserView(repository.save(existing));
+    }
+
+    /** 预览未保存的配置，供连接测试使用；不会写入数据库。 */
+    @Transactional(readOnly = true)
+    public ResolvedModelConfig preview(String tenantId, String userId,
+                                       UpdateModelProviderConfigRequest request) {
+        NormalizedModelConfig normalized = normalize(request);
+        ModelProviderConfig existing = repository.findByTenantIdAndUserId(tenantId, userId).orElse(null);
+        String apiKey = normalized.clearApiKey() ? "" : normalized.suppliedApiKey();
+        if (!normalized.clearApiKey() && apiKey.isBlank()
+                && existing != null && existing.getApiKeyCiphertext() != null) {
+            apiKey = secretCipher.decrypt(existing.getApiKeyCiphertext());
+        }
+        return new ResolvedModelConfig(normalized.enabled(), normalized.baseUrl(), apiKey,
+                normalized.modelName(), "preview");
     }
 
     @Transactional
@@ -134,6 +132,29 @@ public class ModelProviderConfigService {
         return normalized;
     }
 
+    private NormalizedModelConfig normalize(UpdateModelProviderConfigRequest request) {
+        if (request == null) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "MODEL_CONFIG_REQUIRED", "模型配置不能为空");
+        }
+        boolean enabled = Boolean.TRUE.equals(request.enabled());
+        boolean blankBaseUrl = request.baseUrl() == null || request.baseUrl().isBlank();
+        if (enabled && blankBaseUrl) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "MODEL_BASE_URL_REQUIRED", "模型 API 地址不能为空");
+        }
+        String baseUrl = blankBaseUrl ? defaultConfig.baseUrl() : normalizeBaseUrl(request.baseUrl());
+        boolean blankModelName = request.modelName() == null || request.modelName().isBlank();
+        if (enabled && blankModelName) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "MODEL_NAME_REQUIRED", "启用外部模型时必须填写模型名称");
+        }
+        String modelName = blankModelName ? defaultConfig.name() : normalizeModelName(request.modelName());
+        String suppliedApiKey = request.apiKey() == null ? "" : request.apiKey().trim();
+        if (suppliedApiKey.length() > MAX_API_KEY_LENGTH) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "MODEL_API_KEY_TOO_LONG", "模型 API Key 不能超过 1000 个字符");
+        }
+        return new NormalizedModelConfig(enabled, baseUrl, modelName, suppliedApiKey,
+                Boolean.TRUE.equals(request.clearApiKey()));
+    }
+
     private String normalizeModelName(String value) {
         return value == null ? "" : value.trim();
     }
@@ -150,5 +171,9 @@ public class ModelProviderConfigService {
 
     public record ResolvedModelConfig(boolean enabled, String baseUrl, String apiKey,
                                       String modelName, String version) {
+    }
+
+    private record NormalizedModelConfig(boolean enabled, String baseUrl, String modelName,
+                                         String suppliedApiKey, boolean clearApiKey) {
     }
 }

@@ -30,7 +30,9 @@ const health = ref(null)
 const modelConfig = ref(null)
 const modelConfigLoading = ref(false)
 const modelConfigSaving = ref(false)
+const modelConfigTesting = ref(false)
 const modelConfigError = ref('')
+const modelConfigTestResult = ref(null)
 const showModelSettings = ref(false)
 const modelConfigForm = reactive({
   enabled: false,
@@ -1979,6 +1981,7 @@ async function loadModelConfig() {
       apiKey: '',
       clearApiKey: false,
     })
+    modelConfigTestResult.value = null
   } catch (error) {
     modelConfigError.value = error.code === 'PERMISSION_DENIED'
       ? '当前身份没有 model.configure 权限，无法修改模型连接。'
@@ -1993,6 +1996,7 @@ async function saveModelConfig() {
   clearMessages()
   modelConfigSaving.value = true
   modelConfigError.value = ''
+  modelConfigTestResult.value = null
   try {
     const value = await api.updateModelConfig({
       enabled: Boolean(modelConfigForm.enabled),
@@ -2010,6 +2014,32 @@ async function saveModelConfig() {
     modelConfigError.value = errorText(error)
   } finally {
     modelConfigSaving.value = false
+  }
+}
+
+async function testModelConfig() {
+  if (modelConfigTesting.value || modelConfigSaving.value || !modelConfigForm.enabled) return
+  modelConfigError.value = ''
+  modelConfigTestResult.value = null
+  modelConfigTesting.value = true
+  try {
+    modelConfigTestResult.value = await api.testModelConfig({
+      enabled: true,
+      baseUrl: modelConfigForm.baseUrl.trim(),
+      modelName: modelConfigForm.modelName.trim(),
+      apiKey: modelConfigForm.apiKey,
+      clearApiKey: Boolean(modelConfigForm.clearApiKey),
+    })
+  } catch (error) {
+    modelConfigTestResult.value = {
+      success: false,
+      status: 'FAILED',
+      message: errorText(error),
+      modelName: modelConfigForm.modelName.trim(),
+      latencyMs: 0,
+    }
+  } finally {
+    modelConfigTesting.value = false
   }
 }
 
@@ -3528,10 +3558,14 @@ onBeforeUnmount(() => {
           <span>同时删除服务端已保存的 API Key（适用于无密钥本地模型）</span>
         </label>
         <p v-if="modelConfig?.apiKeyConfigured" class="model-settings-hint">当前密钥：{{ modelConfig.apiKeyHint || '已配置（不显示明文）' }}</p>
+        <p v-if="modelConfigTestResult" class="model-settings-test-result" :class="modelConfigTestResult.success ? 'success' : 'failed'" role="status" aria-live="polite">
+          {{ modelConfigTestResult.message }}<span v-if="modelConfigTestResult.latencyMs"> · {{ modelConfigTestResult.latencyMs }} ms</span>
+        </p>
         <p v-if="modelConfigError" class="policy-error">{{ modelConfigError }}</p>
         <footer class="model-settings-actions">
           <button class="danger-button" type="button" :disabled="modelConfigSaving || !modelConfig?.configured" @click="resetModelConfig">恢复环境默认</button>
           <span></span>
+          <button class="secondary-button" type="button" :disabled="modelConfigSaving || modelConfigTesting || !modelConfigEditable || !modelConfigForm.enabled" @click="testModelConfig">{{ modelConfigTesting ? '测试中…' : '测试连接' }}</button>
           <button class="secondary-button" type="button" :disabled="modelConfigSaving" @click="showModelSettings = false">取消</button>
           <button class="primary-button" type="submit" :disabled="modelConfigSaving || modelConfigLoading || !modelConfigEditable">{{ modelConfigSaving ? '保存中…' : '保存并应用' }}</button>
         </footer>

@@ -99,6 +99,21 @@ class HarnessAuthWebTests {
     }
 
     @Test
+    void shouldTestDisabledModelConfigWithoutCallingProvider() throws Exception {
+        HttpResponse<String> response = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/model-config/test"))
+                        .header("Authorization", "Bearer web-test-key")
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("{\"enabled\":false,\"baseUrl\":\"\",\"modelName\":\"\"}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(200, response.statusCode(), response.body());
+        assertTrue(response.body().contains("\"status\":\"DISABLED\""), response.body());
+        assertTrue(response.body().contains("未发起网络请求"), response.body());
+    }
+
+    @Test
     void shouldExposeSafeLocalWorkspaceSummaryWithoutAbsolutePath() throws Exception {
         HttpResponse<String> response = httpClient.send(
                 HttpRequest.newBuilder(URI.create(baseUrl() + "/api/workspace"))
