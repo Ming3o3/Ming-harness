@@ -516,8 +516,11 @@ public class RunService {
                 break;
             }
             ensureNotCancelled(run.id(), run.tenantId());
-            if (executionStateService.finishSuccess(run.id(), run.tenantId(), workerId)) {
+            boolean finished = executionStateService.finishSuccess(run.id(), run.tenantId(), workerId);
+            if (finished) {
                 metrics.runSucceeded();
+            } else if (runRepository.findById(run.id()).map(Run::getStatus).orElse(null) == RunStatus.FAILED) {
+                metrics.runFailed();
             }
         } catch (RunCancellationRequestedException exception) {
             // 取消事务已经是最终事实来源，Worker 不再保存旧对象或写入成功状态。
@@ -1021,6 +1024,9 @@ public class RunService {
             }
             ensureNotCancelled(run);
             completeAgentRun(run);
+            if (run.getStatus() == RunStatus.FAILED) {
+                metrics.runFailed();
+            }
         } catch (RunCancellationRequestedException exception) {
             return toDetail(runRepository.findById(run.getId()).orElseThrow());
         } catch (ExecutionTimeoutException exception) {
