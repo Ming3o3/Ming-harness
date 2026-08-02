@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { api } from './api'
+import { highlightCode, languageFromPath, languageLabel, renderMarkdown } from './markdown'
 
 const runs = ref([])
 const tools = ref([])
@@ -1771,7 +1772,8 @@ onBeforeUnmount(() => {
                     <span class="chat-thinking"><i></i><i></i><i></i>{{ messageStatusLabel(message.status) }}</span>
                   </template>
                   <template v-else>
-                    <p>{{ message.content || messageStatusLabel(message.status) }}</p>
+                    <div v-if="message.content" class="chat-markdown" v-html="renderMarkdown(message.content)"></div>
+                    <p v-else>{{ messageStatusLabel(message.status) }}</p>
                     <small v-if="message.role === 'ASSISTANT' && message.status !== 'COMPLETED'">{{ messageStatusLabel(message.status) }}</small>
                   </template>
                   <div v-if="message.attachments?.length" class="chat-attachment-list" aria-label="已导入的工作区文件">
@@ -1895,8 +1897,8 @@ onBeforeUnmount(() => {
               <p v-if="!workspaceExplorer.entries.length">当前目录没有可显示的文件。</p>
             </div>
             <section v-if="workspaceFilePreview || workspaceFilePreviewLoading" class="workspace-file-preview" aria-label="文件预览">
-              <div><strong>{{ workspaceFilePreview?.path || '正在读取文件…' }}</strong><span v-if="workspaceFilePreview?.redacted">已脱敏</span><span v-if="workspaceFilePreview?.truncated">已截断</span></div>
-              <pre v-if="workspaceFilePreview">{{ workspaceFilePreview.content }}</pre>
+              <div><strong>{{ workspaceFilePreview?.path || '正在读取文件…' }}</strong><span v-if="workspaceFilePreview?.path" class="workspace-file-language">{{ languageLabel('', workspaceFilePreview.path) }}</span><span v-if="workspaceFilePreview?.redacted">已脱敏</span><span v-if="workspaceFilePreview?.truncated">已截断</span></div>
+              <pre v-if="workspaceFilePreview" class="workspace-code-preview" :class="{ 'workspace-code-preview-plain': !languageFromPath(workspaceFilePreview.path) }" v-html="highlightCode(workspaceFilePreview.content, languageFromPath(workspaceFilePreview.path))"></pre>
             </section>
           </template>
           <div v-else class="chat-run-empty">当前会话未连接可访问的本地项目。</div>
@@ -1920,13 +1922,13 @@ onBeforeUnmount(() => {
               </div>
               <article v-for="change in workspaceChangePreviews" :key="change.stepId" class="chat-change-card">
                 <div class="chat-change-card-meta">
-                  <span>{{ change.typeLabel }}</span><code>{{ change.path }}</code><em :class="statusClass(change.status)">{{ statusLabel(change.status) }}</em>
+                  <span>{{ change.typeLabel }}</span><span class="chat-change-language">{{ languageLabel('', change.path) }}</span><code>{{ change.path }}</code><em :class="statusClass(change.status)">{{ statusLabel(change.status) }}</em>
                 </div>
                 <template v-if="change.kind === 'edit'">
-                  <pre v-for="(edit, index) in change.edits" :key="index" class="chat-inline-diff"><span class="diff-remove">− {{ edit.oldText }}</span><span class="diff-add">＋ {{ edit.newText }}</span><small v-if="edit.replaceAll">替换全部匹配项</small></pre>
+                  <pre v-for="(edit, index) in change.edits" :key="index" class="chat-inline-diff chat-inline-code"><span class="diff-remove"><b>−</b><code v-html="highlightCode(edit.oldText, languageFromPath(change.path))"></code></span><span class="diff-add"><b>＋</b><code v-html="highlightCode(edit.newText, languageFromPath(change.path))"></code></span><small v-if="edit.replaceAll">替换全部匹配项</small></pre>
                   <p v-if="change.hiddenEditCount" class="chat-change-truncated">另有 {{ change.hiddenEditCount }} 个编辑已折叠。</p>
                 </template>
-                <pre v-else class="chat-inline-diff"><span class="diff-add">＋ {{ change.content }}</span></pre>
+                <pre v-else class="chat-inline-diff chat-inline-code"><span class="diff-add"><b>＋</b><code v-html="highlightCode(change.content, languageFromPath(change.path))"></code></span></pre>
               </article>
             </section>
             <div class="chat-run-meta"><span>Run</span><code>{{ selectedRun.run.id.slice(0, 12) }}</code><span>Trace</span><code>{{ selectedRun.run.traceId?.slice(0, 12) || '—' }}</code></div>
@@ -2193,7 +2195,7 @@ onBeforeUnmount(() => {
                   <div class="step-rail"><span class="step-marker" :class="statusClass(step.status)">{{ step.sequence }}</span><span class="rail-line"></span></div>
                   <div class="step-body">
                     <div class="step-title-row"><div><span class="step-type">{{ stepLabel(step.type) }}</span><strong>{{ step.name }}</strong></div><span class="step-status" :class="statusClass(step.status)">{{ statusLabel(step.status) }}</span></div>
-                    <p v-if="decodeAgentStep(step).content" class="step-output">{{ decodeAgentStep(step).content }}</p>
+                    <div v-if="decodeAgentStep(step).content" class="step-output chat-markdown step-markdown" v-html="renderMarkdown(decodeAgentStep(step).content)"></div>
                     <div v-if="decodeAgentStep(step).toolCalls.length" class="tool-call-list">
                       <span class="tool-call-heading">Tool Call</span>
                       <code v-for="call in decodeAgentStep(step).toolCalls" :key="call.id">{{ call.name }} · {{ call.id }}</code>

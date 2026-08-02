@@ -12,6 +12,8 @@
     "desktop:dev": "node electron/desktop-dev.cjs"
   },
   "dependencies": {
+    "highlight.js": "^11.11.1",
+    "markdown-it": "^14.3.0",
     "vue": "^3.5.40"
   },
   "devDependencies": {
