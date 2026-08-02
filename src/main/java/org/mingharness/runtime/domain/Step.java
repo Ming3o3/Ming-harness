@@ -108,6 +108,17 @@ public class Step {
         this.durationMs = elapsedMs();
     }
 
+    public void cancel(String reason) {
+        if (status == StepStatus.SUCCEEDED || status == StepStatus.FAILED
+                || status == StepStatus.CANCELLED || status == StepStatus.TIMED_OUT) {
+            return;
+        }
+        this.error = reason;
+        this.status = StepStatus.CANCELLED;
+        this.finishedAt = Instant.now();
+        this.durationMs = elapsedMs();
+    }
+
     public void timeout(String error) {
         this.error = error;
         this.status = StepStatus.TIMED_OUT;

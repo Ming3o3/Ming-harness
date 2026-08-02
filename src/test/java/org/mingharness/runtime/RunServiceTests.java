@@ -296,6 +296,22 @@ class RunServiceTests {
     }
 
     @Test
+    void shouldCancelRunWaitingForApprovalAndMarkPendingStepCancelled() {
+        RunSummary created = runService.create(request("demo.approval", "撤回高风险演示操作"));
+        RunDetail waiting = runService.start(created.id(), "tenant-demo");
+        assertEquals(RunStatus.WAITING_APPROVAL, waiting.run().status());
+
+        runService.cancel(created.id(), "tenant-demo");
+
+        RunDetail cancelled = runService.getDetail(created.id(), "tenant-demo");
+        assertEquals(RunStatus.CANCELLED, cancelled.run().status());
+        assertEquals(StepStatus.CANCELLED, cancelled.steps().get(1).status());
+        assertEquals("Run 已取消", cancelled.steps().get(1).error());
+        assertTrue(auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
+                .anyMatch(event -> "RUN_CANCELLED".equals(event.getEventType())));
+    }
+
+    @Test
     void shouldBlockCrossTenantAccess() {
         RunSummary created = runService.create(request("demo.echo", "跨租户访问"));
 

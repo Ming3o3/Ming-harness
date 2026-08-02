@@ -353,6 +353,7 @@ public class RunService {
                 || run.getStatus() == RunStatus.TIMED_OUT) {
             throw new BusinessException(HttpStatus.CONFLICT, "RUN_NOT_CANCELLABLE", "已结束的任务不能取消");
         }
+        run.getSteps().forEach(step -> step.cancel("Run 已取消"));
         run.cancel();
         runRepository.save(run);
         record(run.getId(), null, "RUN_CANCELLED", "取消执行任务");

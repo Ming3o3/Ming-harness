@@ -259,9 +259,10 @@ const stats = computed(() => ({
 
 const selectedStatus = computed(() => selectedRun.value?.run?.status || 'NONE')
 const canStart = computed(() => selectedStatus.value === 'QUEUED')
-const canCancel = computed(() => ['QUEUED', 'RUNNING'].includes(selectedStatus.value))
+const canCancel = computed(() => ['QUEUED', 'RUNNING', 'WAITING_APPROVAL'].includes(selectedStatus.value))
 const canApprove = computed(() => selectedStatus.value === 'WAITING_APPROVAL')
 const canRetry = computed(() => ['FAILED', 'TIMED_OUT'].includes(selectedStatus.value))
+const cancelActionLabel = computed(() => selectedStatus.value === 'WAITING_APPROVAL' ? '撤回审批' : '取消')
 const infraOnline = computed(() => health.value?.status === 'UP')
 const infraLabel = computed(() => {
   if (!health.value) return '检查基础设施'
@@ -1822,7 +1823,7 @@ async function cancelChatRun() {
   chatCancellingRunId.value = runId
   try {
     await api.cancelRun(runId)
-    noticeMessage.value = '已停止当前 Agent 执行'
+    noticeMessage.value = chatRunStatus.value === 'WAITING_APPROVAL' ? '已撤回当前审批请求' : '已停止当前 Agent 执行'
     await refreshActiveConversation()
     await selectRun(runId, false, false)
   } catch (error) {
@@ -2605,7 +2606,7 @@ async function cancelSelectedRun() {
   loading.value = true
   try {
     await api.cancelRun(selectedRun.value.run.id)
-    noticeMessage.value = 'Run 已取消'
+    noticeMessage.value = selectedStatus.value === 'WAITING_APPROVAL' ? '审批请求已撤回' : 'Run 已取消'
     await loadDashboard()
     await refreshActiveConversation()
   } catch (error) {
@@ -2872,7 +2873,7 @@ onBeforeUnmount(() => {
                 <button class="secondary-button chat-agent-settings-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="showChatAgentSettings = !showChatAgentSettings">⚙ Agent · {{ chatMaxTurns }} 轮</button>
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatAttachmentPicker">⌁ 附件</button>
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatFolderPicker">▣ 文件夹</button>
-                <button v-if="canCancelChat" class="secondary-button chat-stop-button" type="button" :disabled="chatCancellingRunId === pendingChatMessage?.runId" @click="cancelChatRun">{{ chatCancellingRunId === pendingChatMessage?.runId ? '停止中…' : '停止' }}</button>
+                <button v-if="canCancelChat" class="secondary-button chat-stop-button" type="button" :disabled="chatCancellingRunId === pendingChatMessage?.runId" @click="cancelChatRun">{{ chatCancellingRunId === pendingChatMessage?.runId ? '处理中…' : (chatRunStatus === 'WAITING_APPROVAL' ? '撤回审批' : '停止') }}</button>
                 <button class="primary-button chat-send-button" type="submit" :disabled="!canSendChat">{{ chatUploading ? '导入中…' : chatSending ? '提交中…' : '发送' }} <span>↗</span></button>
               </div>
             </div>
@@ -2986,7 +2987,7 @@ onBeforeUnmount(() => {
               <button v-if="canApprove" class="secondary-button" type="button" :disabled="loading" @click="approveSelectedRun">审批通过</button>
               <button v-if="canApprove" class="danger-button" type="button" :disabled="loading" @click="openRejectDialog">拒绝</button>
               <button v-if="canRetry" class="secondary-button" type="button" :disabled="loading" @click="retrySelectedRun">重试</button>
-              <button v-if="canCancel" class="danger-button" type="button" :disabled="loading" @click="cancelSelectedRun">取消</button>
+              <button v-if="canCancel" class="danger-button" type="button" :disabled="loading" @click="cancelSelectedRun">{{ cancelActionLabel }}</button>
             </div>
             <section v-if="workspaceChangePreviews.length" class="chat-change-review" aria-label="代码变更预览">
               <div class="chat-change-review-heading">
@@ -3346,7 +3347,7 @@ onBeforeUnmount(() => {
                 <button v-if="canApprove" class="secondary-button" type="button" :disabled="loading" @click="approveSelectedRun">审批通过</button>
                 <button v-if="canApprove" class="danger-button" type="button" :disabled="loading" @click="openRejectDialog">拒绝</button>
                 <button v-if="canRetry" class="secondary-button" type="button" :disabled="loading" @click="retrySelectedRun">重试</button>
-                <button v-if="canCancel" class="danger-button" type="button" :disabled="loading" @click="cancelSelectedRun">取消</button>
+                <button v-if="canCancel" class="danger-button" type="button" :disabled="loading" @click="cancelSelectedRun">{{ cancelActionLabel }}</button>
               </div>
             </div>
 
