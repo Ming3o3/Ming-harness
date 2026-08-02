@@ -472,6 +472,8 @@ h3 { margin: 0; font-size: 13px; }
 .chat-composer-footer kbd { border: 1px solid var(--line); border-radius: 4px; background: var(--hover-bg); padding: 2px 4px; color: var(--soft); font: 8px "DM Mono", monospace; }
 .chat-composer-actions { display: flex; align-items: center; gap: 7px; margin-left: auto; }
 .chat-attachment-button { padding: 8px 10px; font-size: 10px; }
+.chat-stop-button { border-color: rgba(255,182,95,.3); color: var(--orange); padding: 8px 11px; font-size: 10px; }
+.chat-stop-button:hover:not(:disabled) { border-color: rgba(255,182,95,.62); background: rgba(255,182,95,.1); color: var(--orange); }
 .chat-send-button { padding: 8px 12px; font-size: 10px; }
 .chat-send-button span { margin-left: 4px; font-size: 13px; }
 .chat-run-panel, .chat-workspace-panel { grid-column: 3; grid-row: 1; min-width: 0; min-height: 0; overflow: auto; overscroll-behavior: contain; border-left: 1px solid var(--line); background: var(--sidebar-bg); padding: 25px 20px; scrollbar-gutter: stable; }

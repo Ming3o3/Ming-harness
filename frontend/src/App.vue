@@ -303,6 +303,9 @@ const chatUserMessages = computed(() => chatMessages.value
 const canSendChat = computed(() => Boolean(activeConversationId.value) && !chatSending.value && !chatUploading.value
   && !pendingChatMessage.value
   && (chatInput.value.trim().length > 0 || chatAttachments.value.length > 0))
+const canCancelChat = computed(() => Boolean(pendingChatMessage.value?.runId)
+  && selectedRun.value?.run?.id === pendingChatMessage.value.runId
+  && canCancel.value && !loading.value)
 // 变更预览只读取已经持久化到 Step 的工具参数，不向后端额外发送代码正文。
 const workspaceChangePreviews = computed(() => (selectedRun.value?.steps || [])
   .map(workspaceChangePreview)
@@ -1352,6 +1355,23 @@ async function sendChatMessage() {
   }
 }
 
+async function cancelChatRun() {
+  if (!canCancelChat.value) return
+  const runId = pendingChatMessage.value.runId
+  clearMessages()
+  loading.value = true
+  try {
+    await api.cancelRun(runId)
+    noticeMessage.value = '已停止当前 Agent 执行'
+    await refreshActiveConversation()
+    await selectRun(runId, false, false)
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    loading.value = false
+  }
+}
+
 async function pollConversation() {
   if (!activeConversationId.value || chatSending.value || !pendingChatMessage.value) return
   try {
@@ -2142,6 +2162,7 @@ onBeforeUnmount(() => {
               <div class="chat-composer-actions">
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatAttachmentPicker">⌁ 附件</button>
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatFolderPicker">▣ 文件夹</button>
+                <button v-if="canCancelChat" class="secondary-button chat-stop-button" type="button" :disabled="loading" @click="cancelChatRun">{{ loading ? '停止中…' : '停止' }}</button>
                 <button class="primary-button chat-send-button" type="submit" :disabled="!canSendChat">{{ chatUploading ? '导入中…' : chatSending ? '提交中…' : '发送' }} <span>↗</span></button>
               </div>
             </div>
