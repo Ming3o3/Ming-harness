@@ -312,9 +312,14 @@ const chatUserMessages = computed(() => chatMessages.value
 const canSendChat = computed(() => Boolean(activeConversationId.value) && !chatSending.value && !chatUploading.value
   && !pendingChatMessage.value
   && (chatInput.value.trim().length > 0 || chatAttachments.value.length > 0))
-const canCancelChat = computed(() => Boolean(pendingChatMessage.value?.runId)
-  && selectedRun.value?.run?.id === pendingChatMessage.value.runId
-  && canCancel.value && !loading.value)
+// 发送接口返回 Run ID 后即可停止，不再等待右侧运行详情请求完成；详情尚未加载时
+// 先按执行中展示，详情到达后仍由 canCancel 负责拦截终态 Run。
+const canCancelChat = computed(() => {
+  const runId = pendingChatMessage.value?.runId
+  if (!runId || loading.value) return false
+  if (selectedRun.value?.run?.id !== runId) return true
+  return canCancel.value
+})
 const runEventStatusLabel = computed(() => ({
   connecting: '正在连接实时流…',
   connected: '实时执行',
