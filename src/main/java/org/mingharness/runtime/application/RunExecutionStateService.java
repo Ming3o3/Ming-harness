@@ -594,7 +594,7 @@ public class RunExecutionStateService {
     private String transcript(Run run) {
         StringBuilder value = new StringBuilder(run.getInput());
         for (Step step : run.getSteps()) {
-            if (step.getStatus() != StepStatus.SUCCEEDED) continue;
+            if (step.getStatus() != StepStatus.SUCCEEDED && step.getStatus() != StepStatus.REJECTED) continue;
             if (step.getType() == StepType.MODEL) {
                 AgentTurnCodec.AgentTurn turn = agentTurnCodec.decode(step.getOutput());
                 if (!turn.content().isBlank()) value.append("\n\n模型: ").append(turn.content());

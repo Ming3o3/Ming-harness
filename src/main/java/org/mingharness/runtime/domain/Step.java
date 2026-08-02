@@ -108,8 +108,20 @@ public class Step {
         this.durationMs = elapsedMs();
     }
 
+    /** 记录人工拒绝的工具结果，保留拒绝原因供 Agent 下一轮重新规划。 */
+    public void reject(String reason, String toolResult) {
+        if (status != StepStatus.WAITING_APPROVAL) {
+            throw new IllegalStateException("只有待审批步骤可以被拒绝: " + status);
+        }
+        this.error = reason;
+        this.output = toolResult == null ? "人工审批已拒绝该工具调用" : toolResult;
+        this.status = StepStatus.REJECTED;
+        this.finishedAt = Instant.now();
+        this.durationMs = elapsedMs();
+    }
+
     public void cancel(String reason) {
-        if (status == StepStatus.SUCCEEDED || status == StepStatus.FAILED
+        if (status == StepStatus.SUCCEEDED || status == StepStatus.REJECTED || status == StepStatus.FAILED
                 || status == StepStatus.CANCELLED || status == StepStatus.TIMED_OUT) {
             return;
         }

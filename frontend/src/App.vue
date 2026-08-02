@@ -531,6 +531,7 @@ function statusLabel(status) {
     CANCELLED: '已取消',
     TIMED_OUT: '超时',
     WAITING_APPROVAL: '等待审批',
+    REJECTED: '已拒绝，Agent 调整中',
     NONE: '未选择',
   }
   return labels[status] || status
@@ -973,6 +974,7 @@ function auditEventLabel(eventType) {
     AGENT_TOOL_RECOVERABLE: 'Agent 工具可恢复降级',
     AGENT_VALIDATION_REQUIRED: '需要补充修改核验',
     AGENT_TOOL_CALL_REQUESTED: 'Agent 请求工具',
+    AGENT_APPROVAL_FEEDBACK: '拒绝意见已反馈 Agent',
   }[eventType] || eventType
 }
 
@@ -2636,7 +2638,9 @@ async function rejectSelectedRun() {
     syncSelectedRunAfterAction(rejected)
     showRejectDialog.value = false
     rejectReason.value = ''
-    noticeMessage.value = '审批已拒绝，Run 已结束'
+    noticeMessage.value = rejected?.run?.status === 'RUNNING'
+      ? '审批已拒绝，Agent 正在根据意见调整方案'
+      : '审批已拒绝，Run 已结束'
     await loadDashboard()
     await refreshActiveConversation()
   } catch (error) {
@@ -3662,7 +3666,12 @@ onBeforeUnmount(() => {
         </div>
         <button class="icon-button" type="button" aria-label="关闭拒绝确认" :disabled="loading" @click="closeRejectDialog">×</button>
       </header>
-      <p class="reject-dialog-help">拒绝后 Run 会结束。留下修改意见会写入审计记录，方便后续调整时追溯决策。</p>
+      <p class="reject-dialog-help">
+        {{ selectedRun?.run?.agentMode
+          ? '拒绝意见会作为工具结果反馈给 Agent，由它调整方案后继续执行。'
+          : '拒绝后 Run 会结束。' }}
+        留下修改意见会写入审计记录，方便后续调整时追溯决策。
+      </p>
       <label class="field">
         <span>拒绝原因（可选）</span>
         <textarea ref="rejectReasonInputRef" v-model="rejectReason" maxlength="500" rows="4" placeholder="例如：请先补充测试，并避免修改配置文件。"></textarea>

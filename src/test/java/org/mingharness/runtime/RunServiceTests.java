@@ -364,6 +364,37 @@ class RunServiceTests {
     }
 
     @Test
+    void shouldFeedRejectedAgentApprovalBackToTheNextModelTurn() {
+        RunSummary created = runService.create(new CreateRunRequest(
+                "tenant-demo", "user-demo", "Agent 审批拒绝反馈", "审批拒绝反馈",
+                null, null, "prompt-agent", "policy-v1", BigDecimal.TEN,
+                null, null, true, 3));
+
+        RunDetail waiting = runService.start(created.id(), "tenant-demo");
+        assertEquals(RunStatus.WAITING_APPROVAL, waiting.run().status());
+        assertEquals(StepStatus.WAITING_APPROVAL, waiting.steps().get(1).status());
+        assertEquals("demo.approval", waiting.steps().get(1).name());
+
+        RunDetail completed = runService.reject(created.id(), "tenant-demo", "请改用只读方案", "approver-1");
+
+        assertEquals(RunStatus.SUCCEEDED, completed.run().status(), completed.run().error());
+        assertEquals(3, completed.steps().size());
+        assertEquals(StepStatus.REJECTED, completed.steps().get(1).status());
+        assertTrue(completed.steps().get(1).output().contains("请改用只读方案"));
+        assertEquals(StepStatus.SUCCEEDED, completed.steps().get(2).status());
+        assertEquals("Agent 已根据拒绝意见调整方案", completed.run().output());
+
+        List<ModelMessage> followUpMessages = agentModelToolsState.requestMessages(1);
+        assertTrue(followUpMessages.stream().anyMatch(message -> "tool".equals(message.role())
+                && message.content().contains("请改用只读方案")));
+        assertTrue(auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
+                .anyMatch(event -> "APPROVAL_REJECTED".equals(event.getEventType())
+                        && "approver-1".equals(event.getActorId())));
+        assertTrue(auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
+                .anyMatch(event -> "AGENT_APPROVAL_FEEDBACK".equals(event.getEventType())));
+    }
+
+    @Test
     void shouldRetryTransientFailure() {
         RunSummary created = runService.create(request("test.flaky", "重试瞬态错误"));
         RunDetail firstResult = runService.start(created.id(), "tenant-demo");
@@ -626,6 +657,18 @@ class RunServiceTests {
                 public ModelResponse complete(ModelRequest request) {
                     state.record(request);
                     if (request.tools().isEmpty()) return fallback.complete(request);
+                    if (request.input().contains("审批拒绝反馈") && request.messages().stream()
+                            .anyMatch(message -> "tool".equals(message.role())
+                                    && message.content().contains("人工审批已拒绝"))) {
+                        return new ModelResponse("Agent 已根据拒绝意见调整方案", "agent-test",
+                                request.promptVersion(), 5, 3);
+                    }
+                    if (request.input().contains("审批拒绝反馈")) {
+                        return new ModelResponse("", "agent-test", request.promptVersion(), 5, 4,
+                                java.math.BigDecimal.ZERO,
+                                java.util.List.of(new ModelToolCall(
+                                        "call-agent-approval", "demo.approval", "\"需要审批\"")));
+                    }
                     if (request.input().contains("长上下文") && request.messages().stream()
                             .noneMatch(message -> "tool".equals(message.role()))) {
                         return new ModelResponse("", "agent-test", request.promptVersion(), 5, 4,

@@ -405,15 +405,45 @@ public class RunService {
                 .findFirst()
                 .orElseThrow(() -> new BusinessException(HttpStatus.CONFLICT, "APPROVAL_STEP_NOT_FOUND", "找不到待审批步骤"));
         String rejectReason = sanitizer.sanitize(reason == null || reason.isBlank() ? "人工审批拒绝" : reason);
+        String actorId = approverId == null || approverId.isBlank() ? run.getUserId() : approverId;
+        if (run.isAgentMode()) {
+            step.reject(rejectReason, "人工审批已拒绝该工具调用。原因：" + rejectReason);
+            run.resumeAfterApproval();
+            record(run.getId(), step.getId(), "APPROVAL_REJECTED", rejectReason, actorId,
+                    approvalSnapshot(step));
+            if (!queueAgentModelAfterApprovalRejection(run, step, rejectReason)) {
+                runRepository.save(run);
+                record(run.getId(), null, "RUN_FAILED", run.getError());
+                conversationMessageWriter.updateForTerminalRun(run);
+                return toDetail(run);
+            }
+            runRepository.save(run);
+            record(run.getId(), step.getId(), "AGENT_APPROVAL_FEEDBACK",
+                    "审批意见已反馈给 Agent，准备重新规划", actorId, approvalSnapshot(step));
+            return dispatch(run, "APPROVAL_REJECTED");
+        }
         step.fail(rejectReason);
         run.fail(rejectReason);
         runRepository.save(run);
-        String actorId = approverId == null || approverId.isBlank() ? run.getUserId() : approverId;
         record(run.getId(), step.getId(), "APPROVAL_REJECTED", rejectReason, actorId,
                 approvalSnapshot(step));
         record(run.getId(), null, "RUN_FAILED", rejectReason);
         conversationMessageWriter.updateForTerminalRun(run);
         return toDetail(run);
+    }
+
+    /** Agent 拒绝后追加新的模型步骤，使拒绝意见与原 tool call 保持成对上下文。 */
+    private boolean queueAgentModelAfterApprovalRejection(Run run, Step rejectedStep, String reason) {
+        long modelTurns = run.getSteps().stream().filter(step -> step.getType() == StepType.MODEL).count();
+        if (modelTurns >= run.getMaxTurns()) {
+            run.fail("Agent 达到最大轮数限制: " + run.getMaxTurns());
+            record(run.getId(), rejectedStep.getId(), "AGENT_MAX_TURNS_EXCEEDED",
+                    "审批拒绝后无法继续反馈: " + reason);
+            return false;
+        }
+        int nextSequence = run.getSteps().stream().mapToInt(Step::getSequence).max().orElse(0) + 1;
+        run.addStep(new Step(nextSequence, StepType.MODEL, "model.complete", agentTranscript(run)));
+        return true;
     }
 
     @Transactional
@@ -488,7 +518,7 @@ public class RunService {
                 if (current == null) return;
                 boolean foundPending = false;
                 for (RunExecutionStateService.StepExecutionSnapshot step : current.steps()) {
-                    if (step.status() == StepStatus.SUCCEEDED) continue;
+                    if (isCompletedAgentStep(step.status())) continue;
                     foundPending = true;
                     activeStepId = step.id();
                     ensureNotCancelled(current.id(), current.tenantId());
@@ -522,7 +552,7 @@ public class RunService {
                 RunExecutionStateService.RunExecutionSnapshot latest = executionStateService
                         .current(current.id(), current.tenantId(), workerId).orElse(null);
                 if (latest == null) return;
-                boolean hasPending = latest.steps().stream().anyMatch(step -> step.status() != StepStatus.SUCCEEDED);
+                boolean hasPending = latest.steps().stream().anyMatch(step -> !isCompletedAgentStep(step.status()));
                 if (hasPending || executionStateService.appendNextAgentModel(
                         latest.id(), latest.tenantId(), workerId)) {
                     continue;
@@ -721,7 +751,7 @@ public class RunService {
 
     private void executeStep(Run run, Step step, RunExecutionLock.LockToken lockToken) {
         ensureNotCancelled(run);
-        if (step.getStatus() == StepStatus.SUCCEEDED) {
+        if (isCompletedAgentStep(step.getStatus())) {
             return;
         }
         if (step.getType() == StepType.MODEL) {
@@ -854,7 +884,7 @@ public class RunService {
     private String agentTranscript(Run run) {
         StringBuilder value = new StringBuilder(run.getInput());
         for (Step step : run.getSteps()) {
-            if (step.getStatus() != StepStatus.SUCCEEDED) continue;
+            if (!isAgentContextStep(step.getStatus())) continue;
             if (step.getType() == StepType.MODEL) {
                 String content = agentTurnCodec.decode(step.getOutput()).content();
                 if (!content.isBlank()) value.append("\n\n模型: ").append(content);
@@ -866,6 +896,14 @@ public class RunService {
         String text = sanitizer.sanitize(value.toString());
         int max = Math.max(1, runtimeLimits.maxContextChars());
         return AgentTranscriptFormatter.fit(text, max);
+    }
+
+    private boolean isCompletedAgentStep(StepStatus status) {
+        return status == StepStatus.SUCCEEDED || status == StepStatus.REJECTED;
+    }
+
+    private boolean isAgentContextStep(StepStatus status) {
+        return isCompletedAgentStep(status);
     }
 
     private void executeToolStep(Run run, Step step, RunExecutionLock.LockToken lockToken) {
@@ -1008,7 +1046,7 @@ public class RunService {
             while (true) {
                 while (index < run.getSteps().size()) {
                     Step step = run.getSteps().get(index++);
-                    if (step.getStatus() == StepStatus.SUCCEEDED) continue;
+                    if (isCompletedAgentStep(step.getStatus())) continue;
                     if (run.getStatus() == RunStatus.CANCELLED) {
                         run.clearLease();
                         return toDetail(runRepository.save(run));
@@ -1159,14 +1197,14 @@ public class RunService {
     private List<AgentHistoryStep> historyFromSnapshots(List<RunExecutionStateService.StepExecutionSnapshot> steps,
                                                         int currentSequence) {
         return steps.stream()
-                .filter(step -> step.sequence() < currentSequence && step.status() == StepStatus.SUCCEEDED)
+                .filter(step -> step.sequence() < currentSequence && isAgentContextStep(step.status()))
                 .map(step -> new AgentHistoryStep(step.sequence(), step.type(), step.name(), step.output()))
                 .toList();
     }
 
     private List<AgentHistoryStep> historyFromEntities(List<Step> steps, int currentSequence) {
         return steps.stream()
-                .filter(step -> step.getSequence() < currentSequence && step.getStatus() == StepStatus.SUCCEEDED)
+                .filter(step -> step.getSequence() < currentSequence && isAgentContextStep(step.getStatus()))
                 .map(step -> new AgentHistoryStep(step.getSequence(), step.getType(), step.getName(), step.getOutput()))
                 .toList();
     }

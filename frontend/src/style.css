@@ -176,6 +176,7 @@ h3 { margin: 0; font-size: 13px; }
 .status-pill.status-running, .step-status.status-running { color: var(--cyan); }
 .status-pill.status-failed, .step-status.status-failed { color: var(--red); }
 .status-pill.status-queued, .step-status.status-queued { color: var(--orange); }
+.step-status.status-rejected { color: var(--orange); }
 .run-meta-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 14px 0; }
 .run-meta-grid span, .input-preview > span { display: block; color: var(--muted); font: 9px "DM Mono", monospace; }
 .run-meta-grid strong { display: block; overflow: hidden; margin-top: 5px; color: var(--soft); font-size: 10px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
