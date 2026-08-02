@@ -106,6 +106,13 @@ async function streamRunEvents(runId, { signal, onEvent } = {}) {
 export const api = {
   // 控制台使用受 ops.read 保护的摘要接口，避免直接暴露 Actuator 组件详情。
   health: () => request('/health'),
+  // 模型密钥只在保存时提交给后端；读取接口仅返回是否配置和掩码。
+  getModelConfig: () => request('/model-config'),
+  updateModelConfig: (payload) => request('/model-config', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  }),
+  resetModelConfig: () => request('/model-config', { method: 'DELETE' }),
   // 仅返回工作区名称和能力摘要，绝对路径始终只保留在本地后端进程。
   workspace: () => request('/workspace'),
   // 工作区浏览接口只接受相对路径；后端会按当前租户、用户和 workspaceId 再次解析根目录。

@@ -27,6 +27,19 @@ const noticeMessage = ref('')
 const showCreateForm = ref(true)
 const showGovernance = ref(false)
 const health = ref(null)
+const modelConfig = ref(null)
+const modelConfigLoading = ref(false)
+const modelConfigSaving = ref(false)
+const modelConfigError = ref('')
+const showModelSettings = ref(false)
+const modelConfigForm = reactive({
+  enabled: false,
+  baseUrl: '',
+  modelName: '',
+  apiKey: '',
+  clearApiKey: false,
+})
+const modelConfigEditable = computed(() => !modelConfigError.value.startsWith('当前身份没有 model.configure'))
 // 工作区状态用于告知用户 Agent 是否直接连接到本地项目；接口不会返回绝对路径。
 const workspace = ref(null)
 // 已登记工作区是用户明确在桌面端授权的项目；选择只影响后续创建的会话。
@@ -220,7 +233,7 @@ const tenantPolicyForm = reactive({
 const apiKeyForm = reactive({
   tenantId: form.tenantId,
   userId: form.userId,
-  permissions: 'run.read, run.create, run.execute, run.approve, run.cancel, audit.read, context.read, context.write, evaluation.read, evaluation.run, tool.read, workspace.read, workspace.manage, ops.read, tenant.policy.read, tenant.policy.write, auth.key.read, auth.key.manage',
+  permissions: 'run.read, run.create, run.execute, run.approve, run.cancel, audit.read, context.read, context.write, evaluation.read, evaluation.run, tool.read, workspace.read, workspace.manage, ops.read, model.configure, tenant.policy.read, tenant.policy.write, auth.key.read, auth.key.manage',
   expiresAt: '',
 })
 
@@ -244,11 +257,11 @@ const infraLabel = computed(() => {
   return infraOnline.value ? '基础设施在线' : '基础设施异常'
 })
 const modelLabel = computed(() => {
-  const model = health.value?.model
-  if (!model || model.mode === 'demo' || !model.enabled) return '演示模型'
+  const model = modelConfig.value || health.value?.model
+  if (!model || !model.enabled) return '演示模型'
   return model.modelName ? `模型 ${model.modelName}` : '外部模型'
 })
-const modelStatusClass = computed(() => health.value?.model?.enabled ? 'health-up' : 'health-unknown')
+const modelStatusClass = computed(() => (modelConfig.value || health.value?.model)?.enabled ? 'health-up' : 'health-unknown')
 const workerLabel = computed(() => {
   const runtime = health.value?.runtime
   if (!runtime || !runtime.workerConcurrencyLimit) return 'Worker 同步执行'
@@ -689,7 +702,13 @@ function handleChatKeydown(event) {
 }
 
 function handleChatGlobalKeydown(event) {
-  if (!chatMode.value || event.isComposing || event.key !== 'Escape') return
+  if (event.isComposing || event.key !== 'Escape') return
+  if (showModelSettings.value) {
+    event.preventDefault()
+    showModelSettings.value = false
+    return
+  }
+  if (!chatMode.value) return
   if (workspaceGitReviewOpen.value) {
     event.preventDefault()
     closeWorkspaceGitReviewDialog()
@@ -1742,6 +1761,79 @@ async function loadHealth() {
   }
 }
 
+async function loadModelConfig() {
+  modelConfigLoading.value = true
+  modelConfigError.value = ''
+  try {
+    const value = await api.getModelConfig()
+    modelConfig.value = value
+    Object.assign(modelConfigForm, {
+      enabled: Boolean(value?.enabled),
+      baseUrl: value?.baseUrl || '',
+      modelName: value?.modelName || '',
+      apiKey: '',
+      clearApiKey: false,
+    })
+  } catch (error) {
+    modelConfigError.value = error.code === 'PERMISSION_DENIED'
+      ? '当前身份没有 model.configure 权限，无法修改模型连接。'
+      : errorText(error)
+  } finally {
+    modelConfigLoading.value = false
+  }
+}
+
+async function saveModelConfig() {
+  if (modelConfigSaving.value) return
+  clearMessages()
+  modelConfigSaving.value = true
+  modelConfigError.value = ''
+  try {
+    const value = await api.updateModelConfig({
+      enabled: Boolean(modelConfigForm.enabled),
+      baseUrl: modelConfigForm.baseUrl.trim(),
+      modelName: modelConfigForm.modelName.trim(),
+      apiKey: modelConfigForm.apiKey,
+      clearApiKey: Boolean(modelConfigForm.clearApiKey),
+    })
+    modelConfig.value = value
+    modelConfigForm.apiKey = ''
+    modelConfigForm.clearApiKey = false
+    noticeMessage.value = '模型连接设置已保存；后续新 Run 会使用该配置，正在执行的 Run 保持不变。'
+    showModelSettings.value = false
+  } catch (error) {
+    modelConfigError.value = errorText(error)
+  } finally {
+    modelConfigSaving.value = false
+  }
+}
+
+async function resetModelConfig() {
+  if (modelConfigSaving.value) return
+  if (typeof window !== 'undefined'
+    && !window.confirm('恢复环境默认模型吗？当前用户保存的模型地址和密钥会被删除。')) return
+  clearMessages()
+  modelConfigSaving.value = true
+  modelConfigError.value = ''
+  try {
+    const value = await api.resetModelConfig()
+    modelConfig.value = value
+    Object.assign(modelConfigForm, {
+      enabled: Boolean(value?.enabled),
+      baseUrl: value?.baseUrl || '',
+      modelName: value?.modelName || '',
+      apiKey: '',
+      clearApiKey: false,
+    })
+    noticeMessage.value = '已恢复环境默认模型设置。'
+    showModelSettings.value = false
+  } catch (error) {
+    modelConfigError.value = errorText(error)
+  } finally {
+    modelConfigSaving.value = false
+  }
+}
+
 /** 工作区状态失败不影响聊天；权限不足时仍可使用不依赖本地文件的 Agent 能力。 */
 async function loadWorkspace() {
   try {
@@ -2273,7 +2365,7 @@ onMounted(async () => {
       void handleDesktopWorkspaceDropped(result)
     })
   }
-  await Promise.all([loadDashboard(), loadHealth(), loadWorkspace(), loadTenantPolicy(), loadApiKeys(), loadLocalWorkspaces()])
+  await Promise.all([loadDashboard(), loadHealth(), loadModelConfig(), loadWorkspace(), loadTenantPolicy(), loadApiKeys(), loadLocalWorkspaces()])
   await loadConversations()
   runPollTimer = window.setInterval(pollSelectedRun, 1500)
   conversationPollTimer = window.setInterval(pollConversation, 1200)
@@ -2307,7 +2399,8 @@ onBeforeUnmount(() => {
         <div class="chat-topbar-actions">
           <span class="chat-identity">{{ form.tenantId }} / {{ form.userId }}</span>
           <span class="chat-health" :class="infraOnline ? 'health-up' : 'health-warning'"><i></i>{{ infraLabel }}</span>
-          <span class="chat-model-status" :class="modelStatusClass" :title="health?.model?.enabled ? '当前请求会发送到已配置的外部模型' : '当前使用本地演示模型，不会访问外部模型服务'"><i></i>{{ modelLabel }}</span>
+          <span class="chat-model-status" :class="modelStatusClass" :title="modelConfig?.enabled ? `当前用户模型：${modelConfig.modelName || '外部模型'}` : '当前使用本地演示模型，不会访问外部模型服务'"><i></i>{{ modelLabel }}</span>
+          <button class="secondary-button chat-console-button" type="button" @click="showModelSettings = true">模型设置</button>
           <button class="theme-toggle" type="button" :aria-label="theme === 'dark' ? '切换到白天模式' : '切换到黑夜模式'" @click="toggleTheme">
             <span aria-hidden="true">{{ theme === 'dark' ? '☼' : '☾' }}</span>{{ theme === 'dark' ? '白天' : '黑夜' }}
           </button>
@@ -2767,6 +2860,7 @@ onBeforeUnmount(() => {
         </div>
         <div class="topbar-actions">
           <button class="secondary-button" type="button" @click="chatMode = true">聊天工作台</button>
+          <button class="secondary-button" type="button" @click="showModelSettings = true">模型设置</button>
           <button
             class="theme-toggle"
             type="button"
@@ -3179,4 +3273,46 @@ onBeforeUnmount(() => {
     </main>
   </div>
   </template>
+  <div
+    v-if="showModelSettings"
+    class="model-settings-overlay"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="model-settings-title"
+    @click.self="showModelSettings = false"
+  >
+    <form class="model-settings-dialog" @submit.prevent="saveModelConfig">
+      <header class="model-settings-heading">
+        <div>
+          <p class="eyebrow">MODEL CONNECTION</p>
+          <h2 id="model-settings-title">模型连接设置</h2>
+          <span>{{ modelConfig?.source === 'user' ? '当前用户覆盖' : '环境默认配置' }}</span>
+        </div>
+        <button class="icon-button" type="button" aria-label="关闭模型设置" @click="showModelSettings = false">×</button>
+      </header>
+      <div v-if="modelConfigLoading" class="model-settings-state">正在读取当前模型配置…</div>
+      <template v-else>
+        <p class="model-settings-help">支持 OpenAI 兼容的 Chat Completions 地址，例如 <code>https://api.openai.com/v1</code> 或本机 Ollama 地址。API Key 只会提交给当前 Runtime，服务端加密保存，刷新页面不会回填明文。</p>
+        <label class="check-field model-settings-toggle">
+          <input v-model="modelConfigForm.enabled" type="checkbox" :disabled="!modelConfigEditable" />
+          <span>使用外部模型，不使用本地演示模型</span>
+        </label>
+        <label class="field"><span>模型 API 地址</span><input v-model="modelConfigForm.baseUrl" :disabled="!modelConfigEditable" required maxlength="512" placeholder="https://api.openai.com/v1" /></label>
+        <label class="field"><span>模型名称</span><input v-model="modelConfigForm.modelName" :disabled="!modelConfigEditable" required maxlength="128" placeholder="例如：gpt-4o-mini、deepseek-chat、qwen2.5-coder" /></label>
+        <label class="field"><span>API Key（留空保留当前密钥）</span><input v-model="modelConfigForm.apiKey" :disabled="!modelConfigEditable" type="password" autocomplete="new-password" maxlength="1000" placeholder="不会回显已保存的密钥" /></label>
+        <label v-if="modelConfig?.apiKeyConfigured" class="check-field model-settings-clear-key">
+          <input v-model="modelConfigForm.clearApiKey" type="checkbox" :disabled="!modelConfigEditable" />
+          <span>同时删除服务端已保存的 API Key（适用于无密钥本地模型）</span>
+        </label>
+        <p v-if="modelConfig?.apiKeyConfigured" class="model-settings-hint">当前密钥：{{ modelConfig.apiKeyHint || '已配置（不显示明文）' }}</p>
+        <p v-if="modelConfigError" class="policy-error">{{ modelConfigError }}</p>
+        <footer class="model-settings-actions">
+          <button class="danger-button" type="button" :disabled="modelConfigSaving || !modelConfig?.configured" @click="resetModelConfig">恢复环境默认</button>
+          <span></span>
+          <button class="secondary-button" type="button" :disabled="modelConfigSaving" @click="showModelSettings = false">取消</button>
+          <button class="primary-button" type="submit" :disabled="modelConfigSaving || modelConfigLoading || !modelConfigEditable">{{ modelConfigSaving ? '保存中…' : '保存并应用' }}</button>
+        </footer>
+      </template>
+    </form>
+  </div>
 </template>

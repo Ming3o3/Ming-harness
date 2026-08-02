@@ -615,6 +615,17 @@ h3 { margin: 0; font-size: 13px; }
 .workspace-review-editor { min-height: 0; flex: 1 1 auto; overflow: hidden; }
 .workspace-review-editor .monaco-editor-host { min-height: 100%; }
 .workspace-review-state { display: grid; height: 100%; min-height: 240px; place-items: center; color: var(--muted); padding: 20px; text-align: center; font: 10px/1.6 "DM Mono", monospace; }
+.model-settings-overlay { position: fixed; z-index: 40; inset: 0; display: grid; place-items: center; background: rgba(5,9,18,.72); padding: 20px; backdrop-filter: blur(8px); }
+.model-settings-dialog { display: grid; width: min(540px, calc(100vw - 32px)); max-height: min(720px, calc(100vh - 40px)); gap: 14px; overflow: auto; border: 1px solid rgba(153,174,218,.2); border-radius: 14px; background: var(--panel); box-shadow: 0 28px 90px rgba(0,0,0,.42); padding: 20px; }
+.model-settings-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--line); padding-bottom: 13px; }
+.model-settings-heading h2 { margin: 0 0 5px; color: var(--heading); font-size: 17px; }
+.model-settings-heading span { color: var(--muted); font: 9px "DM Mono", monospace; }
+.model-settings-help { margin: 0; color: var(--muted); font: 10px/1.65 "DM Mono", monospace; }
+.model-settings-help code { color: var(--accent-light); font: inherit; }
+.model-settings-toggle { border: 1px solid rgba(141,124,255,.24); border-radius: 7px; background: rgba(141,124,255,.07); padding: 10px; }
+.model-settings-clear-key { color: var(--orange); }
+.model-settings-hint, .model-settings-state { margin: -4px 0 0; color: var(--muted); font: 9px/1.5 "DM Mono", monospace; }
+.model-settings-actions { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
 .workspace-explorer-path { display: grid; grid-template-columns: 30px minmax(0, 1fr) 29px; align-items: center; gap: 7px; border-bottom: 1px solid var(--line); padding: 12px 0; }
 .workspace-explorer-path .secondary-button { min-width: 0; padding: 6px; }
 .workspace-explorer-path .icon-button { width: 28px; height: 28px; border-radius: 7px; font-size: 15px; }
@@ -670,6 +681,11 @@ h3 { margin: 0; font-size: 13px; }
   .workspace-review-diff-header { align-items: flex-start; flex-direction: column; gap: 7px; padding: 9px 10px; }
   .workspace-review-copy { align-self: flex-end; margin-top: -24px; }
   .workspace-review-state { padding: 14px; font-size: 9px; }
+  .model-settings-overlay { align-items: end; padding: 0; }
+  .model-settings-dialog { width: 100vw; max-height: 92vh; border-radius: 14px 14px 0 0; padding: 16px; }
+  .model-settings-actions { grid-template-columns: 1fr 1fr; }
+  .model-settings-actions span { display: none; }
+  .model-settings-actions .danger-button { grid-column: 1 / -1; justify-self: start; }
   .workspace-explorer-layout.has-preview { grid-template-columns: minmax(145px, 34%) minmax(0, 1fr); gap: 10px; }
   .workspace-file-inspector { padding-left: 10px; }
   .conversation-sidebar { min-height: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 13px 12px; }
