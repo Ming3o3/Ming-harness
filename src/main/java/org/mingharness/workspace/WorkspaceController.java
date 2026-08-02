@@ -1,13 +1,17 @@
 package org.mingharness.workspace;
 
+import jakarta.validation.Valid;
 import org.mingharness.workspace.api.WorkspaceStatusView;
 import org.mingharness.workspace.api.WorkspaceExplorerView;
 import org.mingharness.workspace.api.WorkspaceFileContentView;
 import org.mingharness.workspace.api.WorkspaceGitDiffView;
 import org.mingharness.workspace.api.WorkspaceGitStatusView;
+import org.mingharness.workspace.api.WorkspaceEditorWriteRequest;
 import org.mingharness.security.HarnessIdentity;
 import org.mingharness.security.HarnessIdentityContext;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -48,6 +52,23 @@ public class WorkspaceController {
                                             @RequestParam String path) {
         HarnessIdentity identity = HarnessIdentityContext.require();
         return workspaceExplorerService.read(workspaceId, identity.tenantId(), identity.userId(), path);
+    }
+
+    /** 编辑器读取未脱敏正文；仅允许拥有 workspace.write 权限的用户使用。 */
+    @GetMapping("/files/editor-content")
+    public WorkspaceFileContentView editorContent(@RequestParam(required = false) String workspaceId,
+                                                  @RequestParam String path) {
+        HarnessIdentity identity = HarnessIdentityContext.require();
+        return workspaceExplorerService.readForEditor(workspaceId, identity.tenantId(), identity.userId(), path);
+    }
+
+    /** 编辑器保存通过原子写入和 expectedSha256 防止覆盖并发修改。 */
+    @PutMapping("/files/editor-content")
+    public WorkspaceFileContentView saveEditorContent(@RequestParam(required = false) String workspaceId,
+                                                      @Valid @RequestBody WorkspaceEditorWriteRequest request) {
+        HarnessIdentity identity = HarnessIdentityContext.require();
+        return workspaceExplorerService.writeForEditor(workspaceId, identity.tenantId(), identity.userId(),
+                request.path(), request.content(), request.expectedSha256());
     }
 
     /** 返回受当前身份和工作区范围限制的 Git 变更列表。 */

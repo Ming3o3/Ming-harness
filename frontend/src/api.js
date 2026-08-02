@@ -119,6 +119,27 @@ export const api = {
     if (workspaceId) params.set('workspaceId', workspaceId)
     return request(`/workspace/files/content?${params.toString()}`)
   },
+  // Monaco 编辑器使用拥有 workspace.write 权限的专用接口，避免把脱敏预览误当成可保存正文。
+  readWorkspaceEditorFile: ({ workspaceId = '', path } = {}) => {
+    const params = new URLSearchParams({ path: path || '' })
+    if (workspaceId) params.set('workspaceId', workspaceId)
+    return request(`/workspace/files/editor-content?${params.toString()}`, {
+      headers: configuredApiKey ? {} : {
+        'X-Permissions': localStorage.getItem('harnessChatPermissions') || defaultChatPermissions,
+      },
+    })
+  },
+  saveWorkspaceEditorFile: ({ workspaceId = '', path, content, expectedSha256 } = {}) => {
+    const params = new URLSearchParams()
+    if (workspaceId) params.set('workspaceId', workspaceId)
+    return request(`/workspace/files/editor-content?${params.toString()}`, {
+      method: 'PUT',
+      headers: configuredApiKey ? {} : {
+        'X-Permissions': localStorage.getItem('harnessChatPermissions') || defaultChatPermissions,
+      },
+      body: JSON.stringify({ path, content, expectedSha256 }),
+    })
+  },
   // Git 审阅同样只通过 workspaceId 定位本机目录，页面不会接触绝对路径或任意 Git 参数。
   workspaceGitStatus: ({ workspaceId = '' } = {}) => {
     const params = new URLSearchParams()

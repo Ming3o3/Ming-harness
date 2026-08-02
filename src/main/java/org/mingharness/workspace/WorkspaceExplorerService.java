@@ -63,6 +63,20 @@ public class WorkspaceExplorerService {
         return workspace.withRoot(root, () -> readInsideRoot(requiredPath(rawPath)));
     }
 
+    /** 编辑器专用读取接口：只对拥有 workspace.write 的请求开放，返回未脱敏正文供本地编辑。 */
+    public WorkspaceFileContentView readForEditor(String workspaceId, String tenantId, String userId,
+                                                  String rawPath) {
+        Path root = workspaceDirectoryService.requireRoot(normalizeWorkspaceId(workspaceId), tenantId, userId);
+        return workspace.withRoot(root, () -> readEditorInsideRoot(requiredPath(rawPath)));
+    }
+
+    /** 编辑器保存使用原子写入和 SHA-256 乐观锁，避免覆盖 Agent 或其他编辑器刚写入的内容。 */
+    public WorkspaceFileContentView writeForEditor(String workspaceId, String tenantId, String userId,
+                                                   String rawPath, String content, String expectedSha256) {
+        Path root = workspaceDirectoryService.requireRoot(normalizeWorkspaceId(workspaceId), tenantId, userId);
+        return workspace.withRoot(root, () -> writeEditorInsideRoot(requiredPath(rawPath), content, expectedSha256));
+    }
+
     /** 返回当前项目全部可见变更，供用户在 Agent 执行后快速审阅。 */
     public WorkspaceGitStatusView gitStatus(String workspaceId, String tenantId, String userId) {
         Path root = workspaceDirectoryService.requireRoot(normalizeWorkspaceId(workspaceId), tenantId, userId);
@@ -97,6 +111,47 @@ public class WorkspaceExplorerService {
         return new WorkspaceFileContentView(path, sanitized,
                 workspace.sha256(original.getBytes(StandardCharsets.UTF_8)), lines.length,
                 endLine < lines.length, !sanitized.equals(preview));
+    }
+
+    private WorkspaceFileContentView readEditorInsideRoot(String requestedPath) {
+        Path file = workspace.resolve(requestedPath, false);
+        String path = relative(file);
+        String original = workspace.readText(file, path);
+        String[] lines = original.split("\\R", -1);
+        int endLine = Math.min(lines.length, workspace.properties().maxReadLines());
+        // 未截断时原样返回，保留 CRLF/LF 行尾；只有超出安全上限时才截取到完整行边界。
+        String preview = endLine < lines.length ? truncateLines(original, endLine) : original;
+        return new WorkspaceFileContentView(path, preview,
+                workspace.sha256(original.getBytes(StandardCharsets.UTF_8)), lines.length,
+                endLine < lines.length, false);
+    }
+
+    private String truncateLines(String content, int maxLines) {
+        if (maxLines <= 0 || content.isEmpty()) return "";
+        int lineBreaks = 0;
+        for (int index = 0; index < content.length(); index++) {
+            char current = content.charAt(index);
+            if (current != '\n' && current != '\r') continue;
+            if (current == '\r' && index + 1 < content.length() && content.charAt(index + 1) == '\n') {
+                index++;
+            }
+            lineBreaks++;
+            if (lineBreaks == maxLines) return content.substring(0, index + 1);
+        }
+        return content;
+    }
+
+    private WorkspaceFileContentView writeEditorInsideRoot(String requestedPath, String content,
+                                                            String expectedSha256) {
+        if (content == null) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "WORKSPACE_EDITOR_CONTENT_REQUIRED",
+                    "编辑器保存内容不能为空");
+        }
+        Path file = workspace.resolve(requestedPath, true);
+        String path = relative(file);
+        String sha256 = workspace.writeText(file, path, content, expectedSha256);
+        String[] lines = content.split("\\R", -1);
+        return new WorkspaceFileContentView(path, content, sha256, lines.length, false, false);
     }
 
     private WorkspaceGitStatusView gitStatusInsideRoot() {

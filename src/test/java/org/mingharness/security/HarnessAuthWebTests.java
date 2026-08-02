@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(properties = {
         "harness.auth.mode=api-key",
-        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,run.create,ops.read,workspace.read,workspace.manage,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage;web-other-key|tenant-other|other-user|run.read,workspace.read",
+        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,run.create,ops.read,workspace.read,workspace.write,workspace.manage,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage;web-other-key|tenant-other|other-user|run.read,workspace.read",
         "harness.workspace.enabled=true",
         "harness.workspace.local-registration-enabled=true",
         "management.endpoint.health.show-details=when_authorized",
@@ -184,6 +184,76 @@ class HarnessAuthWebTests {
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(404, crossTenant.statusCode(), crossTenant.body());
         assertTrue(crossTenant.body().contains("WORKSPACE_NOT_FOUND"));
+    }
+
+    @Test
+    void shouldReadOriginalEditorContentAndSaveWithOptimisticHash() throws Exception {
+        Path projectRoot = Files.createDirectories(tempDir.resolve("editor-project"));
+        Path source = projectRoot.resolve("src/App.java");
+        Files.createDirectories(source.getParent());
+        Files.writeString(source, "class App {\n  String token = \"sk-editor-secret\";\n}\n");
+        String workspaceId = registerWorkspace(projectRoot, "编辑项目");
+
+        HttpResponse<String> editor = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/workspace/files/editor-content?workspaceId="
+                                + workspaceId + "&path=src/App.java"))
+                        .header("Authorization", "Bearer web-test-key").GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, editor.statusCode(), editor.body());
+        assertTrue(editor.body().contains("sk-editor-secret"), editor.body());
+        assertTrue(editor.body().contains("class App {\\n  String token"), editor.body());
+        String hash = editor.body().replaceFirst(".*\\\"sha256\\\":\\\"([0-9a-f]{64})\\\".*", "$1");
+
+        String updated = "class App {\n  String token = \"saved\";\n}\n";
+        HttpResponse<String> saved = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/workspace/files/editor-content?workspaceId="
+                                + workspaceId))
+                        .header("Authorization", "Bearer web-test-key")
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString("{\"path\":\"src/App.java\",\"content\":\""
+                                + updated.replace("\\", "\\\\").replace("\n", "\\n").replace("\"", "\\\"")
+                                + "\",\"expectedSha256\":\"" + hash + "\"}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, saved.statusCode(), saved.body());
+        assertEquals(updated, Files.readString(source));
+    }
+
+    @Test
+    void shouldRejectStaleEditorSaveAndMissingWritePermission() throws Exception {
+        Path projectRoot = Files.createDirectories(tempDir.resolve("stale-editor-project"));
+        Path source = projectRoot.resolve("App.java");
+        Files.writeString(source, "before\n");
+        String workspaceId = registerWorkspace(projectRoot, "冲突项目");
+
+        HttpResponse<String> editor = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/workspace/files/editor-content?workspaceId="
+                                + workspaceId + "&path=App.java"))
+                        .header("Authorization", "Bearer web-test-key").GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, editor.statusCode(), editor.body());
+        String hash = editor.body().replaceFirst(".*\\\"sha256\\\":\\\"([0-9a-f]{64})\\\".*", "$1");
+        Files.writeString(source, "changed-by-agent\n");
+
+        HttpResponse<String> stale = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/workspace/files/editor-content?workspaceId="
+                                + workspaceId))
+                        .header("Authorization", "Bearer web-test-key")
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString("{\"path\":\"App.java\",\"content\":\"local\\n\","
+                                + "\"expectedSha256\":\"" + hash + "\"}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(409, stale.statusCode(), stale.body());
+        assertTrue(stale.body().contains("WORKSPACE_FILE_CHANGED"), stale.body());
+
+        HttpResponse<String> denied = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/workspace/files/editor-content?workspaceId="
+                                + workspaceId + "&path=App.java"))
+                        .header("Authorization", "Bearer web-other-key").GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, denied.statusCode(), denied.body());
+        assertTrue(denied.body().contains("PERMISSION_DENIED"), denied.body());
     }
 
     @Test

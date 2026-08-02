@@ -226,6 +226,7 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
                 || path.equals("/api/workspace/files/content")
                 || path.equals("/api/workspace/git/status")
                 || path.equals("/api/workspace/git/diff"))) return "workspace.read";
+        if (path.equals("/api/workspace/files/editor-content")) return "workspace.write";
         if (path.equals("/api/workspaces")) {
             return "GET".equalsIgnoreCase(method) ? "workspace.read" : "workspace.manage";
         }

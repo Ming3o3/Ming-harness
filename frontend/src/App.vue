@@ -1,7 +1,10 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { api } from './api'
 import { highlightCode, languageFromPath, languageLabel, renderMarkdown } from './markdown'
+
+// Monaco 只在打开项目文件或 Diff 审阅时加载，避免普通聊天首屏承担 3 MB+ 的编辑器包。
+const MonacoEditor = defineAsyncComponent(() => import('./components/MonacoEditor.vue'))
 
 const runs = ref([])
 const tools = ref([])
@@ -69,6 +72,12 @@ const workspaceExplorer = ref(null)
 const workspaceExplorerLoading = ref(false)
 const workspaceFilePreview = ref(null)
 const workspaceFilePreviewLoading = ref(false)
+const workspaceEditorRef = ref(null)
+const workspaceEditorContent = ref('')
+const workspaceEditorWritable = ref(false)
+const workspaceEditorDirty = ref(false)
+const workspaceEditorSaving = ref(false)
+const workspaceEditorCopying = ref(false)
 // Git 审阅沿用当前会话的工作区绑定，避免把磁盘路径或自由 Git 参数暴露给页面。
 const workspaceGitReviewVisible = ref(false)
 const workspaceGitStatus = ref(null)
@@ -687,6 +696,7 @@ async function loadConversations(preferredId = '') {
 }
 
 async function createChatConversation() {
+  if (!confirmWorkspaceEditorDiscard()) return null
   clearMessages()
   try {
     const created = await api.createConversation(newConversationPayload())
@@ -803,11 +813,15 @@ async function toggleWorkspaceGitReview() {
 /** 请求始终携带当前会话绑定的 workspaceId，后端会再次验证所属租户和用户。 */
 async function loadWorkspaceDirectory(path = '.') {
   if (!workspaceExplorerAvailable.value) return
+  if (!confirmWorkspaceEditorDiscard()) return
   const requestToken = ++workspaceExplorerLoadToken
   // 切换目录时使旧文件预览失效，避免异步响应把其他目录或会话的内容覆盖到面板。
   workspacePreviewLoadToken += 1
   workspaceExplorerLoading.value = true
   workspaceFilePreview.value = null
+  workspaceEditorContent.value = ''
+  workspaceEditorWritable.value = false
+  workspaceEditorDirty.value = false
   try {
     const result = await api.browseWorkspaceFiles({
       workspaceId: activeConversationWorkspaceId.value,
@@ -877,6 +891,9 @@ function resetWorkspaceExplorerState({ keepPanel = false } = {}) {
   workspaceGitDiffLoadToken += 1
   workspaceExplorer.value = null
   workspaceFilePreview.value = null
+  workspaceEditorContent.value = ''
+  workspaceEditorWritable.value = false
+  workspaceEditorDirty.value = false
   workspaceGitStatus.value = null
   workspaceGitDiff.value = null
   workspaceGitReviewVisible.value = false
@@ -903,14 +920,32 @@ function gitChangeClass(change) {
 
 async function previewWorkspaceFile(entry) {
   if (!entry || entry.directory || !workspaceExplorerAvailable.value) return
+  if (!confirmWorkspaceEditorDiscard()) return
   const requestToken = ++workspacePreviewLoadToken
   workspaceFilePreviewLoading.value = true
+  workspaceEditorDirty.value = false
   try {
-    const result = await api.readWorkspaceFile({
-      workspaceId: activeConversationWorkspaceId.value,
-      path: entry.path,
-    })
-    if (requestToken === workspacePreviewLoadToken) workspaceFilePreview.value = result
+    let result
+    let writable = true
+    try {
+      result = await api.readWorkspaceEditorFile({
+        workspaceId: activeConversationWorkspaceId.value,
+        path: entry.path,
+      })
+    } catch {
+      // 没有 workspace.write 时退回原来的脱敏只读预览，聊天浏览能力不被编辑权限阻断。
+      writable = false
+      result = await api.readWorkspaceFile({
+        workspaceId: activeConversationWorkspaceId.value,
+        path: entry.path,
+      })
+    }
+    if (requestToken === workspacePreviewLoadToken) {
+      workspaceFilePreview.value = result
+      workspaceEditorContent.value = result.content || ''
+      workspaceEditorWritable.value = writable && !result.truncated && !result.redacted
+      workspaceEditorDirty.value = false
+    }
   } catch (error) {
     if (requestToken === workspacePreviewLoadToken) errorMessage.value = errorText(error)
   } finally {
@@ -918,8 +953,67 @@ async function previewWorkspaceFile(entry) {
   }
 }
 
+function confirmWorkspaceEditorDiscard() {
+  if (!workspaceEditorDirty.value || typeof window === 'undefined') return true
+  return window.confirm('当前文件有未保存修改，继续操作会丢弃这些修改。是否继续？')
+}
+
+function handleWorkspaceBeforeUnload(event) {
+  if (!workspaceEditorDirty.value) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+async function saveWorkspaceFile() {
+  if (!workspaceFilePreview.value || !workspaceEditorWritable.value
+      || !workspaceEditorDirty.value || workspaceEditorSaving.value) return
+  const previewToken = workspacePreviewLoadToken
+  const previewPath = workspaceFilePreview.value.path
+  workspaceEditorSaving.value = true
+  clearMessages()
+  try {
+    const result = await api.saveWorkspaceEditorFile({
+      workspaceId: activeConversationWorkspaceId.value,
+      path: workspaceFilePreview.value.path,
+      content: workspaceEditorContent.value,
+      expectedSha256: workspaceFilePreview.value.sha256,
+    })
+    // 用户可能在保存请求返回前切换了会话、目录或文件；旧响应不能覆盖新编辑器状态。
+    if (previewToken !== workspacePreviewLoadToken || workspaceFilePreview.value?.path !== previewPath) return
+    workspaceFilePreview.value = { ...workspaceFilePreview.value, ...result, content: workspaceEditorContent.value }
+    workspaceEditorDirty.value = false
+    noticeMessage.value = `已保存 ${result.path}`
+    if (workspaceGitReviewVisible.value) void loadWorkspaceGitStatus()
+  } catch (error) {
+    if (previewToken !== workspacePreviewLoadToken) return
+    errorMessage.value = error.code === 'WORKSPACE_FILE_CHANGED'
+      ? '文件已被 Agent 或其他进程修改，请重新打开后再保存。'
+      : errorText(error)
+  } finally {
+    workspaceEditorSaving.value = false
+  }
+}
+
+async function copyWorkspaceFile() {
+  if (!workspaceFilePreview.value || workspaceEditorCopying.value) return
+  workspaceEditorCopying.value = true
+  try {
+    if (workspaceEditorRef.value?.copy) {
+      await workspaceEditorRef.value.copy()
+    } else {
+      await navigator.clipboard.writeText(workspaceEditorContent.value)
+    }
+    noticeMessage.value = '代码已复制到剪贴板。'
+  } catch {
+    errorMessage.value = '复制失败，请检查浏览器剪贴板权限。'
+  } finally {
+    workspaceEditorCopying.value = false
+  }
+}
+
 async function selectConversation(conversationId, announce = true) {
   if (!conversationId) return
+  if (conversationId !== activeConversationId.value && !confirmWorkspaceEditorDiscard()) return
   if (announce) clearMessages()
   if (conversationId !== activeConversationId.value) {
     clearChatAttachments()
@@ -1624,6 +1718,7 @@ async function cancelSelectedRun() {
 }
 
 onMounted(async () => {
+  window.addEventListener('beforeunload', handleWorkspaceBeforeUnload)
   syncActiveConsoleSectionFromHash()
   window.addEventListener('hashchange', syncActiveConsoleSectionFromHash)
   if (desktopWorkspaceAvailable.value) {
@@ -1640,6 +1735,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', handleWorkspaceBeforeUnload)
   window.removeEventListener('hashchange', syncActiveConsoleSectionFromHash)
   stopRunEventStream()
   api.clearDesktopWorkspaceDropListener()
@@ -1897,8 +1993,27 @@ onBeforeUnmount(() => {
               <p v-if="!workspaceExplorer.entries.length">当前目录没有可显示的文件。</p>
             </div>
             <section v-if="workspaceFilePreview || workspaceFilePreviewLoading" class="workspace-file-preview" aria-label="文件预览">
-              <div><strong>{{ workspaceFilePreview?.path || '正在读取文件…' }}</strong><span v-if="workspaceFilePreview?.path" class="workspace-file-language">{{ languageLabel('', workspaceFilePreview.path) }}</span><span v-if="workspaceFilePreview?.redacted">已脱敏</span><span v-if="workspaceFilePreview?.truncated">已截断</span></div>
-              <pre v-if="workspaceFilePreview" class="workspace-code-preview" :class="{ 'workspace-code-preview-plain': !languageFromPath(workspaceFilePreview.path) }" v-html="highlightCode(workspaceFilePreview.content, languageFromPath(workspaceFilePreview.path))"></pre>
+              <div class="workspace-file-preview-heading">
+                <div><strong>{{ workspaceFilePreview?.path || '正在读取文件…' }}</strong><span v-if="workspaceFilePreview?.path" class="workspace-file-language">{{ languageLabel('', workspaceFilePreview.path) }}</span><span v-if="workspaceFilePreview?.redacted">已脱敏</span><span v-if="workspaceFilePreview?.truncated">已截断</span></div>
+                <div v-if="workspaceFilePreview" class="workspace-editor-actions">
+                  <span v-if="workspaceEditorDirty" class="workspace-editor-dirty">未保存</span>
+                  <button type="button" :disabled="workspaceEditorCopying" @click="copyWorkspaceFile">{{ workspaceEditorCopying ? '复制中…' : '复制' }}</button>
+                  <button v-if="workspaceEditorWritable" type="button" :disabled="!workspaceEditorDirty || workspaceEditorSaving" @click="saveWorkspaceFile">{{ workspaceEditorSaving ? '保存中…' : '保存' }}</button>
+                </div>
+              </div>
+              <div v-if="workspaceFilePreview" class="workspace-editor-shell">
+                <MonacoEditor
+                  ref="workspaceEditorRef"
+                  v-model="workspaceEditorContent"
+                  :path="workspaceFilePreview.path"
+                  :language="languageFromPath(workspaceFilePreview.path) || 'plaintext'"
+                  :readonly="!workspaceEditorWritable"
+                  @change="workspaceEditorDirty = true"
+                  @save="saveWorkspaceFile"
+                />
+              </div>
+              <p v-if="workspaceFilePreview?.truncated" class="workspace-editor-hint">文件超过编辑器安全行数上限，当前仅展示前 {{ workspaceFilePreview.content?.split('\n').length || 0 }} 行，已禁用保存。</p>
+              <p v-else-if="workspaceFilePreview && !workspaceEditorWritable" class="workspace-editor-hint">当前身份没有 workspace.write 权限，文件以只读模式打开。</p>
             </section>
           </template>
           <div v-else class="chat-run-empty">当前会话未连接可访问的本地项目。</div>
@@ -1925,10 +2040,28 @@ onBeforeUnmount(() => {
                   <span>{{ change.typeLabel }}</span><span class="chat-change-language">{{ languageLabel('', change.path) }}</span><code>{{ change.path }}</code><em :class="statusClass(change.status)">{{ statusLabel(change.status) }}</em>
                 </div>
                 <template v-if="change.kind === 'edit'">
-                  <pre v-for="(edit, index) in change.edits" :key="index" class="chat-inline-diff chat-inline-code"><span class="diff-remove"><b>−</b><code v-html="highlightCode(edit.oldText, languageFromPath(change.path))"></code></span><span class="diff-add"><b>＋</b><code v-html="highlightCode(edit.newText, languageFromPath(change.path))"></code></span><small v-if="edit.replaceAll">替换全部匹配项</small></pre>
+                  <div v-for="(edit, index) in change.edits" :key="index" class="chat-inline-diff chat-inline-monaco-diff">
+                    <MonacoEditor
+                      :path="change.path"
+                      :language="languageFromPath(change.path) || 'plaintext'"
+                      :diff="true"
+                      :original="edit.oldText"
+                      :modified="edit.newText"
+                      height="220px"
+                    />
+                    <small v-if="edit.replaceAll">替换全部匹配项</small>
+                  </div>
                   <p v-if="change.hiddenEditCount" class="chat-change-truncated">另有 {{ change.hiddenEditCount }} 个编辑已折叠。</p>
                 </template>
-                <pre v-else class="chat-inline-diff chat-inline-code"><span class="diff-add"><b>＋</b><code v-html="highlightCode(change.content, languageFromPath(change.path))"></code></span></pre>
+                <div v-else class="chat-inline-diff chat-inline-monaco-diff">
+                  <MonacoEditor
+                    :path="change.path"
+                    :language="languageFromPath(change.path) || 'plaintext'"
+                    :model-value="change.content"
+                    :readonly="true"
+                    height="220px"
+                  />
+                </div>
               </article>
             </section>
             <div class="chat-run-meta"><span>Run</span><code>{{ selectedRun.run.id.slice(0, 12) }}</code><span>Trace</span><code>{{ selectedRun.run.traceId?.slice(0, 12) || '—' }}</code></div>

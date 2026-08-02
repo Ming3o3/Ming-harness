@@ -559,11 +559,22 @@ h3 { margin: 0; font-size: 13px; }
 .workspace-explorer-list p { margin: 9px 0; color: var(--muted); text-align: center; font-size: 10px; }
 .workspace-file-preview { border-top: 1px solid var(--line); padding-top: 12px; }
 .workspace-file-preview > div { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.workspace-file-preview-heading { justify-content: space-between; }
+.workspace-file-preview-heading > div:first-child { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
 .workspace-file-preview strong { overflow: hidden; min-width: 0; max-width: 100%; color: var(--soft); text-overflow: ellipsis; white-space: nowrap; font: 9px "DM Mono", monospace; }
 .workspace-file-preview span { border: 1px solid rgba(255,182,95,.25); border-radius: 10px; color: var(--orange); padding: 3px 5px; font: 8px "DM Mono", monospace; }
 .workspace-file-preview .workspace-file-language { border-color: rgba(76,226,213,.24); color: var(--cyan); text-transform: lowercase; }
-.workspace-file-preview pre.workspace-code-preview { overflow: auto; max-height: 35vh; margin: 9px 0 0; border: 1px solid rgba(153,174,218,.12); border-radius: 6px; background: var(--input-bg); padding: 9px; color: var(--soft); white-space: pre; font: 9px/1.55 "DM Mono", monospace; scrollbar-gutter: stable; }
-.workspace-code-preview-plain { color: var(--soft); }
+.workspace-editor-actions { display: flex; align-items: center; gap: 5px; flex: 0 0 auto; }
+.workspace-editor-actions span.workspace-editor-dirty { border: 0; color: var(--orange); padding: 0 2px; }
+.workspace-editor-actions button { border: 1px solid var(--line); border-radius: 5px; background: var(--hover-bg); color: var(--soft); padding: 4px 7px; font: 8px "DM Mono", monospace; }
+.workspace-editor-actions button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-light); }
+.workspace-editor-actions button:disabled { cursor: not-allowed; }
+.workspace-editor-shell { overflow: hidden; height: min(54vh, 580px); min-height: 220px; margin: 9px 0 0; border: 1px solid rgba(153,174,218,.16); border-radius: 7px; background: var(--input-bg); }
+.monaco-editor-host { width: 100%; min-height: 0; }
+.workspace-editor-hint { margin: 7px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.chat-inline-monaco-diff { display: block; overflow: hidden; max-height: none; padding: 0; }
+.chat-inline-monaco-diff .monaco-editor-host { width: 100%; min-height: 220px; }
+.chat-inline-monaco-diff small { display: block; margin: 0; border-top: 1px solid var(--line); padding: 6px 8px; color: var(--muted); font: 8px "DM Mono", monospace; }
 
 :root[data-theme="light"] .chat-bubble { box-shadow: 0 8px 24px rgba(45,62,90,.06); }
 :root[data-theme="light"] .chat-heading-meta { color: #75839b; }
