@@ -18,13 +18,16 @@ public class ModelProviderConfigService {
     private static final int MAX_API_KEY_LENGTH = 1000;
 
     private final ModelProviderConfigRepository repository;
+    private final ModelProviderConfigSnapshotRepository snapshotRepository;
     private final ModelSecretCipher secretCipher;
     private final ModelConfig defaultConfig;
 
     public ModelProviderConfigService(ModelProviderConfigRepository repository,
+                                      ModelProviderConfigSnapshotRepository snapshotRepository,
                                       ModelSecretCipher secretCipher,
                                       ModelConfig defaultConfig) {
         this.repository = repository;
+        this.snapshotRepository = snapshotRepository;
         this.secretCipher = secretCipher;
         this.defaultConfig = defaultConfig;
     }
@@ -57,7 +60,31 @@ public class ModelProviderConfigService {
         } else {
             existing.update(normalized.enabled(), normalized.baseUrl(), normalized.modelName(), ciphertext, hint);
         }
-        return toUserView(repository.save(existing));
+        ModelProviderConfig saved = repository.save(existing);
+        ModelProviderConfigSnapshot snapshot = snapshotRepository.save(new ModelProviderConfigSnapshot(saved));
+        saved.attachSnapshot(snapshot.getId());
+        return toUserView(repository.save(saved));
+    }
+
+    /** 原子捕获创建 Run 时的模型配置，避免模型名和连接配置在并发更新中错配。 */
+    @Transactional
+    public CapturedModelConfig captureForRun(String tenantId, String userId) {
+        ModelProviderConfig existing = repository.findByTenantIdAndUserId(tenantId, userId).orElse(null);
+        if (existing == null) {
+            return new CapturedModelConfig(null, new ResolvedModelConfig(defaultConfig.enabled(), defaultConfig.baseUrl(),
+                    defaultConfig.apiKey(), defaultConfig.name(), "environment"));
+        }
+        if (existing.getActiveSnapshotId() != null && !existing.getActiveSnapshotId().isBlank()) {
+            Optional<ModelProviderConfigSnapshot> active = snapshotRepository.findByIdAndTenantIdAndUserId(
+                    existing.getActiveSnapshotId(), tenantId, userId);
+            if (active.isPresent()) {
+                return new CapturedModelConfig(active.get().getId(), toResolvedSnapshot(active.get()));
+            }
+        }
+        ModelProviderConfigSnapshot snapshot = snapshotRepository.save(new ModelProviderConfigSnapshot(existing));
+        existing.attachSnapshot(snapshot.getId());
+        repository.save(existing);
+        return new CapturedModelConfig(snapshot.getId(), toResolvedSnapshot(snapshot));
     }
 
     /** 预览未保存的配置，供连接测试使用；不会写入数据库。 */
@@ -93,6 +120,23 @@ public class ModelProviderConfigService {
         return new ResolvedModelConfig(value.isEnabled(), value.getBaseUrl(),
                 secretCipher.decrypt(value.getApiKeyCiphertext()), value.getModelName(),
                 value.getUpdatedAt().toString());
+    }
+
+    /** 按 Run 创建时固化的快照解析模型配置；找不到快照时兼容旧 Run 的当前配置行为。 */
+    @Transactional(readOnly = true)
+    public ResolvedModelConfig resolveForRun(String tenantId, String userId, String snapshotId) {
+        if (snapshotId == null || snapshotId.isBlank()) {
+            return resolve(tenantId, userId);
+        }
+        return snapshotRepository.findByIdAndTenantIdAndUserId(snapshotId, tenantId, userId)
+                .map(this::toResolvedSnapshot)
+                .orElseGet(() -> resolve(tenantId, userId));
+    }
+
+    private ResolvedModelConfig toResolvedSnapshot(ModelProviderConfigSnapshot snapshot) {
+        return new ResolvedModelConfig(snapshot.isEnabled(), snapshot.getBaseUrl(),
+                secretCipher.decrypt(snapshot.getApiKeyCiphertext()), snapshot.getModelName(),
+                "snapshot:" + snapshot.getId());
     }
 
     public String effectiveModelName(String tenantId, String userId) {
@@ -171,6 +215,9 @@ public class ModelProviderConfigService {
 
     public record ResolvedModelConfig(boolean enabled, String baseUrl, String apiKey,
                                       String modelName, String version) {
+    }
+
+    public record CapturedModelConfig(String snapshotId, ResolvedModelConfig config) {
     }
 
     private record NormalizedModelConfig(boolean enabled, String baseUrl, String modelName,

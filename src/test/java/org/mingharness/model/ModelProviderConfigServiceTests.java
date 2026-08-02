@@ -22,10 +22,13 @@ class ModelProviderConfigServiceTests {
     private ModelProviderConfigService service;
     @Autowired
     private ModelProviderConfigRepository repository;
+    @Autowired
+    private ModelProviderConfigSnapshotRepository snapshotRepository;
 
     @BeforeEach
     void clean() {
         repository.deleteAll();
+        snapshotRepository.deleteAll();
     }
 
     @Test
@@ -101,6 +104,26 @@ class ModelProviderConfigServiceTests {
 
         assertEquals("", preview.apiKey());
         assertEquals("saved-secret", service.resolve("tenant-model", "operator").apiKey());
+    }
+
+    @Test
+    void shouldKeepRunSnapshotAfterCurrentConfigChanges() {
+        service.update("tenant-model", "operator",
+                new UpdateModelProviderConfigRequest(true, "https://first.example/v1",
+                        "first-model", "first-secret", false));
+        ModelProviderConfigService.CapturedModelConfig first = service.captureForRun("tenant-model", "operator");
+
+        service.update("tenant-model", "operator",
+                new UpdateModelProviderConfigRequest(true, "https://second.example/v1",
+                        "second-model", "second-secret", false));
+        ModelProviderConfigService.ResolvedModelConfig resolved = service.resolveForRun(
+                "tenant-model", "operator", first.snapshotId());
+
+        assertTrue(first.snapshotId() != null && !first.snapshotId().isBlank());
+        assertEquals("https://first.example/v1", resolved.baseUrl());
+        assertEquals("first-model", resolved.modelName());
+        assertEquals("first-secret", resolved.apiKey());
+        assertEquals("https://second.example/v1", service.resolve("tenant-model", "operator").baseUrl());
     }
 
     @Test

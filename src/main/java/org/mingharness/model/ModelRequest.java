@@ -9,7 +9,8 @@ public record ModelRequest(
         List<ModelToolDefinition> tools,
         List<ModelMessage> messages,
         String tenantId,
-        String userId
+        String userId,
+        String modelConfigSnapshotId
 ) {
 
     /** 保留现有模型调用方，不启用 Tool Call。 */
@@ -30,6 +31,12 @@ public record ModelRequest(
     public ModelRequest(String input, String model, String promptVersion,
                         List<ModelToolDefinition> tools, List<ModelMessage> messages,
                         String tenantId, String userId) {
+        this(input, model, promptVersion, tools, messages, tenantId, userId, null);
+    }
+
+    public ModelRequest(String input, String model, String promptVersion,
+                        List<ModelToolDefinition> tools, List<ModelMessage> messages,
+                        String tenantId, String userId, String modelConfigSnapshotId) {
         this.input = input;
         this.model = model;
         this.promptVersion = promptVersion;
@@ -37,5 +44,6 @@ public record ModelRequest(
         this.messages = messages == null ? List.of() : List.copyOf(messages);
         this.tenantId = tenantId;
         this.userId = userId;
+        this.modelConfigSnapshotId = modelConfigSnapshotId;
     }
 }

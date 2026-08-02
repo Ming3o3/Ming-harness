@@ -231,6 +231,8 @@ public class RunService {
             // 参数/配额校验失败的请求不应消耗 Redis 或内存速率桶中的合法创建额度。
             validateRuntimeLimits(request, tenantLimits);
             tenantRateLimiter.acquire(request.tenantId(), tenantLimits.maxCreatesPerMinute());
+            ModelProviderConfigService.CapturedModelConfig capturedModel =
+                    modelProviderConfigService.captureForRun(request.tenantId(), request.userId());
 
             Run run = new Run(
                     request.tenantId(),
@@ -239,7 +241,7 @@ public class RunService {
                     sanitizedInput,
                     request.budget() == null ? BigDecimal.ONE : request.budget(),
                     sanitizer.sanitize(valueOrDefault(request.modelName(),
-                            modelProviderConfigService.effectiveModelName(request.tenantId(), request.userId()))),
+                            capturedModel.config().enabled() ? capturedModel.config().modelName() : "demo-model")),
                     sanitizer.sanitize(valueOrDefault(request.promptVersion(), defaultPromptVersion)),
                     sanitizer.sanitize(valueOrDefault(request.policyVersion(), defaultPolicyVersion)),
                     idempotencyKey,
@@ -249,6 +251,7 @@ public class RunService {
                     request.conversationId(),
                     workspaceId
             );
+            run.attachModelConfigSnapshot(capturedModel.snapshotId());
             run.addStep(new Step(1, StepType.MODEL, "model.complete", sanitizedInput));
             if (!effectiveAgentMode) {
                 run.addStep(new Step(2, StepType.TOOL, effectiveToolName, sanitizedInput));
@@ -748,7 +751,7 @@ public class RunService {
                 if (run.isAgentMode()) {
                     validateAgentToolCalls(new RunExecutionStateService.RunExecutionSnapshot(
                             run.getId(), run.getTenantId(), run.getUserId(), run.getModelName(),
-                            run.getPromptVersion(), run.getInput(), run.getBudget(),
+                            run.getModelConfigSnapshotId(), run.getPromptVersion(), run.getInput(), run.getBudget(),
                             run.getPermissionsSnapshot(), true, run.getMaxTurns(), run.getWorkspaceId(), List.of()), response.toolCalls());
                 }
                 if (exceedsBudget(run, response.cost())) {
@@ -1118,6 +1121,7 @@ public class RunService {
                                                     RunExecutionStateService.StepExecutionSnapshot step,
                                                     String modelInput, String workerId) {
         return executeModelCall(new StreamingRunContext(run.id(), run.tenantId(), run.userId(), run.modelName(),
+                run.modelConfigSnapshotId(),
                 run.promptVersion(), run.input(), run.agentMode(), permissions(run.permissionsSnapshot()),
                 historyFromSnapshots(run.steps(), step.sequence())),
                 step.id(), modelInput, workerId, true);
@@ -1126,6 +1130,7 @@ public class RunService {
     private ModelResponse executeModelCall(Run run, Step step, String modelInput, String workerId,
                                            boolean streamToChat) {
         return executeModelCall(new StreamingRunContext(run.getId(), run.getTenantId(), run.getUserId(), run.getModelName(),
+                run.getModelConfigSnapshotId(),
                 run.getPromptVersion(), run.getInput(), run.isAgentMode(), permissions(run),
                 historyFromEntities(run.getSteps(), step.getSequence())),
                 step.getId(), modelInput, workerId, streamToChat);
@@ -1140,7 +1145,7 @@ public class RunService {
                 ? agentMessages(run.input(), safeInput, run.history(), runtimeLimits.maxContextChars()) : List.of();
         ModelRequest request = new ModelRequest(
                 safeInput, run.modelName(), run.promptVersion(), tools, messages,
-                run.tenantId(), run.userId());
+                run.tenantId(), run.userId(), run.modelConfigSnapshotId());
         if (!streamToChat) {
             return boundedExecutor.execute("模型调用", runtimeLimits.modelTimeoutMs(), () ->
                     modelGateway.complete(request));
@@ -1284,6 +1289,7 @@ public class RunService {
     }
 
     private record StreamingRunContext(String id, String tenantId, String userId, String modelName,
+                                       String modelConfigSnapshotId,
                                        String promptVersion, String input, boolean agentMode,
                                        Set<String> permissions,
                                        List<AgentHistoryStep> history) {
@@ -1496,7 +1502,8 @@ public class RunService {
 
     private boolean sameCreateRequest(Run run, CreateRunRequest request, String toolName,
                                       String sanitizedTitle, String sanitizedInput) {
-        String modelName = sanitizer.sanitize(valueOrDefault(request.modelName(), defaultModel));
+        String modelName = sanitizer.sanitize(valueOrDefault(request.modelName(),
+                modelProviderConfigService.effectiveModelName(request.tenantId(), request.userId())));
         String promptVersion = sanitizer.sanitize(valueOrDefault(request.promptVersion(), defaultPromptVersion));
         String policyVersion = sanitizer.sanitize(valueOrDefault(request.policyVersion(), defaultPolicyVersion));
         return Objects.equals(run.getUserId(), request.userId())

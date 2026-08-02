@@ -8,7 +8,10 @@ import org.mingharness.runtime.api.CreateRunRequest;
 import org.mingharness.runtime.api.RunDetail;
 import org.mingharness.runtime.api.RunPage;
 import org.mingharness.runtime.api.RunSummary;
+import org.mingharness.model.ModelProviderConfigService;
+import org.mingharness.model.api.UpdateModelProviderConfigRequest;
 import org.mingharness.runtime.application.RunService;
+import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.runtime.domain.StepStatus;
 import org.mingharness.runtime.repository.RunRepository;
@@ -53,6 +56,8 @@ class RunServiceTests {
     private AuditEventRepository auditEventRepository;
     @Autowired
     private AgentModelToolsState agentModelToolsState;
+    @Autowired
+    private ModelProviderConfigService modelProviderConfigService;
 
     @BeforeEach
     void cleanDatabase() {
@@ -84,6 +89,31 @@ class RunServiceTests {
         assertNotNull(firstResult.run().traceId());
         assertEquals(firstResult.run().traceId(), traceEvent.getTraceId());
         assertEquals("tenant-demo", traceEvent.getTenantId());
+    }
+
+    @Test
+    void shouldFreezeModelProviderSnapshotWhenRunIsCreated() {
+        modelProviderConfigService.update("tenant-snapshot", "operator",
+                new UpdateModelProviderConfigRequest(true, "https://first.example/v1",
+                        "first-model", "first-secret", false));
+
+        RunSummary created = runService.create(new CreateRunRequest(
+                "tenant-snapshot", "operator", "固化模型配置", "验证 Run 配置快照",
+                "demo.echo", null, "prompt-v1", "policy-v1", BigDecimal.ONE));
+
+        Run saved = runRepository.findById(created.id()).orElseThrow();
+        assertTrue(saved.getModelConfigSnapshotId() != null && !saved.getModelConfigSnapshotId().isBlank());
+        assertEquals("first-model", saved.getModelName());
+
+        modelProviderConfigService.update("tenant-snapshot", "operator",
+                new UpdateModelProviderConfigRequest(true, "https://second.example/v1",
+                        "second-model", "second-secret", false));
+        ModelProviderConfigService.ResolvedModelConfig resolved = modelProviderConfigService.resolveForRun(
+                "tenant-snapshot", "operator", saved.getModelConfigSnapshotId());
+
+        assertEquals("https://first.example/v1", resolved.baseUrl());
+        assertEquals("first-model", resolved.modelName());
+        assertEquals("first-secret", resolved.apiKey());
     }
 
     @Test

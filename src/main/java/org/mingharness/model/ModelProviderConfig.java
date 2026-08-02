@@ -46,6 +46,9 @@ public class ModelProviderConfig {
     @Column(name = "api_key_hint", length = 32)
     private String apiKeyHint;
 
+    @Column(name = "active_snapshot_id", length = 128)
+    private String activeSnapshotId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -78,6 +81,10 @@ public class ModelProviderConfig {
         this.updatedAt = Instant.now();
     }
 
+    public void attachSnapshot(String snapshotId) {
+        this.activeSnapshotId = snapshotId;
+    }
+
     public String getId() { return id; }
     public String getTenantId() { return tenantId; }
     public String getUserId() { return userId; }
@@ -86,6 +93,7 @@ public class ModelProviderConfig {
     public String getModelName() { return modelName; }
     public String getApiKeyCiphertext() { return apiKeyCiphertext; }
     public String getApiKeyHint() { return apiKeyHint; }
+    public String getActiveSnapshotId() { return activeSnapshotId; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public long getVersion() { return version; }

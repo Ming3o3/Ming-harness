@@ -621,7 +621,7 @@ public class RunExecutionStateService {
 
     private RunExecutionSnapshot snapshot(Run run) {
         return new RunExecutionSnapshot(run.getId(), run.getTenantId(), run.getUserId(),
-                run.getModelName(), run.getPromptVersion(), run.getInput(), run.getBudget(),
+                run.getModelName(), run.getModelConfigSnapshotId(), run.getPromptVersion(), run.getInput(), run.getBudget(),
                 run.getPermissionsSnapshot(), run.isAgentMode(), run.getMaxTurns(),
                 run.getWorkspaceId(),
                 run.getSteps().stream().map(this::stepSnapshot).toList());
@@ -643,6 +643,7 @@ public class RunExecutionStateService {
             String tenantId,
             String userId,
             String modelName,
+            String modelConfigSnapshotId,
             String promptVersion,
             String input,
             BigDecimal budget,

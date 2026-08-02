@@ -39,6 +39,9 @@ public class Run {
     /** Run 创建时冻结工作区，防止用户后来切换项目而让旧 Worker 写入新目录。 */
     @Column(name = "workspace_id", length = 128)
     private String workspaceId;
+    /** 创建 Run 时固化的用户模型供应商快照；为空表示沿用环境默认模型或旧数据兼容路径。 */
+    @Column(name = "model_config_snapshot_id", length = 128)
+    private String modelConfigSnapshotId;
     @Column(name = "idempotency_key", length = 128)
     private String idempotencyKey;
     @Column(name = "permissions_snapshot", columnDefinition = "text")
@@ -144,6 +147,10 @@ public class Run {
         this.startedAt = Instant.now();
         this.finishedAt = null;
         touch();
+    }
+
+    public void attachModelConfigSnapshot(String snapshotId) {
+        this.modelConfigSnapshotId = snapshotId;
     }
 
     /** Worker 成功获取执行锁后建立租约。 */
@@ -277,6 +284,7 @@ public class Run {
     public String getPolicyVersion() { return policyVersion; }
     public String getConversationId() { return conversationId; }
     public String getWorkspaceId() { return workspaceId; }
+    public String getModelConfigSnapshotId() { return modelConfigSnapshotId; }
     public String getIdempotencyKey() { return idempotencyKey; }
     public String getPermissionsSnapshot() { return permissionsSnapshot; }
     public String getTraceId() { return traceId; }

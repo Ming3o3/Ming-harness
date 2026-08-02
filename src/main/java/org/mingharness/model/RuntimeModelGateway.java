@@ -51,13 +51,13 @@ public class RuntimeModelGateway implements ModelGateway {
     }
 
     private ModelGateway delegate(ModelRequest request) {
-        ModelProviderConfigService.ResolvedModelConfig resolved = configService.resolve(
-                valueOrDefault(request == null ? null : request.tenantId(), "tenant-demo"),
-                valueOrDefault(request == null ? null : request.userId(), "operator"));
+        String tenantId = valueOrDefault(request == null ? null : request.tenantId(), "tenant-demo");
+        String userId = valueOrDefault(request == null ? null : request.userId(), "operator");
+        ModelProviderConfigService.ResolvedModelConfig resolved = configService.resolveForRun(
+                tenantId, userId, request == null ? null : request.modelConfigSnapshotId());
         if (!resolved.enabled()) return demoGateway;
 
-        String owner = valueOrDefault(request == null ? null : request.tenantId(), "tenant-demo")
-                + "\u0000" + valueOrDefault(request == null ? null : request.userId(), "operator");
+        String owner = tenantId + "\u0000" + userId;
         CachedGateway cached = externalGateways.get(owner);
         if (cached != null && cached.version().equals(resolved.version())) {
             return cached.gateway();
