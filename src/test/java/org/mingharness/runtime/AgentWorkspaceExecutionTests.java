@@ -113,6 +113,23 @@ class AgentWorkspaceExecutionTests {
                 .findFirst().orElseThrow().output().contains("public class App"));
     }
 
+    @Test
+    void shouldRecoverFromStaleReadPathAndRebrowseWorkspace() {
+        RunSummary created = runService.create(new CreateRunRequest(
+                "tenant-agent-read-fallback", "operator", "路径恢复工作区理解", "请执行路径恢复检查",
+                null, null, "prompt-agent", "policy-v1", java.math.BigDecimal.TEN,
+                null, "workspace.read", true, 6));
+
+        RunDetail detail = runService.start(created.id(), "tenant-agent-read-fallback");
+
+        assertEquals(RunStatus.SUCCEEDED, detail.run().status(), detail.run().error());
+        assertTrue(detail.steps().stream().anyMatch(step -> "workspace.read".equals(step.name())
+                && step.output().contains("WORKSPACE_PATH_NOT_FOUND")));
+        assertTrue(detail.steps().stream().anyMatch(step -> "workspace.list".equals(step.name())));
+        assertTrue(detail.steps().stream().anyMatch(step -> "workspace.read".equals(step.name())
+                && step.output().contains("public class App")));
+    }
+
     @TestConfiguration
     static class AgentGitFallbackModelConfiguration {
 
@@ -121,10 +138,30 @@ class AgentWorkspaceExecutionTests {
         ModelGateway gitFallbackModelGateway() {
             DemoModelGateway fallback = new DemoModelGateway();
             return request -> {
-                if (request.input() == null || !request.input().contains("没有 Git")) {
+                if (request.input() == null
+                        || (!request.input().contains("没有 Git") && !request.input().contains("路径恢复"))) {
                     return fallback.complete(request);
                 }
                 String latestTool = latestToolName(request.messages());
+                if (request.input().contains("路径恢复")) {
+                    if (latestTool.isBlank()) {
+                        return toolResponse("stale-read", "workspace.read",
+                                "{\"path\":\"old/App.java\",\"startLine\":1,\"endLine\":120}");
+                    }
+                    if ("workspace.read".equals(latestTool)
+                            && latestToolResult(request.messages()).contains("WORKSPACE_PATH_NOT_FOUND")) {
+                        return toolResponse("list-after-read-fallback", "workspace.list",
+                                "{\"path\":\".\",\"recursive\":false}");
+                    }
+                    if ("workspace.list".equals(latestTool)) {
+                        return toolResponse("read-after-list-fallback", "workspace.read",
+                                "{\"path\":\"src/main/App.java\",\"startLine\":1,\"endLine\":120}");
+                    }
+                    if ("workspace.read".equals(latestTool)) {
+                        return new ModelResponse("已重新定位并读取项目文件", "read-fallback-model",
+                                request.promptVersion(), 5, 5);
+                    }
+                }
                 if (latestTool.isBlank()) {
                     return toolResponse("git-status", "workspace.git.status", "{}");
                 }
@@ -161,6 +198,15 @@ class AgentWorkspaceExecutionTests {
                         if (message.toolCallId().equals(call.id())) return call.name();
                     }
                 }
+            }
+            return "";
+        }
+
+        private String latestToolResult(java.util.List<ModelMessage> messages) {
+            if (messages == null) return "";
+            for (int index = messages.size() - 1; index >= 0; index--) {
+                ModelMessage message = messages.get(index);
+                if ("tool".equals(message.role())) return message.content();
             }
             return "";
         }

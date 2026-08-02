@@ -72,22 +72,22 @@ class WorkspaceToolTests {
         WorkspaceToolSupport support = support();
         WorkspaceReadFileTool read = new WorkspaceReadFileTool(support);
 
-        BusinessException traversal = assertThrows(BusinessException.class,
-                () -> read.execute("{\"path\":\"../outside.txt\"}"));
-        assertEquals("WORKSPACE_PATH_DENIED", traversal.getCode());
+        String traversal = read.execute("{\"path\":\"../outside.txt\"}");
+        assertTrue(traversal.contains("\"recoverable\":true"));
+        assertTrue(traversal.contains("WORKSPACE_PATH_DENIED"));
 
         Files.writeString(tempDir.resolve(".env"), "secret");
-        BusinessException hidden = assertThrows(BusinessException.class,
-                () -> read.execute("{\"path\":\".env\"}"));
-        assertEquals("WORKSPACE_HIDDEN_PATH_DENIED", hidden.getCode());
+        String hidden = read.execute("{\"path\":\".env\"}");
+        assertTrue(hidden.contains("\"recoverable\":true"));
+        assertTrue(hidden.contains("WORKSPACE_HIDDEN_PATH_DENIED"));
 
         Path outside = tempDir.getParent().resolve("harness-workspace-outside.txt");
         Files.writeString(outside, "outside");
         try {
             Files.createSymbolicLink(tempDir.resolve("outside-link.txt"), outside);
-            BusinessException symlink = assertThrows(BusinessException.class,
-                    () -> read.execute("{\"path\":\"outside-link.txt\"}"));
-            assertEquals("WORKSPACE_PATH_DENIED", symlink.getCode());
+            String symlink = read.execute("{\"path\":\"outside-link.txt\"}");
+            assertTrue(symlink.contains("\"recoverable\":true"));
+            assertTrue(symlink.contains("WORKSPACE_PATH_DENIED"));
         } finally {
             Files.deleteIfExists(outside);
         }
@@ -262,6 +262,24 @@ class WorkspaceToolTests {
         String diff = new WorkspaceGitDiffTool(support).execute("{}");
         assertTrue(diff.contains("\"available\":false"));
         assertTrue(diff.contains("\"verificationEligible\":false"));
+    }
+
+    @Test
+    void shouldReturnRecoverableReadResultForStaleWorkspacePath() {
+        WorkspaceToolSupport support = support();
+
+        String listed = new WorkspaceListTool(support).execute("{\"path\":\"missing\"}");
+        assertTrue(listed.contains("\"recoverable\":true"));
+        assertTrue(listed.contains("WORKSPACE_PATH_NOT_FOUND"));
+
+        String read = new WorkspaceReadFileTool(support).execute("{\"path\":\"missing/App.java\"}");
+        assertTrue(read.contains("\"recoverable\":true"));
+        assertTrue(read.contains("workspace.search"));
+
+        String search = new WorkspaceSearchTool(support).execute(
+                "{\"query\":\"App\",\"path\":\"missing\"}");
+        assertTrue(search.contains("\"recoverable\":true"));
+        assertTrue(search.contains("WORKSPACE_PATH_NOT_FOUND"));
     }
 
     private WorkspaceToolSupport support() {

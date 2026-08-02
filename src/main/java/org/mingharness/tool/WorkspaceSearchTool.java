@@ -1,5 +1,6 @@
 package org.mingharness.tool;
 
+import org.mingharness.common.BusinessException;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 
@@ -27,7 +28,7 @@ public class WorkspaceSearchTool implements HarnessTool {
     public ToolDefinition definition() {
         return new ToolDefinition(
                 "workspace.search",
-                "在工作区内搜索文本，返回文件路径、行号和脱敏后的行内容",
+                "在工作区内搜索文本，返回文件路径、行号和脱敏后的行内容；目录错误时返回 recoverable=true",
                 true,
                 "LOW",
                 false,
@@ -52,21 +53,27 @@ public class WorkspaceSearchTool implements HarnessTool {
 
     @Override
     public String execute(String input) {
-        JsonNode request = support.parseObject(input, definition().name());
-        String query = support.requiredText(request, "query", definition().name());
-        String rawPath = support.optionalText(request, "path");
-        boolean caseSensitive = support.optionalBoolean(request, "caseSensitive", false, definition().name());
-        int maxResults = support.optionalInt(request, "maxResults", support.properties().maxSearchResults(),
-                1, support.properties().maxSearchResults(), definition().name());
-        Path directory = support.resolve(rawPath, false);
-        java.util.List<Map<String, Object>> matches = support.search(
-                query, directory, rawPath, caseSensitive, maxResults);
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("query", query);
-        result.put("path", rawPath == null || rawPath.isBlank() ? "." : rawPath);
-        result.put("matches", matches);
-        result.put("truncated", matches.size() >= maxResults);
-        return support.json(result);
+        try {
+            JsonNode request = support.parseObject(input, definition().name());
+            String query = support.requiredText(request, "query", definition().name());
+            String rawPath = support.optionalText(request, "path");
+            boolean caseSensitive = support.optionalBoolean(request, "caseSensitive", false, definition().name());
+            int maxResults = support.optionalInt(request, "maxResults", support.properties().maxSearchResults(),
+                    1, support.properties().maxSearchResults(), definition().name());
+            Path directory = support.resolve(rawPath, false);
+            java.util.List<Map<String, Object>> matches = support.search(
+                    query, directory, rawPath, caseSensitive, maxResults);
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("query", query);
+            result.put("path", rawPath == null || rawPath.isBlank() ? "." : rawPath);
+            result.put("matches", matches);
+            result.put("truncated", matches.size() >= maxResults);
+            return support.json(result);
+        } catch (BusinessException exception) {
+            if (!support.isRecoverableReadFailure(exception)) throw exception;
+            return support.recoverableReadFailure(definition().name(), exception,
+                    "请先用 workspace.list 确认搜索目录，或换一个更具体的 query");
+        }
     }
 
     @Override

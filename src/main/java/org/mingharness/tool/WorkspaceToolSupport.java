@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
@@ -40,6 +41,17 @@ import java.util.stream.Stream;
  */
 @Component
 public class WorkspaceToolSupport {
+
+    private static final Set<String> RECOVERABLE_READ_FAILURES = Set.of(
+            "WORKSPACE_PATH_NOT_FOUND",
+            "WORKSPACE_NOT_DIRECTORY",
+            "WORKSPACE_NOT_FILE",
+            "WORKSPACE_FILE_TOO_LARGE",
+            "WORKSPACE_BINARY_FILE",
+            "WORKSPACE_HIDDEN_PATH_DENIED",
+            "WORKSPACE_PATH_DENIED",
+            "WORKSPACE_IO_FAILED"
+    );
 
     private final WorkspaceProperties properties;
     private final ObjectMapper objectMapper;
@@ -407,6 +419,28 @@ public class WorkspaceToolSupport {
         result.put("message", sanitizer.sanitize(exception.getMessage()));
         result.put("suggestion", "当前工作区仍可使用 workspace.list、workspace.search 或 workspace.read 继续检查文件");
         return json(result);
+    }
+
+    /**
+     * 只读工作区调用的路径或文件内容不符合预期时，给 Agent 一个可继续推理的结果。
+     * 写入、审批和基础设施错误不走这条路径，仍然抛出原始业务异常。
+     */
+    public String recoverableReadFailure(String toolName, BusinessException exception,
+                                         String suggestion) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("ok", false);
+        result.put("available", true);
+        result.put("recoverable", true);
+        result.put("verificationEligible", false);
+        result.put("tool", toolName);
+        result.put("code", exception.getCode());
+        result.put("message", sanitizer.sanitize(exception.getMessage()));
+        result.put("suggestion", sanitizer.sanitize(suggestion));
+        return json(result);
+    }
+
+    public boolean isRecoverableReadFailure(BusinessException exception) {
+        return exception != null && RECOVERABLE_READ_FAILURES.contains(exception.getCode());
     }
 
     public String sanitize(String value) {

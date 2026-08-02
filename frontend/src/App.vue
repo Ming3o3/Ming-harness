@@ -319,7 +319,10 @@ const chatRunActivity = computed(() => {
   if (activeStep?.type === 'MODEL') {
     const fallbackStep = steps.slice().reverse().find((step) => isRecoverableToolFallback(step)
       && step.sequence < activeStep.sequence)
-    if (fallbackStep) return 'Git 审阅不可用，Agent 正在改用文件工具…'
+    if (fallbackStep?.name?.startsWith('workspace.git.')) {
+      return 'Git 审阅不可用，Agent 正在改用文件工具…'
+    }
+    if (fallbackStep) return '文件定位未成功，Agent 正在重新浏览工作区…'
   }
   return agentActivityLabel(activeStep)
 })
@@ -471,12 +474,22 @@ function decodeWorkspaceGitDiff(step) {
 }
 
 function isRecoverableToolFallback(step) {
-  if (!step?.output || step.status !== 'SUCCEEDED' || !String(step.name || '').startsWith('workspace.git.')) return false
+  if (!step?.output || step.status !== 'SUCCEEDED' || !String(step.name || '').startsWith('workspace.')) return false
   try {
     const parsed = JSON.parse(step.output)
-    return parsed && parsed.available === false && parsed.recoverable === true
+    return parsed && parsed.recoverable === true && parsed.ok === false
   } catch {
     return false
+  }
+}
+
+function decodeWorkspaceRecoverableFailure(step) {
+  if (!step?.output || step.status !== 'SUCCEEDED' || !String(step.name || '').startsWith('workspace.')) return null
+  try {
+    const parsed = JSON.parse(step.output)
+    return parsed && parsed.ok === false && parsed.recoverable === true ? parsed : null
+  } catch {
+    return null
   }
 }
 
@@ -2865,6 +2878,15 @@ onBeforeUnmount(() => {
                         <pre v-if="decodeWorkspaceGitDiff(step).diff" class="git-diff-output">{{ decodeWorkspaceGitDiff(step).diff }}</pre>
                         <p v-else class="muted-line">当前范围没有代码差异</p>
                       </template>
+                    </template>
+                    <template v-else-if="decodeWorkspaceRecoverableFailure(step)">
+                      <p class="command-line"><span>↻</span> {{ step.name }} 未完成，Agent 将继续定位</p>
+                      <div class="command-summary">
+                        <span class="command-failed">{{ decodeWorkspaceRecoverableFailure(step).code || '读取未完成' }}</span>
+                        <span>可恢复</span>
+                      </div>
+                      <p class="muted-line">{{ decodeWorkspaceRecoverableFailure(step).message }}</p>
+                      <p v-if="decodeWorkspaceRecoverableFailure(step).suggestion" class="muted-line">{{ decodeWorkspaceRecoverableFailure(step).suggestion }}</p>
                     </template>
                     <p v-else-if="step.type !== 'MODEL' && step.output" class="step-output">{{ step.output }}</p>
                     <p v-if="step.error" class="step-error">{{ step.error }}</p>

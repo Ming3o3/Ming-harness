@@ -131,6 +131,27 @@ class DemoModelGatewayTests {
         assertTrue(response.toolCalls().get(0).arguments().contains("src/App.java"));
     }
 
+    @Test
+    void shouldRebrowseWorkspaceWhenAReadToolReturnsRecoverableError() {
+        ModelToolDefinition list = new ModelToolDefinition(
+                "workspace.list", "列出工作区目录结构", Map.of("type", "object"));
+        ModelToolDefinition read = new ModelToolDefinition(
+                "workspace.read", "读取工作区文件", Map.of("type", "object"));
+        ModelToolCall readCall = new ModelToolCall("stale-read", "workspace.read",
+                "{\"path\":\"old/App.java\"}");
+        ModelResponse response = gateway.complete(new ModelRequest(
+                "请检查项目", "demo-model", "prompt-agent", List.of(list, read), List.of(
+                ModelMessage.system("你是代码 Agent"),
+                ModelMessage.user("请检查项目"),
+                ModelMessage.assistant("读取旧路径", List.of(readCall)),
+                ModelMessage.tool(readCall.id(), "{\"ok\":false,\"available\":true,"
+                        + "\"recoverable\":true,\"code\":\"WORKSPACE_PATH_NOT_FOUND\"}"))));
+
+        assertEquals("workspace.list", response.toolCalls().get(0).name());
+        assertTrue(response.content().contains("重新浏览工作区"));
+        assertTrue(response.toolCalls().get(0).arguments().contains("\"path\":\".\""));
+    }
+
     private ModelRequest withToolResult(ModelRequest previousRequest,
                                         ModelResponse response, String toolResult) {
         List<ModelMessage> messages = new java.util.ArrayList<>(previousRequest.messages());

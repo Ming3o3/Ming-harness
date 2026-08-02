@@ -1,5 +1,6 @@
 package org.mingharness.tool;
 
+import org.mingharness.common.BusinessException;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 
@@ -27,7 +28,7 @@ public class WorkspaceListTool implements HarnessTool {
     public ToolDefinition definition() {
         return new ToolDefinition(
                 "workspace.list",
-                "列出工作区目录结构，不跟随符号链接",
+                "列出工作区目录结构，不跟随符号链接；路径错误会返回 recoverable=true，Agent 可重新浏览根目录",
                 true,
                 "LOW",
                 false,
@@ -49,15 +50,21 @@ public class WorkspaceListTool implements HarnessTool {
 
     @Override
     public String execute(String input) {
-        JsonNode request = support.parseObject(input, definition().name());
-        String rawPath = support.optionalText(request, "path");
-        boolean recursive = support.optionalBoolean(request, "recursive", false, definition().name());
-        Path directory = support.resolve(rawPath, false);
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("path", rawPath == null || rawPath.isBlank() ? "." : rawPath);
-        result.put("recursive", recursive);
-        result.put("entries", support.list(directory, rawPath, recursive));
-        return support.json(result);
+        try {
+            JsonNode request = support.parseObject(input, definition().name());
+            String rawPath = support.optionalText(request, "path");
+            boolean recursive = support.optionalBoolean(request, "recursive", false, definition().name());
+            Path directory = support.resolve(rawPath, false);
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("path", rawPath == null || rawPath.isBlank() ? "." : rawPath);
+            result.put("recursive", recursive);
+            result.put("entries", support.list(directory, rawPath, recursive));
+            return support.json(result);
+        } catch (BusinessException exception) {
+            if (!support.isRecoverableReadFailure(exception)) throw exception;
+            return support.recoverableReadFailure(definition().name(), exception,
+                    "请改用 workspace.list 的 path=. 重新浏览工作区，再选择存在的目录");
+        }
     }
 
     @Override

@@ -151,9 +151,9 @@ npm run dev
 
 当该目录就是你要开发的项目根目录时，Agent 读取、编辑和通过审批的命令会直接作用于原项目，无需先把整个项目上传到聊天框。聊天页会通过 `GET /api/workspace` 显示已连接的工作区名称、Git 状态和命令开关；该接口需要 `workspace.read` 权限，并且**永远不会**返回本机绝对路径。模型同样只使用相对于工作区根目录的路径（例如 `src/App.vue`）。
 
-- `workspace.list`：浏览目录结构，需要 `workspace.read`
-- `workspace.read`：读取文件，可按 `startLine`/`endLine` 截取，并返回当前文件 SHA-256
-- `workspace.search`：在工作区文本文件中搜索路径、行号和脱敏后的内容，需要 `workspace.read`
+- `workspace.list`：浏览目录结构，需要 `workspace.read`；路径暂时失效时返回 `recoverable=true`，Agent 会重新从根目录定位
+- `workspace.read`：读取文件，可按 `startLine`/`endLine` 截取，并返回当前文件 SHA-256；文件路径或内容不可读时返回脱敏的可恢复结果
+- `workspace.search`：在工作区文本文件中搜索路径、行号和脱敏后的内容，需要 `workspace.read`；搜索目录失效时可恢复
 - `workspace.write`：原子写入 UTF-8 文件，需要 `workspace.write` 和人工审批；覆盖已有文件必须携带上一次读取返回的 `sha256`，文件被其他人修改时会返回 `WORKSPACE_FILE_CHANGED`
 - `workspace.edit`：按多个精确 `oldText`/`newText` 片段增量编辑文件，需要 `workspace.write` 和人工审批；默认要求每个片段只匹配一处，并且必须携带读取时的 `expectedSha256`
 - `workspace.git.status`：查看当前工作区范围内的分支和文件变更，需要 `workspace.read`，只执行固定的只读 Git 命令；非 Git 工作区会返回 `available=false` 的可恢复结果，Agent 可继续使用文件工具

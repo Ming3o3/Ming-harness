@@ -1,5 +1,6 @@
 package org.mingharness.tool;
 
+import org.mingharness.common.BusinessException;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 
@@ -28,7 +29,7 @@ public class WorkspaceReadFileTool implements HarnessTool {
     public ToolDefinition definition() {
         return new ToolDefinition(
                 "workspace.read",
-                "读取工作区内的 UTF-8 文本文件，支持按行截取",
+                "读取工作区内的 UTF-8 文本文件，支持按行截取；路径或文件不可读时返回 recoverable=true",
                 true,
                 "LOW",
                 false,
@@ -52,28 +53,34 @@ public class WorkspaceReadFileTool implements HarnessTool {
 
     @Override
     public String execute(String input) {
-        JsonNode request = support.parseObject(input, definition().name());
-        String rawPath = support.requiredText(request, "path", definition().name());
-        int startLine = support.optionalInt(request, "startLine", 1, 1,
-                support.properties().maxReadLines(), definition().name());
-        int endLine = support.optionalInt(request, "endLine",
-                Math.min(support.properties().maxReadLines(), startLine + support.properties().maxReadLines() - 1),
-                startLine, Integer.MAX_VALUE, definition().name());
-        Path path = support.resolve(rawPath, false);
-        String content = support.readText(path, rawPath);
-        String[] lines = content.split("\\R", -1);
-        int from = Math.min(startLine - 1, lines.length);
-        int to = Math.min(endLine, lines.length);
-        String selected = String.join("\n", java.util.Arrays.copyOfRange(lines, from, to));
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("path", rawPath);
-        result.put("startLine", from + 1);
-        result.put("endLine", to);
-        result.put("totalLines", lines.length);
-        result.put("content", selected);
-        result.put("sha256", support.sha256(content.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        result.put("truncated", from > 0 || to < lines.length);
-        return support.json(result);
+        try {
+            JsonNode request = support.parseObject(input, definition().name());
+            String rawPath = support.requiredText(request, "path", definition().name());
+            int startLine = support.optionalInt(request, "startLine", 1, 1,
+                    support.properties().maxReadLines(), definition().name());
+            int endLine = support.optionalInt(request, "endLine",
+                    Math.min(support.properties().maxReadLines(), startLine + support.properties().maxReadLines() - 1),
+                    startLine, Integer.MAX_VALUE, definition().name());
+            Path path = support.resolve(rawPath, false);
+            String content = support.readText(path, rawPath);
+            String[] lines = content.split("\\R", -1);
+            int from = Math.min(startLine - 1, lines.length);
+            int to = Math.min(endLine, lines.length);
+            String selected = String.join("\n", java.util.Arrays.copyOfRange(lines, from, to));
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("path", rawPath);
+            result.put("startLine", from + 1);
+            result.put("endLine", to);
+            result.put("totalLines", lines.length);
+            result.put("content", selected);
+            result.put("sha256", support.sha256(content.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+            result.put("truncated", from > 0 || to < lines.length);
+            return support.json(result);
+        } catch (BusinessException exception) {
+            if (!support.isRecoverableReadFailure(exception)) throw exception;
+            return support.recoverableReadFailure(definition().name(), exception,
+                    "请先用 workspace.list 或 workspace.search 确认文件路径；文件过大时缩小 startLine/endLine");
+        }
     }
 
     @Override

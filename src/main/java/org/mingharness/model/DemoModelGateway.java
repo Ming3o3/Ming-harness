@@ -111,7 +111,7 @@ public class DemoModelGateway implements ModelGateway {
         // 将结构化不可用结果转成下一步工具调用，演示模型与真实 Agent 的降级行为保持一致。
         if (("workspace.git.status".equals(latestToolName)
                 || "workspace.git.diff".equals(latestToolName))
-                && isUnavailableToolResult(toolResult)) {
+                && isRecoverableToolResult(toolResult)) {
             Optional<ModelToolDefinition> workspaceRead = request.tools().stream()
                     .filter(tool -> "workspace.read".equals(tool.name()))
                     .findFirst();
@@ -134,6 +134,18 @@ public class DemoModelGateway implements ModelGateway {
             }
         }
 
+        // 路径可能在模型规划后被用户或其他进程改变；从根目录重新定位比直接终止更接近桌面 Agent 体验。
+        if (isRecoverableToolResult(toolResult)) {
+            Optional<ModelToolDefinition> workspaceList = request.tools().stream()
+                    .filter(tool -> "workspace.list".equals(tool.name()))
+                    .findFirst();
+            if (workspaceList.isPresent()) {
+                return response(request, input, "上一步文件定位未成功，演示 Agent 正在重新浏览工作区…",
+                        List.of(new ModelToolCall("demo-workspace-list-after-read-fallback", "workspace.list",
+                                "{\"path\":\".\",\"recursive\":false}")));
+            }
+        }
+
         if ("workspace.read".equals(latestToolName)) {
             String readSummary = summarizeReadResult(toolResult);
             if (!readSummary.isBlank()) {
@@ -149,10 +161,9 @@ public class DemoModelGateway implements ModelGateway {
         return response(request, input, content, List.of());
     }
 
-    private boolean isUnavailableToolResult(String rawResult) {
+    private boolean isRecoverableToolResult(String rawResult) {
         JsonNode result = parseJson(rawResult);
-        return result != null && !result.path("available").asBoolean(true)
-                && result.path("recoverable").asBoolean(false);
+        return result != null && result.path("recoverable").asBoolean(false);
     }
 
     private Optional<ModelMessage> latestToolMessage(List<ModelMessage> messages) {
