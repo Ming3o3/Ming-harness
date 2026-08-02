@@ -1068,21 +1068,24 @@ public class RunService {
                                                     RunExecutionStateService.StepExecutionSnapshot step,
                                                     String modelInput, String workerId) {
         return executeModelCall(new StreamingRunContext(run.id(), run.tenantId(), run.modelName(),
-                run.promptVersion(), run.input(), run.agentMode(), historyFromSnapshots(run.steps(), step.sequence())),
+                run.promptVersion(), run.input(), run.agentMode(), permissions(run.permissionsSnapshot()),
+                historyFromSnapshots(run.steps(), step.sequence())),
                 step.id(), modelInput, workerId, true);
     }
 
     private ModelResponse executeModelCall(Run run, Step step, String modelInput, String workerId,
                                            boolean streamToChat) {
         return executeModelCall(new StreamingRunContext(run.getId(), run.getTenantId(), run.getModelName(),
-                run.getPromptVersion(), run.getInput(), run.isAgentMode(), historyFromEntities(run.getSteps(), step.getSequence())),
+                run.getPromptVersion(), run.getInput(), run.isAgentMode(), permissions(run),
+                historyFromEntities(run.getSteps(), step.getSequence())),
                 step.getId(), modelInput, workerId, streamToChat);
     }
 
     private ModelResponse executeModelCall(StreamingRunContext run, String stepId,
                                            String modelInput, String workerId, boolean streamToChat) {
         String safeInput = sanitizer.sanitize(modelInput);
-        List<ModelToolDefinition> tools = run.agentMode() ? availableModelTools(run.tenantId()) : List.of();
+        List<ModelToolDefinition> tools = run.agentMode()
+                ? availableModelTools(run.tenantId(), run.permissions()) : List.of();
         List<ModelMessage> messages = run.agentMode()
                 ? agentMessages(run.input(), safeInput, run.history()) : List.of();
         ModelRequest request = new ModelRequest(
@@ -1157,6 +1160,7 @@ public class RunService {
 
     private record StreamingRunContext(String id, String tenantId, String modelName,
                                        String promptVersion, String input, boolean agentMode,
+                                       Set<String> permissions,
                                        List<AgentHistoryStep> history) {
     }
 
@@ -1318,11 +1322,13 @@ public class RunService {
                 .collect(Collectors.toUnmodifiableSet());
     }
 
-    /** 只把当前租户白名单内的工具契约发给模型，权限/审批字段永远不会泄露给供应商。 */
-    private List<ModelToolDefinition> availableModelTools(String tenantId) {
+    /** 只把当前租户和当前执行身份都可使用的工具契约发给模型，避免模型反复请求必然被拒绝的工具。 */
+    private List<ModelToolDefinition> availableModelTools(String tenantId, Set<String> grantedPermissions) {
         TenantPolicyLimits limits = tenantPolicyService.limitsFor(tenantId);
+        Set<String> permissions = grantedPermissions == null ? Set.of() : grantedPermissions;
         return toolRegistry.definitions().stream()
                 .filter(definition -> limits.allowsTool(definition.name()))
+                .filter(definition -> definition.requiredPermissions().stream().allMatch(permissions::contains))
                 .filter(definition -> toolRegistry.get(definition.name()).available())
                 .map(definition -> new ModelToolDefinition(
                         definition.name(), definition.description(), definition.inputSchema()))

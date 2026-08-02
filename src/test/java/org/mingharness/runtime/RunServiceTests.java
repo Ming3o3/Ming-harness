@@ -27,6 +27,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -47,11 +50,14 @@ class RunServiceTests {
     private RunRepository runRepository;
     @Autowired
     private AuditEventRepository auditEventRepository;
+    @Autowired
+    private AgentModelToolsState agentModelToolsState;
 
     @BeforeEach
     void cleanDatabase() {
         auditEventRepository.deleteAll();
         runRepository.deleteAll();
+        agentModelToolsState.reset();
     }
 
     @Test
@@ -102,6 +108,20 @@ class RunServiceTests {
         assertEquals("Agent 最终结果", result.run().output());
         assertTrue(auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
                 .anyMatch(event -> "AGENT_TOOL_CALL_REQUESTED".equals(event.getEventType())));
+    }
+
+    @Test
+    void shouldOnlyExposeAgentToolsGrantedByRunPermissions() {
+        RunSummary created = runService.create(new CreateRunRequest(
+                "tenant-demo", "user-demo", "按权限筛选工具", "请完成一次 Agent 任务",
+                null, null, "prompt-agent", "policy-v1", BigDecimal.TEN,
+                null, "some.other.permission", true, 3));
+
+        RunDetail result = runService.start(created.id(), "tenant-demo");
+
+        assertEquals(RunStatus.SUCCEEDED, result.run().status(), result.run().error());
+        assertFalse(agentModelToolsState.firstToolNames().contains("test.secured"));
+        assertTrue(agentModelToolsState.firstToolNames().contains("demo.echo"));
     }
 
     @Test
@@ -508,12 +528,18 @@ class RunServiceTests {
     static class AgentModelConfiguration {
 
         @Bean
+        AgentModelToolsState agentModelToolsState() {
+            return new AgentModelToolsState();
+        }
+
+        @Bean
         @org.springframework.context.annotation.Primary
-        ModelGateway agentModelGateway() {
+        ModelGateway agentModelGateway(AgentModelToolsState state) {
             DemoModelGateway fallback = new DemoModelGateway();
             return new ModelGateway() {
                 @Override
                 public ModelResponse complete(ModelRequest request) {
+                    state.record(request);
                     if (request.tools().isEmpty()) return fallback.complete(request);
                     if (request.input().contains("重复工具调用")) {
                         return new ModelResponse("", "agent-test", request.promptVersion(), 5, 4,
@@ -536,6 +562,24 @@ class RunServiceTests {
                                     "call-agent-1", "demo.echo", "\"agent input\"")));
                 }
             };
+        }
+    }
+
+    static class AgentModelToolsState {
+        private final List<List<String>> calls = Collections.synchronizedList(new ArrayList<>());
+
+        void record(ModelRequest request) {
+            calls.add(request.tools().stream().map(tool -> tool.name()).toList());
+        }
+
+        List<String> firstToolNames() {
+            synchronized (calls) {
+                return calls.isEmpty() ? List.of() : List.copyOf(calls.get(0));
+            }
+        }
+
+        void reset() {
+            calls.clear();
         }
     }
 }
