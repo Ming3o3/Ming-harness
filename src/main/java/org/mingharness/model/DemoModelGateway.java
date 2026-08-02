@@ -2,14 +2,25 @@ package org.mingharness.model;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 
 @Component
 @ConditionalOnProperty(prefix = "harness.model", name = "enabled", havingValue = "false", matchIfMissing = true)
 public class DemoModelGateway implements ModelGateway {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final int READ_PREVIEW_LINES = 120;
+    private static final int FINAL_PREVIEW_CHARS = 1_200;
 
     @Override
     public ModelResponse complete(ModelRequest request) {
@@ -24,13 +35,13 @@ public class DemoModelGateway implements ModelGateway {
     }
 
     /**
-     * 默认演示模型也跑一遍最小的 Agent 闭环，便于本地未配置外部模型时验证工具、步骤和审计体验。
-     * 真实模型接入后仍由 OpenAI 兼容网关负责自然语言决策；演示路径只执行一次安全的只读/回显工具。
+     * 默认演示模型也跑一遍确定性的 Agent 代码理解闭环，便于本地未配置外部模型时验证工具、步骤和审计体验。
+     * 真实模型接入后仍由 OpenAI 兼容网关负责自然语言决策；演示路径最多浏览一层源码目录并读取一个代表性文本文件，
+     * 或在工作区工具不可用时退回安全的回显工具。
      */
     private ModelResponse completeAgentDemo(ModelRequest request, String input) {
-        boolean hasToolResult = request.messages().stream()
-                .anyMatch(message -> "tool".equals(message.role()));
-        if (!hasToolResult) {
+        Optional<ModelMessage> latestToolMessage = latestToolMessage(request.messages());
+        if (latestToolMessage.isEmpty()) {
             Optional<ModelToolDefinition> workspaceList = request.tools().stream()
                     .filter(tool -> "workspace.list".equals(tool.name()))
                     .findFirst();
@@ -48,17 +59,172 @@ public class DemoModelGateway implements ModelGateway {
             }
         }
 
-        String toolResult = request.messages().stream()
-                .filter(message -> "tool".equals(message.role()))
-                .reduce((left, right) -> right)
-                .map(ModelMessage::content)
-                .orElse("");
+        String toolResult = latestToolMessage.map(ModelMessage::content).orElse("");
+        String latestToolName = latestToolName(request.messages());
+        if ("workspace.list".equals(latestToolName)) {
+            Optional<ModelToolDefinition> workspaceRead = request.tools().stream()
+                    .filter(tool -> "workspace.read".equals(tool.name()))
+                    .findFirst();
+            if (workspaceRead.isPresent()) {
+                Optional<String> nextDirectory = nextSourceDirectory(toolResult);
+                if (nextDirectory.isPresent()) {
+                    return response(request, input, "演示 Agent 正在深入检查源代码目录…",
+                            List.of(new ModelToolCall("demo-workspace-list-source", "workspace.list",
+                                    jsonObject(Map.of("path", nextDirectory.get(), "recursive", true)))));
+                }
+                Optional<String> candidate = firstReadableFile(toolResult);
+                if (candidate.isPresent()) {
+                    return response(request, input, "演示 Agent 正在读取关键文件…",
+                            List.of(new ModelToolCall("demo-workspace-read", "workspace.read",
+                                    jsonObject(Map.of("path", candidate.get(), "startLine", 1,
+                                            "endLine", READ_PREVIEW_LINES)))));
+                }
+            }
+        }
+
+        if ("workspace.read".equals(latestToolName)) {
+            String readSummary = summarizeReadResult(toolResult);
+            if (!readSummary.isBlank()) {
+                return response(request, input, readSummary, List.of());
+            }
+        }
+
         String clippedResult = toolResult.length() > 800
                 ? toolResult.substring(0, 800) + "…" : toolResult;
         String content = clippedResult.isBlank()
                 ? "演示 Agent 已完成任务，但没有可展示的工具结果。"
                 : "演示 Agent 已完成任务。\n\n工具结果：\n" + clippedResult;
         return response(request, input, content, List.of());
+    }
+
+    private Optional<ModelMessage> latestToolMessage(List<ModelMessage> messages) {
+        if (messages == null) return Optional.empty();
+        for (int index = messages.size() - 1; index >= 0; index--) {
+            ModelMessage message = messages.get(index);
+            if (message != null && "tool".equals(message.role())) return Optional.of(message);
+        }
+        return Optional.empty();
+    }
+
+    private String latestToolName(List<ModelMessage> messages) {
+        Optional<ModelMessage> toolMessage = latestToolMessage(messages);
+        if (toolMessage.isEmpty() || messages == null) return "";
+        String toolCallId = toolMessage.get().toolCallId();
+        for (int index = messages.size() - 1; index >= 0; index--) {
+            ModelMessage message = messages.get(index);
+            if (message == null || !"assistant".equals(message.role())) continue;
+            for (int callIndex = message.toolCalls().size() - 1; callIndex >= 0; callIndex--) {
+                ModelToolCall call = message.toolCalls().get(callIndex);
+                if (toolCallId == null || toolCallId.isBlank() || toolCallId.equals(call.id())) {
+                    return call.name();
+                }
+            }
+        }
+        return "";
+    }
+
+    /** 根目录下存在典型源码目录时，先深入一层，避免递归扫描依赖目录吞掉安全上限。 */
+    private Optional<String> nextSourceDirectory(String rawResult) {
+        JsonNode root = parseJson(rawResult);
+        if (root == null || !".".equals(root.path("path").asText("."))) return Optional.empty();
+        JsonNode entries = root.path("entries");
+        if (!entries.isArray()) return Optional.empty();
+        return streamEntries(entries).stream()
+                .filter(entry -> "directory".equals(entry.path("type").asText()))
+                .filter(entry -> !entry.path("path").asText().contains("/"))
+                .filter(entry -> sourceDirectoryRank(entry.path("path").asText()) < Integer.MAX_VALUE)
+                .sorted(Comparator.comparingInt(entry -> sourceDirectoryRank(entry.path("path").asText())))
+                .map(entry -> entry.path("path").asText())
+                .findFirst();
+    }
+
+    private Optional<String> firstReadableFile(String rawResult) {
+        JsonNode root = parseJson(rawResult);
+        if (root == null) return Optional.empty();
+        JsonNode entries = root.path("entries");
+        if (!entries.isArray()) return Optional.empty();
+        return streamEntries(entries).stream()
+                .filter(entry -> "file".equals(entry.path("type").asText()))
+                .map(entry -> entry.path("path").asText())
+                .filter(path -> !path.isBlank() && !isIgnoredPath(path))
+                .filter(this::looksReadable)
+                .sorted(Comparator.comparingInt(this::fileRank).thenComparing(String::length))
+                .findFirst();
+    }
+
+    private List<JsonNode> streamEntries(JsonNode entries) {
+        List<JsonNode> result = new ArrayList<>();
+        entries.forEach(result::add);
+        return result;
+    }
+
+    private JsonNode parseJson(String rawValue) {
+        if (rawValue == null || rawValue.isBlank()) return null;
+        try {
+            return OBJECT_MAPPER.readTree(rawValue);
+        } catch (JacksonException ignored) {
+            return null;
+        }
+    }
+
+    private int sourceDirectoryRank(String path) {
+        return switch (path.toLowerCase(Locale.ROOT)) {
+            case "src" -> 0;
+            case "app" -> 1;
+            case "lib" -> 2;
+            case "frontend" -> 3;
+            case "backend" -> 4;
+            default -> Integer.MAX_VALUE;
+        };
+    }
+
+    private int fileRank(String path) {
+        String lower = path.toLowerCase(Locale.ROOT);
+        if (lower.endsWith(".java") || lower.endsWith(".kt") || lower.endsWith(".ts")
+                || lower.endsWith(".tsx") || lower.endsWith(".vue") || lower.endsWith(".py")
+                || lower.endsWith(".go") || lower.endsWith(".rs")) return 0;
+        if (lower.endsWith(".js") || lower.endsWith(".jsx") || lower.endsWith(".cs")
+                || lower.endsWith(".cpp") || lower.endsWith(".c")) return 1;
+        if (lower.endsWith(".xml") || lower.endsWith(".json") || lower.endsWith(".yaml")
+                || lower.endsWith(".yml") || lower.endsWith(".properties")) return 2;
+        if (lower.endsWith(".md") || lower.endsWith(".txt")) return 3;
+        return 4;
+    }
+
+    private boolean looksReadable(String path) {
+        String lower = path.toLowerCase(Locale.ROOT);
+        return lower.contains(".") && fileRank(path) < 4;
+    }
+
+    private boolean isIgnoredPath(String path) {
+        String lower = path.toLowerCase(Locale.ROOT);
+        return lower.startsWith(".") || lower.contains("/.")
+                || lower.contains("/node_modules/") || lower.contains("/target/")
+                || lower.contains("/dist/") || lower.contains("/build/")
+                || lower.contains("/.git/");
+    }
+
+    private String summarizeReadResult(String rawResult) {
+        JsonNode root = parseJson(rawResult);
+        if (root == null || !root.path("content").isTextual()) return "";
+        String path = root.path("path").asText("工作区文件");
+        String content = root.path("content").asText("");
+        String preview = content.length() > FINAL_PREVIEW_CHARS
+                ? content.substring(0, FINAL_PREVIEW_CHARS) + "\n…" : content;
+        String hash = root.path("sha256").asText("");
+        String lineInfo = root.path("totalLines").isNumber()
+                ? "，共 " + root.path("totalLines").asInt() + " 行" : "";
+        return "演示 Agent 已完成项目理解。\n\n已读取：" + path + lineInfo
+                + (hash.isBlank() ? "" : "，sha256=" + hash)
+                + "\n\n关键内容片段：\n" + preview;
+    }
+
+    private String jsonObject(Map<String, Object> value) {
+        try {
+            return OBJECT_MAPPER.writeValueAsString(value);
+        } catch (JacksonException exception) {
+            throw new IllegalStateException("无法创建演示工具参数", exception);
+        }
     }
 
     private ModelResponse response(ModelRequest request, String input, String content,
