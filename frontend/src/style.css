@@ -486,11 +486,26 @@ h3 { margin: 0; font-size: 13px; }
 .chat-quick-prompts > span { margin-right: 2px; color: var(--muted); font: 8px "DM Mono", monospace; letter-spacing: .06em; }
 .chat-quick-prompts button { border: 1px solid rgba(141,124,255,.24); border-radius: 14px; background: rgba(141,124,255,.06); color: var(--soft); padding: 5px 8px; font: 9px "DM Mono", monospace; transition: .16s ease; }
 .chat-quick-prompts button:hover:not(:disabled) { border-color: rgba(141,124,255,.52); background: rgba(141,124,255,.14); color: var(--heading); transform: translateY(-1px); }
+.chat-agent-settings { display: grid; gap: 10px; margin: 0 0 10px; border: 1px solid rgba(141,124,255,.24); border-radius: 8px; background: rgba(141,124,255,.055); padding: 10px; }
+.chat-agent-settings-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.chat-agent-settings-heading > div { display: grid; gap: 3px; }
+.chat-agent-settings-heading strong { color: var(--soft); font-size: 10px; }
+.chat-agent-settings-heading small { color: var(--muted); font: 8px/1.45 "DM Mono", monospace; }
+.chat-agent-settings-heading button { width: 20px; height: 20px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); padding: 0; font-size: 15px; line-height: 1; }
+.chat-agent-settings-heading button:hover { background: rgba(255,114,123,.12); color: var(--red); }
+.chat-agent-settings-controls { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; }
+.chat-agent-settings-controls label { display: grid; gap: 5px; color: var(--muted); font: 8px "DM Mono", monospace; }
+.chat-agent-settings-controls input { width: 100px; border: 1px solid var(--line); border-radius: 6px; outline: 0; background: var(--input-bg); color: var(--text); padding: 7px 8px; font: 10px "DM Mono", monospace; }
+.chat-agent-settings-controls input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(141,124,255,.1); }
+.chat-agent-presets { display: flex; flex-wrap: wrap; gap: 5px; }
+.chat-agent-presets button { border: 1px solid var(--line); border-radius: 6px; background: var(--hover-bg); color: var(--muted); padding: 7px 8px; font: 8px "DM Mono", monospace; }
+.chat-agent-presets button:hover:not(:disabled), .chat-agent-presets button.active { border-color: rgba(141,124,255,.5); background: rgba(141,124,255,.12); color: var(--accent-light); }
 .chat-composer textarea { display: block; width: 100%; min-height: 78px; max-height: 220px; resize: none; overflow-y: auto; border: 0; outline: 0; background: transparent; color: var(--text); padding: 3px 2px 8px; font-size: 12px; line-height: 1.65; }
 .chat-composer textarea::placeholder { color: var(--muted); }
 .chat-composer-footer { justify-content: space-between; gap: 8px; border-top: 1px solid var(--line); padding-top: 9px; color: var(--muted); font: 9px "DM Mono", monospace; }
 .chat-composer-footer kbd { border: 1px solid var(--line); border-radius: 4px; background: var(--hover-bg); padding: 2px 4px; color: var(--soft); font: 8px "DM Mono", monospace; }
 .chat-composer-actions { display: flex; align-items: center; gap: 7px; margin-left: auto; }
+.chat-agent-settings-button { padding: 8px 9px; font-size: 9px; white-space: nowrap; }
 .chat-attachment-button { padding: 8px 10px; font-size: 10px; }
 .chat-stop-button { border-color: rgba(255,182,95,.3); color: var(--orange); padding: 8px 11px; font-size: 10px; }
 .chat-stop-button:hover:not(:disabled) { border-color: rgba(255,182,95,.62); background: rgba(255,182,95,.1); color: var(--orange); }
@@ -721,5 +736,7 @@ h3 { margin: 0; font-size: 13px; }
   .chat-messages { padding: 22px 14px 30px; }
   .chat-composer { width: calc(100% - 28px); margin-bottom: 14px; }
   .chat-composer-footer > span { display: none; }
+  .chat-agent-settings-button { width: 32px; overflow: hidden; padding: 8px 0; font-size: 0; }
+  .chat-agent-settings-button::before { content: "⚙"; font-size: 13px; }
   .chat-send-button { margin-left: auto; }
 }

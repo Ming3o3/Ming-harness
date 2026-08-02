@@ -83,6 +83,8 @@ const chatDragActive = ref(false)
 const chatAttachmentInput = ref(null)
 const chatFolderInput = ref(null)
 const showChatRun = ref(false)
+const showChatAgentSettings = ref(false)
+const chatMaxTurns = ref(readChatMaxTurns())
 const showCommandPalette = ref(false)
 const commandQuery = ref('')
 const commandSelectedIndex = ref(0)
@@ -748,6 +750,27 @@ function saveChatDraft(conversationId, value = chatInput.value) {
 function loadChatDraft(conversationId) {
   const draft = readChatDrafts()[conversationId]
   return typeof draft === 'string' ? draft : ''
+}
+
+function readChatMaxTurns() {
+  const value = Number(readStoredValue('harnessChatMaxTurns', '24'))
+  return Number.isInteger(value) && value >= 1 && value <= 1000 ? value : 24
+}
+
+function persistChatMaxTurns() {
+  const value = Math.max(1, Math.min(1000, Number(chatMaxTurns.value) || 1))
+  chatMaxTurns.value = value
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem('harnessChatMaxTurns', String(value))
+  } catch {
+    // 浏览器禁用本地存储时仍保留当前页面内的 Agent 设置。
+  }
+}
+
+function setChatMaxTurns(value) {
+  chatMaxTurns.value = value
+  persistChatMaxTurns()
 }
 
 function removeChatDraft(conversationId) {
@@ -1654,6 +1677,7 @@ function scrollChatToBottom() {
 
 async function sendChatMessage() {
   if (!canSendChat.value) return
+  persistChatMaxTurns()
   clearMessages()
   chatSending.value = true
   const conversationId = activeConversationId.value
@@ -1720,7 +1744,7 @@ async function sendChatMessage() {
     }
     const detail = await api.sendConversationMessage(conversationId, {
       content,
-      maxTurns: 1000,
+      maxTurns: chatMaxTurns.value,
       attachmentIds: uploadedAttachments.map((attachment) => attachment.id),
     }, `chat-${crypto.randomUUID?.() || Date.now()}`)
     messageSubmitted = true
@@ -2731,6 +2755,15 @@ onBeforeUnmount(() => {
                 {{ template.label }}
               </button>
             </div>
+            <div v-if="showChatAgentSettings && activeConversationId" class="chat-agent-settings" aria-label="Agent 设置">
+              <div class="chat-agent-settings-heading"><div><strong>Agent 执行深度</strong><small>限制本轮最多执行的模型轮数，工具结果会继续计入同一 Run。</small></div><button type="button" aria-label="关闭 Agent 设置" @click="showChatAgentSettings = false">×</button></div>
+              <div class="chat-agent-settings-controls">
+                <label><span>模型轮数上限</span><input v-model.number="chatMaxTurns" type="number" min="1" max="1000" step="1" :disabled="chatSending || chatUploading" @change="persistChatMaxTurns" /></label>
+                <div class="chat-agent-presets" aria-label="Agent 深度预设">
+                  <button v-for="preset in [8, 24, 100, 1000]" :key="preset" type="button" :class="{ active: chatMaxTurns === preset }" :disabled="chatSending || chatUploading" @click="setChatMaxTurns(preset)">{{ preset === 1000 ? '平台上限' : `${preset} 轮` }}</button>
+                </div>
+              </div>
+            </div>
             <textarea
               ref="chatInputRef"
               v-model="chatInput"
@@ -2744,6 +2777,7 @@ onBeforeUnmount(() => {
             <div class="chat-composer-footer">
               <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行<span v-if="canCancelChat"> · <kbd>Esc</kbd> 停止</span> · 草稿自动保存 · {{ desktopWorkspaceDropping ? '正在授权拖入的本地项目…' : workspaceConnected ? 'Agent 可直接操作本会话绑定的本地项目' : '文件夹导入后保留层级' }}</span>
               <div class="chat-composer-actions">
+                <button class="secondary-button chat-agent-settings-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="showChatAgentSettings = !showChatAgentSettings">⚙ Agent · {{ chatMaxTurns }} 轮</button>
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatAttachmentPicker">⌁ 附件</button>
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatFolderPicker">▣ 文件夹</button>
                 <button v-if="canCancelChat" class="secondary-button chat-stop-button" type="button" :disabled="chatCancellingRunId === pendingChatMessage?.runId" @click="cancelChatRun">{{ chatCancellingRunId === pendingChatMessage?.runId ? '停止中…' : '停止' }}</button>

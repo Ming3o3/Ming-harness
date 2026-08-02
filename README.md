@@ -292,6 +292,8 @@ curl -X POST http://localhost:8080/api/conversations/{conversationId}/messages \
 
 相关接口：`GET /api/conversations`、`GET /api/conversations/{id}`、`POST /api/conversations/{id}/attachments`、`DELETE /api/conversations/{id}/attachments/{attachmentId}`、`POST /api/conversations/{id}/messages`。聊天框可拖入文件或文件夹，也可点击“文件夹”选择本地目录；文件夹会保留相对层级，以一个目录附件写入 `HARNESS_WORKSPACE_ROOT/attachments/<conversation-id>/`，Agent 会先通过 `workspace.list` 获取目录信息，再按需 `workspace.read` 或编写代码。附件仅接受 UTF-8 文本，单次最多 200 个文件、20 MB，单条消息最多 8 个文件或文件夹。浏览器不会暴露本机绝对路径，返回的 `workspacePath` 是 Agent 唯一可见、并受工作区安全边界保护的路径；文件会在消息发送成功时绑定到该轮记录，发送失败时前端会尽力回收未绑定文件。会话按租户和用户隔离，消息中的 `runId` 可以继续调用原有 Run 详情、审批、取消和重试接口。
 
+聊天输入框旁的“Agent”设置可以调整本轮模型轮数上限，预设为 8、24、100 或平台上限 1000；该值会随消息发送到 `maxTurns`，并保存在浏览器中用于下次继续使用。较低的轮数适合快速问答，较高的轮数适合需要多次读取、修改和核验的代码任务。
+
 `local` 与 `local-infra` Profile 默认启用受控工作区；若在其他环境启用聊天附件，请显式配置 `WORKSPACE_ENABLED=true` 与专用的 `HARNESS_WORKSPACE_ROOT`。不要把工作区配置成用户主目录或其他宽泛目录。
 
 创建 Run 时将 `agentMode` 设置为 `true`，Harness 会把模型返回的 Tool Call 持久化为新的工具步骤；每个工具完成后自动追加下一轮模型步骤。模型结果、工具参数、审计事件和当前轮次都保存在数据库中，Rabbit Worker 重启后可以从最后一个已提交步骤恢复，而不会依赖进程内上下文。
