@@ -86,6 +86,9 @@ const chatDragActive = ref(false)
 const chatAttachmentInput = ref(null)
 const chatFolderInput = ref(null)
 const showChatRun = ref(false)
+const showRejectDialog = ref(false)
+const rejectReason = ref('')
+const rejectReasonInputRef = ref(null)
 const showChatAgentSettings = ref(false)
 const chatMaxTurns = ref(readChatMaxTurns())
 const showCommandPalette = ref(false)
@@ -909,6 +912,11 @@ function handleChatGlobalKeydown(event) {
   if (showModelSettings.value) {
     event.preventDefault()
     showModelSettings.value = false
+    return
+  }
+  if (showRejectDialog.value) {
+    event.preventDefault()
+    closeRejectDialog()
     return
   }
   if (!chatMode.value) return
@@ -2522,12 +2530,32 @@ async function approveSelectedRun() {
   }
 }
 
+function openRejectDialog() {
+  if (!selectedRun.value || !canApprove.value || loading.value) return
+  clearMessages()
+  rejectReason.value = ''
+  showRejectDialog.value = true
+  void nextTick(() => rejectReasonInputRef.value?.focus())
+}
+
+function closeRejectDialog() {
+  if (loading.value) return
+  showRejectDialog.value = false
+  rejectReason.value = ''
+}
+
 async function rejectSelectedRun() {
-  if (!selectedRun.value) return
+  if (!selectedRun.value || !canApprove.value) {
+    closeRejectDialog()
+    return
+  }
   clearMessages()
   loading.value = true
   try {
-    await api.rejectRun(selectedRun.value.run.id, '控制台人工拒绝')
+    const reason = rejectReason.value.trim() || '控制台人工拒绝'
+    await api.rejectRun(selectedRun.value.run.id, reason)
+    showRejectDialog.value = false
+    rejectReason.value = ''
     noticeMessage.value = '审批已拒绝，Run 已结束'
     await loadDashboard()
     await refreshActiveConversation()
@@ -2956,7 +2984,7 @@ onBeforeUnmount(() => {
             <div class="chat-run-summary"><strong>{{ selectedRun.run.title }}</strong><span class="status-pill" :class="statusClass(selectedRun.run.status)"><i></i>{{ statusLabel(selectedRun.run.status) }}</span></div>
             <div class="chat-run-actions">
               <button v-if="canApprove" class="secondary-button" type="button" :disabled="loading" @click="approveSelectedRun">审批通过</button>
-              <button v-if="canApprove" class="danger-button" type="button" :disabled="loading" @click="rejectSelectedRun">拒绝</button>
+              <button v-if="canApprove" class="danger-button" type="button" :disabled="loading" @click="openRejectDialog">拒绝</button>
               <button v-if="canRetry" class="secondary-button" type="button" :disabled="loading" @click="retrySelectedRun">重试</button>
               <button v-if="canCancel" class="danger-button" type="button" :disabled="loading" @click="cancelSelectedRun">取消</button>
             </div>
@@ -3316,7 +3344,7 @@ onBeforeUnmount(() => {
                 <span class="status-pill" :class="statusClass(selectedStatus)"><i></i>{{ statusLabel(selectedStatus) }}</span>
                 <button v-if="canStart" class="secondary-button" type="button" :disabled="loading" @click="startSelectedRun">启动</button>
                 <button v-if="canApprove" class="secondary-button" type="button" :disabled="loading" @click="approveSelectedRun">审批通过</button>
-                <button v-if="canApprove" class="danger-button" type="button" :disabled="loading" @click="rejectSelectedRun">拒绝</button>
+                <button v-if="canApprove" class="danger-button" type="button" :disabled="loading" @click="openRejectDialog">拒绝</button>
                 <button v-if="canRetry" class="secondary-button" type="button" :disabled="loading" @click="retrySelectedRun">重试</button>
                 <button v-if="canCancel" class="danger-button" type="button" :disabled="loading" @click="cancelSelectedRun">取消</button>
               </div>
@@ -3526,6 +3554,34 @@ onBeforeUnmount(() => {
     </main>
   </div>
   </template>
+  <div
+    v-if="showRejectDialog"
+    class="reject-dialog-overlay"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="reject-dialog-title"
+    @click.self="closeRejectDialog"
+  >
+    <form class="reject-dialog" @submit.prevent="rejectSelectedRun">
+      <header class="reject-dialog-heading">
+        <div>
+          <p class="eyebrow">APPROVAL DECISION</p>
+          <h2 id="reject-dialog-title">拒绝这次变更？</h2>
+          <span>{{ selectedRun?.run?.title || '当前 Run' }}</span>
+        </div>
+        <button class="icon-button" type="button" aria-label="关闭拒绝确认" :disabled="loading" @click="closeRejectDialog">×</button>
+      </header>
+      <p class="reject-dialog-help">拒绝后 Run 会结束。留下修改意见会写入审计记录，方便后续调整时追溯决策。</p>
+      <label class="field">
+        <span>拒绝原因（可选）</span>
+        <textarea ref="rejectReasonInputRef" v-model="rejectReason" maxlength="500" rows="4" placeholder="例如：请先补充测试，并避免修改配置文件。"></textarea>
+      </label>
+      <footer class="reject-dialog-actions">
+        <button class="secondary-button" type="button" :disabled="loading" @click="closeRejectDialog">返回检查</button>
+        <button class="danger-button" type="submit" :disabled="loading">{{ loading ? '提交中…' : '拒绝并记录意见' }}</button>
+      </footer>
+    </form>
+  </div>
   <div
     v-if="showModelSettings"
     class="model-settings-overlay"
