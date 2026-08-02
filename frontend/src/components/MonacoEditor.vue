@@ -118,6 +118,7 @@ function editorOptions() {
   return {
     automaticLayout: true,
     ariaLabel: props.diff ? '代码差异对比编辑器' : '代码编辑器',
+    bracketPairColorization: { enabled: false },
     contextmenu: true,
     folding: true,
     foldingHighlight: true,
@@ -125,6 +126,7 @@ function editorOptions() {
     fontLigatures: false,
     fontSize: 12,
     glyphMargin: false,
+    guides: { bracketPairs: false, indentation: true, highlightActiveIndentation: true },
     lineDecorationsWidth: 8,
     lineNumbers: 'on',
     minimap: { enabled: false },

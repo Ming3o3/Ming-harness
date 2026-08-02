@@ -1934,14 +1934,16 @@ onBeforeUnmount(() => {
           </form>
         </main>
 
-        <aside v-if="showChatWorkspace" class="chat-workspace-panel">
+        <aside v-if="showChatWorkspace" class="chat-workspace-panel" :class="{ 'workspace-panel-expanded': workspaceFilePreview || workspaceFilePreviewLoading }">
           <div class="chat-run-panel-heading">
             <div><p class="eyebrow">PROJECT EXPLORER</p><h2>项目文件</h2></div>
             <button class="icon-button" type="button" aria-label="关闭项目文件" @click="showChatWorkspace = false">×</button>
           </div>
           <div v-if="workspaceExplorerLoading && !workspaceExplorer" class="chat-run-empty">正在读取工作区目录…</div>
           <template v-else-if="workspaceExplorer">
-            <div class="workspace-explorer-git" :class="{ unavailable: !workspaceExplorer.git?.available }">
+            <div class="workspace-explorer-layout" :class="{ 'has-preview': workspaceFilePreview || workspaceFilePreviewLoading }">
+              <section class="workspace-browser-column" aria-label="工作区文件树">
+              <div class="workspace-explorer-git" :class="{ unavailable: !workspaceExplorer.git?.available }">
               <span>Git</span>
               <strong>{{ workspaceExplorer.git?.available ? workspaceExplorer.git.branch : '非 Git 项目' }}</strong>
               <em v-if="workspaceExplorer.git?.available">{{ workspaceExplorer.git.clean ? '工作区干净' : `${workspaceExplorer.git.changeCount} 项变更` }}</em>
@@ -1992,6 +1994,8 @@ onBeforeUnmount(() => {
               </button>
               <p v-if="!workspaceExplorer.entries.length">当前目录没有可显示的文件。</p>
             </div>
+              </section>
+              <section v-if="workspaceFilePreview || workspaceFilePreviewLoading" class="workspace-file-inspector" aria-label="文件编辑器">
             <section v-if="workspaceFilePreview || workspaceFilePreviewLoading" class="workspace-file-preview" aria-label="文件预览">
               <div class="workspace-file-preview-heading">
                 <div><strong>{{ workspaceFilePreview?.path || '正在读取文件…' }}</strong><span v-if="workspaceFilePreview?.path" class="workspace-file-language">{{ languageLabel('', workspaceFilePreview.path) }}</span><span v-if="workspaceFilePreview?.redacted">已脱敏</span><span v-if="workspaceFilePreview?.truncated">已截断</span></div>
@@ -2015,6 +2019,8 @@ onBeforeUnmount(() => {
               <p v-if="workspaceFilePreview?.truncated" class="workspace-editor-hint">文件超过编辑器安全行数上限，当前仅展示前 {{ workspaceFilePreview.content?.split('\n').length || 0 }} 行，已禁用保存。</p>
               <p v-else-if="workspaceFilePreview && !workspaceEditorWritable" class="workspace-editor-hint">当前身份没有 workspace.write 权限，文件以只读模式打开。</p>
             </section>
+              </section>
+            </div>
           </template>
           <div v-else class="chat-run-empty">当前会话未连接可访问的本地项目。</div>
         </aside>
