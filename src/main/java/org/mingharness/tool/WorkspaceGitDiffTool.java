@@ -62,7 +62,15 @@ public class WorkspaceGitDiffTool implements HarnessTool {
         JsonNode request = support.parseObject(input, definition().name());
         String rawPath = support.optionalText(request, "path");
         Path root = support.resolve(".", false);
-        Path gitDirectory = support.requireGitDirectory();
+        Path gitDirectory;
+        try {
+            gitDirectory = support.requireGitDirectory();
+        } catch (BusinessException exception) {
+            if ("WORKSPACE_GIT_REPOSITORY_INVALID".equals(exception.getCode())) {
+                return support.gitUnavailable(definition().name(), exception);
+            }
+            throw exception;
+        }
         String relativePath = ".";
         if (rawPath != null && !rawPath.isBlank()) {
             Path target = support.resolve(rawPath, true);

@@ -156,6 +156,7 @@ public class WorkspaceExplorerService {
 
     private WorkspaceGitStatusView gitStatusInsideRoot() {
         JsonNode status = parseGitResult(gitStatusTool.execute("{}"), "WORKSPACE_GIT_STATUS_INVALID");
+        requireGitAvailable(status);
         List<WorkspaceGitChangeView> entries = new java.util.ArrayList<>();
         JsonNode rawEntries = status.path("entries");
         if (rawEntries.isArray()) {
@@ -175,6 +176,7 @@ public class WorkspaceExplorerService {
     private WorkspaceGitDiffView gitDiffInsideRoot(String path, boolean staged, int contextLines) {
         String input = workspace.json(Map.of("path", path, "staged", staged, "contextLines", contextLines));
         JsonNode diff = parseGitResult(gitDiffTool.execute(input), "WORKSPACE_GIT_DIFF_INVALID");
+        requireGitAvailable(diff);
         return new WorkspaceGitDiffView(diff.path("path").asText(path), diff.path("staged").asBoolean(staged),
                 diff.path("contextLines").asInt(contextLines), diff.path("hasChanges").asBoolean(false),
                 diff.path("outputTruncated").asBoolean(false), diff.path("outputBytes").asInt(0),
@@ -194,6 +196,9 @@ public class WorkspaceExplorerService {
         try {
             String raw = gitStatusTool.execute("{}");
             JsonNode status = objectMapper.readTree(raw);
+            if (!status.path("available").asBoolean(true)) {
+                return WorkspaceGitOverviewView.unavailable();
+            }
             return new WorkspaceGitOverviewView(true, status.path("branch").asText("—"),
                     status.path("clean").asBoolean(false), status.path("entryCount").asInt(0),
                     status.path("outputTruncated").asBoolean(false));
@@ -216,6 +221,13 @@ public class WorkspaceExplorerService {
         } catch (JacksonException exception) {
             throw new BusinessException(HttpStatus.INTERNAL_SERVER_ERROR, errorCode, "Git 工具结果无法解析");
         }
+    }
+
+    private void requireGitAvailable(JsonNode result) {
+        if (result.path("available").asBoolean(true)) return;
+        String code = result.path("code").asText("WORKSPACE_GIT_REPOSITORY_INVALID");
+        String message = result.path("message").asText("当前工作区不是 Git 仓库");
+        throw new BusinessException(HttpStatus.CONFLICT, code, message);
     }
 
     private String normalizeWorkspaceId(String workspaceId) {

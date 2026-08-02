@@ -26,12 +26,13 @@ final class AgentVerificationPolicy {
         if (latestMutation < 0) return Optional.empty();
         boolean verified = steps.stream()
                 .filter(step -> step.status() == StepStatus.SUCCEEDED)
+                .filter(StepEvidence::verificationEligible)
                 .anyMatch(step -> step.sequence() > latestMutation
                         && VERIFICATION_TOOLS.contains(step.name()));
         return verified ? Optional.empty()
                 : Optional.of("Agent 修改工作区后必须重新读取文件或使用 workspace.git.diff 核对实际变更");
     }
 
-    record StepEvidence(int sequence, String name, StepStatus status) {
+    record StepEvidence(int sequence, String name, StepStatus status, boolean verificationEligible) {
     }
 }

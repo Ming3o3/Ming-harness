@@ -2817,11 +2817,17 @@ onBeforeUnmount(() => {
                       </div>
                     </template>
                     <template v-else-if="decodeWorkspaceGitStatus(step)">
-                      <p class="git-line"><span>⌘</span> {{ decodeWorkspaceGitStatus(step).branch || 'Git 工作区' }}</p>
-                      <div class="command-summary">
-                        <span :class="decodeWorkspaceGitStatus(step).clean ? 'command-ok' : 'command-failed'">{{ decodeWorkspaceGitStatus(step).clean ? '工作区干净' : '存在文件变更' }}</span>
-                        <span>{{ decodeWorkspaceGitStatus(step).entryCount || 0 }} 个变更</span>
-                      </div>
+                      <template v-if="decodeWorkspaceGitStatus(step).available === false">
+                        <p class="git-line"><span>⌘</span> Git 审阅不可用</p>
+                        <div class="command-summary"><span class="command-failed">{{ decodeWorkspaceGitStatus(step).message || '当前工作区不是 Git 仓库' }}</span><span>Agent 已改用文件工具继续检查</span></div>
+                      </template>
+                      <template v-else>
+                        <p class="git-line"><span>⌘</span> {{ decodeWorkspaceGitStatus(step).branch || 'Git 工作区' }}</p>
+                        <div class="command-summary">
+                          <span :class="decodeWorkspaceGitStatus(step).clean ? 'command-ok' : 'command-failed'">{{ decodeWorkspaceGitStatus(step).clean ? '工作区干净' : '存在文件变更' }}</span>
+                          <span>{{ decodeWorkspaceGitStatus(step).entryCount || 0 }} 个变更</span>
+                        </div>
+                      </template>
                     </template>
                     <template v-else-if="decodeWorkspaceSearch(step)">
                       <p class="search-line"><span>⌕</span> {{ decodeWorkspaceSearch(step).query }} · {{ decodeWorkspaceSearch(step).path || '.' }}</p>
@@ -2835,9 +2841,15 @@ onBeforeUnmount(() => {
                       </div>
                     </template>
                     <template v-else-if="decodeWorkspaceGitDiff(step)">
-                      <p class="git-line"><span>⌘</span> {{ decodeWorkspaceGitDiff(step).path || '.' }} · {{ decodeWorkspaceGitDiff(step).staged ? '已暂存' : '未暂存' }}</p>
-                      <pre v-if="decodeWorkspaceGitDiff(step).diff" class="git-diff-output">{{ decodeWorkspaceGitDiff(step).diff }}</pre>
-                      <p v-else class="muted-line">当前范围没有代码差异</p>
+                      <template v-if="decodeWorkspaceGitDiff(step).available === false">
+                        <p class="git-line"><span>⌘</span> Git Diff 不可用</p>
+                        <p class="muted-line">{{ decodeWorkspaceGitDiff(step).suggestion || '请改为读取相关文件核对修改。' }}</p>
+                      </template>
+                      <template v-else>
+                        <p class="git-line"><span>⌘</span> {{ decodeWorkspaceGitDiff(step).path || '.' }} · {{ decodeWorkspaceGitDiff(step).staged ? '已暂存' : '未暂存' }}</p>
+                        <pre v-if="decodeWorkspaceGitDiff(step).diff" class="git-diff-output">{{ decodeWorkspaceGitDiff(step).diff }}</pre>
+                        <p v-else class="muted-line">当前范围没有代码差异</p>
+                      </template>
                     </template>
                     <p v-else-if="step.type !== 'MODEL' && step.output" class="step-output">{{ step.output }}</p>
                     <p v-if="step.error" class="step-error">{{ step.error }}</p>

@@ -58,7 +58,15 @@ public class WorkspaceGitStatusTool implements HarnessTool {
         support.requireEnabled();
         support.parseObject(input, definition().name());
         Path root = support.resolve(".", false);
-        Path gitDirectory = support.requireGitDirectory();
+        Path gitDirectory;
+        try {
+            gitDirectory = support.requireGitDirectory();
+        } catch (BusinessException exception) {
+            if ("WORKSPACE_GIT_REPOSITORY_INVALID".equals(exception.getCode())) {
+                return support.gitUnavailable(definition().name(), exception);
+            }
+            throw exception;
+        }
         WorkspaceCommandRunner.Result result = commandRunner.run(
                 List.of("git", "--git-dir=" + gitDirectory, "--work-tree=" + root,
                         "-c", "core.quotepath=false", "-c", "core.fsmonitor=false", "status",

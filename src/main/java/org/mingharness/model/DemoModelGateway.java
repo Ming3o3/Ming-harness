@@ -107,6 +107,33 @@ public class DemoModelGateway implements ModelGateway {
             }
         }
 
+        // Git 只是辅助审阅能力，非 Git 工作区仍然可以继续浏览普通文件。
+        // 将结构化不可用结果转成下一步工具调用，演示模型与真实 Agent 的降级行为保持一致。
+        if (("workspace.git.status".equals(latestToolName)
+                || "workspace.git.diff".equals(latestToolName))
+                && isUnavailableToolResult(toolResult)) {
+            Optional<ModelToolDefinition> workspaceRead = request.tools().stream()
+                    .filter(tool -> "workspace.read".equals(tool.name()))
+                    .findFirst();
+            if (workspaceRead.isPresent()) {
+                Optional<String> candidate = firstReadableFile(latestToolResult(request.messages(), "workspace.list"));
+                if (candidate.isPresent()) {
+                    return response(request, input, "Git 审阅不可用，演示 Agent 改为读取关键文件…",
+                            List.of(new ModelToolCall("demo-workspace-read-after-git-fallback", "workspace.read",
+                                    jsonObject(Map.of("path", candidate.get(), "startLine", 1,
+                                            "endLine", READ_PREVIEW_LINES)))));
+                }
+            }
+            Optional<ModelToolDefinition> workspaceList = request.tools().stream()
+                    .filter(tool -> "workspace.list".equals(tool.name()))
+                    .findFirst();
+            if (workspaceList.isPresent()) {
+                return response(request, input, "Git 审阅不可用，演示 Agent 先重新浏览工作区…",
+                        List.of(new ModelToolCall("demo-workspace-list-after-git-fallback", "workspace.list",
+                                "{\"path\":\".\",\"recursive\":false}")));
+            }
+        }
+
         if ("workspace.read".equals(latestToolName)) {
             String readSummary = summarizeReadResult(toolResult);
             if (!readSummary.isBlank()) {
@@ -120,6 +147,12 @@ public class DemoModelGateway implements ModelGateway {
                 ? "演示 Agent 已完成任务，但没有可展示的工具结果。"
                 : "演示 Agent 已完成任务。\n\n工具结果：\n" + clippedResult;
         return response(request, input, content, List.of());
+    }
+
+    private boolean isUnavailableToolResult(String rawResult) {
+        JsonNode result = parseJson(rawResult);
+        return result != null && !result.path("available").asBoolean(true)
+                && result.path("recoverable").asBoolean(false);
     }
 
     private Optional<ModelMessage> latestToolMessage(List<ModelMessage> messages) {

@@ -188,6 +188,32 @@ class RunWorkerExecutionTests {
         assertEquals(RunStatus.SUCCEEDED, runRepository.findById(run.getId()).orElseThrow().getStatus());
     }
 
+    @Test
+    void shouldNotTreatUnavailableGitAsWorkspaceVerification() {
+        Run run = new Run("tenant-agent-validation-git", "worker-user", "Git 审阅降级", "输入",
+                BigDecimal.TEN, "demo-model", "prompt-agent", "policy-v1",
+                null, "workspace.write,workspace.read", true, 3);
+        run.addStep(succeededStep(1, org.mingharness.runtime.domain.StepType.MODEL,
+                "model.complete", "{\"content\":\"开始修改\",\"toolCalls\":[]}"));
+        run.addStep(succeededStep(2, org.mingharness.runtime.domain.StepType.TOOL,
+                "workspace.write", "{\"path\":\"src/App.java\"}"));
+        run.addStep(succeededStep(3, org.mingharness.runtime.domain.StepType.TOOL,
+                "workspace.git.diff", "{\"ok\":false,\"available\":false,"
+                        + "\"recoverable\":true,\"verificationEligible\":false}"));
+        run.addStep(succeededStep(4, org.mingharness.runtime.domain.StepType.MODEL,
+                "model.complete", "{\"content\":\"Git 不可用\",\"toolCalls\":[]}"));
+        run.start();
+        runRepository.saveAndFlush(run);
+
+        assertTrue(executionStateService.claim(run.getId(), run.getTenantId(), "validation-worker-git",
+                Instant.now().plusSeconds(30)).isPresent());
+        assertFalse(executionStateService.finishSuccess(run.getId(), run.getTenantId(), "validation-worker-git"));
+
+        Run failed = runRepository.findById(run.getId()).orElseThrow();
+        assertEquals(RunStatus.FAILED, failed.getStatus());
+        assertTrue(failed.getError().contains("重新读取文件"));
+    }
+
     private org.mingharness.runtime.domain.Step succeededStep(int sequence,
                                                                 org.mingharness.runtime.domain.StepType type,
                                                                 String name, String output) {

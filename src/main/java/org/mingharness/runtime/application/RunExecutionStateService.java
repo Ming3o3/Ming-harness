@@ -395,7 +395,8 @@ public class RunExecutionStateService {
         }
         Optional<String> validationError = AgentVerificationPolicy.missingVerification(run.getSteps().stream()
                 .map(step -> new AgentVerificationPolicy.StepEvidence(
-                        step.getSequence(), step.getName(), step.getStatus()))
+                        step.getSequence(), step.getName(), step.getStatus(),
+                        AgentToolFailureRecovery.verificationEligible(step.getOutput())))
                 .toList());
         if (run.isAgentMode() && validationError.isPresent()) {
             Step latest = run.getSteps().stream()

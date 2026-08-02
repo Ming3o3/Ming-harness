@@ -251,11 +251,17 @@ class WorkspaceToolTests {
     }
 
     @Test
-    void shouldFailClearlyWhenWorkspaceIsNotGitRepository() {
+    void shouldReturnRecoverableGitResultWhenWorkspaceIsNotGitRepository() {
         WorkspaceToolSupport support = support();
-        BusinessException exception = assertThrows(BusinessException.class,
-                () -> new WorkspaceGitStatusTool(support).execute("{}"));
-        assertEquals("WORKSPACE_GIT_REPOSITORY_INVALID", exception.getCode());
+        String status = new WorkspaceGitStatusTool(support).execute("{}");
+        assertTrue(status.contains("\"available\":false"));
+        assertTrue(status.contains("\"recoverable\":true"));
+        assertTrue(status.contains("WORKSPACE_GIT_REPOSITORY_INVALID"));
+        assertTrue(status.contains("workspace.read"));
+
+        String diff = new WorkspaceGitDiffTool(support).execute("{}");
+        assertTrue(diff.contains("\"available\":false"));
+        assertTrue(diff.contains("\"verificationEligible\":false"));
     }
 
     private WorkspaceToolSupport support() {

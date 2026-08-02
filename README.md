@@ -156,8 +156,8 @@ npm run dev
 - `workspace.search`：在工作区文本文件中搜索路径、行号和脱敏后的内容，需要 `workspace.read`
 - `workspace.write`：原子写入 UTF-8 文件，需要 `workspace.write` 和人工审批；覆盖已有文件必须携带上一次读取返回的 `sha256`，文件被其他人修改时会返回 `WORKSPACE_FILE_CHANGED`
 - `workspace.edit`：按多个精确 `oldText`/`newText` 片段增量编辑文件，需要 `workspace.write` 和人工审批；默认要求每个片段只匹配一处，并且必须携带读取时的 `expectedSha256`
-- `workspace.git.status`：查看当前工作区范围内的分支和文件变更，需要 `workspace.read`，只执行固定的只读 Git 命令
-- `workspace.git.diff`：查看当前工作区范围内的未暂存或已暂存差异，需要 `workspace.read`，支持按文件和上下文行数限制输出
+- `workspace.git.status`：查看当前工作区范围内的分支和文件变更，需要 `workspace.read`，只执行固定的只读 Git 命令；非 Git 工作区会返回 `available=false` 的可恢复结果，Agent 可继续使用文件工具
+- `workspace.git.diff`：查看当前工作区范围内的未暂存或已暂存差异，需要 `workspace.read`，支持按文件和上下文行数限制输出；Git 不可用时不会冒充有效修改核验
 
 本地配置示例：
 
@@ -299,7 +299,7 @@ curl -X POST http://localhost:8080/api/runs \
 
 Agent 模式下 `toolName` 不参与选择，模型只会收到当前租户工具白名单、工具可用性和当前执行身份权限都满足的工具契约；工具注册表、JSON Schema、租户策略、权限和审批仍是最终授权边界。默认演示模型在工作区工具可用时会先浏览根目录，再深入典型源码目录并读取一个代表性文本文件，把受限内容片段和 `sha256` 带入最终结论；没有工作区工具时退回安全的回显工具，便于本地验证真实的“模型 → 工具 → 模型”链路。接入外部模型后由模型自行决定工具调用。`maxTurns` 范围为 1 到 1000，超过后 Run 以 `FAILED` 结束并记录 `AGENT_MAX_TURNS_EXCEEDED`。控制台创建表单可以直接开启 Agent 模式，详情页会展示模型轮次、Tool Call、工具输出和审批状态。
 
-当前工作区工具支持浏览、读取、搜索、精确增量编辑、原子写入、Git 状态/差异查看和受控命令执行。写入和编辑工具需要 `workspace.write` 权限、人工审批以及读取时返回的 `sha256` 并发校验；编辑工具只接受精确文本替换，匹配不唯一时会拒绝执行，避免误改代码。Git 工具只查看工作区范围内的变更，不执行 Hook、外部 Diff 或 TextConv，不需要人工审批；为防止 Git 配置越界，工作区根目录必须是包含普通 `.git` 目录的仓库根目录。命令工具需要 `workspace.exec` 权限、白名单和人工审批。所有工作目录仍受工作区根目录、隐藏路径和符号链接边界保护，Agent 不会获得任意 Shell 拼接能力。
+当前工作区工具支持浏览、读取、搜索、精确增量编辑、原子写入、Git 状态/差异查看和受控命令执行。写入和编辑工具需要 `workspace.write` 权限、人工审批以及读取时返回的 `sha256` 并发校验；编辑工具只接受精确文本替换，匹配不唯一时会拒绝执行，避免误改代码。Git 工具只查看工作区范围内的变更，不执行 Hook、外部 Diff 或 TextConv，不需要人工审批；为防止 Git 配置越界，工作区根目录必须是包含普通 `.git` 目录的仓库根目录。若目录不是 Git 仓库，工具会把原因和替代建议交给 Agent，默认演示模型会自动降级到 `workspace.read`，但该结果不会满足“修改后必须核验”的策略。命令工具需要 `workspace.exec` 权限、白名单和人工审批。所有工作目录仍受工作区根目录、隐藏路径和符号链接边界保护，Agent 不会获得任意 Shell 拼接能力。
 
 开启命令沙箱的本地示例：
 

@@ -103,6 +103,34 @@ class DemoModelGatewayTests {
         assertTrue(finalResponse.content().contains("abc123"));
     }
 
+    @Test
+    void shouldFallBackToReadingFilesWhenGitIsUnavailable() {
+        ModelToolDefinition list = new ModelToolDefinition(
+                "workspace.list", "列出工作区目录结构", Map.of("type", "object"));
+        ModelToolDefinition read = new ModelToolDefinition(
+                "workspace.read", "读取工作区文件", Map.of("type", "object"));
+        ModelToolDefinition gitStatus = new ModelToolDefinition(
+                "workspace.git.status", "查看 Git 状态", Map.of("type", "object"));
+        ModelToolCall listCall = new ModelToolCall("list-call", "workspace.list", "{}");
+        ModelToolCall gitCall = new ModelToolCall("git-call", "workspace.git.status", "{}");
+        List<ModelMessage> messages = new java.util.ArrayList<>(List.of(
+                ModelMessage.system("你是代码 Agent"),
+                ModelMessage.user("请检查项目"),
+                ModelMessage.assistant("先浏览工作区", List.of(listCall)),
+                ModelMessage.tool(listCall.id(), "{\"path\":\".\",\"entries\":["
+                        + "{\"path\":\"src/App.java\",\"type\":\"file\"}] }"),
+                ModelMessage.assistant("尝试查看 Git", List.of(gitCall)),
+                ModelMessage.tool(gitCall.id(), "{\"ok\":false,\"available\":false,"
+                        + "\"recoverable\":true,\"verificationEligible\":false}")));
+
+        ModelResponse response = gateway.complete(new ModelRequest(
+                "请检查项目", "demo-model", "prompt-agent", List.of(list, read, gitStatus), messages));
+
+        assertEquals("workspace.read", response.toolCalls().get(0).name());
+        assertTrue(response.content().contains("Git 审阅不可用"));
+        assertTrue(response.toolCalls().get(0).arguments().contains("src/App.java"));
+    }
+
     private ModelRequest withToolResult(ModelRequest previousRequest,
                                         ModelResponse response, String toolResult) {
         List<ModelMessage> messages = new java.util.ArrayList<>(previousRequest.messages());

@@ -391,6 +391,24 @@ public class WorkspaceToolSupport {
         }
     }
 
+    /**
+     * Git 不是所有工作区都具备。对 Agent 来说，这类环境能力缺失应当是可解释的结果，
+     * 而不是让整轮任务直接失败；调用方仍可根据 {@code available=false} 选择普通文件工具继续工作。
+     */
+    public String gitUnavailable(String toolName, BusinessException exception) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("ok", false);
+        result.put("available", false);
+        result.put("recoverable", true);
+        // Git 不可用不能作为 workspace.git.diff 的有效修改核验依据。
+        result.put("verificationEligible", false);
+        result.put("tool", toolName);
+        result.put("code", exception.getCode());
+        result.put("message", sanitizer.sanitize(exception.getMessage()));
+        result.put("suggestion", "当前工作区仍可使用 workspace.list、workspace.search 或 workspace.read 继续检查文件");
+        return json(result);
+    }
+
     public String sanitize(String value) {
         return sanitizer.sanitize(value);
     }
