@@ -578,6 +578,13 @@ h3 { margin: 0; font-size: 13px; }
 .chat-step-row strong { display: block; overflow: hidden; color: var(--soft); font: 10px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .chat-step-row small { display: block; margin-top: 4px; color: var(--muted); font: 9px "DM Mono", monospace; }
 .chat-step-row p { margin: 6px 0 0; color: var(--red); font-size: 10px; line-height: 1.4; }
+.chat-step-rejection { color: var(--orange) !important; }
+.chat-step-details { margin-top: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--input-bg); }
+.chat-step-details summary { cursor: pointer; padding: 7px 8px; color: var(--accent-light); font: 9px "DM Mono", monospace; }
+.chat-step-details summary:hover { color: var(--soft); }
+.chat-step-payload { border-top: 1px solid var(--line); padding: 7px 8px 8px; }
+.chat-step-payload > span { display: block; margin-bottom: 5px; color: var(--muted); font: 8px "DM Mono", monospace; text-transform: uppercase; }
+.chat-step-payload pre { max-height: 150px; margin: 0; overflow: auto; color: var(--soft); white-space: pre-wrap; word-break: break-word; font: 9px/1.5 "DM Mono", monospace; }
 .chat-run-empty { color: var(--muted); font-size: 10px; line-height: 1.6; }
 .workspace-explorer-git { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 5px 8px; border: 1px solid rgba(85,214,138,.2); border-radius: 8px; background: rgba(85,214,138,.045); padding: 9px; color: var(--soft); font: 9px "DM Mono", monospace; }
 .workspace-explorer-git > span { color: var(--green); }

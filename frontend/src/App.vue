@@ -681,6 +681,16 @@ function decodeToolInput(step) {
   }
 }
 
+function chatStepPayload(value) {
+  if (value == null || value === '') return ''
+  const raw = String(value)
+  try {
+    return clipCodePreview(JSON.stringify(JSON.parse(raw), null, 2), 1400)
+  } catch {
+    return clipCodePreview(raw, 1400)
+  }
+}
+
 function clipCodePreview(value, maximum = 900) {
   if (typeof value !== 'string') return ''
   if (value.length <= maximum) return value
@@ -3119,7 +3129,19 @@ onBeforeUnmount(() => {
             </section>
             <div class="chat-run-meta"><span>Run</span><code>{{ selectedRun.run.id.slice(0, 12) }}</code><span>Trace</span><code>{{ selectedRun.run.traceId?.slice(0, 12) || '—' }}</code></div>
             <div class="chat-step-list">
-              <div v-for="step in selectedRun.steps" :key="step.id" class="chat-step-row"><span class="chat-step-dot" :class="statusClass(step.status)"></span><div><strong>{{ step.name }}</strong><small>{{ stepLabel(step.type) }} · {{ statusLabel(step.status) }}</small><p v-if="step.error">{{ step.error }}</p></div></div>
+              <div v-for="step in selectedRun.steps" :key="step.id" class="chat-step-row">
+                <span class="chat-step-dot" :class="statusClass(step.status)"></span>
+                <div>
+                  <strong>{{ step.name }}</strong>
+                  <small>{{ stepLabel(step.type) }} · {{ statusLabel(step.status) }}</small>
+                  <p v-if="step.error" :class="step.status === 'REJECTED' ? 'chat-step-rejection' : ''">{{ step.error }}</p>
+                  <details v-if="step.type === 'TOOL' && (step.input || step.output)" class="chat-step-details" :open="['REJECTED', 'FAILED'].includes(step.status)">
+                    <summary>查看工具参数与结果</summary>
+                    <div v-if="step.input" class="chat-step-payload"><span>输入</span><pre>{{ chatStepPayload(step.input) }}</pre></div>
+                    <div v-if="step.output" class="chat-step-payload"><span>结果</span><pre>{{ chatStepPayload(step.output) }}</pre></div>
+                  </details>
+                </div>
+              </div>
             </div>
           </template>
         </aside>
