@@ -536,19 +536,29 @@ function stepLabel(type) {
   return { MODEL: '模型', TOOL: '工具', APPROVAL: '审批' }[type] || type
 }
 
+function activityValue(value, maximum = 46) {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  return text.length <= maximum ? text : `${text.slice(0, maximum - 1)}…`
+}
+
 function agentActivityLabel(step) {
   if (!step) return 'Agent 正在整理结果…'
   if (step.status === 'WAITING_APPROVAL') return `等待你审批：${step.name}`
   if (step.type === 'MODEL') return 'Agent 正在思考…'
+  const input = decodeToolInput(step)
+  const path = activityValue(input?.path)
+  const query = activityValue(input?.query, 32)
+  const command = activityValue(input?.command, 32)
   return {
     'workspace.list': '正在浏览工作区…',
-    'workspace.search': '正在搜索代码…',
-    'workspace.read': '正在读取文件…',
-    'workspace.edit': '正在修改文件…',
-    'workspace.write': '正在写入文件…',
+    'workspace.search': query ? `正在搜索「${query}」…` : '正在搜索代码…',
+    'workspace.read': path ? `正在读取 ${path}…` : '正在读取文件…',
+    'workspace.edit': path ? `正在修改 ${path}…` : '正在修改文件…',
+    'workspace.write': path ? `正在写入 ${path}…` : '正在写入文件…',
     'workspace.git.status': '正在检查 Git 状态…',
-    'workspace.git.diff': '正在核对代码变更…',
-    'workspace.exec': '正在运行命令…',
+    'workspace.git.diff': path ? `正在核对 ${path}…` : '正在核对代码变更…',
+    'workspace.exec': command ? `正在运行 ${command}…` : '正在运行命令…',
   }[step.name] || `正在使用 ${step.name}…`
 }
 
