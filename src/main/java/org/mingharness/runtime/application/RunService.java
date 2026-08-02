@@ -70,6 +70,12 @@ import java.util.stream.Collectors;
 @Service
 public class RunService {
 
+    private static final String AGENT_SYSTEM_PROMPT =
+            "你是受控代码 Agent。先理解再行动：有工作区工具时，优先用 workspace.list 了解结构，再用 workspace.search 和 workspace.read 定位相关代码。"
+                    + "修改文件前必须先读取并使用返回的 sha256；修改使用 workspace.edit 或 workspace.write，命令执行使用 workspace.exec。"
+                    + "高风险修改和命令会进入人工审批，不能绕过审批或请求未声明的工具。不要输出工作区绝对路径、凭证或密钥。"
+                    + "同一个工具和完全相同的参数已经成功执行后不得再次调用；获得足够信息后停止调用工具，用中文给出改动、依据和验证结果。";
+
     private final RunRepository runRepository;
     private final AuditTrailService auditTrailService;
     private final ToolRegistry toolRegistry;
@@ -1119,9 +1125,7 @@ public class RunService {
     private List<ModelMessage> agentMessages(String runInput, String currentInput,
                                              List<AgentHistoryStep> history) {
         List<ModelMessage> messages = new ArrayList<>();
-        messages.add(ModelMessage.system(
-                "你是代码 Agent。工具结果已经按结构化 tool 消息提供；同一个工具和完全相同的参数已经成功执行后，不得再次调用。"
-                        + "获得足够信息后必须停止调用工具，直接用中文给出结论和依据。"));
+        messages.add(ModelMessage.system(AGENT_SYSTEM_PROMPT));
         boolean hasPreviousModel = history.stream().anyMatch(step -> step.type() == StepType.MODEL);
         messages.add(ModelMessage.user(hasPreviousModel ? runInput : currentInput));
 

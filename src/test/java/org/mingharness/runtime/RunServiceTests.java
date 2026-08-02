@@ -16,6 +16,7 @@ import org.mingharness.tool.HarnessTool;
 import org.mingharness.tool.RetryableToolException;
 import org.mingharness.tool.ToolDefinition;
 import org.mingharness.model.ModelGateway;
+import org.mingharness.model.ModelMessage;
 import org.mingharness.model.ModelRequest;
 import org.mingharness.model.ModelResponse;
 import org.mingharness.model.ModelToolCall;
@@ -122,6 +123,7 @@ class RunServiceTests {
         assertEquals(RunStatus.SUCCEEDED, result.run().status(), result.run().error());
         assertFalse(agentModelToolsState.firstToolNames().contains("test.secured"));
         assertTrue(agentModelToolsState.firstToolNames().contains("demo.echo"));
+        assertTrue(agentModelToolsState.firstSystemPrompt().contains("sha256"));
     }
 
     @Test
@@ -567,9 +569,15 @@ class RunServiceTests {
 
     static class AgentModelToolsState {
         private final List<List<String>> calls = Collections.synchronizedList(new ArrayList<>());
+        private final List<String> systemPrompts = Collections.synchronizedList(new ArrayList<>());
 
         void record(ModelRequest request) {
             calls.add(request.tools().stream().map(tool -> tool.name()).toList());
+            request.messages().stream()
+                    .filter(message -> "system".equals(message.role()))
+                    .map(ModelMessage::content)
+                    .findFirst()
+                    .ifPresent(systemPrompts::add);
         }
 
         List<String> firstToolNames() {
@@ -578,8 +586,15 @@ class RunServiceTests {
             }
         }
 
+        String firstSystemPrompt() {
+            synchronized (systemPrompts) {
+                return systemPrompts.isEmpty() ? "" : systemPrompts.get(0);
+            }
+        }
+
         void reset() {
             calls.clear();
+            systemPrompts.clear();
         }
     }
 }
