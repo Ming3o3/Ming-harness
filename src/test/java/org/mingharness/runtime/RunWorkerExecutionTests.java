@@ -120,6 +120,26 @@ class RunWorkerExecutionTests {
     }
 
     @Test
+    void shouldRejectAgentToolCallBeforeCreatingUnauthorizedToolStep() {
+        RunSummary created = runService.create(new CreateRunRequest(
+                "tenant-agent-permission", "worker-user", "Agent 权限校验", "请验证权限拒绝",
+                null, null, "prompt-agent", "policy-v1", BigDecimal.TEN,
+                null, null, true, 3));
+        Run run = runRepository.findById(created.id()).orElseThrow();
+        run.start();
+        runRepository.saveAndFlush(run);
+
+        runService.executeFromWorker(new RunExecutionMessage(
+                "agent-permission-event", run.getId(), run.getTenantId(), run.getTraceId(),
+                "START", Instant.now()));
+
+        Run failed = runRepository.findById(run.getId()).orElseThrow();
+        assertEquals(RunStatus.FAILED, failed.getStatus());
+        assertEquals(1, failed.getSteps().size(), "权限失败应在模型步骤完成前阻止工具步骤入队");
+        assertTrue(failed.getSteps().get(0).getError().contains("缺少权限"));
+    }
+
+    @Test
     void shouldFailQueuedStepsWhenDispatchHasExhaustedRetries() {
         Run run = new Run("tenant-dispatch", "worker-user", "消息投递失败", "输入",
                 BigDecimal.ONE, "demo-model", "prompt-v1", "policy-v1");
@@ -181,6 +201,24 @@ class RunWorkerExecutionTests {
                 }
             };
         }
+
+        @Bean
+        HarnessTool restrictedAgentTool() {
+            return new HarnessTool() {
+                @Override
+                public ToolDefinition definition() {
+                    return new ToolDefinition("test.agent-restricted", "需要额外权限的 Agent 工具",
+                            true, "LOW", false, Map.of("type", "object"),
+                            java.util.Set.of("test.agent.read"), 30_000, 1,
+                            "DENY_EXTERNAL", Map.of("type", "object"));
+                }
+
+                @Override
+                public String execute(String input) {
+                    return "不应执行";
+                }
+            };
+        }
     }
 
     @TestConfiguration
@@ -194,6 +232,12 @@ class RunWorkerExecutionTests {
                 @Override
                 public ModelResponse complete(ModelRequest request) {
                     if (request.tools().isEmpty()) return fallback.complete(request);
+                    if (request.input().contains("权限拒绝")) {
+                        return new ModelResponse("", "agent-worker-test", request.promptVersion(), 5, 4,
+                                java.math.BigDecimal.ZERO,
+                                java.util.List.of(new ModelToolCall(
+                                        "call-worker-agent-restricted", "test.agent-restricted", "{}")));
+                    }
                     if (request.input().contains("工具 demo.echo 返回")) {
                         return new ModelResponse("Worker Agent 最终结果", "agent-worker-test",
                                 request.promptVersion(), 5, 3);

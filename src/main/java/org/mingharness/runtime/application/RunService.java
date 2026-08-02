@@ -1346,13 +1346,32 @@ public class RunService {
                                         List<ModelToolCall> calls) {
         if (calls == null) return;
         TenantPolicyLimits limits = tenantPolicyService.limitsFor(run.tenantId());
+        Set<String> grantedPermissions = permissions(run.permissionsSnapshot());
         for (ModelToolCall call : calls) {
             HarnessTool tool = toolRegistry.get(call.name());
+            ToolDefinition definition = tool.definition();
             if (!limits.allowsTool(call.name())) {
                 throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_TOOL_NOT_ALLOWED",
                         "当前租户策略不允许使用工具: " + call.name());
             }
-            toolInputValidator.validate(tool.definition(), call.arguments());
+            if (!tool.available()) {
+                throw new BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "AGENT_TOOL_UNAVAILABLE",
+                        "Agent 请求的工具当前不可用: " + call.name());
+            }
+            String missingPermission = definition.requiredPermissions().stream()
+                    .filter(permission -> !grantedPermissions.contains(permission))
+                    .findFirst()
+                    .orElse(null);
+            if (missingPermission != null) {
+                throw new BusinessException(HttpStatus.FORBIDDEN, "AGENT_TOOL_PERMISSION_DENIED",
+                        "Agent 请求的工具缺少权限: " + missingPermission);
+            }
+            if ("ALLOW_EXTERNAL".equalsIgnoreCase(definition.networkPolicy())
+                    && !grantedPermissions.contains("network.external")) {
+                throw new BusinessException(HttpStatus.FORBIDDEN, "AGENT_EXTERNAL_NETWORK_DENIED",
+                        "Agent 请求的工具需要 network.external 权限: " + call.name());
+            }
+            toolInputValidator.validate(definition, call.arguments());
         }
     }
 
