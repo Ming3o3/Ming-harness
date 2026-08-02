@@ -297,7 +297,7 @@ curl -X POST http://localhost:8080/api/runs \
   -d '{"tenantId":"tenant-demo","userId":"operator","title":"分析项目结构","input":"请读取项目并总结入口模块","agentMode":true,"maxTurns":8,"budget":10,"permissions":"workspace.read"}'
 ```
 
-Agent 模式下 `toolName` 不参与选择，模型只会收到当前租户工具白名单内的工具契约；工具注册表、JSON Schema、租户策略、权限和审批仍是最终授权边界。`maxTurns` 范围为 1 到 1000，超过后 Run 以 `FAILED` 结束并记录 `AGENT_MAX_TURNS_EXCEEDED`。控制台创建表单可以直接开启 Agent 模式，详情页会展示模型轮次、Tool Call、工具输出和审批状态。
+Agent 模式下 `toolName` 不参与选择，模型只会收到当前租户工具白名单、工具可用性和当前执行身份权限都满足的工具契约；工具注册表、JSON Schema、租户策略、权限和审批仍是最终授权边界。默认演示模型在可用工具存在时会执行一次安全的工具调用，再把工具结果带入下一轮模型，便于本地验证真实的“模型 → 工具 → 模型”链路；接入外部模型后由模型自行决定工具调用。`maxTurns` 范围为 1 到 1000，超过后 Run 以 `FAILED` 结束并记录 `AGENT_MAX_TURNS_EXCEEDED`。控制台创建表单可以直接开启 Agent 模式，详情页会展示模型轮次、Tool Call、工具输出和审批状态。
 
 当前工作区工具支持浏览、读取、搜索、精确增量编辑、原子写入、Git 状态/差异查看和受控命令执行。写入和编辑工具需要 `workspace.write` 权限、人工审批以及读取时返回的 `sha256` 并发校验；编辑工具只接受精确文本替换，匹配不唯一时会拒绝执行，避免误改代码。Git 工具只查看工作区范围内的变更，不执行 Hook、外部 Diff 或 TextConv，不需要人工审批；为防止 Git 配置越界，工作区根目录必须是包含普通 `.git` 目录的仓库根目录。命令工具需要 `workspace.exec` 权限、白名单和人工审批。所有工作目录仍受工作区根目录、隐藏路径和符号链接边界保护，Agent 不会获得任意 Shell 拼接能力。
 
