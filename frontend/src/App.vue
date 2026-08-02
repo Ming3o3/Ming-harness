@@ -61,6 +61,7 @@ const chatInputRef = ref(null)
 const chatLoading = ref(false)
 const chatSending = ref(false)
 const copyingMessageId = ref('')
+const retryingMessageId = ref('')
 // 文件仅在点击发送时才上传，切换会话不会在后端留下未绑定的附件。
 const chatAttachments = ref([])
 const chatUploading = ref(false)
@@ -594,6 +595,12 @@ function messageStatusClass(status) {
   return `message-status-${String(status || 'unknown').toLowerCase()}`
 }
 
+function canRetryChatMessage(message) {
+  return message?.role === 'ASSISTANT'
+    && Boolean(message.runId)
+    && message.status === 'FAILED'
+}
+
 function attachmentLabel(attachment) {
   if (!attachment) return '已附加文件'
   return attachment.originalName || attachment.workspacePath || '已附加文件'
@@ -615,6 +622,34 @@ async function copyChatMessage(message) {
     errorMessage.value = '复制失败，请检查浏览器剪贴板权限。'
   } finally {
     copyingMessageId.value = ''
+  }
+}
+
+/** 失败气泡直接重试原 Run，保留同一轮上下文并立即恢复实时执行状态。 */
+async function retryChatMessage(message) {
+  if (!canRetryChatMessage(message) || retryingMessageId.value) return
+  clearMessages()
+  retryingMessageId.value = message.id
+  try {
+    const retried = await api.retryRun(message.runId)
+    const retryStatus = retried?.run?.status
+    noticeMessage.value = retryStatus === 'WAITING_APPROVAL'
+      ? '本轮重试已进入人工审批'
+      : ['QUEUED', 'RUNNING'].includes(retryStatus)
+        ? '本轮已重新提交，Agent 正在执行'
+        : retryStatus === 'SUCCEEDED'
+          ? '本轮重试已完成'
+          : `本轮重试状态：${statusLabel(retryStatus)}`
+    await Promise.all([
+      refreshActiveConversation(),
+      selectRun(message.runId, false, false),
+    ])
+    showChatRun.value = false
+    scrollChatToBottom()
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    retryingMessageId.value = ''
   }
 }
 
@@ -2140,8 +2175,9 @@ onBeforeUnmount(() => {
                     </span>
                   </div>
                 </div>
-                <div v-if="message.role === 'ASSISTANT' && message.content" class="chat-message-actions">
-                  <button type="button" :disabled="copyingMessageId === message.id" @click="copyChatMessage(message)">{{ copyingMessageId === message.id ? '复制中…' : '复制回复' }}</button>
+                <div v-if="message.role === 'ASSISTANT' && (message.content || canRetryChatMessage(message))" class="chat-message-actions">
+                  <button v-if="message.content" type="button" :disabled="copyingMessageId === message.id" @click="copyChatMessage(message)">{{ copyingMessageId === message.id ? '复制中…' : '复制回复' }}</button>
+                  <button v-if="canRetryChatMessage(message)" type="button" :disabled="retryingMessageId === message.id" @click="retryChatMessage(message)">{{ retryingMessageId === message.id ? '重试中…' : '重试本轮' }}</button>
                 </div>
                 <button v-if="message.runId && message.role === 'ASSISTANT'" class="message-run-link" type="button" @click="openRunPanel(message.runId)">查看执行步骤 · {{ message.runId.slice(0, 8) }}</button>
               </div>
