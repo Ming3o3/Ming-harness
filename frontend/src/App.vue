@@ -1,5 +1,5 @@
 <script setup>
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { api } from './api'
 import { highlightCode, languageFromPath, languageLabel, renderMarkdown } from './markdown'
 
@@ -57,6 +57,7 @@ const activeConsoleSection = ref('runtime')
 const conversations = ref([])
 const activeConversation = ref(null)
 const chatInput = ref('')
+const chatInputRef = ref(null)
 const chatLoading = ref(false)
 const chatSending = ref(false)
 // 文件仅在点击发送时才上传，切换会话不会在后端留下未绑定的附件。
@@ -66,6 +67,13 @@ const chatDragActive = ref(false)
 const chatAttachmentInput = ref(null)
 const chatFolderInput = ref(null)
 const showChatRun = ref(false)
+const CHAT_DRAFT_STORAGE_KEY = 'mingHarnessChatDrafts'
+const quickPromptTemplates = [
+  { label: '理解代码', prompt: '请先阅读相关代码，解释现有实现、关键流程和潜在风险。' },
+  { label: '实现功能', prompt: '请先梳理实现方案，再完成代码修改，并说明改动和验证结果。' },
+  { label: '修复问题', prompt: '请定位这个问题的根因，给出最小安全修复，并补充验证步骤。' },
+  { label: '审查变更', prompt: '请审查当前代码变更，优先指出正确性、兼容性和安全性风险。' },
+]
 // 项目文件面板仅浏览当前会话已绑定的工作区，不会把绝对路径带到前端。
 const showChatWorkspace = ref(false)
 const workspaceExplorer = ref(null)
@@ -471,6 +479,80 @@ function clearMessages() {
   noticeMessage.value = ''
 }
 
+function readChatDrafts() {
+  if (typeof window === 'undefined') return {}
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(CHAT_DRAFT_STORAGE_KEY) || '{}')
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function saveChatDraft(conversationId, value = chatInput.value) {
+  if (!conversationId || typeof window === 'undefined') return
+  try {
+    const drafts = readChatDrafts()
+    const content = String(value || '')
+    if (content.trim()) drafts[conversationId] = content
+    else delete drafts[conversationId]
+    window.localStorage.setItem(CHAT_DRAFT_STORAGE_KEY, JSON.stringify(drafts))
+  } catch {
+    // 浏览器禁用本地存储时仍保留当前页面内的输入，不阻断发送。
+  }
+}
+
+function loadChatDraft(conversationId) {
+  const draft = readChatDrafts()[conversationId]
+  return typeof draft === 'string' ? draft : ''
+}
+
+function removeChatDraft(conversationId) {
+  if (!conversationId || typeof window === 'undefined') return
+  try {
+    const drafts = readChatDrafts()
+    delete drafts[conversationId]
+    window.localStorage.setItem(CHAT_DRAFT_STORAGE_KEY, JSON.stringify(drafts))
+  } catch {
+    // 本地存储不可用时无需额外处理。
+  }
+}
+
+function resizeChatInput() {
+  const element = chatInputRef.value
+  if (!element) return
+  element.style.height = 'auto'
+  element.style.height = `${Math.min(Math.max(element.scrollHeight, 78), 220)}px`
+}
+
+function handleChatInput() {
+  saveChatDraft(activeConversationId.value)
+  resizeChatInput()
+}
+
+function setChatInput(value, focus = false) {
+  chatInput.value = value
+  saveChatDraft(activeConversationId.value, value)
+  void nextTick(() => {
+    resizeChatInput()
+    if (focus) chatInputRef.value?.focus()
+  })
+}
+
+function applyQuickPrompt(prompt) {
+  if (!prompt || chatSending.value || chatUploading.value || !activeConversationId.value) return
+  const current = chatInput.value.trimEnd()
+  setChatInput(current ? `${current}\n\n${prompt}` : prompt, true)
+}
+
+function handleChatKeydown(event) {
+  if (event.isComposing || event.key !== 'Enter') return
+  // Enter 保持快速发送；Shift+Enter 换行，Cmd/Ctrl+Enter 也可发送，方便从其他编辑器切换过来。
+  if (event.shiftKey || event.altKey) return
+  event.preventDefault()
+  void sendChatMessage()
+}
+
 function errorText(error) {
   if (!error) return '请求失败'
   return error.traceId ? `${error.message}（追踪 ID：${error.traceId}）` : error.message
@@ -703,12 +785,13 @@ async function loadConversations(preferredId = '') {
 
 async function createChatConversation() {
   if (!confirmWorkspaceEditorDiscard()) return null
+  saveChatDraft(activeConversationId.value)
   clearMessages()
   try {
     const created = await api.createConversation(newConversationPayload())
     conversations.value = [created.conversation, ...conversations.value.filter((item) => item.id !== created.conversation.id)]
     activeConversation.value = created
-    chatInput.value = ''
+    setChatInput('')
     clearChatAttachments()
     stopRunEventStream()
     selectedRun.value = null
@@ -1133,6 +1216,7 @@ async function copyWorkspaceFile() {
 async function selectConversation(conversationId, announce = true) {
   if (!conversationId) return
   if (conversationId !== activeConversationId.value && !confirmWorkspaceEditorDiscard()) return
+  if (conversationId !== activeConversationId.value) saveChatDraft(activeConversationId.value)
   if (announce) clearMessages()
   if (conversationId !== activeConversationId.value) {
     clearChatAttachments()
@@ -1141,6 +1225,7 @@ async function selectConversation(conversationId, announce = true) {
   try {
     const detail = await api.getConversation(conversationId)
     activeConversation.value = detail
+    setChatInput(loadChatDraft(conversationId))
     const runId = latestConversationRun(detail)
     if (runId) await selectRun(runId, false, false)
     else {
@@ -1191,7 +1276,8 @@ async function sendChatMessage() {
     fileCount: attachment.fileCount || 1,
     createdAt: sentAt,
   }))
-  chatInput.value = ''
+  removeChatDraft(conversationId)
+  setChatInput('')
   clearChatAttachments()
   if (activeConversation.value) {
     activeConversation.value = {
@@ -1249,6 +1335,7 @@ async function sendChatMessage() {
       await Promise.allSettled(uploadedAttachments.map((attachment) =>
         api.deleteConversationAttachment(conversationId, attachment.id)))
       chatInput.value = typedContent
+      saveChatDraft(conversationId, typedContent)
       chatAttachments.value = attachments
       if (activeConversation.value?.conversation?.id === conversationId) {
         activeConversation.value = {
@@ -2034,16 +2121,24 @@ onBeforeUnmount(() => {
                 <button type="button" :aria-label="`移除 ${attachment.name}`" :disabled="chatSending || chatUploading" @click="removeChatAttachment(index)">×</button>
               </span>
             </div>
+            <div v-if="!chatInput.trim() && !chatAttachments.length && activeConversationId" class="chat-quick-prompts" aria-label="常用任务模板">
+              <span>快速开始</span>
+              <button v-for="template in quickPromptTemplates" :key="template.label" type="button" :disabled="chatSending || chatUploading" @click="applyQuickPrompt(template.prompt)">
+                {{ template.label }}
+              </button>
+            </div>
             <textarea
+              ref="chatInputRef"
               v-model="chatInput"
               rows="3"
               :disabled="chatSending || chatUploading || !activeConversationId"
               placeholder="描述代码任务；桌面版可拖入项目文件夹，浏览器会导入文本副本…"
               aria-label="输入消息"
-              @keydown.enter.exact.prevent="sendChatMessage"
+              @input="handleChatInput"
+              @keydown="handleChatKeydown"
             ></textarea>
             <div class="chat-composer-footer">
-              <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行 · {{ desktopWorkspaceDropping ? '正在授权拖入的本地项目…' : workspaceConnected ? 'Agent 可直接操作本会话绑定的本地项目' : '文件夹导入后保留层级' }}</span>
+              <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行 · 草稿自动保存 · {{ desktopWorkspaceDropping ? '正在授权拖入的本地项目…' : workspaceConnected ? 'Agent 可直接操作本会话绑定的本地项目' : '文件夹导入后保留层级' }}</span>
               <div class="chat-composer-actions">
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatAttachmentPicker">⌁ 附件</button>
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatFolderPicker">▣ 文件夹</button>
