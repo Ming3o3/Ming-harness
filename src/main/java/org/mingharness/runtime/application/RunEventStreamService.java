@@ -57,9 +57,9 @@ public class RunEventStreamService {
         Subscription subscription = new Subscription(subscriptionId, runId, tenantId, emitter,
                 fingerprint(initial), Instant.now());
         subscriptions.put(subscriptionId, subscription);
-        emitter.onCompletion(() -> subscriptions.remove(subscriptionId));
-        emitter.onTimeout(() -> subscriptions.remove(subscriptionId));
-        emitter.onError(error -> subscriptions.remove(subscriptionId));
+        emitter.onCompletion(() -> removeSubscription(subscription));
+        emitter.onTimeout(() -> removeSubscription(subscription));
+        emitter.onError(error -> removeSubscription(subscription));
         if (!send(subscription, "snapshot", initial)) {
             return emitter;
         }
@@ -118,8 +118,10 @@ public class RunEventStreamService {
         try {
             subscription.emitter.send(SseEmitter.event().name(eventName).data(detail));
             return true;
-        } catch (IOException | IllegalStateException exception) {
-            close(subscription);
+        } catch (IOException | RuntimeException exception) {
+            // 客户端主动断开后不要再次 complete；Spring MVC 可能把 complete 转成一次
+            // 无法写回的异步错误分发，污染服务日志并触发 JSON 错误处理器。
+            removeSubscription(subscription);
             return false;
         }
     }
@@ -127,21 +129,27 @@ public class RunEventStreamService {
     private void sendKeepalive(Subscription subscription) {
         try {
             subscription.emitter.send(SseEmitter.event().comment("keepalive"));
-        } catch (IOException | IllegalStateException exception) {
-            close(subscription);
+        } catch (IOException | RuntimeException exception) {
+            removeSubscription(subscription);
         }
     }
 
     private void close(Subscription subscription) {
         // 只有实际从映射删除的订阅才归还配额，onCompletion/onError 的重复回调不会多次释放。
-        if (subscriptions.remove(subscription.id, subscription)) {
-            subscriberPermits.release();
-        }
+        removeSubscription(subscription);
         try {
             subscription.emitter.complete();
         } catch (RuntimeException ignored) {
             // 客户端断开后 complete 可能抛出异常，订阅已被移除即可。
         }
+    }
+
+    private boolean removeSubscription(Subscription subscription) {
+        if (subscriptions.remove(subscription.id, subscription)) {
+            subscriberPermits.release();
+            return true;
+        }
+        return false;
     }
 
     private boolean terminal(RunDetail detail) {
