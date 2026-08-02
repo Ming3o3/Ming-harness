@@ -390,6 +390,7 @@ h3 { margin: 0; font-size: 13px; }
 .chat-live-indicator i, .run-live-indicator i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; animation: live-pulse 1.2s ease-in-out infinite; }
 .chat-live-indicator.chat-live-connecting { border-color: rgba(141,124,255,.32); background: rgba(141,124,255,.08); color: var(--accent-light); }
 .chat-live-indicator.chat-live-reconnecting { border-color: rgba(255,182,95,.34); background: rgba(255,182,95,.08); color: var(--orange); }
+.chat-live-indicator.chat-live-offline { border-color: rgba(255,114,123,.34); background: rgba(255,114,123,.08); color: var(--red); }
 @keyframes live-pulse { 50% { opacity: .35; transform: scale(.7); } }
 .chat-run-pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 18px; padding: 7px 10px; color: var(--soft); font: 9px "DM Mono", monospace; }
 .chat-run-pill i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }

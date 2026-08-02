@@ -103,10 +103,12 @@ const workspaceGitDiffCopying = ref(false)
 // 实时流只订阅当前查看的非终态 Run；HTTP 轮询仍用于网络异常后的兜底校验。
 const runEventStreaming = ref(false)
 const runEventConnectionState = ref('idle')
+const networkOnline = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
 let conversationPollTimer
 let chatHighlightTimer
 let runEventAbortController
 let runEventReconnectTimer
+let runEventReconnectAttempt = 0
 let workspaceExplorerLoadToken = 0
 let workspacePreviewLoadToken = 0
 let workspaceGitStatusLoadToken = 0
@@ -357,6 +359,7 @@ const runEventStatusLabel = computed(() => ({
   connecting: '正在连接实时流…',
   connected: '实时执行',
   reconnecting: '实时流重连中…',
+  offline: '网络已断开，等待恢复…',
 }[runEventConnectionState.value] || ''))
 // 变更预览只读取已经持久化到 Step 的工具参数，不向后端额外发送代码正文。
 const workspaceChangePreviews = computed(() => (selectedRun.value?.steps || [])
@@ -1592,7 +1595,7 @@ async function cancelChatRun() {
 }
 
 async function pollConversation() {
-  if (!activeConversationId.value || chatSending.value || !pendingChatMessage.value) return
+  if (!networkOnline.value || !activeConversationId.value || chatSending.value || !pendingChatMessage.value) return
   const conversationId = activeConversationId.value
   const selectionToken = conversationSelectionToken
   try {
@@ -1975,6 +1978,28 @@ async function selectRun(runId, announce = true, showLoading = true) {
   }
 }
 
+function handleNetworkOffline() {
+  networkOnline.value = false
+  const runId = runEventStreamRunId || selectedRun.value?.run?.id
+  if (!runId || isTerminal(selectedStatus.value)) {
+    if (runEventConnectionState.value === 'connecting' || runEventConnectionState.value === 'reconnecting') {
+      stopRunEventStream()
+      runEventConnectionState.value = 'offline'
+    }
+    return
+  }
+  stopRunEventStream()
+  runEventConnectionState.value = 'offline'
+}
+
+function handleNetworkOnline() {
+  networkOnline.value = true
+  if (!selectedRun.value || isTerminal(selectedStatus.value)) return
+  if (runEventStreaming.value) return
+  runEventReconnectAttempt = 0
+  startRunEventStream(selectedRun.value.run.id, true)
+}
+
 function stopRunEventStream() {
   window.clearTimeout(runEventReconnectTimer)
   runEventReconnectTimer = undefined
@@ -1994,11 +2019,17 @@ function startRunEventStream(runId, reconnecting = false) {
     stopRunEventStream()
     return
   }
+  if (!networkOnline.value) {
+    stopRunEventStream()
+    runEventConnectionState.value = 'offline'
+    return
+  }
   // 同一 Run 的 SSE 已建立时保持连接，避免聊天轮询每 1.2 秒触发一次重连。
   if (runEventStreamRunId === runId && runEventAbortController && !runEventAbortController.signal.aborted) {
     return
   }
   stopRunEventStream()
+  if (!reconnecting) runEventReconnectAttempt = 0
   const controller = new AbortController()
   runEventAbortController = controller
   runEventStreamRunId = runId
@@ -2010,6 +2041,7 @@ function startRunEventStream(runId, reconnecting = false) {
       if ((event !== 'snapshot' && event !== 'run') || data?.run?.id !== runId) return
       if (selectedRun.value?.run?.id !== runId) return
       runEventConnectionState.value = 'connected'
+      runEventReconnectAttempt = 0
       selectedRun.value = data
       applyStreamingAssistantContent(runId, data)
       if (latestStreamingModelContent(data)) scrollChatToBottom()
@@ -2030,8 +2062,14 @@ function startRunEventStream(runId, reconnecting = false) {
     runEventAbortController = undefined
     runEventStreamRunId = undefined
     if (!isTerminal(selectedRun.value?.run?.status) && selectedRun.value?.run?.id === runId) {
+      if (!networkOnline.value) {
+        runEventConnectionState.value = 'offline'
+        return
+      }
       runEventConnectionState.value = 'reconnecting'
-      runEventReconnectTimer = window.setTimeout(() => startRunEventStream(runId, true), 1000)
+      const delay = Math.min(1000 * (2 ** Math.min(runEventReconnectAttempt, 4)), 15000)
+      runEventReconnectAttempt += 1
+      runEventReconnectTimer = window.setTimeout(() => startRunEventStream(runId, true), delay)
     } else {
       runEventConnectionState.value = 'idle'
     }
@@ -2061,7 +2099,7 @@ async function refreshAfterTerminalRunEvent(runId) {
 }
 
 async function pollSelectedRun() {
-  if (!selectedRun.value || isTerminal(selectedStatus.value)) return
+  if (!networkOnline.value || !selectedRun.value || isTerminal(selectedStatus.value)) return
   if (runsLoading.value) return
   // 实时 SSE 正常存在时避免每 1.5 秒重复拉取详情；断线时会自动回到该兜底路径。
   if (runEventStreaming.value) return
@@ -2187,6 +2225,8 @@ async function cancelSelectedRun() {
 onMounted(async () => {
   window.addEventListener('beforeunload', handleWorkspaceBeforeUnload)
   window.addEventListener('keydown', handleChatGlobalKeydown)
+  window.addEventListener('offline', handleNetworkOffline)
+  window.addEventListener('online', handleNetworkOnline)
   syncActiveConsoleSectionFromHash()
   window.addEventListener('hashchange', syncActiveConsoleSectionFromHash)
   if (desktopWorkspaceAvailable.value) {
@@ -2205,6 +2245,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', handleWorkspaceBeforeUnload)
   window.removeEventListener('keydown', handleChatGlobalKeydown)
+  window.removeEventListener('offline', handleNetworkOffline)
+  window.removeEventListener('online', handleNetworkOnline)
   window.removeEventListener('hashchange', syncActiveConsoleSectionFromHash)
   stopRunEventStream()
   api.clearDesktopWorkspaceDropListener()
@@ -2315,7 +2357,7 @@ onBeforeUnmount(() => {
                 :class="`chat-live-${runEventConnectionState}`"
                 role="status"
                 aria-live="polite"
-                :title="runEventStreaming ? '当前 Run 正通过 SSE 推送状态，HTTP 轮询仍作为兜底' : '实时流暂时中断，HTTP 轮询仍会继续更新状态'"
+                :title="!networkOnline ? '浏览器已离线；网络恢复后会自动续接当前 Run' : runEventStreaming ? '当前 Run 正通过 SSE 推送状态，HTTP 轮询仍作为兜底' : '实时流暂时中断，HTTP 轮询仍会继续更新状态'"
               ><i></i>{{ runEventStatusLabel }}</span>
               <span v-if="pendingChatMessage" class="chat-run-pill" :class="statusClass(chatRunStatus)"><i></i>{{ statusLabel(chatRunStatus) }}</span>
               <span v-if="pendingChatMessage && chatRunActivity" class="chat-activity-pill" role="status" aria-live="polite">{{ chatRunActivity }}</span>
