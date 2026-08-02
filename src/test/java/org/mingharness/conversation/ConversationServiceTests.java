@@ -151,6 +151,22 @@ class ConversationServiceTests {
     }
 
     @Test
+    void shouldRenameOnlyTheCurrentUsersConversation() {
+        ConversationDetail created = conversationService.create(
+                "tenant-chat", "operator", new CreateConversationRequest("新的对话"));
+
+        ConversationDetail renamed = conversationService.rename(
+                created.conversation().id(), "tenant-chat", "operator", "修复登录超时");
+
+        assertEquals("修复登录超时", renamed.conversation().title());
+        assertEquals("修复登录超时", conversationService.list("tenant-chat", "operator").get(0).title());
+        assertThrows(BusinessException.class, () -> conversationService.rename(
+                created.conversation().id(), "tenant-chat", "other-user", "越权修改"));
+        assertThrows(BusinessException.class, () -> conversationService.rename(
+                created.conversation().id(), "tenant-chat", "operator", "   "));
+    }
+
+    @Test
     void shouldImportTextAttachmentAndPassWorkspacePathToAgent() throws IOException {
         ConversationDetail created = conversationService.create(
                 "tenant-chat", "operator", new CreateConversationRequest("附件测试"));

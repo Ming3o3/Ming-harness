@@ -72,6 +72,10 @@ const activeConsoleSection = ref('runtime')
 const conversations = ref([])
 const conversationQuery = ref('')
 const activeConversation = ref(null)
+const showConversationRename = ref(false)
+const conversationRenameValue = ref('')
+const conversationRenaming = ref(false)
+const conversationRenameInputRef = ref(null)
 const chatInput = ref('')
 const chatInputRef = ref(null)
 const chatLoading = ref(false)
@@ -419,6 +423,15 @@ const commandPaletteItems = computed(() => [
       chatInputRef.value?.focus()
     },
     disabled: !activeConversationId.value || chatSending.value || chatUploading.value,
+  },
+  {
+    id: 'rename-conversation',
+    label: '重命名当前对话',
+    description: '修改当前会话在侧边栏中的标题',
+    keywords: 'rename conversation session title 重命名 对话 会话 标题',
+    icon: '✎',
+    action: beginConversationRename,
+    disabled: !activeConversationId.value || conversationRenaming.value,
   },
   {
     id: 'workspace-explorer',
@@ -920,6 +933,11 @@ function handleChatGlobalKeydown(event) {
     closeRejectDialog()
     return
   }
+  if (showConversationRename.value) {
+    event.preventDefault()
+    cancelConversationRename()
+    return
+  }
   if (!chatMode.value) return
   if (workspaceGitReviewOpen.value) {
     event.preventDefault()
@@ -1177,6 +1195,52 @@ function jumpToChatMessage(messageId) {
 
 function latestConversationRun(detail) {
   return detail?.messages?.slice().reverse().find((message) => message.runId)?.runId || ''
+}
+
+function beginConversationRename() {
+  if (!activeConversationId.value || conversationRenaming.value) return
+  conversationRenameValue.value = activeConversation.value?.conversation?.title || ''
+  showConversationRename.value = true
+  void nextTick(() => {
+    conversationRenameInputRef.value?.focus()
+    conversationRenameInputRef.value?.select()
+  })
+}
+
+function cancelConversationRename() {
+  showConversationRename.value = false
+  conversationRenameValue.value = ''
+}
+
+function refreshRenamedConversation(detail) {
+  if (!detail?.conversation?.id) return
+  const isCurrentConversation = activeConversationId.value === detail.conversation.id
+  if (isCurrentConversation) activeConversation.value = detail
+  conversations.value = conversations.value
+    .map((item) => item.id === detail.conversation.id ? detail.conversation : item)
+    .sort((left, right) => new Date(right.updatedAt || 0) - new Date(left.updatedAt || 0))
+}
+
+async function renameActiveConversation() {
+  if (!activeConversationId.value || conversationRenaming.value) return
+  const title = conversationRenameValue.value.trim()
+  if (!title) {
+    errorMessage.value = '会话标题不能为空。'
+    conversationRenameInputRef.value?.focus()
+    return
+  }
+  clearMessages()
+  conversationRenaming.value = true
+  try {
+    const renamed = await api.renameConversation(activeConversationId.value, title)
+    refreshRenamedConversation(renamed)
+    cancelConversationRename()
+    noticeMessage.value = '对话标题已更新。'
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    conversationRenaming.value = false
+  }
 }
 
 function pendingConversationAssistant(detail, runId) {
@@ -1666,6 +1730,7 @@ async function selectConversation(conversationId, announce = true) {
   if (!conversationId) return
   const changingConversation = conversationId !== activeConversationId.value
   if (changingConversation && !confirmWorkspaceEditorDiscard()) return
+  if (changingConversation && showConversationRename.value) cancelConversationRename()
   const selectionToken = ++conversationSelectionToken
   if (changingConversation) {
     saveChatDraft(activeConversationId.value)
@@ -2754,7 +2819,12 @@ onBeforeUnmount(() => {
           <div class="chat-heading">
             <div>
               <p class="eyebrow">CONTINUOUS AGENT SESSION</p>
-              <h1>{{ activeConversation?.conversation?.title || '新的对话' }}</h1>
+              <form v-if="showConversationRename" class="conversation-rename-form" @submit.prevent="renameActiveConversation">
+                <input ref="conversationRenameInputRef" v-model="conversationRenameValue" maxlength="255" :disabled="conversationRenaming" aria-label="对话标题" @keydown.esc.prevent="cancelConversationRename" />
+                <button class="secondary-button" type="button" :disabled="conversationRenaming" @click="cancelConversationRename">取消</button>
+                <button class="primary-button" type="submit" :disabled="conversationRenaming">{{ conversationRenaming ? '保存中…' : '保存' }}</button>
+              </form>
+              <h1 v-else>{{ activeConversation?.conversation?.title || '新的对话' }}</h1>
               <p class="chat-heading-meta">每一轮输入都会创建可追踪 Run，Agent 会在同一会话中继续理解上下文。</p>
             </div>
             <div class="chat-heading-actions">
@@ -2783,6 +2853,7 @@ onBeforeUnmount(() => {
               ><i></i>{{ runEventStatusLabel }}</span>
               <span v-if="pendingChatMessage" class="chat-run-pill" :class="statusClass(chatRunStatus)"><i></i>{{ statusLabel(chatRunStatus) }}</span>
               <span v-if="pendingChatMessage && chatRunActivity" class="chat-activity-pill" role="status" aria-live="polite">{{ chatRunActivity }}</span>
+              <button v-if="activeConversationId && !showConversationRename" class="secondary-button" type="button" :disabled="conversationRenaming" @click="beginConversationRename">重命名</button>
               <button v-if="workspaceExplorerAvailable" class="secondary-button" type="button" @click="toggleWorkspaceExplorer">{{ showChatWorkspace ? '隐藏文件' : '项目文件' }}</button>
               <button v-if="latestConversationRun(activeConversation)" class="secondary-button" type="button" @click="toggleRunPanel">{{ showChatRun ? '隐藏运行' : '查看运行' }}</button>
             </div>

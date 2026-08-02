@@ -208,6 +208,10 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(payload),
   }),
+  renameConversation: (conversationId, title) => request(`/conversations/${encodeURIComponent(conversationId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ title }),
+  }),
   getConversation: (conversationId) => request(`/conversations/${encodeURIComponent(conversationId)}`),
   // entries 的 path 是浏览器可提供的相对路径，后端会再次校验，绝不接受本机绝对路径。
   uploadConversationAttachments: (conversationId, entries) => {

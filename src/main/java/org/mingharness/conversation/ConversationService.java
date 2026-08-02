@@ -115,6 +115,19 @@ public class ConversationService {
         return detail(load(conversationId, tenantId, userId));
     }
 
+    /** 重命名不会改动会话消息、上下文快照、工作区绑定或关联 Run。 */
+    @Transactional
+    public ConversationDetail rename(String conversationId, String tenantId, String userId, String title) {
+        Conversation conversation = loadForMessage(conversationId, tenantId, userId);
+        String normalized = sanitizer.sanitize(title == null ? "" : title.trim());
+        if (normalized.isBlank()) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "CONVERSATION_TITLE_REQUIRED", "会话标题不能为空");
+        }
+        conversation.rename(normalized);
+        conversationRepository.save(conversation);
+        return detail(conversation);
+    }
+
     /**
      * 将浏览器拖入的 UTF-8 文本文件导入到受控工作区。
      *

@@ -388,6 +388,9 @@ h3 { margin: 0; font-size: 13px; }
 .chat-heading h1 { color: var(--heading); font-size: 22px; letter-spacing: -.04em; }
 .chat-heading-meta { margin: 7px 0 0; color: var(--muted); font-size: 10px; }
 .chat-heading-actions { flex-shrink: 0; gap: 8px; }
+.conversation-rename-form { display: flex; align-items: center; gap: 7px; min-width: min(520px, 58vw); }
+.conversation-rename-form input { width: min(330px, 38vw); border: 1px solid var(--accent); border-radius: 8px; outline: 0; background: var(--panel); color: var(--heading); padding: 8px 10px; font: 600 19px/1.2 "Plus Jakarta Sans", sans-serif; letter-spacing: -.035em; }
+.conversation-rename-form .secondary-button, .conversation-rename-form .primary-button { padding: 8px 10px; font-size: 10px; white-space: nowrap; }
 .chat-workspace-chip { max-width: 230px; gap: 8px; border: 1px solid var(--line); border-radius: 9px; padding: 6px 9px; color: var(--soft); }
 .chat-workspace-selector { gap: 6px; }
 .chat-workspace-selector select { max-width: 170px; border: 1px solid var(--line); border-radius: 7px; outline: none; background: var(--input-bg); color: var(--soft); padding: 8px 9px; font: 10px "DM Mono", monospace; }
@@ -753,6 +756,8 @@ h3 { margin: 0; font-size: 13px; }
   .chat-heading { align-items: flex-start; flex-direction: column; padding: 22px 18px 16px; }
   .chat-heading h1 { font-size: 19px; }
   .chat-heading-meta { line-height: 1.5; }
+  .conversation-rename-form { min-width: 0; width: 100%; }
+  .conversation-rename-form input { width: 100%; font-size: 17px; }
   .chat-messages { padding: 22px 14px 30px; }
   .chat-composer { width: calc(100% - 28px); margin-bottom: 14px; }
   .chat-composer-footer > span { display: none; }

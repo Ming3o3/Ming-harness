@@ -7,6 +7,7 @@ import org.mingharness.conversation.api.ConversationAttachmentView;
 import org.mingharness.conversation.api.ConversationSummary;
 import org.mingharness.conversation.api.CreateConversationRequest;
 import org.mingharness.conversation.api.SendConversationMessageRequest;
+import org.mingharness.conversation.api.UpdateConversationRequest;
 import org.mingharness.security.HarnessIdentity;
 import org.mingharness.security.HarnessIdentityContext;
 import org.springframework.http.HttpStatus;
@@ -14,6 +15,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -53,6 +55,14 @@ public class ConversationController {
     public ConversationDetail detail(@PathVariable String conversationId) {
         HarnessIdentity identity = identity();
         return conversationService.detail(conversationId, identity.tenantId(), identity.userId());
+    }
+
+    /** 仅更新当前身份所属会话的展示标题，不影响已经关联的 Run 或工作区。 */
+    @PatchMapping("/{conversationId}")
+    public ConversationDetail rename(@PathVariable String conversationId,
+                                     @Valid @RequestBody UpdateConversationRequest request) {
+        HarnessIdentity identity = identity();
+        return conversationService.rename(conversationId, identity.tenantId(), identity.userId(), request.title());
     }
 
     @PostMapping("/{conversationId}/messages")
