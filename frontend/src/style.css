@@ -396,6 +396,7 @@ h3 { margin: 0; font-size: 13px; }
 .chat-run-pill.status-running, .chat-run-pill.status-queued { color: var(--cyan); }
 .chat-run-pill.status-succeeded { color: var(--green); }
 .chat-run-pill.status-failed, .chat-run-pill.status-timed_out { color: var(--red); }
+.chat-activity-pill { max-width: 230px; overflow: hidden; border: 1px solid rgba(141,124,255,.2); border-radius: 14px; background: rgba(141,124,255,.07); color: var(--accent-light); padding: 5px 8px; font: 9px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .chat-heading-actions .secondary-button { padding: 8px 11px; font-size: 10px; }
 .chat-messages { min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 30px max(7vw, 36px) 38px; scroll-behavior: smooth; scrollbar-gutter: stable; }
 .chat-message { display: flex; align-items: flex-start; gap: 11px; max-width: 790px; margin: 0 auto 23px; scroll-margin-top: 18px; transition: filter .2s ease, transform .2s ease; }

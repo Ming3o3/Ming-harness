@@ -308,6 +308,16 @@ const chatRunStatus = computed(() => {
   if (runId && selectedRun.value?.run?.id === runId) return selectedRun.value.run.status
   return pendingChatMessage.value ? 'RUNNING' : ''
 })
+const chatRunActivity = computed(() => {
+  const runId = pendingChatMessage.value?.runId
+  if (!runId) return ''
+  if (selectedRun.value?.run?.id !== runId) return 'Agent 正在准备任务…'
+  const steps = selectedRun.value.steps || []
+  const activeStep = steps.find((step) => step.status === 'RUNNING')
+    || steps.find((step) => step.status === 'WAITING_APPROVAL')
+    || steps.find((step) => step.status === 'QUEUED')
+  return agentActivityLabel(activeStep)
+})
 const chatUserMessages = computed(() => chatMessages.value
   .filter((message) => message.role === 'USER'))
 const canSendChat = computed(() => Boolean(activeConversationId.value) && !chatSending.value && !chatUploading.value
@@ -378,6 +388,22 @@ function apiKeyStatusClass(status) {
 
 function stepLabel(type) {
   return { MODEL: '模型', TOOL: '工具', APPROVAL: '审批' }[type] || type
+}
+
+function agentActivityLabel(step) {
+  if (!step) return 'Agent 正在整理结果…'
+  if (step.status === 'WAITING_APPROVAL') return `等待你审批：${step.name}`
+  if (step.type === 'MODEL') return 'Agent 正在思考…'
+  return {
+    'workspace.list': '正在浏览工作区…',
+    'workspace.search': '正在搜索代码…',
+    'workspace.read': '正在读取文件…',
+    'workspace.edit': '正在修改文件…',
+    'workspace.write': '正在写入文件…',
+    'workspace.git.status': '正在检查 Git 状态…',
+    'workspace.git.diff': '正在核对代码变更…',
+    'workspace.exec': '正在运行命令…',
+  }[step.name] || `正在使用 ${step.name}…`
 }
 
 function decodeAgentStep(step) {
@@ -2174,6 +2200,7 @@ onBeforeUnmount(() => {
                 :title="runEventStreaming ? '当前 Run 正通过 SSE 推送状态，HTTP 轮询仍作为兜底' : '实时流暂时中断，HTTP 轮询仍会继续更新状态'"
               ><i></i>{{ runEventStatusLabel }}</span>
               <span v-if="pendingChatMessage" class="chat-run-pill" :class="statusClass(chatRunStatus)"><i></i>{{ statusLabel(chatRunStatus) }}</span>
+              <span v-if="pendingChatMessage && chatRunActivity" class="chat-activity-pill" role="status" aria-live="polite">{{ chatRunActivity }}</span>
               <button v-if="workspaceExplorerAvailable" class="secondary-button" type="button" @click="toggleWorkspaceExplorer">{{ showChatWorkspace ? '隐藏文件' : '项目文件' }}</button>
               <button v-if="latestConversationRun(activeConversation)" class="secondary-button" type="button" @click="toggleRunPanel">{{ showChatRun ? '隐藏运行' : '查看运行' }}</button>
             </div>
@@ -2198,7 +2225,7 @@ onBeforeUnmount(() => {
                 <div class="chat-message-meta"><strong>{{ message.role === 'USER' ? '你' : 'Ming Agent' }}</strong><span>{{ formatDate(message.createdAt) }}</span></div>
                 <div class="chat-bubble" :class="messageStatusClass(message.status)">
                   <template v-if="message.role === 'ASSISTANT' && message.status === 'PENDING' && !message.content">
-                    <span class="chat-thinking"><i></i><i></i><i></i>{{ messageStatusLabel(message.status) }}</span>
+                    <span class="chat-thinking"><i></i><i></i><i></i>{{ chatRunActivity || messageStatusLabel(message.status) }}</span>
                   </template>
                   <template v-else>
                     <div v-if="message.content" class="chat-markdown" v-html="renderMarkdown(message.content)"></div>
