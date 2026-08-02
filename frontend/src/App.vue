@@ -60,6 +60,7 @@ const chatInput = ref('')
 const chatInputRef = ref(null)
 const chatLoading = ref(false)
 const chatSending = ref(false)
+const chatCancellingRunId = ref('')
 const copyingMessageId = ref('')
 const retryingMessageId = ref('')
 // 文件仅在点击发送时才上传，切换会话不会在后端留下未绑定的附件。
@@ -316,7 +317,7 @@ const canSendChat = computed(() => Boolean(activeConversationId.value) && !chatS
 // 先按执行中展示，详情到达后仍由 canCancel 负责拦截终态 Run。
 const canCancelChat = computed(() => {
   const runId = pendingChatMessage.value?.runId
-  if (!runId || loading.value) return false
+  if (!runId) return false
   if (selectedRun.value?.run?.id !== runId) return true
   return canCancel.value
 })
@@ -1437,8 +1438,9 @@ async function sendChatMessage() {
 async function cancelChatRun() {
   if (!canCancelChat.value) return
   const runId = pendingChatMessage.value.runId
+  if (chatCancellingRunId.value === runId) return
   clearMessages()
-  loading.value = true
+  chatCancellingRunId.value = runId
   try {
     await api.cancelRun(runId)
     noticeMessage.value = '已停止当前 Agent 执行'
@@ -1447,7 +1449,7 @@ async function cancelChatRun() {
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
-    loading.value = false
+    if (chatCancellingRunId.value === runId) chatCancellingRunId.value = ''
   }
 }
 
@@ -2261,7 +2263,7 @@ onBeforeUnmount(() => {
               <div class="chat-composer-actions">
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatAttachmentPicker">⌁ 附件</button>
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatFolderPicker">▣ 文件夹</button>
-                <button v-if="canCancelChat" class="secondary-button chat-stop-button" type="button" :disabled="loading" @click="cancelChatRun">{{ loading ? '停止中…' : '停止' }}</button>
+                <button v-if="canCancelChat" class="secondary-button chat-stop-button" type="button" :disabled="chatCancellingRunId === pendingChatMessage?.runId" @click="cancelChatRun">{{ chatCancellingRunId === pendingChatMessage?.runId ? '停止中…' : '停止' }}</button>
                 <button class="primary-button chat-send-button" type="submit" :disabled="!canSendChat">{{ chatUploading ? '导入中…' : chatSending ? '提交中…' : '发送' }} <span>↗</span></button>
               </div>
             </div>
