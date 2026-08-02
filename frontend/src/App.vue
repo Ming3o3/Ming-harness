@@ -71,6 +71,7 @@ const chatAttachmentInput = ref(null)
 const chatFolderInput = ref(null)
 const showChatRun = ref(false)
 const CHAT_DRAFT_STORAGE_KEY = 'mingHarnessChatDrafts'
+const ACTIVE_CONVERSATION_STORAGE_KEY = 'mingHarnessActiveConversation'
 const quickPromptTemplates = [
   { label: '理解代码', prompt: '请先阅读相关代码，解释现有实现、关键流程和潜在风险。' },
   { label: '实现功能', prompt: '请先梳理实现方案，再完成代码修改，并说明改动和验证结果。' },
@@ -112,6 +113,10 @@ let workspaceGitStatusLoadToken = 0
 let workspaceGitDiffLoadToken = 0
 // 记录连接所属 Run，避免聊天轮询读取到同一任务时重复中断并创建 SSE 连接。
 let runEventStreamRunId
+// 对话详情和 Run 详情都可能在用户快速点击后交错返回；只接受最后一次选择的结果。
+let conversationSelectionToken = 0
+let conversationListRequestToken = 0
+let runDetailRequestToken = 0
 
 function readTheme() {
   if (typeof window === 'undefined') return 'dark'
@@ -155,12 +160,21 @@ function syncActiveConsoleSectionFromHash() {
   activeConsoleSection.value = ['runtime', 'tools', 'audit'].includes(section) ? section : 'runtime'
 }
 
+function readStoredValue(key, fallback) {
+  if (typeof window === 'undefined') return fallback
+  try {
+    return window.localStorage.getItem(key) || fallback
+  } catch {
+    return fallback
+  }
+}
+
 // 在首屏渲染前同步主题，避免切换时出现短暂的错误背景色。
 applyTheme(theme.value)
 
 const form = reactive({
-  tenantId: import.meta.env.VITE_HARNESS_TENANT_ID || 'tenant-demo',
-  userId: import.meta.env.VITE_HARNESS_USER_ID || 'operator',
+  tenantId: readStoredValue('harnessTenantId', import.meta.env.VITE_HARNESS_TENANT_ID || 'tenant-demo'),
+  userId: readStoredValue('harnessUserId', import.meta.env.VITE_HARNESS_USER_ID || 'operator'),
   title: '订单状态分析',
   input: '请分析这条任务并返回可追溯结果',
   toolName: 'demo.echo',
@@ -566,6 +580,33 @@ function clearMessages() {
   noticeMessage.value = ''
 }
 
+function activeConversationStorageScope() {
+  return `${form.tenantId}:${form.userId}`
+}
+
+function readRememberedConversationId() {
+  if (typeof window === 'undefined') return ''
+  try {
+    const value = JSON.parse(window.localStorage.getItem(ACTIVE_CONVERSATION_STORAGE_KEY) || 'null')
+    if (!value || value.scope !== activeConversationStorageScope()) return ''
+    return typeof value.conversationId === 'string' ? value.conversationId : ''
+  } catch {
+    return ''
+  }
+}
+
+function rememberConversation(conversationId) {
+  if (!conversationId || typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(ACTIVE_CONVERSATION_STORAGE_KEY, JSON.stringify({
+      scope: activeConversationStorageScope(),
+      conversationId,
+    }))
+  } catch {
+    // 禁用本地存储时不影响当前页面内的会话切换。
+  }
+}
+
 function readChatDrafts() {
   if (typeof window === 'undefined') return {}
   try {
@@ -920,32 +961,45 @@ function applyStreamingAssistantContent(runId, detail) {
 }
 
 async function loadConversations(preferredId = '') {
+  const requestToken = ++conversationListRequestToken
   chatLoading.value = true
   try {
-    conversations.value = await api.listConversations()
+    const listedConversations = await api.listConversations()
+    if (requestToken !== conversationListRequestToken) return
+    conversations.value = listedConversations
     if (!conversations.value.length) {
       const created = await api.createConversation(newConversationPayload())
+      if (requestToken !== conversationListRequestToken) return
       conversations.value = [created.conversation]
       activeConversation.value = created
+      rememberConversation(created.conversation.id)
       return
     }
-    const targetId = preferredId || activeConversationId.value || conversations.value[0].id
+    const requestedId = preferredId || activeConversationId.value || readRememberedConversationId()
+    const targetId = conversations.value.some((item) => item.id === requestedId)
+      ? requestedId
+      : conversations.value[0].id
     await selectConversation(targetId, false)
   } catch (error) {
-    errorMessage.value = errorText(error)
+    if (requestToken === conversationListRequestToken) errorMessage.value = errorText(error)
   } finally {
-    chatLoading.value = false
+    if (requestToken === conversationListRequestToken) chatLoading.value = false
   }
 }
 
 async function createChatConversation() {
   if (!confirmWorkspaceEditorDiscard()) return null
+  const creationToken = ++conversationSelectionToken
+  runDetailRequestToken += 1
+  stopRunEventStream()
   saveChatDraft(activeConversationId.value)
   clearMessages()
   try {
     const created = await api.createConversation(newConversationPayload())
+    if (creationToken !== conversationSelectionToken) return null
     conversations.value = [created.conversation, ...conversations.value.filter((item) => item.id !== created.conversation.id)]
     activeConversation.value = created
+    rememberConversation(created.conversation.id)
     setChatInput('')
     clearChatAttachments()
     stopRunEventStream()
@@ -1370,16 +1424,27 @@ async function copyWorkspaceFile() {
 
 async function selectConversation(conversationId, announce = true) {
   if (!conversationId) return
-  if (conversationId !== activeConversationId.value && !confirmWorkspaceEditorDiscard()) return
-  if (conversationId !== activeConversationId.value) saveChatDraft(activeConversationId.value)
+  const changingConversation = conversationId !== activeConversationId.value
+  if (changingConversation && !confirmWorkspaceEditorDiscard()) return
+  const selectionToken = ++conversationSelectionToken
+  if (changingConversation) {
+    saveChatDraft(activeConversationId.value)
+    // 先断开旧 Run 的实时流并清掉详情，避免新会话加载期间仍显示旧项目的执行状态。
+    runDetailRequestToken += 1
+    stopRunEventStream()
+    selectedRun.value = null
+    auditEvents.value = []
+  }
   if (announce) clearMessages()
-  if (conversationId !== activeConversationId.value) {
+  if (changingConversation) {
     clearChatAttachments()
   }
   chatLoading.value = true
   try {
     const detail = await api.getConversation(conversationId)
+    if (selectionToken !== conversationSelectionToken) return
     activeConversation.value = detail
+    rememberConversation(conversationId)
     setChatInput(loadChatDraft(conversationId))
     const runId = latestConversationRun(detail)
     if (runId) await selectRun(runId, false, false)
@@ -1388,14 +1453,15 @@ async function selectConversation(conversationId, announce = true) {
       selectedRun.value = null
       auditEvents.value = []
     }
+    if (selectionToken !== conversationSelectionToken) return
     const shouldReloadWorkspace = showChatWorkspace.value
     resetWorkspaceExplorerState({ keepPanel: shouldReloadWorkspace })
     if (showChatWorkspace.value) void loadWorkspaceDirectory('.')
     scrollChatToBottom()
   } catch (error) {
-    errorMessage.value = errorText(error)
+    if (selectionToken === conversationSelectionToken) errorMessage.value = errorText(error)
   } finally {
-    chatLoading.value = false
+    if (selectionToken === conversationSelectionToken) chatLoading.value = false
   }
 }
 
@@ -1527,19 +1593,25 @@ async function cancelChatRun() {
 
 async function pollConversation() {
   if (!activeConversationId.value || chatSending.value || !pendingChatMessage.value) return
+  const conversationId = activeConversationId.value
+  const selectionToken = conversationSelectionToken
   try {
-    const detail = await api.getConversation(activeConversationId.value)
+    const detail = await api.getConversation(conversationId)
+    if (selectionToken !== conversationSelectionToken || activeConversationId.value !== conversationId) return
     activeConversation.value = detail
     const runId = latestConversationRun(detail)
     if (runId && selectedRun.value?.run?.id !== runId) {
       await selectRun(runId, false, false)
     }
+    if (selectionToken !== conversationSelectionToken || activeConversationId.value !== conversationId) return
     if (!detail.messages.some((message) => message.status === 'PENDING')) {
-      await loadConversations(activeConversationId.value)
+      await loadConversations(conversationId)
     }
     scrollChatToBottom()
   } catch (error) {
-    errorMessage.value = errorText(error)
+    if (selectionToken === conversationSelectionToken && activeConversationId.value === conversationId) {
+      errorMessage.value = errorText(error)
+    }
   }
 }
 
@@ -1547,13 +1619,17 @@ async function pollConversation() {
 async function refreshActiveConversation() {
   const conversationId = activeConversationId.value
   if (!conversationId) return
+  const selectionToken = conversationSelectionToken
   const detail = await api.getConversation(conversationId)
+  if (selectionToken !== conversationSelectionToken || activeConversationId.value !== conversationId) return
   activeConversation.value = detail
   const runId = latestConversationRun(detail)
   if (runId && selectedRun.value?.run?.id !== runId) {
     await selectRun(runId, false, false)
   }
+  if (selectionToken !== conversationSelectionToken || activeConversationId.value !== conversationId) return
   conversations.value = await api.listConversations()
+  if (selectionToken !== conversationSelectionToken || activeConversationId.value !== conversationId) return
   scrollChatToBottom()
 }
 
@@ -1883,17 +1959,19 @@ async function runQuickEvaluation() {
 }
 
 async function selectRun(runId, announce = true, showLoading = true) {
+  const requestToken = ++runDetailRequestToken
   if (showLoading) detailLoading.value = true
   if (announce) clearMessages()
   try {
     const [detail, events] = await Promise.all([api.getRun(runId), api.listAuditEvents(runId)])
+    if (requestToken !== runDetailRequestToken) return
     selectedRun.value = detail
     auditEvents.value = events
     startRunEventStream(runId)
   } catch (error) {
-    errorMessage.value = errorText(error)
+    if (requestToken === runDetailRequestToken) errorMessage.value = errorText(error)
   } finally {
-    if (showLoading) detailLoading.value = false
+    if (showLoading && requestToken === runDetailRequestToken) detailLoading.value = false
   }
 }
 
@@ -1961,14 +2039,18 @@ function startRunEventStream(runId, reconnecting = false) {
 }
 
 async function refreshAfterTerminalRunEvent(runId) {
+  const conversationId = activeConversationId.value
+  const selectionToken = conversationSelectionToken
   try {
     const work = [loadRunsPage(), api.dashboardSummary()]
-    if (activeConversationId.value && latestConversationRun(activeConversation.value) === runId) {
-      work.push(api.getConversation(activeConversationId.value), api.listConversations())
+    if (conversationId && latestConversationRun(activeConversation.value) === runId) {
+      work.push(api.getConversation(conversationId), api.listConversations())
     }
     const results = await Promise.all(work)
     summary.value = results[1]
-    if (results.length > 2) {
+    if (results.length > 2
+      && selectionToken === conversationSelectionToken
+      && activeConversationId.value === conversationId) {
       activeConversation.value = results[2]
       conversations.value = results[3]
       scrollChatToBottom()
