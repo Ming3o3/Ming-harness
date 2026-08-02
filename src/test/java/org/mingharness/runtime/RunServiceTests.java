@@ -112,6 +112,24 @@ class RunServiceTests {
     }
 
     @Test
+    void shouldBoundLargeToolHistoryBeforeSendingNextModelTurn() {
+        RunSummary created = runService.create(new CreateRunRequest(
+                "tenant-demo", "user-demo", "压缩 Agent 上下文", "长上下文",
+                null, null, "prompt-agent", "policy-v1", BigDecimal.TEN,
+                null, null, true, 3));
+
+        RunDetail result = runService.start(created.id(), "tenant-demo");
+
+        assertEquals(RunStatus.SUCCEEDED, result.run().status(), result.run().error());
+        List<ModelMessage> secondRequest = agentModelToolsState.requestMessages(1);
+        assertTrue(secondRequest.stream().anyMatch(message -> "tool".equals(message.role())));
+        assertTrue(secondRequest.stream()
+                .filter(message -> "tool".equals(message.role()))
+                .mapToInt(message -> message.content().length())
+                .sum() < 4_000);
+    }
+
+    @Test
     void shouldOnlyExposeAgentToolsGrantedByRunPermissions() {
         RunSummary created = runService.create(new CreateRunRequest(
                 "tenant-demo", "user-demo", "按权限筛选工具", "请完成一次 Agent 任务",
@@ -527,6 +545,22 @@ class RunServiceTests {
                 }
             };
         }
+
+        @Bean
+        HarnessTool largeOutputTool() {
+            return new HarnessTool() {
+                @Override
+                public ToolDefinition definition() {
+                    return new ToolDefinition("test.large-output", "返回较大的只读结果，用于验证上下文压缩",
+                            true, "LOW", false, Map.of("type", "string"));
+                }
+
+                @Override
+                public String execute(String input) {
+                    return "工具结果: " + "x".repeat(8_000);
+                }
+            };
+        }
     }
 
     @TestConfiguration
@@ -546,6 +580,18 @@ class RunServiceTests {
                 public ModelResponse complete(ModelRequest request) {
                     state.record(request);
                     if (request.tools().isEmpty()) return fallback.complete(request);
+                    if (request.input().contains("长上下文") && request.messages().stream()
+                            .noneMatch(message -> "tool".equals(message.role()))) {
+                        return new ModelResponse("", "agent-test", request.promptVersion(), 5, 4,
+                                java.math.BigDecimal.ZERO,
+                                java.util.List.of(new ModelToolCall(
+                                        "call-agent-large", "test.large-output", "\"短输入\"")));
+                    }
+                    if (request.input().contains("长上下文") && request.messages().stream()
+                            .anyMatch(message -> "tool".equals(message.role()))) {
+                        return new ModelResponse("长工具输出已压缩并继续执行", "agent-test", request.promptVersion(),
+                                5, 3);
+                    }
                     if (request.input().contains("重复工具调用")) {
                         return new ModelResponse("", "agent-test", request.promptVersion(), 5, 4,
                                 java.math.BigDecimal.ZERO,
@@ -573,9 +619,11 @@ class RunServiceTests {
     static class AgentModelToolsState {
         private final List<List<String>> calls = Collections.synchronizedList(new ArrayList<>());
         private final List<String> systemPrompts = Collections.synchronizedList(new ArrayList<>());
+        private final List<List<ModelMessage>> requestMessages = Collections.synchronizedList(new ArrayList<>());
 
         void record(ModelRequest request) {
             calls.add(request.tools().stream().map(tool -> tool.name()).toList());
+            requestMessages.add(List.copyOf(request.messages()));
             request.messages().stream()
                     .filter(message -> "system".equals(message.role()))
                     .map(ModelMessage::content)
@@ -595,9 +643,16 @@ class RunServiceTests {
             }
         }
 
+        List<ModelMessage> requestMessages(int index) {
+            synchronized (requestMessages) {
+                return index < requestMessages.size() ? List.copyOf(requestMessages.get(index)) : List.of();
+            }
+        }
+
         void reset() {
             calls.clear();
             systemPrompts.clear();
+            requestMessages.clear();
         }
     }
 }

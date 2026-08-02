@@ -60,6 +60,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -80,6 +81,8 @@ public class RunService {
                     + "最终回答只能报告实际执行过的验证，不要声称未运行的测试或未观察到的结果。"
                     + "高风险修改和命令会进入人工审批，不能绕过审批或请求未声明的工具。不要输出工作区绝对路径、凭证或密钥。"
                     + "同一个工具和完全相同的参数已经成功执行后不得再次调用；获得足够信息后停止调用工具，用中文给出改动、依据和验证结果。";
+    private static final String AGENT_HISTORY_COMPRESSION_NOTICE =
+            "\n\n（较早的模型和工具上下文已压缩，仅保留最近可用结果。）";
 
     private final RunRepository runRepository;
     private final AuditTrailService auditTrailService;
@@ -1133,7 +1136,7 @@ public class RunService {
         List<ModelToolDefinition> tools = run.agentMode()
                 ? availableModelTools(run.tenantId(), run.permissions()) : List.of();
         List<ModelMessage> messages = run.agentMode()
-                ? agentMessages(run.input(), safeInput, run.history()) : List.of();
+                ? agentMessages(run.input(), safeInput, run.history(), runtimeLimits.maxContextChars()) : List.of();
         ModelRequest request = new ModelRequest(
                 safeInput, run.modelName(), run.promptVersion(), tools, messages,
                 run.tenantId(), run.userId());
@@ -1162,18 +1165,18 @@ public class RunService {
                 .toList();
     }
 
-    /** 将已完成的 Agent 轮次转换为供应商理解的 assistant/tool 消息。 */
+    /** 将已完成的 Agent 轮次转换为供应商理解的 assistant/tool 消息，并限制历史上下文总量。 */
     private List<ModelMessage> agentMessages(String runInput, String currentInput,
-                                             List<AgentHistoryStep> history) {
-        List<ModelMessage> messages = new ArrayList<>();
-        messages.add(ModelMessage.system(AGENT_SYSTEM_PROMPT));
+                                             List<AgentHistoryStep> history, int maximumChars) {
         boolean hasPreviousModel = history.stream().anyMatch(step -> step.type() == StepType.MODEL);
-        messages.add(ModelMessage.user(hasPreviousModel ? runInput : currentInput));
+        String initialUser = hasPreviousModel ? runInput : currentInput;
+        List<List<ModelMessage>> turns = new ArrayList<>();
 
         for (int index = 0; index < history.size(); index++) {
             AgentHistoryStep model = history.get(index);
             if (model.type() != StepType.MODEL) continue;
             AgentTurnCodec.AgentTurn turn = agentTurnCodec.decode(model.output());
+            List<ModelMessage> messages = new ArrayList<>();
             messages.add(ModelMessage.assistant(turn.content(), turn.toolCalls()));
             int callIndex = 0;
             for (int next = index + 1; next < history.size(); next++) {
@@ -1183,8 +1186,84 @@ public class RunService {
                 messages.add(ModelMessage.tool(turn.toolCalls().get(callIndex).id(), tool.output()));
                 callIndex++;
             }
+            turns.add(List.copyOf(messages));
         }
+
+        int maximum = Math.max(1, maximumChars);
+        ModelMessage system = ModelMessage.system(AGENT_SYSTEM_PROMPT);
+        int userBudget = Math.max(1, maximum - messageChars(system)
+                - AGENT_HISTORY_COMPRESSION_NOTICE.length());
+        String boundedUser = AgentTranscriptFormatter.fit(initialUser, userBudget);
+        ModelMessage user = ModelMessage.user(boundedUser);
+        int historyBudget = Math.max(0, maximum - messageChars(system) - messageChars(user)
+                - AGENT_HISTORY_COMPRESSION_NOTICE.length());
+        LinkedList<List<ModelMessage>> selectedTurns = new LinkedList<>();
+        int usedHistoryChars = 0;
+        boolean historyTruncated = false;
+        for (int index = turns.size() - 1; index >= 0; index--) {
+            int remaining = historyBudget - usedHistoryChars;
+            if (remaining <= 0) {
+                historyTruncated = true;
+                break;
+            }
+            List<ModelMessage> compacted = compactAgentTurn(turns.get(index), remaining);
+            int compactedChars = messageChars(compacted);
+            if (compacted.isEmpty() || compactedChars > remaining) {
+                historyTruncated = true;
+                break;
+            }
+            selectedTurns.addFirst(compacted);
+            usedHistoryChars += compactedChars;
+        }
+        if (selectedTurns.size() < turns.size()) historyTruncated = true;
+        if (historyTruncated) {
+            user = ModelMessage.user(boundedUser + AGENT_HISTORY_COMPRESSION_NOTICE);
+        }
+
+        List<ModelMessage> messages = new ArrayList<>();
+        messages.add(system);
+        messages.add(user);
+        selectedTurns.forEach(messages::addAll);
         return List.copyOf(messages);
+    }
+
+    /** 单轮过大的工具输出只保留可读摘要，保留 assistant/tool 配对避免供应商拒绝消息序列。 */
+    private List<ModelMessage> compactAgentTurn(List<ModelMessage> turn, int maximumChars) {
+        if (turn == null || turn.isEmpty() || maximumChars < 1) return List.of();
+        if (messageChars(turn) <= maximumChars) return turn;
+        ModelMessage assistant = turn.get(0);
+        if (assistant.toolCalls().size() != turn.size() - 1) return List.of();
+        int assistantChars = messageChars(assistant);
+        if (assistantChars > maximumChars) return List.of();
+        int toolOverhead = turn.subList(1, turn.size()).stream()
+                .mapToInt(tool -> tool.role().length() + tool.toolCallId().length())
+                .sum();
+        int contentBudget = maximumChars - assistantChars - toolOverhead;
+        if (contentBudget < 0) return List.of();
+
+        List<ModelMessage> compacted = new ArrayList<>();
+        compacted.add(assistant);
+        int toolCount = Math.max(1, turn.size() - 1);
+        for (int index = 1; index < turn.size(); index++) {
+            ModelMessage tool = turn.get(index);
+            int toolBudget = contentBudget / toolCount--;
+            String content = toolBudget > 0 ? AgentTranscriptFormatter.fit(tool.content(), toolBudget) : "";
+            compacted.add(ModelMessage.tool(tool.toolCallId(), content));
+            contentBudget -= content.length();
+        }
+        return List.copyOf(compacted);
+    }
+
+    private int messageChars(List<ModelMessage> messages) {
+        return messages == null ? 0 : messages.stream().mapToInt(this::messageChars).sum();
+    }
+
+    private int messageChars(ModelMessage message) {
+        if (message == null) return 0;
+        int calls = message.toolCalls().stream()
+                .mapToInt(call -> call.id().length() + call.name().length() + call.arguments().length())
+                .sum();
+        return message.role().length() + message.content().length() + message.toolCallId().length() + calls;
     }
 
     private void persistStreamingModelContent(StreamingRunContext run, String stepId, String workerId,
