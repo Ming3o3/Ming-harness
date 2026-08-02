@@ -189,6 +189,32 @@ class RunWorkerExecutionTests {
     }
 
     @Test
+    void shouldNotFinishWorkerAgentAfterRejectedToolWithoutFollowUpModel() {
+        Run run = new Run("tenant-agent-rejected-retry", "worker-user", "审批拒绝后重试保护", "输入",
+                BigDecimal.TEN, "demo-model", "prompt-agent", "policy-v1",
+                null, null, true, 1);
+        run.addStep(succeededStep(1, org.mingharness.runtime.domain.StepType.MODEL,
+                "model.complete", "{\"content\":\"\",\"toolCalls\":[{\"id\":\"call-1\",\"name\":\"demo.approval\",\"arguments\":\"\\\"高风险操作\\\"\"}]}"));
+        org.mingharness.runtime.domain.Step rejected = new org.mingharness.runtime.domain.Step(
+                2, org.mingharness.runtime.domain.StepType.TOOL, "demo.approval", "高风险操作");
+        rejected.requestApproval();
+        rejected.reject("需要先补充测试", "人工审批已拒绝该工具调用。原因：需要先补充测试");
+        run.addStep(rejected);
+        run.start();
+        runRepository.saveAndFlush(run);
+
+        assertTrue(executionStateService.claim(run.getId(), run.getTenantId(), "rejected-worker",
+                Instant.now().plusSeconds(30)).isPresent());
+        assertFalse(executionStateService.finishSuccess(run.getId(), run.getTenantId(), "rejected-worker"));
+
+        Run failed = runRepository.findById(run.getId()).orElseThrow();
+        assertEquals(RunStatus.FAILED, failed.getStatus());
+        assertTrue(failed.getError().contains("人工拒绝"));
+        assertTrue(auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(run.getId()).stream()
+                .anyMatch(event -> "AGENT_FINAL_MODEL_REQUIRED".equals(event.getEventType())));
+    }
+
+    @Test
     void shouldNotTreatUnavailableGitAsWorkspaceVerification() {
         Run run = new Run("tenant-agent-validation-git", "worker-user", "Git 审阅降级", "输入",
                 BigDecimal.TEN, "demo-model", "prompt-agent", "policy-v1",

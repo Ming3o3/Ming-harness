@@ -395,6 +395,28 @@ class RunServiceTests {
     }
 
     @Test
+    void shouldNotTurnRejectedAgentRetryIntoFalseSuccess() {
+        RunSummary created = runService.create(new CreateRunRequest(
+                "tenant-demo", "user-demo", "审批拒绝达到轮数上限", "审批拒绝达到轮数上限",
+                null, null, "prompt-agent", "policy-v1", BigDecimal.TEN,
+                null, null, true, 1));
+
+        RunDetail waiting = runService.start(created.id(), "tenant-demo");
+        assertEquals(RunStatus.WAITING_APPROVAL, waiting.run().status());
+
+        RunDetail failed = runService.reject(created.id(), "tenant-demo", "需要先补充测试");
+        assertEquals(RunStatus.FAILED, failed.run().status());
+        assertEquals(StepStatus.REJECTED, failed.steps().get(1).status());
+
+        RunDetail retried = runService.retry(created.id(), "tenant-demo");
+
+        assertEquals(RunStatus.FAILED, retried.run().status());
+        assertTrue(retried.run().error().contains("人工拒绝"), retried.run().error());
+        assertTrue(auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
+                .anyMatch(event -> "AGENT_FINAL_MODEL_REQUIRED".equals(event.getEventType())));
+    }
+
+    @Test
     void shouldRetryTransientFailure() {
         RunSummary created = runService.create(request("test.flaky", "重试瞬态错误"));
         RunDetail firstResult = runService.start(created.id(), "tenant-demo");
@@ -668,6 +690,12 @@ class RunServiceTests {
                                 java.math.BigDecimal.ZERO,
                                 java.util.List.of(new ModelToolCall(
                                         "call-agent-approval", "demo.approval", "\"需要审批\"")));
+                    }
+                    if (request.input().contains("审批拒绝达到轮数上限")) {
+                        return new ModelResponse("", "agent-test", request.promptVersion(), 5, 4,
+                                java.math.BigDecimal.ZERO,
+                                java.util.List.of(new ModelToolCall(
+                                        "call-agent-approval-limit", "demo.approval", "\"需要审批\"")));
                     }
                     if (request.input().contains("长上下文") && request.messages().stream()
                             .noneMatch(message -> "tool".equals(message.role()))) {

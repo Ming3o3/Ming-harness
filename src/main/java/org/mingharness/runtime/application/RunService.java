@@ -1106,6 +1106,13 @@ public class RunService {
     }
 
     private void completeAgentRun(Run run) {
+        Optional<String> finalModelError = AgentCompletionPolicy.missingFinalModel(run.getSteps(), agentTurnCodec);
+        if (finalModelError.isPresent()) {
+            run.fail(finalModelError.get());
+            record(run.getId(), null, "AGENT_FINAL_MODEL_REQUIRED", finalModelError.get());
+            record(run.getId(), null, "RUN_FAILED", run.getError());
+            return;
+        }
         Optional<String> validationError = AgentVerificationPolicy.missingVerification(run.getSteps().stream()
                 .map(step -> new AgentVerificationPolicy.StepEvidence(
                         step.getSequence(), step.getName(), step.getStatus(),

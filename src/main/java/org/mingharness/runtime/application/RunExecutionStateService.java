@@ -393,6 +393,15 @@ public class RunExecutionStateService {
         if (!ownsRunningRun(run, workerId)) {
             return false;
         }
+        Optional<String> finalModelError = AgentCompletionPolicy.missingFinalModel(run.getSteps(), agentTurnCodec);
+        if (run.isAgentMode() && finalModelError.isPresent()) {
+            run.fail(finalModelError.get());
+            append(run, null, "AGENT_FINAL_MODEL_REQUIRED", finalModelError.get());
+            append(run, null, "RUN_FAILED", run.getError());
+            runRepository.save(run);
+            conversationMessageWriter.updateForTerminalRun(run);
+            return false;
+        }
         Optional<String> validationError = AgentVerificationPolicy.missingVerification(run.getSteps().stream()
                 .map(step -> new AgentVerificationPolicy.StepEvidence(
                         step.getSequence(), step.getName(), step.getStatus(),
