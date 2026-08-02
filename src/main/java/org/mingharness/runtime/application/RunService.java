@@ -22,6 +22,7 @@ import org.mingharness.model.ModelToolDefinition;
 import org.mingharness.model.ModelToolCall;
 import org.mingharness.model.AgentTurnCodec;
 import org.mingharness.model.ModelMessage;
+import org.mingharness.model.ModelProviderConfigService;
 import org.springframework.beans.factory.annotation.Value;
 import org.mingharness.runtime.repository.RunRepository;
 import org.mingharness.dashboard.RunDashboardSummary;
@@ -84,6 +85,7 @@ public class RunService {
     private final AuditTrailService auditTrailService;
     private final ToolRegistry toolRegistry;
     private final ModelGateway modelGateway;
+    private final ModelProviderConfigService modelProviderConfigService;
     private final String defaultModel;
     private final String defaultPromptVersion;
     private final String defaultPolicyVersion;
@@ -118,6 +120,7 @@ public class RunService {
                       AuditTrailService auditTrailService,
                       ToolRegistry toolRegistry,
                       ModelGateway modelGateway,
+                      ModelProviderConfigService modelProviderConfigService,
                       @Value("${harness.model.name:demo-model}") String defaultModel,
                       @Value("${harness.prompt.version:prompt-v1}") String defaultPromptVersion,
                       @Value("${harness.policy.version:policy-v1}") String defaultPolicyVersion,
@@ -148,6 +151,7 @@ public class RunService {
         this.auditTrailService = auditTrailService;
         this.toolRegistry = toolRegistry;
         this.modelGateway = modelGateway;
+        this.modelProviderConfigService = modelProviderConfigService;
         this.defaultModel = defaultModel;
         this.defaultPromptVersion = defaultPromptVersion;
         this.defaultPolicyVersion = defaultPolicyVersion;
@@ -231,7 +235,8 @@ public class RunService {
                     sanitizedTitle,
                     sanitizedInput,
                     request.budget() == null ? BigDecimal.ONE : request.budget(),
-                    sanitizer.sanitize(valueOrDefault(request.modelName(), defaultModel)),
+                    sanitizer.sanitize(valueOrDefault(request.modelName(),
+                            modelProviderConfigService.effectiveModelName(request.tenantId(), request.userId()))),
                     sanitizer.sanitize(valueOrDefault(request.promptVersion(), defaultPromptVersion)),
                     sanitizer.sanitize(valueOrDefault(request.policyVersion(), defaultPolicyVersion)),
                     idempotencyKey,
@@ -1108,7 +1113,7 @@ public class RunService {
     private ModelResponse executeStreamingModelCall(RunExecutionStateService.RunExecutionSnapshot run,
                                                     RunExecutionStateService.StepExecutionSnapshot step,
                                                     String modelInput, String workerId) {
-        return executeModelCall(new StreamingRunContext(run.id(), run.tenantId(), run.modelName(),
+        return executeModelCall(new StreamingRunContext(run.id(), run.tenantId(), run.userId(), run.modelName(),
                 run.promptVersion(), run.input(), run.agentMode(), permissions(run.permissionsSnapshot()),
                 historyFromSnapshots(run.steps(), step.sequence())),
                 step.id(), modelInput, workerId, true);
@@ -1116,7 +1121,7 @@ public class RunService {
 
     private ModelResponse executeModelCall(Run run, Step step, String modelInput, String workerId,
                                            boolean streamToChat) {
-        return executeModelCall(new StreamingRunContext(run.getId(), run.getTenantId(), run.getModelName(),
+        return executeModelCall(new StreamingRunContext(run.getId(), run.getTenantId(), run.getUserId(), run.getModelName(),
                 run.getPromptVersion(), run.getInput(), run.isAgentMode(), permissions(run),
                 historyFromEntities(run.getSteps(), step.getSequence())),
                 step.getId(), modelInput, workerId, streamToChat);
@@ -1130,7 +1135,8 @@ public class RunService {
         List<ModelMessage> messages = run.agentMode()
                 ? agentMessages(run.input(), safeInput, run.history()) : List.of();
         ModelRequest request = new ModelRequest(
-                safeInput, run.modelName(), run.promptVersion(), tools, messages);
+                safeInput, run.modelName(), run.promptVersion(), tools, messages,
+                run.tenantId(), run.userId());
         if (!streamToChat) {
             return boundedExecutor.execute("模型调用", runtimeLimits.modelTimeoutMs(), () ->
                     modelGateway.complete(request));
@@ -1197,7 +1203,7 @@ public class RunService {
                 persistedOutput, safeContent);
     }
 
-    private record StreamingRunContext(String id, String tenantId, String modelName,
+    private record StreamingRunContext(String id, String tenantId, String userId, String modelName,
                                        String promptVersion, String input, boolean agentMode,
                                        Set<String> permissions,
                                        List<AgentHistoryStep> history) {

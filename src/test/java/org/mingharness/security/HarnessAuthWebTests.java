@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(properties = {
         "harness.auth.mode=api-key",
-        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,run.create,ops.read,workspace.read,workspace.write,workspace.manage,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage;web-other-key|tenant-other|other-user|run.read,workspace.read",
+        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,run.create,ops.read,model.configure,workspace.read,workspace.write,workspace.manage,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage;web-other-key|tenant-other|other-user|run.read,workspace.read",
         "harness.workspace.enabled=true",
         "harness.workspace.local-registration-enabled=true",
         "management.endpoint.health.show-details=when_authorized",
@@ -66,6 +66,36 @@ class HarnessAuthWebTests {
 
         assertEquals(200, response.statusCode());
         assertTrue(response.headers().firstValue("X-Trace-Id").isPresent());
+    }
+
+    @Test
+    void shouldSaveUserModelConfigWithoutReturningApiKey() throws Exception {
+        HttpResponse<String> saved = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/model-config"))
+                        .header("Authorization", "Bearer web-test-key")
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString("{\"enabled\":true,\"baseUrl\":\"http://localhost:11434/v1\","
+                                + "\"modelName\":\"qwen2.5-coder\",\"apiKey\":\"secret-web-model\"}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, saved.statusCode(), saved.body());
+        assertTrue(saved.body().contains("\"source\":\"user\""), saved.body());
+        assertTrue(saved.body().contains("••••odel"), saved.body());
+        assertFalse(saved.body().contains("secret-web-model"), saved.body());
+
+        HttpResponse<String> loaded = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/model-config"))
+                        .header("Authorization", "Bearer web-test-key").GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, loaded.statusCode(), loaded.body());
+        assertFalse(loaded.body().contains("secret-web-model"), loaded.body());
+
+        HttpResponse<String> denied = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/model-config"))
+                        .header("Authorization", "Bearer web-other-key").GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, denied.statusCode(), denied.body());
+        assertTrue(denied.body().contains("PERMISSION_DENIED"), denied.body());
     }
 
     @Test

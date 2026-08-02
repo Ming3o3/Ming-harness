@@ -1,7 +1,5 @@
 package org.mingharness.model;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -14,8 +12,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
-@Component
-@ConditionalOnProperty(prefix = "harness.model", name = "enabled", havingValue = "false", matchIfMissing = true)
 public class DemoModelGateway implements ModelGateway {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();

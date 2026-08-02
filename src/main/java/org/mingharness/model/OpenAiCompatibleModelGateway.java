@@ -5,7 +5,6 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.observability.HarnessMetrics;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -32,8 +31,6 @@ import java.util.function.Consumer;
  * OpenAI 兼容模型网关，负责供应商级重试、熔断、备用路由、响应契约校验和成本解析。
  * Runtime 仍通过 ModelGateway 接口调用，因此不会改变现有 Run/Step 执行协议。
  */
-@Component
-@ConditionalOnProperty(prefix = "harness.model", name = "enabled", havingValue = "true")
 public class OpenAiCompatibleModelGateway implements ModelGateway {
 
     private final Provider primary;
@@ -563,13 +560,11 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
 
     private Provider provider(RestClient.Builder builder, String name, String baseUrl, String apiKey,
                               String model) {
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new IllegalArgumentException("模型供应商 " + name + " 缺少 API Key");
+        RestClient.Builder clientBuilder = builder.clone().baseUrl(baseUrl);
+        if (apiKey != null && !apiKey.isBlank()) {
+            clientBuilder.defaultHeader("Authorization", "Bearer " + apiKey);
         }
-        return new Provider(name, model,
-                builder.clone().baseUrl(baseUrl)
-                        .defaultHeader("Authorization", "Bearer " + apiKey)
-                        .build(),
+        return new Provider(name, model, clientBuilder.build(),
                 new ModelCircuitBreaker(config.circuitFailureThreshold(), config.circuitOpenMs()));
     }
 
