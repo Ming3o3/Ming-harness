@@ -3,6 +3,7 @@ package org.mingharness.observability;
 import org.springframework.boot.health.actuate.endpoint.CompositeHealthDescriptor;
 import org.springframework.boot.health.actuate.endpoint.HealthDescriptor;
 import org.springframework.boot.health.actuate.endpoint.HealthEndpoint;
+import org.mingharness.model.ModelConfig;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -23,10 +24,13 @@ public class OperationalHealthController {
 
     private final HealthEndpoint healthEndpoint;
     private final HarnessMetrics metrics;
+    private final ModelConfig modelConfig;
 
-    public OperationalHealthController(HealthEndpoint healthEndpoint, HarnessMetrics metrics) {
+    public OperationalHealthController(HealthEndpoint healthEndpoint, HarnessMetrics metrics,
+                                       ModelConfig modelConfig) {
         this.healthEndpoint = healthEndpoint;
         this.metrics = metrics;
+        this.modelConfig = modelConfig;
     }
 
     @GetMapping
@@ -40,13 +44,21 @@ public class OperationalHealthController {
         return new OperationalHealthView(
                 component.getStatus().getCode(),
                 new LinkedHashMap<>(components),
-                metrics.operationalSnapshot()
+                metrics.operationalSnapshot(),
+                new ModelHealthView(modelConfig.enabled(),
+                        modelConfig.enabled() ? "external" : "demo",
+                        modelConfig.enabled() ? modelConfig.name() : "demo-model")
         );
     }
 
     /** 只暴露状态码，不暴露 Actuator 组件 details。 */
     public record OperationalHealthView(String status,
                                         Map<String, String> components,
-                                        HarnessMetrics.OperationalSnapshot runtime) {
+                                        HarnessMetrics.OperationalSnapshot runtime,
+                                        ModelHealthView model) {
+    }
+
+    /** 只返回模型模式和名称，不返回供应商地址、API Key 或其他连接细节。 */
+    public record ModelHealthView(boolean enabled, String mode, String modelName) {
     }
 }

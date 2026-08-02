@@ -220,6 +220,12 @@ const infraLabel = computed(() => {
   if (health.value.error) return health.value.error
   return infraOnline.value ? '基础设施在线' : '基础设施异常'
 })
+const modelLabel = computed(() => {
+  const model = health.value?.model
+  if (!model || model.mode === 'demo' || !model.enabled) return '演示模型'
+  return model.modelName ? `模型 ${model.modelName}` : '外部模型'
+})
+const modelStatusClass = computed(() => health.value?.model?.enabled ? 'health-up' : 'health-unknown')
 const workerLabel = computed(() => {
   const runtime = health.value?.runtime
   if (!runtime || !runtime.workerConcurrencyLimit) return 'Worker 同步执行'
@@ -2012,6 +2018,7 @@ onBeforeUnmount(() => {
         <div class="chat-topbar-actions">
           <span class="chat-identity">{{ form.tenantId }} / {{ form.userId }}</span>
           <span class="chat-health" :class="infraOnline ? 'health-up' : 'health-warning'"><i></i>{{ infraLabel }}</span>
+          <span class="chat-model-status" :class="modelStatusClass" :title="health?.model?.enabled ? '当前请求会发送到已配置的外部模型' : '当前使用本地演示模型，不会访问外部模型服务'"><i></i>{{ modelLabel }}</span>
           <button class="theme-toggle" type="button" :aria-label="theme === 'dark' ? '切换到白天模式' : '切换到黑夜模式'" @click="toggleTheme">
             <span aria-hidden="true">{{ theme === 'dark' ? '☼' : '☾' }}</span>{{ theme === 'dark' ? '白天' : '黑夜' }}
           </button>
@@ -2490,6 +2497,7 @@ onBeforeUnmount(() => {
             <span :class="healthClass('redis')"><i></i>Redis {{ healthStatus('redis') }}</span>
             <span :class="healthClass('rabbit')"><i></i>RabbitMQ {{ healthStatus('rabbit') }}</span>
             <span :class="healthClass('diskSpace')"><i></i>应用 {{ health?.status || '—' }}</span>
+            <span :class="modelStatusClass"><i></i>{{ modelLabel }}</span>
             <span :class="workerHealthClass"><i></i>{{ workerLabel }}</span>
             <span :class="queueHealthClass"><i></i>{{ queueLabel }}</span>
           </div>

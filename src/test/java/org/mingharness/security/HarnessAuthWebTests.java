@@ -333,6 +333,7 @@ class HarnessAuthWebTests {
         assertEquals(200, health.statusCode());
         assertTrue(health.body().contains("\"status\""));
         assertTrue(health.body().contains("\"db\""));
+        assertTrue(health.body().contains("\"model\""));
         assertTrue(!health.body().contains("jdbc:h2"));
 
         HttpResponse<String> metrics = httpClient.send(

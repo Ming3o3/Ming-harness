@@ -332,6 +332,10 @@ h3 { margin: 0; font-size: 13px; }
 .chat-health i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .chat-health.health-up { border-color: rgba(85,214,138,.25); color: var(--green); }
 .chat-health.health-warning { border-color: rgba(255,182,95,.3); color: var(--orange); }
+.chat-model-status { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 18px; padding: 7px 10px; font: 9px "DM Mono", monospace; }
+.chat-model-status i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.chat-model-status.health-up { border-color: rgba(85,214,138,.25); color: var(--green); }
+.chat-model-status.health-unknown { border-color: rgba(141,124,255,.25); color: var(--accent-light); }
 .chat-console-button { padding: 8px 11px; font-size: 10px; }
 .chat-message-banner { width: min(100% - 44px, 1040px); flex: 0 0 auto; margin: 14px auto 0; }
 .chat-layout { display: grid; min-height: 0; flex: 1 1 auto; overflow: hidden; grid-template-columns: 252px minmax(0, 1fr) 320px; grid-template-rows: minmax(0, 1fr); }
