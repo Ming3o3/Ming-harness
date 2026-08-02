@@ -439,6 +439,16 @@ function decodeWorkspaceGitDiff(step) {
   }
 }
 
+function decodeWorkspaceSearch(step) {
+  if (!step || step.name !== 'workspace.search' || !step.output) return null
+  try {
+    const parsed = JSON.parse(step.output)
+    return parsed && typeof parsed === 'object' && Array.isArray(parsed.matches) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
 function decodeToolInput(step) {
   if (!step?.input) return null
   try {
@@ -2784,6 +2794,17 @@ onBeforeUnmount(() => {
                       <div class="command-summary">
                         <span :class="decodeWorkspaceGitStatus(step).clean ? 'command-ok' : 'command-failed'">{{ decodeWorkspaceGitStatus(step).clean ? '工作区干净' : '存在文件变更' }}</span>
                         <span>{{ decodeWorkspaceGitStatus(step).entryCount || 0 }} 个变更</span>
+                      </div>
+                    </template>
+                    <template v-else-if="decodeWorkspaceSearch(step)">
+                      <p class="search-line"><span>⌕</span> {{ decodeWorkspaceSearch(step).query }} · {{ decodeWorkspaceSearch(step).path || '.' }}</p>
+                      <div class="command-summary">
+                        <span class="command-ok">命中 {{ decodeWorkspaceSearch(step).matches.length }} 处</span>
+                        <span v-if="decodeWorkspaceSearch(step).truncated">结果已截断</span>
+                      </div>
+                      <div v-if="decodeWorkspaceSearch(step).matches.length" class="search-match-list">
+                        <code v-for="match in decodeWorkspaceSearch(step).matches.slice(0, 6)" :key="`${match.path}:${match.line}`">{{ match.path }}:{{ match.line }}</code>
+                        <span v-if="decodeWorkspaceSearch(step).matches.length > 6">另有 {{ decodeWorkspaceSearch(step).matches.length - 6 }} 处</span>
                       </div>
                     </template>
                     <template v-else-if="decodeWorkspaceGitDiff(step)">
