@@ -791,6 +791,14 @@ function resizeChatInput() {
   element.style.height = `${Math.min(Math.max(element.scrollHeight, 78), 220)}px`
 }
 
+// 新会话或切换会话后直接进入可输入状态，减少一次额外点击；发送期间不抢回焦点。
+function focusChatComposer() {
+  void nextTick(() => {
+    if (!chatMode.value || !activeConversationId.value || chatSending.value || chatUploading.value) return
+    chatInputRef.value?.focus()
+  })
+}
+
 function handleChatInput() {
   saveChatDraft(activeConversationId.value)
   resizeChatInput()
@@ -1175,6 +1183,7 @@ async function loadConversations(preferredId = '') {
       conversations.value = [created.conversation]
       activeConversation.value = created
       rememberConversation(created.conversation.id)
+      focusChatComposer()
       return
     }
     const requestedId = preferredId || activeConversationId.value || readRememberedConversationId()
@@ -1208,6 +1217,7 @@ async function createChatConversation() {
     selectedRun.value = null
     auditEvents.value = []
     resetWorkspaceExplorerState()
+    focusChatComposer()
     return created
   } catch (error) {
     errorMessage.value = errorText(error)
@@ -1660,6 +1670,7 @@ async function selectConversation(conversationId, announce = true) {
     resetWorkspaceExplorerState({ keepPanel: shouldReloadWorkspace })
     if (showChatWorkspace.value) void loadWorkspaceDirectory('.')
     scrollChatToBottom()
+    focusChatComposer()
   } catch (error) {
     if (selectionToken === conversationSelectionToken) errorMessage.value = errorText(error)
   } finally {
