@@ -316,6 +316,11 @@ const chatRunActivity = computed(() => {
   const activeStep = steps.find((step) => step.status === 'RUNNING')
     || steps.find((step) => step.status === 'WAITING_APPROVAL')
     || steps.find((step) => step.status === 'QUEUED')
+  if (activeStep?.type === 'MODEL') {
+    const fallbackStep = steps.slice().reverse().find((step) => isRecoverableToolFallback(step)
+      && step.sequence < activeStep.sequence)
+    if (fallbackStep) return 'Git 审阅不可用，Agent 正在改用文件工具…'
+  }
   return agentActivityLabel(activeStep)
 })
 const chatUserMessages = computed(() => chatMessages.value
@@ -462,6 +467,16 @@ function decodeWorkspaceGitDiff(step) {
     return parsed && typeof parsed === 'object' ? parsed : null
   } catch {
     return null
+  }
+}
+
+function isRecoverableToolFallback(step) {
+  if (!step?.output || step.status !== 'SUCCEEDED' || !String(step.name || '').startsWith('workspace.git.')) return false
+  try {
+    const parsed = JSON.parse(step.output)
+    return parsed && parsed.available === false && parsed.recoverable === true
+  } catch {
+    return false
   }
 }
 
