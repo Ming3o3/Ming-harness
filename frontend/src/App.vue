@@ -83,6 +83,10 @@ const chatDragActive = ref(false)
 const chatAttachmentInput = ref(null)
 const chatFolderInput = ref(null)
 const showChatRun = ref(false)
+const showCommandPalette = ref(false)
+const commandQuery = ref('')
+const commandSelectedIndex = ref(0)
+const commandPaletteInputRef = ref(null)
 const CHAT_DRAFT_STORAGE_KEY = 'mingHarnessChatDrafts'
 const ACTIVE_CONVERSATION_STORAGE_KEY = 'mingHarnessActiveConversation'
 const quickPromptTemplates = [
@@ -371,6 +375,97 @@ const canCancelChat = computed(() => {
   if (!runId) return false
   if (selectedRun.value?.run?.id !== runId) return true
   return canCancel.value
+})
+const commandPaletteItems = computed(() => [
+  {
+    id: 'new-conversation',
+    label: '新建对话',
+    description: '创建一条独立会话，继续使用当前工作区选择',
+    keywords: 'new conversation chat session 对话 会话',
+    icon: '＋',
+    shortcut: '⌘ N',
+    action: async () => {
+      if (!chatMode.value) chatMode.value = true
+      await nextTick()
+      await createChatConversation()
+    },
+    disabled: chatSending.value || chatUploading.value,
+  },
+  {
+    id: 'focus-composer',
+    label: '聚焦消息输入框',
+    description: '立即回到聊天输入，保留当前草稿',
+    keywords: 'focus composer input message 输入 聚焦 草稿',
+    icon: '↗',
+    shortcut: '⌘ I',
+    action: async () => {
+      if (!chatMode.value) chatMode.value = true
+      await nextTick()
+      chatInputRef.value?.focus()
+    },
+    disabled: !activeConversationId.value || chatSending.value || chatUploading.value,
+  },
+  {
+    id: 'workspace-explorer',
+    label: showChatWorkspace.value ? '隐藏项目文件' : '打开项目文件',
+    description: '查看当前会话绑定工作区的目录、文件和 Git 状态',
+    keywords: 'workspace files project explorer code 项目 文件 工作区',
+    icon: '▣',
+    shortcut: '⌘ O',
+    action: async () => {
+      if (!chatMode.value) chatMode.value = true
+      await nextTick()
+      await toggleWorkspaceExplorer()
+    },
+    disabled: !workspaceExplorerAvailable.value,
+  },
+  {
+    id: 'run-panel',
+    label: showChatRun.value ? '隐藏当前 Run' : '查看当前 Run',
+    description: '打开执行步骤、工具调用和审计事件',
+    keywords: 'run execution steps audit trace 运行 执行 步骤 审计',
+    icon: '◇',
+    shortcut: '⌘ J',
+    action: async () => {
+      if (!chatMode.value) chatMode.value = true
+      await nextTick()
+      await toggleRunPanel()
+    },
+    disabled: !latestConversationRun(activeConversation.value),
+  },
+  {
+    id: 'model-settings',
+    label: '打开模型设置',
+    description: '配置当前用户的新 Run 使用的模型连接',
+    keywords: 'model provider api key settings 模型 供应商 设置 密钥',
+    icon: '◈',
+    shortcut: '⌘ ,',
+    action: () => { showModelSettings.value = true },
+    disabled: modelConfigLoading.value,
+  },
+  {
+    id: 'toggle-console',
+    label: chatMode.value ? '打开运行控制台' : '返回聊天工作台',
+    description: chatMode.value ? '查看所有 Run、工具注册表和治理面板' : '回到连续 Agent 对话',
+    keywords: 'console chat workspace runtime 控制台 聊天 工作台',
+    icon: chatMode.value ? '▤' : '⌁',
+    shortcut: '⌘ 1',
+    action: () => { chatMode.value = !chatMode.value },
+  },
+  {
+    id: 'toggle-theme',
+    label: theme.value === 'dark' ? '切换到白天模式' : '切换到黑夜模式',
+    description: '调整界面亮度，设置会保存在当前浏览器',
+    keywords: 'theme dark light appearance 主题 黑夜 白天',
+    icon: theme.value === 'dark' ? '☼' : '☾',
+    shortcut: '⌘ ⇧ L',
+    action: toggleTheme,
+  },
+].filter((command) => !command.disabled))
+const filteredCommandPaletteItems = computed(() => {
+  const query = commandQuery.value.trim().toLowerCase()
+  if (!query) return commandPaletteItems.value
+  return commandPaletteItems.value.filter((command) => `${command.label} ${command.description} ${command.keywords}`.toLowerCase().includes(query))
 })
 const runEventStatusLabel = computed(() => ({
   connecting: '正在连接实时流…',
@@ -693,6 +788,41 @@ function applyQuickPrompt(prompt) {
   setChatInput(current ? `${current}\n\n${prompt}` : prompt, true)
 }
 
+function openCommandPalette() {
+  if (showModelSettings.value) return
+  showCommandPalette.value = true
+  commandQuery.value = ''
+  commandSelectedIndex.value = 0
+  void nextTick(() => commandPaletteInputRef.value?.focus())
+}
+
+function closeCommandPalette() {
+  showCommandPalette.value = false
+  commandQuery.value = ''
+  commandSelectedIndex.value = 0
+}
+
+function moveCommandSelection(delta) {
+  const count = filteredCommandPaletteItems.value.length
+  if (!count) return
+  commandSelectedIndex.value = (commandSelectedIndex.value + delta + count) % count
+}
+
+function executeCommand(command) {
+  if (!command || command.disabled) return
+  closeCommandPalette()
+  try {
+    const result = command.action?.()
+    if (result?.catch) result.catch((error) => { errorMessage.value = errorText(error) })
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  }
+}
+
+function executeSelectedCommand() {
+  executeCommand(filteredCommandPaletteItems.value[commandSelectedIndex.value])
+}
+
 function handleChatKeydown(event) {
   if (event.isComposing || event.key !== 'Enter') return
   // Enter 保持快速发送；Shift+Enter 换行，Cmd/Ctrl+Enter 也可发送，方便从其他编辑器切换过来。
@@ -702,6 +832,29 @@ function handleChatKeydown(event) {
 }
 
 function handleChatGlobalKeydown(event) {
+  const key = event.key.toLowerCase()
+  if (!event.isComposing && (event.metaKey || event.ctrlKey) && key === 'k') {
+    event.preventDefault()
+    if (showCommandPalette.value) closeCommandPalette()
+    else openCommandPalette()
+    return
+  }
+  if (showCommandPalette.value) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      closeCommandPalette()
+    } else if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      moveCommandSelection(1)
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      moveCommandSelection(-1)
+    } else if (event.key === 'Enter') {
+      event.preventDefault()
+      executeSelectedCommand()
+    }
+    return
+  }
   if (event.isComposing || event.key !== 'Escape') return
   if (showModelSettings.value) {
     event.preventDefault()
@@ -2401,6 +2554,7 @@ onBeforeUnmount(() => {
           <span class="chat-health" :class="infraOnline ? 'health-up' : 'health-warning'"><i></i>{{ infraLabel }}</span>
           <span class="chat-model-status" :class="modelStatusClass" :title="modelConfig?.enabled ? `当前用户模型：${modelConfig.modelName || '外部模型'}` : '当前使用本地演示模型，不会访问外部模型服务'"><i></i>{{ modelLabel }}</span>
           <button class="secondary-button chat-console-button" type="button" @click="showModelSettings = true">模型设置</button>
+          <button class="command-palette-trigger" type="button" title="打开命令面板（⌘/Ctrl + K）" @click="openCommandPalette"><span>⌘K</span><em>命令</em></button>
           <button class="theme-toggle" type="button" :aria-label="theme === 'dark' ? '切换到白天模式' : '切换到黑夜模式'" @click="toggleTheme">
             <span aria-hidden="true">{{ theme === 'dark' ? '☼' : '☾' }}</span>{{ theme === 'dark' ? '白天' : '黑夜' }}
           </button>
@@ -2861,6 +3015,7 @@ onBeforeUnmount(() => {
         <div class="topbar-actions">
           <button class="secondary-button" type="button" @click="chatMode = true">聊天工作台</button>
           <button class="secondary-button" type="button" @click="showModelSettings = true">模型设置</button>
+          <button class="command-palette-trigger" type="button" title="打开命令面板（⌘/Ctrl + K）" @click="openCommandPalette"><span>⌘K</span><em>命令</em></button>
           <button
             class="theme-toggle"
             type="button"
@@ -3314,5 +3469,48 @@ onBeforeUnmount(() => {
         </footer>
       </template>
     </form>
+  </div>
+  <div
+    v-if="showCommandPalette"
+    class="command-palette-overlay"
+    role="dialog"
+    aria-modal="true"
+    aria-label="命令面板"
+    @click.self="closeCommandPalette"
+  >
+    <section class="command-palette-dialog">
+      <header class="command-palette-header">
+        <div class="command-palette-search-icon" aria-hidden="true">⌕</div>
+        <input
+          ref="commandPaletteInputRef"
+          v-model="commandQuery"
+          type="search"
+          autocomplete="off"
+          placeholder="搜索命令…"
+          aria-label="搜索命令"
+          @input="commandSelectedIndex = 0"
+        />
+        <kbd>Esc</kbd>
+      </header>
+      <div class="command-palette-list" role="listbox" aria-label="可执行命令">
+        <button
+          v-for="(command, index) in filteredCommandPaletteItems"
+          :key="command.id"
+          class="command-palette-item"
+          :class="{ selected: index === commandSelectedIndex }"
+          type="button"
+          role="option"
+          :aria-selected="index === commandSelectedIndex"
+          @mouseenter="commandSelectedIndex = index"
+          @click="executeCommand(command)"
+        >
+          <span class="command-palette-item-icon" aria-hidden="true">{{ command.icon }}</span>
+          <span class="command-palette-item-copy"><strong>{{ command.label }}</strong><small>{{ command.description }}</small></span>
+          <kbd v-if="command.shortcut">{{ command.shortcut }}</kbd>
+        </button>
+        <div v-if="!filteredCommandPaletteItems.length" class="command-palette-empty">没有匹配的命令</div>
+      </div>
+      <footer class="command-palette-footer"><span><kbd>↑</kbd><kbd>↓</kbd> 选择</span><span><kbd>Enter</kbd> 执行</span><span><kbd>Esc</kbd> 关闭</span></footer>
+    </section>
   </div>
 </template>

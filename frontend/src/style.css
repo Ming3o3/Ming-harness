@@ -332,6 +332,10 @@ h3 { margin: 0; font-size: 13px; }
 .chat-brand strong { display: block; color: var(--heading); font-size: 14px; }
 .chat-brand span { display: block; margin-top: 3px; color: var(--muted); font: 9px "DM Mono", monospace; letter-spacing: .08em; }
 .chat-topbar-actions { gap: 10px; }
+.command-palette-trigger { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 18px; background: var(--hover-bg); color: var(--muted); padding: 7px 9px; font: 9px "DM Mono", monospace; transition: .2s ease; }
+.command-palette-trigger:hover { border-color: rgba(141,124,255,.55); color: var(--accent-light); background: rgba(141,124,255,.08); }
+.command-palette-trigger span { border: 1px solid var(--line); border-radius: 4px; background: rgba(141,124,255,.08); padding: 2px 4px; color: var(--accent-light); font-size: 8px; }
+.command-palette-trigger em { font-style: normal; }
 .chat-identity { max-width: 220px; overflow: hidden; color: var(--muted); font: 9px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .chat-health { gap: 6px; border: 1px solid var(--line); border-radius: 18px; padding: 7px 10px; font: 9px "DM Mono", monospace; }
 .chat-health i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
@@ -626,6 +630,24 @@ h3 { margin: 0; font-size: 13px; }
 .model-settings-clear-key { color: var(--orange); }
 .model-settings-hint, .model-settings-state { margin: -4px 0 0; color: var(--muted); font: 9px/1.5 "DM Mono", monospace; }
 .model-settings-actions { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
+.command-palette-overlay { position: fixed; z-index: 60; inset: 0; display: grid; place-items: start center; background: rgba(5,9,18,.6); padding: min(17vh, 150px) 20px 20px; backdrop-filter: blur(7px); }
+.command-palette-dialog { width: min(620px, calc(100vw - 32px)); overflow: hidden; border: 1px solid rgba(153,174,218,.24); border-radius: 13px; background: var(--panel); box-shadow: 0 30px 100px rgba(0,0,0,.48); }
+.command-palette-header { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); padding: 13px 15px; }
+.command-palette-search-icon { color: var(--accent-light); font: 19px "DM Mono", monospace; line-height: 1; }
+.command-palette-header input { min-width: 0; flex: 1 1 auto; border: 0; outline: 0; background: transparent; color: var(--heading); padding: 2px 0; font-size: 14px; }
+.command-palette-header input::placeholder { color: var(--muted); }
+.command-palette-header kbd, .command-palette-item kbd, .command-palette-footer kbd { border: 1px solid var(--line); border-radius: 4px; background: var(--hover-bg); color: var(--muted); padding: 3px 5px; font: 8px "DM Mono", monospace; white-space: nowrap; }
+.command-palette-list { display: grid; max-height: min(480px, 55vh); overflow: auto; padding: 7px; scrollbar-gutter: stable; }
+.command-palette-item { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--soft); padding: 10px 9px; text-align: left; transition: .14s ease; }
+.command-palette-item:hover, .command-palette-item.selected { border-color: rgba(141,124,255,.32); background: var(--selected-bg); color: var(--heading); }
+.command-palette-item-icon { display: grid; width: 25px; height: 25px; place-items: center; border: 1px solid rgba(141,124,255,.25); border-radius: 7px; background: rgba(141,124,255,.08); color: var(--accent-light); font: 13px "DM Mono", monospace; }
+.command-palette-item-copy { display: grid; min-width: 0; gap: 3px; }
+.command-palette-item-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 600; }
+.command-palette-item-copy small { overflow: hidden; color: var(--muted); font: 9px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.command-palette-item.selected .command-palette-item-copy small { color: var(--soft); }
+.command-palette-empty { padding: 30px 12px; color: var(--muted); text-align: center; font: 10px "DM Mono", monospace; }
+.command-palette-footer { display: flex; flex-wrap: wrap; gap: 12px; border-top: 1px solid var(--line); padding: 9px 14px; color: var(--muted); font: 8px "DM Mono", monospace; }
+.command-palette-footer span { display: inline-flex; align-items: center; gap: 4px; }
 .workspace-explorer-path { display: grid; grid-template-columns: 30px minmax(0, 1fr) 29px; align-items: center; gap: 7px; border-bottom: 1px solid var(--line); padding: 12px 0; }
 .workspace-explorer-path .secondary-button { min-width: 0; padding: 6px; }
 .workspace-explorer-path .icon-button { width: 28px; height: 28px; border-radius: 7px; font-size: 15px; }
