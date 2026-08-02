@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** 验证 Worker 在短事务状态边界下仍能持久化业务失败和完整审计。 */
@@ -137,6 +138,64 @@ class RunWorkerExecutionTests {
         assertEquals(RunStatus.FAILED, failed.getStatus());
         assertEquals(1, failed.getSteps().size(), "权限失败应在模型步骤完成前阻止工具步骤入队");
         assertTrue(failed.getSteps().get(0).getError().contains("缺少权限"));
+    }
+
+    @Test
+    void shouldRequireWorkspaceVerificationBeforeAgentRunCanSucceed() {
+        Run run = new Run("tenant-agent-validation", "worker-user", "Agent 修改验证", "输入",
+                BigDecimal.TEN, "demo-model", "prompt-agent", "policy-v1",
+                null, "workspace.write", true, 3);
+        run.addStep(succeededStep(1, org.mingharness.runtime.domain.StepType.MODEL,
+                "model.complete", "{\"content\":\"开始修改\",\"toolCalls\":[]}"));
+        run.addStep(succeededStep(2, org.mingharness.runtime.domain.StepType.TOOL,
+                "workspace.write", "{\"path\":\"src/App.java\"}"));
+        run.addStep(succeededStep(3, org.mingharness.runtime.domain.StepType.MODEL,
+                "model.complete", "{\"content\":\"修改完成\",\"toolCalls\":[]}"));
+        run.start();
+        runRepository.saveAndFlush(run);
+
+        assertTrue(executionStateService.claim(run.getId(), run.getTenantId(), "validation-worker",
+                Instant.now().plusSeconds(30)).isPresent());
+        assertFalse(executionStateService.finishSuccess(run.getId(), run.getTenantId(), "validation-worker"));
+
+        Run failed = runRepository.findById(run.getId()).orElseThrow();
+        assertEquals(RunStatus.FAILED, failed.getStatus());
+        assertEquals(StepStatus.FAILED, failed.getSteps().get(2).getStatus());
+        assertTrue(failed.getError().contains("重新读取文件"));
+        assertTrue(auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(run.getId()).stream()
+                .anyMatch(event -> "AGENT_VALIDATION_REQUIRED".equals(event.getEventType())));
+    }
+
+    @Test
+    void shouldAllowAgentRunAfterWorkspaceVerification() {
+        Run run = new Run("tenant-agent-validation-ok", "worker-user", "Agent 修改验证通过", "输入",
+                BigDecimal.TEN, "demo-model", "prompt-agent", "policy-v1",
+                null, "workspace.write,workspace.read", true, 3);
+        run.addStep(succeededStep(1, org.mingharness.runtime.domain.StepType.MODEL,
+                "model.complete", "{\"content\":\"开始修改\",\"toolCalls\":[]}"));
+        run.addStep(succeededStep(2, org.mingharness.runtime.domain.StepType.TOOL,
+                "workspace.write", "{\"path\":\"src/App.java\"}"));
+        run.addStep(succeededStep(3, org.mingharness.runtime.domain.StepType.TOOL,
+                "workspace.read", "{\"path\":\"src/App.java\",\"sha256\":\"abc\"}"));
+        run.addStep(succeededStep(4, org.mingharness.runtime.domain.StepType.MODEL,
+                "model.complete", "{\"content\":\"修改已核验\",\"toolCalls\":[]}"));
+        run.start();
+        runRepository.saveAndFlush(run);
+
+        assertTrue(executionStateService.claim(run.getId(), run.getTenantId(), "validation-worker-ok",
+                Instant.now().plusSeconds(30)).isPresent());
+        assertTrue(executionStateService.finishSuccess(run.getId(), run.getTenantId(), "validation-worker-ok"));
+        assertEquals(RunStatus.SUCCEEDED, runRepository.findById(run.getId()).orElseThrow().getStatus());
+    }
+
+    private org.mingharness.runtime.domain.Step succeededStep(int sequence,
+                                                                org.mingharness.runtime.domain.StepType type,
+                                                                String name, String output) {
+        org.mingharness.runtime.domain.Step step =
+                new org.mingharness.runtime.domain.Step(sequence, type, name, "input");
+        step.start();
+        step.succeed(output);
+        return step;
     }
 
     @Test

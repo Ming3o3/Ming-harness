@@ -1020,15 +1020,7 @@ public class RunService {
                 index = 0;
             }
             ensureNotCancelled(run);
-            String output = run.getSteps().stream()
-                    .filter(step -> step.getStatus() == StepStatus.SUCCEEDED)
-                    .reduce((left, right) -> right)
-                    .map(Step::getOutput)
-                    .map(agentTurnCodec::decode)
-                    .map(AgentTurnCodec.AgentTurn::content)
-                    .orElse("");
-            run.succeed(output);
-            record(run.getId(), null, "RUN_SUCCEEDED", "Agent 任务执行成功");
+            completeAgentRun(run);
         } catch (RunCancellationRequestedException exception) {
             return toDetail(runRepository.findById(run.getId()).orElseThrow());
         } catch (ExecutionTimeoutException exception) {
@@ -1051,6 +1043,36 @@ public class RunService {
         Run persisted = runRepository.save(run);
         conversationMessageWriter.updateForTerminalRun(persisted);
         return toDetail(persisted);
+    }
+
+    private void completeAgentRun(Run run) {
+        Optional<String> validationError = AgentVerificationPolicy.missingVerification(run.getSteps().stream()
+                .map(step -> new AgentVerificationPolicy.StepEvidence(
+                        step.getSequence(), step.getName(), step.getStatus()))
+                .toList());
+        if (validationError.isPresent()) {
+            Step latest = run.getSteps().stream()
+                    .filter(step -> step.getStatus() == StepStatus.SUCCEEDED)
+                    .reduce((left, right) -> right)
+                    .orElse(null);
+            if (latest != null && latest.getType() == StepType.MODEL) {
+                latest.fail(validationError.get());
+            }
+            run.fail(validationError.get());
+            record(run.getId(), latest == null ? null : latest.getId(),
+                    "AGENT_VALIDATION_REQUIRED", validationError.get());
+            record(run.getId(), null, "RUN_FAILED", validationError.get());
+            return;
+        }
+        String output = run.getSteps().stream()
+                .filter(step -> step.getStatus() == StepStatus.SUCCEEDED)
+                .reduce((left, right) -> right)
+                .map(Step::getOutput)
+                .map(agentTurnCodec::decode)
+                .map(AgentTurnCodec.AgentTurn::content)
+                .orElse("");
+        run.succeed(output);
+        record(run.getId(), null, "RUN_SUCCEEDED", "Agent 任务执行成功");
     }
 
     private RunDetail dispatch(Run run, String command) {

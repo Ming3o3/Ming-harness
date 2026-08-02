@@ -393,6 +393,25 @@ public class RunExecutionStateService {
         if (!ownsRunningRun(run, workerId)) {
             return false;
         }
+        Optional<String> validationError = AgentVerificationPolicy.missingVerification(run.getSteps().stream()
+                .map(step -> new AgentVerificationPolicy.StepEvidence(
+                        step.getSequence(), step.getName(), step.getStatus()))
+                .toList());
+        if (run.isAgentMode() && validationError.isPresent()) {
+            Step latest = run.getSteps().stream()
+                    .filter(step -> step.getStatus() == StepStatus.SUCCEEDED)
+                    .reduce((left, right) -> right)
+                    .orElse(null);
+            if (latest != null && latest.getType() == StepType.MODEL) {
+                latest.fail(validationError.get());
+            }
+            run.fail(validationError.get());
+            append(run, latest, "AGENT_VALIDATION_REQUIRED", validationError.get());
+            append(run, null, "RUN_FAILED", validationError.get());
+            runRepository.save(run);
+            conversationMessageWriter.updateForTerminalRun(run);
+            return false;
+        }
         String output = run.getSteps().stream()
                 .filter(step -> step.getStatus() == StepStatus.SUCCEEDED)
                 .reduce((left, right) -> right)
