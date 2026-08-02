@@ -1,9 +1,12 @@
 package org.mingharness.runtime.application;
 
+import jakarta.annotation.PreDestroy;
 import org.mingharness.common.BusinessException;
 import org.mingharness.runtime.api.RunDetail;
 import org.mingharness.runtime.domain.RunStatus;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.event.ContextClosedEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -95,6 +98,20 @@ public class RunEventStreamService {
 
     int activeSubscriberCount() {
         return subscriptions.size();
+    }
+
+    /**
+     * SSE 连接通常是长连接；应用进入关闭流程时必须主动结束它们，
+     * 否则 Tomcat 的优雅停机会一直把连接视为活动请求。
+     */
+    @EventListener(ContextClosedEvent.class)
+    public void onContextClosed(ContextClosedEvent event) {
+        shutdown();
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        subscriptions.values().forEach(this::close);
     }
 
     private boolean send(Subscription subscription, String eventName, RunDetail detail) {
