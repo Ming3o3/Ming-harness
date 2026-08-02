@@ -204,9 +204,14 @@ function remountModels() {
   if (!editor) return
   const previousValue = props.diff ? null : editor.getValue()
   if (props.diff) {
-    disposeModels()
+    // Diff 编辑器仍引用旧模型时不能先 dispose；先原子替换模型，再释放旧实例，
+    // 否则在快速切换文件时 Monaco 会抛出 “TextModel got disposed”。
+    const previousOriginalModel = originalModel
+    const previousModifiedModel = modifiedModel
     createModels()
     editor.setModel({ original: originalModel, modified: modifiedModel })
+    previousOriginalModel?.dispose()
+    previousModifiedModel?.dispose()
   } else if (props.language !== undefined && modifiedModel) {
     monaco.editor.setModelLanguage(modifiedModel, props.language || 'plaintext')
     if (previousValue !== props.modelValue && previousValue !== null) {

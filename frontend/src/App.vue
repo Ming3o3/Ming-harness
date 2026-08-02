@@ -80,10 +80,14 @@ const workspaceEditorSaving = ref(false)
 const workspaceEditorCopying = ref(false)
 // Git 审阅沿用当前会话的工作区绑定，避免把磁盘路径或自由 Git 参数暴露给页面。
 const workspaceGitReviewVisible = ref(false)
+const workspaceGitReviewOpen = ref(false)
 const workspaceGitStatus = ref(null)
 const workspaceGitStatusLoading = ref(false)
 const workspaceGitDiff = ref(null)
 const workspaceGitDiffLoading = ref(false)
+const workspaceGitReviewPath = ref('')
+const workspaceGitReviewStaged = ref(false)
+const workspaceGitDiffCopying = ref(false)
 // 实时流只订阅当前查看的非终态 Run；HTTP 轮询仍用于网络异常后的兜底校验。
 const runEventStreaming = ref(false)
 let conversationPollTimer
@@ -268,6 +272,8 @@ const workspaceStatusClass = computed(() => workspaceConnected.value ? 'workspac
 const workspaceExplorerAvailable = computed(() => workspaceConnected.value && Boolean(activeConversationId.value))
 const workspaceExplorerPath = computed(() => workspaceExplorer.value?.path || '.')
 const workspaceGitAvailable = computed(() => Boolean(workspaceExplorer.value?.git?.available))
+const workspaceGitReviewEntries = computed(() => workspaceGitStatus.value?.entries || [])
+const workspaceGitReviewParsed = computed(() => parseUnifiedGitDiff(workspaceGitDiff.value?.diff || ''))
 const runPageLabel = computed(() => {
   if (!runPage.totalElements) return '0 条记录'
   return `第 ${runPage.page + 1} / ${runPage.totalPages} 页 · 共 ${runPage.totalElements} 条`
@@ -805,9 +811,59 @@ async function openRunPanel(runId, announce = false) {
 /** 展开 Git 审阅时才请求变更明细，普通目录浏览不会额外运行 Git 命令。 */
 async function toggleWorkspaceGitReview() {
   if (!workspaceExplorerAvailable.value || !workspaceGitAvailable.value) return
-  workspaceGitReviewVisible.value = !workspaceGitReviewVisible.value
-  if (!workspaceGitReviewVisible.value) return
+  if (workspaceGitReviewVisible.value) {
+    closeWorkspaceGitReview()
+    return
+  }
+  workspaceGitReviewVisible.value = true
   await loadWorkspaceGitStatus()
+}
+
+function closeWorkspaceGitReview() {
+  workspaceGitDiffLoadToken += 1
+  workspaceGitReviewVisible.value = false
+  workspaceGitReviewOpen.value = false
+  workspaceGitReviewPath.value = ''
+  workspaceGitReviewStaged.value = false
+  workspaceGitDiff.value = null
+  workspaceGitDiffLoading.value = false
+}
+
+function closeWorkspaceGitReviewDialog() {
+  workspaceGitReviewOpen.value = false
+}
+
+async function openWorkspaceGitReviewDialog() {
+  if (!workspaceGitReviewVisible.value) return
+  workspaceGitReviewOpen.value = true
+  if (workspaceGitReviewPath.value || workspaceGitDiffLoading.value) return
+  const firstChange = workspaceGitReviewEntries.value.find((entry) => entry?.path)
+  if (firstChange && !(firstChange.worktree === '?' && firstChange.index === '?')) {
+    await loadWorkspaceGitDiff(firstChange.path, defaultGitDiffStage(firstChange))
+  }
+}
+
+function openWorkspaceGitReviewFile(change, staged = defaultGitDiffStage(change)) {
+  if (!change?.path) return
+  if (change.worktree === '?' && change.index === '?') {
+    previewUntrackedWorkspaceFile(change)
+    return
+  }
+  workspaceGitReviewOpen.value = true
+  void loadWorkspaceGitDiff(change.path, staged)
+}
+
+async function copyWorkspaceGitDiff() {
+  if (!workspaceGitDiff.value?.diff || workspaceGitDiffCopying.value) return
+  workspaceGitDiffCopying.value = true
+  try {
+    await navigator.clipboard.writeText(workspaceGitDiff.value.diff)
+    noticeMessage.value = 'Diff 已复制到剪贴板。'
+  } catch {
+    errorMessage.value = '复制失败，请检查浏览器剪贴板权限。'
+  } finally {
+    workspaceGitDiffCopying.value = false
+  }
 }
 
 /** 请求始终携带当前会话绑定的 workspaceId，后端会再次验证所属租户和用户。 */
@@ -845,9 +901,25 @@ async function loadWorkspaceGitStatus() {
   workspaceGitStatusLoading.value = true
   workspaceGitDiffLoadToken += 1
   workspaceGitDiff.value = null
+  workspaceGitDiffLoading.value = false
   try {
     const result = await api.workspaceGitStatus({ workspaceId: activeConversationWorkspaceId.value })
-    if (requestToken === workspaceGitStatusLoadToken) workspaceGitStatus.value = result
+    if (requestToken === workspaceGitStatusLoadToken) {
+      workspaceGitStatus.value = result
+      const firstChange = result.entries?.find((entry) => entry?.path)
+      const selectedChange = result.entries?.find((entry) => entry?.path === workspaceGitReviewPath.value)
+      if (!selectedChange && workspaceGitReviewPath.value) {
+        workspaceGitReviewPath.value = ''
+        workspaceGitReviewStaged.value = false
+      }
+      const changeToLoad = selectedChange || firstChange
+      if (workspaceGitReviewOpen.value && changeToLoad
+          && !(changeToLoad.worktree === '?' && changeToLoad.index === '?')) {
+        const keepSelectedStage = selectedChange && workspaceGitReviewStaged.value
+          && selectedChange.index !== ' ' && selectedChange.index !== '?'
+        void loadWorkspaceGitDiff(changeToLoad.path, keepSelectedStage || defaultGitDiffStage(changeToLoad))
+      }
+    }
   } catch (error) {
     if (requestToken === workspaceGitStatusLoadToken) {
       workspaceGitStatus.value = null
@@ -862,6 +934,8 @@ async function loadWorkspaceGitStatus() {
 async function loadWorkspaceGitDiff(path, staged = false) {
   if (!workspaceExplorerAvailable.value || !workspaceGitAvailable.value || !path) return
   const requestToken = ++workspaceGitDiffLoadToken
+  workspaceGitReviewPath.value = path
+  workspaceGitReviewStaged.value = staged
   workspaceGitDiffLoading.value = true
   try {
     const result = await api.workspaceGitDiff({
@@ -896,7 +970,12 @@ function resetWorkspaceExplorerState({ keepPanel = false } = {}) {
   workspaceEditorDirty.value = false
   workspaceGitStatus.value = null
   workspaceGitDiff.value = null
+  workspaceGitDiffLoading.value = false
+  workspaceGitDiffCopying.value = false
+  workspaceGitReviewPath.value = ''
+  workspaceGitReviewStaged.value = false
   workspaceGitReviewVisible.value = false
+  workspaceGitReviewOpen.value = false
   if (!keepPanel) showChatWorkspace.value = false
 }
 
@@ -916,6 +995,46 @@ function gitChangeClass(change) {
   if (label === '删除') return 'git-change-delete'
   if (label === '新增' || label === '未跟踪') return 'git-change-add'
   return 'git-change-modified'
+}
+
+/** 将受安全过滤后的 unified diff 转成 Monaco Diff Editor 所需的两份文本。 */
+function parseUnifiedGitDiff(rawDiff) {
+  if (!rawDiff) return { original: '', modified: '', additions: 0, deletions: 0, hasChanges: false }
+  const original = []
+  const modified = []
+  let additions = 0
+  let deletions = 0
+  let inHunk = false
+  for (const line of String(rawDiff).split(/\r?\n/)) {
+    if (line.startsWith('@@')) {
+      inHunk = true
+      continue
+    }
+    if (!inHunk || line.startsWith('\\ No newline at end of file')) continue
+    if (line.startsWith('+++') || line.startsWith('---')) continue
+    if (line.startsWith('+')) {
+      modified.push(line.slice(1))
+      additions += 1
+    } else if (line.startsWith('-')) {
+      original.push(line.slice(1))
+      deletions += 1
+    } else if (line.startsWith(' ')) {
+      const context = line.slice(1)
+      original.push(context)
+      modified.push(context)
+    }
+  }
+  return {
+    original: original.join('\n'),
+    modified: modified.join('\n'),
+    additions,
+    deletions,
+    hasChanges: additions > 0 || deletions > 0,
+  }
+}
+
+function defaultGitDiffStage(change) {
+  return change?.worktree === ' ' && change?.index !== ' ' && change?.index !== '?'
 }
 
 async function previewWorkspaceFile(entry) {
@@ -1949,20 +2068,32 @@ onBeforeUnmount(() => {
               <em v-if="workspaceExplorer.git?.available">{{ workspaceExplorer.git.clean ? '工作区干净' : `${workspaceExplorer.git.changeCount} 项变更` }}</em>
               <button v-if="workspaceGitAvailable" type="button" @click="toggleWorkspaceGitReview">{{ workspaceGitReviewVisible ? '收起审阅' : '审阅变更' }}</button>
             </div>
-            <section v-if="workspaceGitReviewVisible" class="workspace-git-review" aria-label="Git 代码变更审阅">
+            <section v-if="workspaceGitReviewVisible" class="workspace-git-review workspace-git-summary" aria-label="Git 代码变更摘要">
               <div class="workspace-git-review-heading">
-                <strong>代码变更</strong>
-                <button class="icon-button" type="button" aria-label="刷新 Git 变更" :disabled="workspaceGitStatusLoading" @click="loadWorkspaceGitStatus">↻</button>
+                <div><strong>代码变更</strong><small>{{ workspaceGitReviewEntries.length }} 个文件</small></div>
+                <div class="workspace-git-review-heading-actions">
+                  <button class="workspace-git-open-button" type="button" @click="openWorkspaceGitReviewDialog">打开审阅</button>
+                  <button class="icon-button" type="button" aria-label="刷新 Git 变更" :disabled="workspaceGitStatusLoading" @click="loadWorkspaceGitStatus">↻</button>
+                </div>
               </div>
               <p v-if="workspaceGitStatusLoading && !workspaceGitStatus" class="workspace-git-review-empty">正在读取 Git 变更…</p>
               <template v-else-if="workspaceGitStatus">
                 <p v-if="workspaceGitStatus.clean" class="workspace-git-review-empty">当前工作区没有未提交变更。</p>
                 <div v-else class="workspace-git-change-list">
-                  <article v-for="change in workspaceGitStatus.entries" :key="`${change.index}-${change.worktree}-${change.path}`">
-                    <div><span :class="gitChangeClass(change)">{{ gitChangeLabel(change) }}</span><strong :title="change.path">{{ change.path }}</strong></div>
+                  <article v-for="change in workspaceGitReviewEntries" :key="`${change.index}-${change.worktree}-${change.path}`">
+                    <button
+                      class="workspace-git-file-row"
+                      type="button"
+                      :class="{ selected: workspaceGitReviewPath === change.path }"
+                      @click="openWorkspaceGitReviewFile(change)"
+                    >
+                      <span :class="gitChangeClass(change)">{{ gitChangeLabel(change) }}</span>
+                      <strong :title="change.path">{{ change.path }}</strong>
+                      <em>{{ defaultGitDiffStage(change) ? '已暂存' : change.worktree === '?' ? '未跟踪' : '工作区' }}</em>
+                    </button>
                     <nav>
-                      <button v-if="change.worktree !== ' ' && !(change.worktree === '?' && change.index === '?')" type="button" @click="loadWorkspaceGitDiff(change.path, false)">工作区</button>
-                      <button v-if="change.index !== ' ' && change.index !== '?'" type="button" @click="loadWorkspaceGitDiff(change.path, true)">暂存</button>
+                      <button v-if="change.worktree !== ' ' && !(change.worktree === '?' && change.index === '?')" type="button" @click="openWorkspaceGitReviewFile(change, false)">工作区</button>
+                      <button v-if="change.index !== ' ' && change.index !== '?'" type="button" @click="openWorkspaceGitReviewFile(change, true)">暂存</button>
                       <button v-if="change.worktree === '?' && change.index === '?'" type="button" @click="previewUntrackedWorkspaceFile(change)">预览</button>
                     </nav>
                   </article>
@@ -1971,11 +2102,6 @@ onBeforeUnmount(() => {
                 <p v-if="workspaceGitStatus.outputTruncated" class="workspace-git-review-warning">变更列表已按安全上限截断，请逐步处理项目中的文件。</p>
               </template>
               <p v-else class="workspace-git-review-empty">无法读取 Git 变更。</p>
-              <section v-if="workspaceGitDiff || workspaceGitDiffLoading" class="workspace-git-diff" aria-label="Git 差异内容">
-                <div><strong>{{ workspaceGitDiff ? `${workspaceGitDiff.path} · ${workspaceGitDiff.staged ? '已暂存' : '工作区'}` : '正在读取差异…' }}</strong><span v-if="workspaceGitDiff?.outputTruncated">已截断</span></div>
-                <pre v-if="workspaceGitDiff?.hasChanges">{{ workspaceGitDiff.diff }}</pre>
-                <p v-else-if="workspaceGitDiff">当前范围没有可显示的 Diff；新增未跟踪文件请使用“预览”。</p>
-              </section>
             </section>
             <div class="workspace-explorer-path">
               <button class="secondary-button" type="button" :disabled="workspaceExplorerPath === '.' || workspaceExplorerLoading" @click="loadWorkspaceDirectory(workspaceExplorer.parentPath)">↑</button>
@@ -2076,6 +2202,84 @@ onBeforeUnmount(() => {
             </div>
           </template>
         </aside>
+      </div>
+      <div
+        v-if="workspaceGitReviewOpen"
+        class="workspace-review-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-label="代码变更审阅"
+        @click.self="closeWorkspaceGitReviewDialog"
+      >
+        <div class="workspace-review-dialog">
+          <header class="workspace-review-header">
+            <div>
+              <p class="eyebrow">CODE REVIEW</p>
+              <h2>审查代码变更</h2>
+              <span>{{ workspaceGitReviewEntries.length }} 个文件 · {{ workspaceGitStatus?.branch || 'Git 工作区' }}</span>
+            </div>
+            <button class="icon-button" type="button" aria-label="关闭代码审阅" @click="closeWorkspaceGitReviewDialog">×</button>
+          </header>
+          <div class="workspace-review-body">
+            <aside class="workspace-review-files" aria-label="变更文件列表">
+              <div class="workspace-review-files-heading">
+                <span>变更文件</span>
+                <button class="icon-button" type="button" aria-label="刷新 Git 变更" :disabled="workspaceGitStatusLoading" @click="loadWorkspaceGitStatus">↻</button>
+              </div>
+              <div v-if="workspaceGitStatusLoading && !workspaceGitStatus" class="workspace-review-empty">正在读取变更…</div>
+              <div v-else-if="workspaceGitStatus?.clean" class="workspace-review-empty">当前工作区干净。</div>
+              <template v-else-if="workspaceGitReviewEntries.length">
+                <div v-for="change in workspaceGitReviewEntries" :key="change.path + ':' + change.index + ':' + change.worktree" class="workspace-review-file-group">
+                  <button
+                    class="workspace-review-file"
+                    type="button"
+                    :class="{ selected: workspaceGitReviewPath === change.path }"
+                    @click="openWorkspaceGitReviewFile(change)"
+                  >
+                    <span :class="gitChangeClass(change)">{{ gitChangeLabel(change) }}</span>
+                    <strong :title="change.path">{{ change.path }}</strong>
+                    <small>{{ defaultGitDiffStage(change) ? '已暂存' : change.worktree === '?' ? '未跟踪' : '工作区' }}</small>
+                  </button>
+                  <div class="workspace-review-file-actions">
+                    <button v-if="change.worktree !== ' ' && !(change.worktree === '?' && change.index === '?')" type="button" :class="{ active: workspaceGitReviewPath === change.path && !workspaceGitReviewStaged }" @click="loadWorkspaceGitDiff(change.path, false)">工作区</button>
+                    <button v-if="change.index !== ' ' && change.index !== '?'" type="button" :class="{ active: workspaceGitReviewPath === change.path && workspaceGitReviewStaged }" @click="loadWorkspaceGitDiff(change.path, true)">暂存</button>
+                    <button v-if="change.worktree === '?' && change.index === '?'" type="button" @click="previewUntrackedWorkspaceFile(change)">打开文件</button>
+                  </div>
+                </div>
+              </template>
+              <div v-else class="workspace-review-empty">无法读取 Git 变更。</div>
+              <p v-if="workspaceGitStatus?.protectedChangeCount" class="workspace-review-warning">已隐藏 {{ workspaceGitStatus.protectedChangeCount }} 项受保护文件。</p>
+              <p v-if="workspaceGitStatus?.outputTruncated" class="workspace-review-warning">变更列表已达到安全上限。</p>
+            </aside>
+            <section class="workspace-review-diff" aria-label="文件差异对比">
+              <header class="workspace-review-diff-header">
+                <div>
+                  <code>{{ workspaceGitReviewPath || '选择一个变更文件' }}</code>
+                  <span v-if="workspaceGitReviewStaged" class="workspace-review-scope">已暂存</span>
+                  <span v-else-if="workspaceGitReviewPath" class="workspace-review-scope">工作区</span>
+                  <span v-if="workspaceGitReviewParsed.additions" class="workspace-review-additions">+{{ workspaceGitReviewParsed.additions }}</span>
+                  <span v-if="workspaceGitReviewParsed.deletions" class="workspace-review-deletions">−{{ workspaceGitReviewParsed.deletions }}</span>
+                  <span v-if="workspaceGitDiff?.outputTruncated" class="workspace-review-scope">已截断</span>
+                </div>
+                <button v-if="workspaceGitDiff?.hasChanges" class="workspace-review-copy" type="button" :disabled="workspaceGitDiffCopying" @click="copyWorkspaceGitDiff">{{ workspaceGitDiffCopying ? '复制中…' : '复制 Diff' }}</button>
+              </header>
+              <div class="workspace-review-editor">
+                <MonacoEditor
+                  v-if="workspaceGitDiff?.hasChanges"
+                  :diff="true"
+                  :path="workspaceGitReviewPath"
+                  :language="languageFromPath(workspaceGitReviewPath) || 'plaintext'"
+                  :original="workspaceGitReviewParsed.original"
+                  :modified="workspaceGitReviewParsed.modified"
+                  height="100%"
+                />
+                <div v-else-if="workspaceGitDiffLoading" class="workspace-review-state">正在读取差异…</div>
+                <div v-else-if="workspaceGitDiff" class="workspace-review-state">当前范围没有可显示的 Diff；新增未跟踪文件请从左侧打开文件。</div>
+                <div v-else class="workspace-review-state">从左侧选择文件开始审阅。</div>
+              </div>
+            </section>
+          </div>
+        </div>
       </div>
     </div>
   </template>
