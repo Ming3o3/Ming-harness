@@ -100,6 +100,7 @@ const workspaceGitReviewStaged = ref(false)
 const workspaceGitDiffCopying = ref(false)
 // 实时流只订阅当前查看的非终态 Run；HTTP 轮询仍用于网络异常后的兜底校验。
 const runEventStreaming = ref(false)
+const runEventConnectionState = ref('idle')
 let conversationPollTimer
 let chatHighlightTimer
 let runEventAbortController
@@ -314,6 +315,11 @@ const canSendChat = computed(() => Boolean(activeConversationId.value) && !chatS
 const canCancelChat = computed(() => Boolean(pendingChatMessage.value?.runId)
   && selectedRun.value?.run?.id === pendingChatMessage.value.runId
   && canCancel.value && !loading.value)
+const runEventStatusLabel = computed(() => ({
+  connecting: '正在连接实时流…',
+  connected: '实时执行',
+  reconnecting: '实时流重连中…',
+}[runEventConnectionState.value] || ''))
 // 变更预览只读取已经持久化到 Step 的工具参数，不向后端额外发送代码正文。
 const workspaceChangePreviews = computed(() => (selectedRun.value?.steps || [])
   .map(workspaceChangePreview)
@@ -1821,10 +1827,11 @@ function stopRunEventStream() {
   }
   runEventStreamRunId = undefined
   runEventStreaming.value = false
+  runEventConnectionState.value = 'idle'
 }
 
 /** 只保留一个当前 Run 的实时连接，切换对话或控制台条目时立即关闭旧连接。 */
-function startRunEventStream(runId) {
+function startRunEventStream(runId, reconnecting = false) {
   if (!runId || isTerminal(selectedRun.value?.run?.status)) {
     // 切到终态任务也必须关闭此前其他 Run 的连接。
     stopRunEventStream()
@@ -1839,11 +1846,13 @@ function startRunEventStream(runId) {
   runEventAbortController = controller
   runEventStreamRunId = runId
   runEventStreaming.value = true
+  runEventConnectionState.value = reconnecting ? 'reconnecting' : 'connecting'
   void api.streamRunEvents(runId, {
     signal: controller.signal,
     onEvent: ({ event, data }) => {
       if ((event !== 'snapshot' && event !== 'run') || data?.run?.id !== runId) return
       if (selectedRun.value?.run?.id !== runId) return
+      runEventConnectionState.value = 'connected'
       selectedRun.value = data
       applyStreamingAssistantContent(runId, data)
       if (latestStreamingModelContent(data)) scrollChatToBottom()
@@ -1864,7 +1873,10 @@ function startRunEventStream(runId) {
     runEventAbortController = undefined
     runEventStreamRunId = undefined
     if (!isTerminal(selectedRun.value?.run?.status) && selectedRun.value?.run?.id === runId) {
-      runEventReconnectTimer = window.setTimeout(() => startRunEventStream(runId), 1000)
+      runEventConnectionState.value = 'reconnecting'
+      runEventReconnectTimer = window.setTimeout(() => startRunEventStream(runId, true), 1000)
+    } else {
+      runEventConnectionState.value = 'idle'
     }
   })
 }
@@ -2136,7 +2148,14 @@ onBeforeUnmount(() => {
                   {{ desktopWorkspacePicking ? '选择中…' : '选择本地项目' }}
                 </button>
               </div>
-              <span v-if="runEventStreaming && !isTerminal(selectedStatus)" class="chat-live-indicator"><i></i>实时执行</span>
+              <span
+                v-if="runEventConnectionState !== 'idle' && !isTerminal(selectedStatus)"
+                class="chat-live-indicator"
+                :class="`chat-live-${runEventConnectionState}`"
+                role="status"
+                aria-live="polite"
+                :title="runEventStreaming ? '当前 Run 正通过 SSE 推送状态，HTTP 轮询仍作为兜底' : '实时流暂时中断，HTTP 轮询仍会继续更新状态'"
+              ><i></i>{{ runEventStatusLabel }}</span>
               <span v-if="pendingChatMessage" class="chat-run-pill" :class="statusClass(chatRunStatus)"><i></i>{{ statusLabel(chatRunStatus) }}</span>
               <button v-if="workspaceExplorerAvailable" class="secondary-button" type="button" @click="toggleWorkspaceExplorer">{{ showChatWorkspace ? '隐藏文件' : '项目文件' }}</button>
               <button v-if="latestConversationRun(activeConversation)" class="secondary-button" type="button" @click="toggleRunPanel">{{ showChatRun ? '隐藏运行' : '查看运行' }}</button>
