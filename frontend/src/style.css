@@ -435,6 +435,9 @@ h3 { margin: 0; font-size: 13px; }
 .chat-bubble small { display: block; margin-top: 8px; color: var(--red); font: 9px "DM Mono", monospace; }
 .chat-bubble.message-status-failed { border-color: rgba(255,114,123,.3); }
 .chat-bubble.message-status-cancelled { border-color: rgba(255,182,95,.28); }
+.chat-message-actions { display: flex; gap: 8px; margin-top: 5px; }
+.chat-message-actions button { border: 0; background: transparent; color: var(--muted); padding: 2px; font: 9px "DM Mono", monospace; }
+.chat-message-actions button:hover:not(:disabled) { color: var(--accent-light); text-decoration: underline; }
 .chat-attachment-list { display: grid; gap: 6px; margin-top: 10px; text-align: left; }
 .chat-attachment-list > span { display: grid; grid-template-columns: 11px minmax(0, auto) auto minmax(0, 1fr); align-items: center; gap: 6px; min-width: 0; border: 1px solid rgba(141,124,255,.22); border-radius: 6px; background: rgba(141,124,255,.055); padding: 7px 8px; color: var(--soft); font: 9px "DM Mono", monospace; }
 .chat-attachment-list i { color: var(--accent-light); font-style: normal; }

@@ -60,6 +60,7 @@ const chatInput = ref('')
 const chatInputRef = ref(null)
 const chatLoading = ref(false)
 const chatSending = ref(false)
+const copyingMessageId = ref('')
 // 文件仅在点击发送时才上传，切换会话不会在后端留下未绑定的附件。
 const chatAttachments = ref([])
 const chatUploading = ref(false)
@@ -583,6 +584,19 @@ function messageNavigationLabel(message) {
   const content = String(message?.content || '').trim()
   if (content) return content.length > 30 ? `${content.slice(0, 30)}…` : content
   return attachmentLabel(message?.attachments?.[0])
+}
+
+async function copyChatMessage(message) {
+  if (!message?.content || copyingMessageId.value) return
+  copyingMessageId.value = message.id
+  try {
+    await navigator.clipboard.writeText(message.content)
+    noticeMessage.value = '助手回复已复制到剪贴板。'
+  } catch {
+    errorMessage.value = '复制失败，请检查浏览器剪贴板权限。'
+  } finally {
+    copyingMessageId.value = ''
+  }
 }
 
 function formatFileSize(size) {
@@ -2103,6 +2117,9 @@ onBeforeUnmount(() => {
                       <i>{{ attachment.directory ? '▣' : '⌁' }}</i><strong>{{ attachment.originalName }}</strong><em v-if="attachment.directory">{{ attachment.fileCount }} 文件</em><code>{{ attachment.workspacePath }}</code>
                     </span>
                   </div>
+                </div>
+                <div v-if="message.role === 'ASSISTANT' && message.content" class="chat-message-actions">
+                  <button type="button" :disabled="copyingMessageId === message.id" @click="copyChatMessage(message)">{{ copyingMessageId === message.id ? '复制中…' : '复制回复' }}</button>
                 </div>
                 <button v-if="message.runId && message.role === 'ASSISTANT'" class="message-run-link" type="button" @click="openRunPanel(message.runId)">查看执行步骤 · {{ message.runId.slice(0, 8) }}</button>
               </div>
