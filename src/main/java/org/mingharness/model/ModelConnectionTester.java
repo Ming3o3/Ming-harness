@@ -3,6 +3,9 @@ package org.mingharness.model;
 import org.mingharness.model.api.ModelConnectionTestView;
 import org.mingharness.observability.HarnessMetrics;
 import org.mingharness.common.SensitiveDataSanitizer;
+import org.mingharness.runtime.application.BoundedExecutor;
+import org.mingharness.runtime.application.ExecutionTimeoutException;
+import org.mingharness.runtime.application.RuntimeLimits;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.ObjectMapper;
@@ -18,17 +21,23 @@ public class ModelConnectionTester {
     private final SensitiveDataSanitizer sanitizer;
     private final HarnessMetrics metrics;
     private final ObjectMapper objectMapper;
+    private final BoundedExecutor boundedExecutor;
+    private final int timeoutMs;
 
     public ModelConnectionTester(ModelConfig defaults,
                                  RestClient.Builder restClientBuilder,
                                  SensitiveDataSanitizer sanitizer,
                                  HarnessMetrics metrics,
-                                 ObjectMapper objectMapper) {
+                                 ObjectMapper objectMapper,
+                                 BoundedExecutor boundedExecutor,
+                                 RuntimeLimits runtimeLimits) {
         this.defaults = defaults;
         this.restClientBuilder = restClientBuilder;
         this.sanitizer = sanitizer;
         this.metrics = metrics;
         this.objectMapper = objectMapper;
+        this.boundedExecutor = boundedExecutor;
+        this.timeoutMs = Math.max(1_000, Math.min(10_000, runtimeLimits.modelTimeoutMs()));
     }
 
     public ModelConnectionTestView test(ModelProviderConfigService.ResolvedModelConfig candidate,
@@ -46,11 +55,14 @@ public class ModelConnectionTester {
                     defaults.maxResponseChars());
             ModelGateway gateway = new OpenAiCompatibleModelGateway(restClientBuilder, config,
                     sanitizer, metrics, objectMapper);
-            ModelResponse response = gateway.complete(new ModelRequest(
-                    "请只回复 OK，不要调用工具。", candidate.modelName(), "model-connection-test",
-                    List.of(), List.of(), tenantId, userId));
+            ModelResponse response = boundedExecutor.execute("模型连接测试", timeoutMs, () -> gateway.complete(
+                    new ModelRequest("请只回复 OK，不要调用工具。", candidate.modelName(),
+                            "model-connection-test", List.of(), List.of(), tenantId, userId)));
             return new ModelConnectionTestView(true, "CONNECTED", "连接成功，模型已返回响应。",
                     response.model(), elapsedMs(startedAt));
+        } catch (ExecutionTimeoutException exception) {
+            return new ModelConnectionTestView(false, "TIMEOUT",
+                    "连接测试超时，请检查模型地址、网络或服务状态。", candidate.modelName(), elapsedMs(startedAt));
         } catch (ModelGatewayException exception) {
             return new ModelConnectionTestView(false, "FAILED",
                     "连接失败：" + safeMessage(exception), candidate.modelName(), elapsedMs(startedAt));
