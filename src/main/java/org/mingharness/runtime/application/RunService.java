@@ -847,7 +847,7 @@ public class RunService {
         }
         String text = sanitizer.sanitize(value.toString());
         int max = Math.max(1, runtimeLimits.maxContextChars());
-        return text.length() <= max ? text : text.substring(text.length() - max);
+        return AgentTranscriptFormatter.fit(text, max);
     }
 
     private void executeToolStep(Run run, Step step, RunExecutionLock.LockToken lockToken) {

@@ -585,7 +585,7 @@ public class RunExecutionStateService {
         }
         String text = sanitizer.sanitize(value.toString());
         int max = Math.max(1, runtimeLimits.maxContextChars());
-        return text.length() <= max ? text : text.substring(text.length() - max);
+        return AgentTranscriptFormatter.fit(text, max);
     }
 
     private void append(Run run, Step step, String eventType, String message) {
