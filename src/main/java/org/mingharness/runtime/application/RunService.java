@@ -638,6 +638,7 @@ public class RunService {
                         () -> tool.execute(started.get().input(), executionContext));
                 toolOutputValidator.validate(definition, output);
                 ToolAudit toolAudit = tool.audit(started.get().input(), output);
+                toolAudit = recoverableToolAudit(run.agentMode(), step.name(), output, toolAudit);
                 // 工具可能产生外部副作用，只有续租成功后才允许写入本次结果。
                 refreshLease(run, lockToken);
                 RunExecutionStateService.StepCompletionResult result = executionStateService.completeStep(
@@ -881,6 +882,7 @@ public class RunService {
                         () -> tool.execute(step.getInput(), executionContext));
                 toolOutputValidator.validate(definition, output);
                 ToolAudit toolAudit = tool.audit(step.getInput(), output);
+                toolAudit = recoverableToolAudit(run.isAgentMode(), step.getName(), output, toolAudit);
                 step.succeed(sanitizer.sanitize(output));
                 record(run.getId(), step.getId(), "STEP_SUCCEEDED", "步骤执行成功");
                 if (toolAudit != null) {
@@ -1437,6 +1439,18 @@ public class RunService {
         String message = exception == null || exception.getMessage() == null || exception.getMessage().isBlank()
                 ? fallback : exception.getMessage();
         return sanitizer.sanitize(message);
+    }
+
+    /** 将只读工具的可恢复错误单独写入审计链，避免与普通成功结果混淆。 */
+    private ToolAudit recoverableToolAudit(boolean agentMode, String toolName, String output,
+                                           ToolAudit existing) {
+        if (existing != null || !agentMode || output == null
+                || !output.contains("\"ok\":false")
+                || !output.contains("\"recoverable\":true")) {
+            return existing;
+        }
+        return new ToolAudit("AGENT_TOOL_RECOVERABLE",
+                "Agent 工具 " + toolName + " 返回可恢复错误，继续调整工作区定位", null);
     }
 
     private String valueOrDefault(String value, String fallback) {

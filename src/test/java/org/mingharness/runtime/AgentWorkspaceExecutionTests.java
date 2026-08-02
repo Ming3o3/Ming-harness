@@ -111,6 +111,8 @@ class AgentWorkspaceExecutionTests {
         assertTrue(detail.steps().stream()
                 .filter(step -> "workspace.read".equals(step.name()))
                 .findFirst().orElseThrow().output().contains("public class App"));
+        assertTrue(auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
+                .anyMatch(event -> "AGENT_TOOL_RECOVERABLE".equals(event.getEventType())));
     }
 
     @Test
@@ -128,6 +130,8 @@ class AgentWorkspaceExecutionTests {
         assertTrue(detail.steps().stream().anyMatch(step -> "workspace.list".equals(step.name())));
         assertTrue(detail.steps().stream().anyMatch(step -> "workspace.read".equals(step.name())
                 && step.output().contains("public class App")));
+        assertTrue(auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
+                .anyMatch(event -> "AGENT_TOOL_RECOVERABLE".equals(event.getEventType())));
     }
 
     @TestConfiguration

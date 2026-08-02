@@ -671,6 +671,14 @@ function messageStatusClass(status) {
   return `message-status-${String(status || 'unknown').toLowerCase()}`
 }
 
+function auditEventLabel(eventType) {
+  return {
+    AGENT_TOOL_RECOVERABLE: 'Agent 工具可恢复降级',
+    AGENT_VALIDATION_REQUIRED: '需要补充修改核验',
+    AGENT_TOOL_CALL_REQUESTED: 'Agent 请求工具',
+  }[eventType] || eventType
+}
+
 function canRetryChatMessage(message) {
   return message?.role === 'ASSISTANT'
     && Boolean(message.runId)
@@ -2900,7 +2908,7 @@ onBeforeUnmount(() => {
               <div class="subsection-title"><h3>审计事件</h3><span>{{ auditEvents.length }} events</span></div>
               <div class="audit-list">
                 <div v-for="event in auditEvents" :key="event.id" class="audit-row">
-                  <span class="audit-time">{{ formatDate(event.createdAt) }}</span><strong>{{ event.eventType }}</strong><span>{{ event.message }}</span><small v-if="event.actorId">{{ event.actorId }} · {{ event.traceId?.slice(0, 10) }}</small>
+                  <span class="audit-time">{{ formatDate(event.createdAt) }}</span><strong>{{ auditEventLabel(event.eventType) }}</strong><span>{{ event.message }}</span><small v-if="event.actorId">{{ event.actorId }} · {{ event.traceId?.slice(0, 10) }}</small>
                 </div>
                 <div v-if="!auditEvents.length" class="muted-line">暂无审计事件</div>
               </div>
