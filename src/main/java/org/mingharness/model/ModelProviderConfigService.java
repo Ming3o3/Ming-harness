@@ -42,12 +42,17 @@ public class ModelProviderConfigService {
         if (request == null) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "MODEL_CONFIG_REQUIRED", "模型配置不能为空");
         }
-        String baseUrl = normalizeBaseUrl(request.baseUrl());
-        String modelName = normalizeModelName(request.modelName());
         boolean enabled = Boolean.TRUE.equals(request.enabled());
-        if (enabled && modelName.isBlank()) {
+        boolean blankBaseUrl = request.baseUrl() == null || request.baseUrl().isBlank();
+        if (enabled && blankBaseUrl) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "MODEL_BASE_URL_REQUIRED", "模型 API 地址不能为空");
+        }
+        String baseUrl = blankBaseUrl ? defaultConfig.baseUrl() : normalizeBaseUrl(request.baseUrl());
+        boolean blankModelName = request.modelName() == null || request.modelName().isBlank();
+        if (enabled && blankModelName) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "MODEL_NAME_REQUIRED", "启用外部模型时必须填写模型名称");
         }
+        String modelName = blankModelName ? defaultConfig.name() : normalizeModelName(request.modelName());
 
         String suppliedApiKey = request.apiKey() == null ? "" : request.apiKey().trim();
         if (suppliedApiKey.length() > MAX_API_KEY_LENGTH) {

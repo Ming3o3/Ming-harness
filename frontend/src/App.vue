@@ -3510,8 +3510,8 @@ onBeforeUnmount(() => {
           <input v-model="modelConfigForm.enabled" type="checkbox" :disabled="!modelConfigEditable" />
           <span>使用外部模型，不使用本地演示模型</span>
         </label>
-        <label class="field"><span>模型 API 地址</span><input v-model="modelConfigForm.baseUrl" :disabled="!modelConfigEditable" required maxlength="512" placeholder="https://api.openai.com/v1" /></label>
-        <label class="field"><span>模型名称</span><input v-model="modelConfigForm.modelName" :disabled="!modelConfigEditable" required maxlength="128" placeholder="例如：gpt-4o-mini、deepseek-chat、qwen2.5-coder" /></label>
+        <label class="field"><span>模型 API 地址</span><input v-model="modelConfigForm.baseUrl" :disabled="!modelConfigEditable || !modelConfigForm.enabled" :required="modelConfigForm.enabled" maxlength="512" placeholder="https://api.openai.com/v1" /></label>
+        <label class="field"><span>模型名称</span><input v-model="modelConfigForm.modelName" :disabled="!modelConfigEditable || !modelConfigForm.enabled" :required="modelConfigForm.enabled" maxlength="128" placeholder="例如：gpt-4o-mini、deepseek-chat、qwen2.5-coder" /></label>
         <label class="field"><span>API Key（留空保留当前密钥）</span><input v-model="modelConfigForm.apiKey" :disabled="!modelConfigEditable" type="password" autocomplete="new-password" maxlength="1000" placeholder="不会回显已保存的密钥" /></label>
         <label v-if="modelConfig?.apiKeyConfigured" class="check-field model-settings-clear-key">
           <input v-model="modelConfigForm.clearApiKey" type="checkbox" :disabled="!modelConfigEditable" />

@@ -14,6 +14,6 @@ public record UpdateModelProviderConfigRequest(
 
     @AssertTrue(message = "模型配置必须提供 API 地址")
     public boolean hasBaseUrl() {
-        return baseUrl != null && !baseUrl.isBlank();
+        return !Boolean.TRUE.equals(enabled) || (baseUrl != null && !baseUrl.isBlank());
     }
 }

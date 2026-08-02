@@ -65,6 +65,18 @@ class ModelProviderConfigServiceTests {
     }
 
     @Test
+    void shouldAllowDisablingExternalModelWithoutProviderFields() {
+        ModelProviderConfigView saved = service.update("tenant-model", "operator",
+                new UpdateModelProviderConfigRequest(false, "", "", "", false));
+
+        assertFalse(saved.enabled());
+        assertEquals("user", saved.source());
+        assertEquals("https://api.openai.com/v1", saved.baseUrl());
+        assertEquals("demo-model", saved.modelName());
+        assertFalse(service.resolve("tenant-model", "operator").enabled());
+    }
+
+    @Test
     void shouldRejectUnsafeBaseUrlAndMissingModelWhenEnabled() {
         assertThrows(RuntimeException.class, () -> service.update("tenant-model", "operator",
                 new UpdateModelProviderConfigRequest(true, "file:///tmp/model", "model-a", "", false)));
