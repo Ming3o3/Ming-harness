@@ -135,12 +135,6 @@ const commandSelectedIndex = ref(0)
 const commandPaletteInputRef = ref(null)
 const CHAT_DRAFT_STORAGE_KEY = 'mingHarnessChatDrafts'
 const ACTIVE_CONVERSATION_STORAGE_KEY = 'mingHarnessActiveConversation'
-const quickPromptTemplates = [
-  { label: '理解代码', prompt: '请先阅读相关代码，解释现有实现、关键流程和潜在风险。' },
-  { label: '实现功能', prompt: '请先梳理实现方案，再完成代码修改，并说明改动和验证结果。' },
-  { label: '修复问题', prompt: '请定位这个问题的根因，给出最小安全修复，并补充验证步骤。' },
-  { label: '审查变更', prompt: '请审查当前代码变更，优先指出正确性、兼容性和安全性风险。' },
-]
 const commandIconComponents = {
   'new-conversation': MessageSquarePlus,
   'focus-composer': ArrowUp,
@@ -907,12 +901,6 @@ function setChatInput(value, focus = false) {
     resizeChatInput()
     if (focus) chatInputRef.value?.focus()
   })
-}
-
-function applyQuickPrompt(prompt) {
-  if (!prompt || chatSending.value || chatUploading.value || !activeConversationId.value) return
-  const current = chatInput.value.trimEnd()
-  setChatInput(current ? `${current}\n\n${prompt}` : prompt, true)
 }
 
 function openCommandPalette() {
@@ -3030,12 +3018,6 @@ onBeforeUnmount(() => {
                 <i aria-hidden="true"><FolderOpen v-if="attachment.directory" :size="13" /><Paperclip v-else :size="13" /></i><strong>{{ attachment.name }}</strong><em>{{ attachment.directory ? `${attachment.fileCount} 文件` : formatFileSize(attachment.size) }}</em>
                 <button type="button" :aria-label="`移除 ${attachment.name}`" :disabled="chatSending || chatUploading" @click="removeChatAttachment(index)"><X :size="13" /></button>
               </span>
-            </div>
-            <div v-if="!chatInput.trim() && !chatAttachments.length && activeConversationId" class="chat-quick-prompts" aria-label="常用任务模板">
-              <span>快速开始</span>
-              <button v-for="template in quickPromptTemplates" :key="template.label" type="button" :disabled="chatSending || chatUploading" @click="applyQuickPrompt(template.prompt)">
-                {{ template.label }}
-              </button>
             </div>
             <div v-if="showChatAgentSettings && activeConversationId" class="chat-agent-settings" aria-label="Agent 设置">
               <div class="chat-agent-settings-heading"><div><strong>Agent 执行深度</strong><small>限制本轮最多执行的模型轮数，工具结果会继续计入同一 Run。</small></div><button type="button" aria-label="关闭 Agent 设置" @click="showChatAgentSettings = false"><X :size="14" /></button></div>

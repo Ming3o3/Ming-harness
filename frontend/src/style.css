@@ -494,10 +494,6 @@ h3 { margin: 0; font-size: 13px; }
 .chat-composer-attachments em { color: var(--muted); font-style: normal; }
 .chat-composer-attachments button { width: 17px; height: 17px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); padding: 0; font-size: 14px; line-height: 1; }
 .chat-composer-attachments button:hover { background: rgba(255,114,123,.14); color: var(--red); }
-.chat-quick-prompts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 9px; }
-.chat-quick-prompts > span { margin-right: 2px; color: var(--muted); font: 8px "DM Mono", monospace; letter-spacing: .06em; }
-.chat-quick-prompts button { border: 1px solid rgba(141,124,255,.24); border-radius: 14px; background: rgba(141,124,255,.06); color: var(--soft); padding: 5px 8px; font: 9px "DM Mono", monospace; transition: .16s ease; }
-.chat-quick-prompts button:hover:not(:disabled) { border-color: rgba(141,124,255,.52); background: rgba(141,124,255,.14); color: var(--heading); transform: translateY(-1px); }
 .chat-agent-settings { display: grid; gap: 10px; margin: 0 0 10px; border: 1px solid rgba(141,124,255,.24); border-radius: 8px; background: rgba(141,124,255,.055); padding: 10px; }
 .chat-agent-settings-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .chat-agent-settings-heading > div { display: grid; gap: 3px; }
@@ -1207,41 +1203,6 @@ button svg {
   background: var(--panel-soft);
   color: var(--heading);
 }
-
-.chat-quick-prompts {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-  margin: 0 auto 11px;
-}
-
-.chat-quick-prompts > span {
-  grid-column: 1 / -1;
-  margin: 0;
-  color: var(--muted);
-  font-size: 10px;
-  letter-spacing: 0;
-}
-
-.chat-quick-prompts button {
-  min-height: 58px;
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  background: var(--panel);
-  color: var(--soft);
-  padding: 11px 10px;
-  text-align: left;
-  font-family: inherit;
-  font-size: 11px;
-}
-
-.chat-quick-prompts button:hover:not(:disabled) {
-  border-color: rgba(0, 0, 0, .2);
-  background: var(--hover-bg);
-  color: var(--heading);
-  transform: none;
-}
-
 .chat-composer {
   width: min(780px, calc(100% - 64px));
   margin-bottom: 22px;
@@ -1372,10 +1333,6 @@ button svg {
   .chat-layout:has(> .chat-run-panel),
   .chat-layout:has(> .chat-workspace-panel) {
     grid-template-columns: 1fr;
-  }
-
-  .chat-quick-prompts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .chat-primary-nav {
