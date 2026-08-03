@@ -15,6 +15,7 @@ import {
   Moon,
   PanelRight,
   Paperclip,
+  PenLine,
   Plus,
   Settings2,
   RefreshCw,
@@ -140,6 +141,16 @@ const quickPromptTemplates = [
   { label: '修复问题', prompt: '请定位这个问题的根因，给出最小安全修复，并补充验证步骤。' },
   { label: '审查变更', prompt: '请审查当前代码变更，优先指出正确性、兼容性和安全性风险。' },
 ]
+const commandIconComponents = {
+  'new-conversation': MessageSquarePlus,
+  'focus-composer': ArrowUp,
+  'rename-conversation': PenLine,
+  'workspace-explorer': FolderOpen,
+  'run-panel': Activity,
+  'model-settings': Settings2,
+  'toggle-console': PanelRight,
+  'toggle-theme': Sun,
+}
 // 项目文件面板仅浏览当前会话已绑定的工作区，不会把绝对路径带到前端。
 const showChatWorkspace = ref(false)
 const workspaceExplorer = ref(null)
@@ -524,6 +535,10 @@ const commandPaletteItems = computed(() => [
     action: toggleTheme,
   },
 ].filter((command) => !command.disabled))
+
+function commandIconComponent(commandId) {
+  return commandIconComponents[commandId] || Command
+}
 const filteredCommandPaletteItems = computed(() => {
   const query = commandQuery.value.trim().toLowerCase()
   if (!query) return commandPaletteItems.value
@@ -3818,7 +3833,7 @@ onBeforeUnmount(() => {
   >
     <section class="command-palette-dialog">
       <header class="command-palette-header">
-        <div class="command-palette-search-icon" aria-hidden="true">⌕</div>
+        <div class="command-palette-search-icon" aria-hidden="true"><Command :size="17" /></div>
         <input
           ref="commandPaletteInputRef"
           v-model="commandQuery"
@@ -3842,7 +3857,7 @@ onBeforeUnmount(() => {
           @mouseenter="commandSelectedIndex = index"
           @click="executeCommand(command)"
         >
-          <span class="command-palette-item-icon" aria-hidden="true">{{ command.icon }}</span>
+          <span class="command-palette-item-icon" aria-hidden="true"><component :is="commandIconComponent(command.id)" :size="15" /></span>
           <span class="command-palette-item-copy"><strong>{{ command.label }}</strong><small>{{ command.description }}</small></span>
           <kbd v-if="command.shortcut">{{ command.shortcut }}</kbd>
         </button>

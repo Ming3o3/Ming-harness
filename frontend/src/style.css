@@ -1491,6 +1491,23 @@ button svg {
   color: var(--muted);
 }
 
+.command-palette-search-icon {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.command-palette-item-icon {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.command-palette-item:hover .command-palette-item-icon,
+.command-palette-item.selected .command-palette-item-icon {
+  color: var(--heading);
+}
+
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
