@@ -2,14 +2,20 @@
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import {
   Bot,
+  ArrowUp,
   Check,
   CircleDot,
   Command,
+  FolderGit2,
+  FolderOpen,
   MessageSquarePlus,
   Moon,
   PanelRight,
+  Paperclip,
   Plus,
   Settings2,
+  RefreshCw,
+  Send,
   Sparkles,
   Sun,
   Wrench,
@@ -2989,8 +2995,8 @@ onBeforeUnmount(() => {
             />
             <div v-if="chatAttachments.length" class="chat-composer-attachments" aria-label="待发送附件">
               <span v-for="(attachment, index) in chatAttachments" :key="attachment.key">
-                <i>{{ attachment.directory ? '▣' : '⌁' }}</i><strong>{{ attachment.name }}</strong><em>{{ attachment.directory ? `${attachment.fileCount} 文件` : formatFileSize(attachment.size) }}</em>
-                <button type="button" :aria-label="`移除 ${attachment.name}`" :disabled="chatSending || chatUploading" @click="removeChatAttachment(index)">×</button>
+                <i aria-hidden="true"><FolderOpen v-if="attachment.directory" :size="13" /><Paperclip v-else :size="13" /></i><strong>{{ attachment.name }}</strong><em>{{ attachment.directory ? `${attachment.fileCount} 文件` : formatFileSize(attachment.size) }}</em>
+                <button type="button" :aria-label="`移除 ${attachment.name}`" :disabled="chatSending || chatUploading" @click="removeChatAttachment(index)"><X :size="13" /></button>
               </span>
             </div>
             <div v-if="!chatInput.trim() && !chatAttachments.length && activeConversationId" class="chat-quick-prompts" aria-label="常用任务模板">
@@ -3000,7 +3006,7 @@ onBeforeUnmount(() => {
               </button>
             </div>
             <div v-if="showChatAgentSettings && activeConversationId" class="chat-agent-settings" aria-label="Agent 设置">
-              <div class="chat-agent-settings-heading"><div><strong>Agent 执行深度</strong><small>限制本轮最多执行的模型轮数，工具结果会继续计入同一 Run。</small></div><button type="button" aria-label="关闭 Agent 设置" @click="showChatAgentSettings = false">×</button></div>
+              <div class="chat-agent-settings-heading"><div><strong>Agent 执行深度</strong><small>限制本轮最多执行的模型轮数，工具结果会继续计入同一 Run。</small></div><button type="button" aria-label="关闭 Agent 设置" @click="showChatAgentSettings = false"><X :size="14" /></button></div>
               <div class="chat-agent-settings-controls">
                 <label><span>模型轮数上限</span><input v-model.number="chatMaxTurns" type="number" min="1" max="1000" step="1" :disabled="chatSending || chatUploading" @change="persistChatMaxTurns" /></label>
                 <div class="chat-agent-presets" aria-label="Agent 深度预设">
@@ -3021,11 +3027,11 @@ onBeforeUnmount(() => {
             <div class="chat-composer-footer">
               <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行<span v-if="canCancelChat"> · <kbd>Esc</kbd> 停止</span> · 草稿自动保存 · {{ desktopWorkspaceDropping ? '正在授权拖入的本地项目…' : workspaceConnected ? 'Agent 可直接操作本会话绑定的本地项目' : '文件夹导入后保留层级' }}</span>
               <div class="chat-composer-actions">
-                <button class="secondary-button chat-agent-settings-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="showChatAgentSettings = !showChatAgentSettings">⚙ Agent · {{ chatMaxTurns }} 轮</button>
-                <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatAttachmentPicker">⌁ 附件</button>
-                <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatFolderPicker">▣ 文件夹</button>
+                <button class="secondary-button chat-agent-settings-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="showChatAgentSettings = !showChatAgentSettings"><Settings2 :size="14" />Agent · {{ chatMaxTurns }} 轮</button>
+                <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatAttachmentPicker"><Paperclip :size="14" />附件</button>
+                <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatFolderPicker"><FolderOpen :size="14" />文件夹</button>
                 <button v-if="canCancelChat" class="secondary-button chat-stop-button" type="button" :disabled="chatCancellingRunId === pendingChatMessage?.runId" @click="cancelChatRun">{{ chatCancellingRunId === pendingChatMessage?.runId ? '处理中…' : (chatRunStatus === 'WAITING_APPROVAL' ? '撤回审批' : '停止') }}</button>
-                <button class="primary-button chat-send-button" type="submit" :disabled="!canSendChat">{{ chatUploading ? '导入中…' : chatSending ? '提交中…' : '发送' }} <span>↗</span></button>
+                <button class="primary-button chat-send-button" type="submit" :disabled="!canSendChat">{{ chatUploading ? '导入中…' : chatSending ? '提交中…' : '发送' }} <Send :size="14" /></button>
               </div>
             </div>
           </form>
@@ -3034,7 +3040,7 @@ onBeforeUnmount(() => {
         <aside v-if="showChatWorkspace" class="chat-workspace-panel" :class="{ 'workspace-panel-expanded': workspaceFilePreview || workspaceFilePreviewLoading }">
           <div class="chat-run-panel-heading">
             <div><p class="eyebrow">PROJECT EXPLORER</p><h2>项目文件</h2></div>
-            <button class="icon-button" type="button" aria-label="关闭项目文件" @click="showChatWorkspace = false">×</button>
+            <button class="icon-button" type="button" aria-label="关闭项目文件" @click="showChatWorkspace = false"><X :size="15" /></button>
           </div>
           <div v-if="workspaceExplorerLoading && !workspaceExplorer" class="chat-run-empty">正在读取工作区目录…</div>
           <template v-else-if="workspaceExplorer">
@@ -3051,7 +3057,7 @@ onBeforeUnmount(() => {
                 <div><strong>代码变更</strong><small>{{ workspaceGitReviewEntries.length }} 个文件</small></div>
                 <div class="workspace-git-review-heading-actions">
                   <button class="workspace-git-open-button" type="button" @click="openWorkspaceGitReviewDialog">打开审阅</button>
-                  <button class="icon-button" type="button" aria-label="刷新 Git 变更" :disabled="workspaceGitStatusLoading" @click="loadWorkspaceGitStatus">↻</button>
+                  <button class="icon-button" type="button" aria-label="刷新 Git 变更" :disabled="workspaceGitStatusLoading" @click="loadWorkspaceGitStatus"><RefreshCw :size="14" /></button>
                 </div>
               </div>
               <p v-if="workspaceGitStatusLoading && !workspaceGitStatus" class="workspace-git-review-empty">正在读取 Git 变更…</p>
@@ -3082,9 +3088,9 @@ onBeforeUnmount(() => {
               <p v-else class="workspace-git-review-empty">无法读取 Git 变更。</p>
             </section>
             <div class="workspace-explorer-path">
-              <button class="secondary-button" type="button" :disabled="workspaceExplorerPath === '.' || workspaceExplorerLoading" @click="loadWorkspaceDirectory(workspaceExplorer.parentPath)">↑</button>
+              <button class="secondary-button" type="button" aria-label="返回上级目录" :disabled="workspaceExplorerPath === '.' || workspaceExplorerLoading" @click="loadWorkspaceDirectory(workspaceExplorer.parentPath)"><ArrowUp :size="14" /></button>
               <code>{{ workspaceExplorerPath }}</code>
-              <button class="icon-button" type="button" aria-label="刷新目录" :disabled="workspaceExplorerLoading" @click="loadWorkspaceDirectory(workspaceExplorerPath)">↻</button>
+              <button class="icon-button" type="button" aria-label="刷新目录" :disabled="workspaceExplorerLoading" @click="loadWorkspaceDirectory(workspaceExplorerPath)"><RefreshCw :size="14" /></button>
             </div>
             <div class="workspace-explorer-list" aria-label="工作区目录列表">
               <button
@@ -3094,7 +3100,7 @@ onBeforeUnmount(() => {
                 :class="{ directory: entry.directory, active: workspaceFilePreview?.path === entry.path }"
                 @click="entry.directory ? loadWorkspaceDirectory(entry.path) : previewWorkspaceFile(entry)"
               >
-                <i>{{ entry.directory ? '▸' : '⌁' }}</i><strong>{{ entry.name }}</strong><em>{{ entry.directory ? '目录' : formatFileSize(entry.size) }}</em>
+                <i aria-hidden="true"><FolderGit2 v-if="entry.directory" :size="13" /><FolderOpen v-else :size="13" /></i><strong>{{ entry.name }}</strong><em>{{ entry.directory ? '目录' : formatFileSize(entry.size) }}</em>
               </button>
               <p v-if="!workspaceExplorer.entries.length">当前目录没有可显示的文件。</p>
             </div>
@@ -3130,7 +3136,7 @@ onBeforeUnmount(() => {
         </aside>
 
         <aside v-if="showChatRun" class="chat-run-panel">
-          <div class="chat-run-panel-heading"><div><p class="eyebrow">RUN TRACE</p><h2>本轮执行</h2></div><button class="icon-button" type="button" aria-label="关闭运行详情" @click="showChatRun = false">×</button></div>
+          <div class="chat-run-panel-heading"><div><p class="eyebrow">RUN TRACE</p><h2>本轮执行</h2></div><button class="icon-button" type="button" aria-label="关闭运行详情" @click="showChatRun = false"><X :size="15" /></button></div>
           <div v-if="!selectedRun" class="chat-run-empty">选择一条助手消息查看执行链。</div>
           <template v-else>
             <div class="chat-run-summary"><strong>{{ selectedRun.run.title }}</strong><span class="status-pill" :class="statusClass(selectedRun.run.status)"><i></i>{{ statusLabel(selectedRun.run.status) }}</span></div>
