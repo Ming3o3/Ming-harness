@@ -565,12 +565,13 @@ public class RunExecutionStateService {
             planned.putIfAbsent(toolCallKey(calls.get(index)), existing.get(index));
         }
         Map<String, Step> reusable = previousSuccessfulTools(run, modelStep);
-        // 如果本批没有任何新的调用，直接复用会让 Agent 无限空转；保留原有的
-        // 重复调用保护。但重复项与新调用混在一起时，重复项可以安全复用，
-        // 新调用仍应继续入队执行。
+        // 第一次纯重复批次先复用已成功结果，让模型有机会看到完整的 tool 响应后收敛；
+        // 如果上一轮本身已经是纯重放，说明模型仍在空转，此时才终止 Run。
         if (existing.isEmpty() && !reusable.isEmpty()
                 && calls.stream().allMatch(call -> reusable.containsKey(toolCallKey(call)))) {
-            rejectRepeatedToolCalls(run, modelStep, calls);
+            if (previousModelWasReplayOnly(run, modelStep)) {
+                rejectRepeatedToolCalls(run, modelStep, calls);
+            }
         }
         for (int index = existing.size(); index < calls.size(); index++) {
             ModelToolCall call = calls.get(index);
@@ -621,6 +622,12 @@ public class RunExecutionStateService {
     private void failDuplicateAgentRun(Run run, Step modelStep, String reason) {
         String message = sanitizer.sanitize(reason == null || reason.isBlank()
                 ? "模型重复请求已成功执行的工具" : reason);
+        // 将触发保护的模型步骤标记为失败，确保用户点击“重试”时会重新执行该轮模型，
+        // 而不是因为所有已持久化步骤都是 SUCCEEDED 直接落入最终结果校验。
+        if (modelStep != null && modelStep.getStatus() == StepStatus.SUCCEEDED) {
+            modelStep.fail(message);
+            append(run, modelStep, "STEP_FAILED", message);
+        }
         append(run, modelStep, "AGENT_DUPLICATE_TOOL_CALL", message);
         run.fail(message);
         append(run, null, "RUN_FAILED", message);
@@ -653,6 +660,28 @@ public class RunExecutionStateService {
                 .filter(step -> step.getStatus() == StepStatus.SUCCEEDED)
                 .forEach(step -> result.putIfAbsent(toolCallKey(step.getName(), step.getInput()), step));
         return result;
+    }
+
+    /**
+     * 判断紧邻的上一轮模型是否已经只拿重放结果继续请求工具。
+     *
+     * <p>第一次遇到纯重复调用时仍应给模型一次机会：工具结果本身是有效的，
+     * 模型可能只是因为上下文压缩或供应商 Tool Call 偏差重新规划了一遍。若上一轮
+     * 的所有工具步骤都已经是重放结果，再次复用只会造成无界空转，因此保留失败保护。</p>
+     */
+    private boolean previousModelWasReplayOnly(Run run, Step modelStep) {
+        Step previousModel = run.getSteps().stream()
+                .filter(step -> step.getType() == StepType.MODEL
+                        && step.getSequence() < modelStep.getSequence()
+                        && step.getStatus() == StepStatus.SUCCEEDED)
+                .max(java.util.Comparator.comparingInt(Step::getSequence))
+                .orElse(null);
+        if (previousModel == null) return false;
+        List<Step> previousTools = stepsAfterModel(run, previousModel);
+        return !previousTools.isEmpty()
+                && previousTools.stream().allMatch(step -> step.getStatus() == StepStatus.SUCCEEDED
+                && step.getReplaySourceStepId() != null
+                && !step.getReplaySourceStepId().isBlank());
     }
 
     private String toolCallKey(ModelToolCall call) {

@@ -252,6 +252,31 @@ class RunServiceTests {
     }
 
     @Test
+    void shouldReplayOnePureDuplicateBatchAndLetAgentFinish() {
+        RunSummary created = runService.create(new CreateRunRequest(
+                "tenant-demo", "user-demo", "单次重复后收敛", "单次重复后收敛",
+                null, null, "prompt-agent", "policy-v1", BigDecimal.TEN,
+                null, null, true, 5));
+
+        RunDetail result = runService.start(created.id(), "tenant-demo");
+
+        assertEquals(RunStatus.SUCCEEDED, result.run().status(), result.run().error());
+        List<org.mingharness.runtime.api.StepView> tools = result.steps().stream()
+                .filter(step -> org.mingharness.runtime.domain.StepType.TOOL == step.type())
+                .toList();
+        assertEquals(2, tools.size());
+        assertEquals(1, tools.get(0).attempt());
+        assertEquals(0, tools.get(1).attempt(), "纯重复调用应复用结果而不是再次执行工具");
+        assertEquals("重复调用已恢复", result.run().output());
+        assertTrue(tools.get(1).output().equals(tools.get(0).output()));
+        assertTrue(agentModelToolsState.requestMessages(2).stream()
+                .filter(message -> "user".equals(message.role()))
+                .anyMatch(message -> message.content().contains("上一轮工具调用已复用")));
+        assertTrue(auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
+                .anyMatch(event -> "AGENT_TOOL_CALL_REPLAYED".equals(event.getEventType())));
+    }
+
+    @Test
     void shouldPersistFailureStateAndAuditEvent() {
         RunSummary created = runService.create(request("test.failure", "触发失败"));
         RunDetail result = runService.start(created.id(), "tenant-demo");
@@ -797,6 +822,18 @@ class RunServiceTests {
                                 java.math.BigDecimal.ZERO,
                                 java.util.List.of(new ModelToolCall(
                                         "call-agent-repeat", "demo.echo", "\"重复\"")));
+                    }
+                    if (request.input().contains("单次重复后收敛")) {
+                        long toolResults = request.messages().stream()
+                                .filter(message -> "tool".equals(message.role()))
+                                .count();
+                        if (toolResults < 2) {
+                            return new ModelResponse("", "agent-test", request.promptVersion(), 5, 4,
+                                    java.math.BigDecimal.ZERO,
+                                    java.util.List.of(new ModelToolCall(
+                                            "call-agent-single-duplicate", "demo.echo", "\"重复一次\"")));
+                        }
+                        return new ModelResponse("重复调用已恢复", "agent-test", request.promptVersion(), 5, 3);
                     }
                     if (request.input().contains("达到最多轮数")) {
                         return new ModelResponse("", "agent-test", request.promptVersion(), 5, 4,

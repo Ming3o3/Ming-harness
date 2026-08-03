@@ -161,6 +161,33 @@ class RunWorkerExecutionTests {
     }
 
     @Test
+    void shouldReplayOnePureDuplicateBatchAndLetWorkerAgentFinish() {
+        RunSummary created = runService.create(new CreateRunRequest(
+                "tenant-worker-single-duplicate", "worker-user", "Worker 单次重复后收敛", "Worker 单次重复后收敛",
+                null, null, "prompt-agent", "policy-v1", BigDecimal.TEN,
+                null, null, true, 5));
+        Run run = runRepository.findById(created.id()).orElseThrow();
+        run.start();
+        runRepository.saveAndFlush(run);
+
+        runService.executeFromWorker(new RunExecutionMessage(
+                "worker-single-duplicate-event", run.getId(), run.getTenantId(), run.getTraceId(),
+                "START", Instant.now()));
+
+        Run completed = runRepository.findById(run.getId()).orElseThrow();
+        assertEquals(RunStatus.SUCCEEDED, completed.getStatus(), completed.getError());
+        List<org.mingharness.runtime.domain.Step> tools = completed.getSteps().stream()
+                .filter(step -> org.mingharness.runtime.domain.StepType.TOOL == step.getType())
+                .toList();
+        assertEquals(2, tools.size());
+        assertEquals(1, tools.get(0).getAttempt());
+        assertEquals(0, tools.get(1).getAttempt());
+        assertEquals("Worker 重复调用已恢复", completed.getOutput());
+        assertTrue(tools.get(1).getReplaySourceStepId() != null
+                && !tools.get(1).getReplaySourceStepId().isBlank());
+    }
+
+    @Test
     void shouldRejectAgentToolCallBeforeCreatingUnauthorizedToolStep() {
         RunSummary created = runService.create(new CreateRunRequest(
                 "tenant-agent-permission", "worker-user", "Agent 权限校验", "请验证权限拒绝",
@@ -426,6 +453,19 @@ class RunWorkerExecutionTests {
                                                     "test.worker.replay.counter", "\"B\"")));
                         }
                         return new ModelResponse("Worker 混合重放已完成", "agent-worker-test",
+                                request.promptVersion(), 5, 3);
+                    }
+                    if (request.input().contains("Worker 单次重复后收敛")) {
+                        long toolResults = request.messages().stream()
+                                .filter(message -> "tool".equals(message.role()))
+                                .count();
+                        if (toolResults < 2) {
+                            return new ModelResponse("", "agent-worker-test", request.promptVersion(), 5, 4,
+                                    BigDecimal.ZERO,
+                                    List.of(new ModelToolCall("worker-single-duplicate",
+                                            "demo.echo", "\"重复一次\"")));
+                        }
+                        return new ModelResponse("Worker 重复调用已恢复", "agent-worker-test",
                                 request.promptVersion(), 5, 3);
                     }
                     if (request.input().contains("权限拒绝")) {

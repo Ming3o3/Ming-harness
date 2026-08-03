@@ -85,6 +85,8 @@ public class RunService {
                     + "同一个工具和完全相同的参数已经成功执行后不得再次调用；获得足够信息后停止调用工具，用中文给出改动、依据和验证结果。";
     private static final String AGENT_HISTORY_COMPRESSION_NOTICE =
             "\n\n（较早的模型和工具上下文已压缩，仅保留最近可用结果。）";
+    private static final String AGENT_DUPLICATE_REPLAY_NOTICE =
+            "\n\n（上一轮工具调用已复用之前成功结果；不要再次调用相同工具和参数，直接继续分析并给出最终答复。）";
 
     private final RunRepository runRepository;
     private final AuditTrailService auditTrailService;
@@ -833,7 +835,10 @@ public class RunService {
         Map<String, Step> reusable = previousSuccessfulTools(run, modelStep);
         if (!reusable.isEmpty() && calls.stream()
                 .allMatch(call -> reusable.containsKey(toolCallKey(call)))) {
-            rejectRepeatedToolCalls(run, modelStep, calls);
+            // 第一次纯重复批次先复用结果；上一轮已经是纯重放时再终止，避免模型无限空转。
+            if (previousModelWasReplayOnly(run, modelStep)) {
+                rejectRepeatedToolCalls(run, modelStep, calls);
+            }
         }
         int sequence = run.getSteps().stream().mapToInt(Step::getSequence).max().orElse(0) + 1;
         Map<String, Step> planned = new HashMap<>();
@@ -921,6 +926,31 @@ public class RunService {
                 .forEach(step -> result.putIfAbsent(
                         toolCallKey(step.getName(), step.getInput()), step));
         return result;
+    }
+
+    /**
+     * 判断紧邻的上一轮模型是否已经只拿重放结果继续请求工具。
+     * 第一次纯重复调用可能只是供应商 Tool Call 偏差或上下文压缩造成的，
+     * 允许复用一次；连续重复则必须停止，防止 Run 无界增长。
+     */
+    private boolean previousModelWasReplayOnly(Run run, Step modelStep) {
+        Step previousModel = run.getSteps().stream()
+                .filter(step -> step.getType() == StepType.MODEL
+                        && step.getSequence() < modelStep.getSequence()
+                        && step.getStatus() == StepStatus.SUCCEEDED)
+                .max(java.util.Comparator.comparingInt(Step::getSequence))
+                .orElse(null);
+        if (previousModel == null) return false;
+        List<Step> previousTools = run.getSteps().stream()
+                .filter(step -> step.getType() == StepType.TOOL
+                        && step.getSequence() > previousModel.getSequence()
+                        && step.getSequence() < modelStep.getSequence())
+                .sorted(java.util.Comparator.comparingInt(Step::getSequence))
+                .toList();
+        return !previousTools.isEmpty()
+                && previousTools.stream().allMatch(step -> step.getStatus() == StepStatus.SUCCEEDED
+                && step.getReplaySourceStepId() != null
+                && !step.getReplaySourceStepId().isBlank());
     }
 
     private String toolCallKey(ModelToolCall call) {
@@ -1283,14 +1313,16 @@ public class RunService {
                                                         int currentSequence) {
         return steps.stream()
                 .filter(step -> step.sequence() < currentSequence && isAgentContextStep(step.status()))
-                .map(step -> new AgentHistoryStep(step.sequence(), step.type(), step.name(), step.output()))
+                .map(step -> new AgentHistoryStep(step.sequence(), step.type(), step.name(), step.output(),
+                        step.replaySourceStepId() != null && !step.replaySourceStepId().isBlank()))
                 .toList();
     }
 
     private List<AgentHistoryStep> historyFromEntities(List<Step> steps, int currentSequence) {
         return steps.stream()
                 .filter(step -> step.getSequence() < currentSequence && isAgentContextStep(step.getStatus()))
-                .map(step -> new AgentHistoryStep(step.getSequence(), step.getType(), step.getName(), step.getOutput()))
+                .map(step -> new AgentHistoryStep(step.getSequence(), step.getType(), step.getName(), step.getOutput(),
+                        step.getReplaySourceStepId() != null && !step.getReplaySourceStepId().isBlank()))
                 .toList();
     }
 
@@ -1320,10 +1352,12 @@ public class RunService {
 
         int maximum = Math.max(1, maximumChars);
         ModelMessage system = ModelMessage.system(AGENT_SYSTEM_PROMPT);
+        String userSuffix = latestAgentTurnWasReplayOnly(history)
+                ? AGENT_DUPLICATE_REPLAY_NOTICE : "";
         int userBudget = Math.max(1, maximum - messageChars(system)
-                - AGENT_HISTORY_COMPRESSION_NOTICE.length());
+                - AGENT_HISTORY_COMPRESSION_NOTICE.length() - userSuffix.length());
         String boundedUser = AgentTranscriptFormatter.fit(initialUser, userBudget);
-        ModelMessage user = ModelMessage.user(boundedUser);
+        ModelMessage user = ModelMessage.user(boundedUser + userSuffix);
         int historyBudget = Math.max(0, maximum - messageChars(system) - messageChars(user)
                 - AGENT_HISTORY_COMPRESSION_NOTICE.length());
         LinkedList<List<ModelMessage>> selectedTurns = new LinkedList<>();
@@ -1346,7 +1380,7 @@ public class RunService {
         }
         if (selectedTurns.size() < turns.size()) historyTruncated = true;
         if (historyTruncated) {
-            user = ModelMessage.user(boundedUser + AGENT_HISTORY_COMPRESSION_NOTICE);
+            user = ModelMessage.user(boundedUser + AGENT_HISTORY_COMPRESSION_NOTICE + userSuffix);
         }
 
         List<ModelMessage> messages = new ArrayList<>();
@@ -1354,6 +1388,28 @@ public class RunService {
         messages.add(user);
         selectedTurns.forEach(messages::addAll);
         return List.copyOf(messages);
+    }
+
+    /** 上一轮若全部工具步骤都是重放结果，给供应商一个明确的收敛提示。 */
+    private boolean latestAgentTurnWasReplayOnly(List<AgentHistoryStep> history) {
+        if (history == null || history.isEmpty()) return false;
+        int latestModelIndex = -1;
+        for (int index = history.size() - 1; index >= 0; index--) {
+            if (history.get(index).type() == StepType.MODEL) {
+                latestModelIndex = index;
+                break;
+            }
+        }
+        if (latestModelIndex < 0) return false;
+        boolean hasTool = false;
+        for (int index = latestModelIndex + 1; index < history.size(); index++) {
+            AgentHistoryStep step = history.get(index);
+            if (step.type() == StepType.MODEL) break;
+            if (step.type() != StepType.TOOL) continue;
+            hasTool = true;
+            if (!step.replayed()) return false;
+        }
+        return hasTool;
     }
 
     /** 单轮过大的工具输出只保留可读摘要，保留 assistant/tool 配对避免供应商拒绝消息序列。 */
@@ -1418,7 +1474,7 @@ public class RunService {
                                        List<AgentHistoryStep> history) {
     }
 
-    private record AgentHistoryStep(int sequence, StepType type, String name, String output) {
+    private record AgentHistoryStep(int sequence, StepType type, String name, String output, boolean replayed) {
     }
 
     private void refreshLease(Run run, RunExecutionLock.LockToken lockToken) {
