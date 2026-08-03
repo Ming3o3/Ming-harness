@@ -23,14 +23,18 @@ import org.mingharness.model.ModelMessage;
 import org.mingharness.model.ModelRequest;
 import org.mingharness.model.ModelResponse;
 import org.mingharness.model.ModelToolCall;
+import org.mingharness.model.AgentTurnCodec;
 import org.mingharness.model.DemoModelGateway;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.util.AopTestUtils;
 
 import java.math.BigDecimal;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -61,6 +65,8 @@ class RunServiceTests {
     private MixedReplayState mixedReplayState;
     @Autowired
     private ModelProviderConfigService modelProviderConfigService;
+    @Autowired
+    private AgentTurnCodec agentTurnCodec;
 
     @BeforeEach
     void cleanDatabase() {
@@ -161,6 +167,47 @@ class RunServiceTests {
                 .filter(message -> "tool".equals(message.role()))
                 .mapToInt(message -> message.content().length())
                 .sum() < 4_000);
+    }
+
+    @Test
+    void shouldOrderOutOfOrderAgentHistoryBeforePairingToolResponses() throws ReflectiveOperationException {
+        ModelToolCall firstCall = new ModelToolCall("call-first", "demo.echo", "\"first\"");
+        List<ModelToolCall> batchCalls = List.of(
+                new ModelToolCall("call-a", "demo.echo", "\"A\""),
+                new ModelToolCall("call-b", "demo.echo", "\"B\""),
+                new ModelToolCall("call-c", "demo.echo", "\"C\""));
+        String firstModel = agentTurnCodec.encode(new ModelResponse("", "agent-test", "prompt-agent",
+                0, 0, BigDecimal.ZERO, List.of(firstCall)));
+        String batchModel = agentTurnCodec.encode(new ModelResponse("", "agent-test", "prompt-agent",
+                0, 0, BigDecimal.ZERO, batchCalls));
+
+        List<Object> unorderedHistory = List.of(
+                agentHistoryStep(6, org.mingharness.runtime.domain.StepType.TOOL,
+                        "demo.echo", "result-C"),
+                agentHistoryStep(1, org.mingharness.runtime.domain.StepType.MODEL,
+                        "model.complete", firstModel),
+                agentHistoryStep(4, org.mingharness.runtime.domain.StepType.TOOL,
+                        "demo.echo", "result-A"),
+                agentHistoryStep(3, org.mingharness.runtime.domain.StepType.MODEL,
+                        "model.complete", batchModel),
+                agentHistoryStep(2, org.mingharness.runtime.domain.StepType.TOOL,
+                        "demo.echo", "result-first"),
+                agentHistoryStep(5, org.mingharness.runtime.domain.StepType.TOOL,
+                        "demo.echo", "result-B"));
+
+        List<ModelMessage> messages = agentMessagesFor(unorderedHistory);
+
+        assertEquals(List.of("system", "user", "assistant", "tool", "assistant", "tool", "tool", "tool"),
+                messages.stream().map(ModelMessage::role).toList());
+        assertEquals(List.of("call-first"), messages.get(2).toolCalls().stream()
+                .map(ModelToolCall::id).toList());
+        assertEquals("call-first", messages.get(3).toolCallId());
+        assertEquals(List.of("call-a", "call-b", "call-c"), messages.get(4).toolCalls().stream()
+                .map(ModelToolCall::id).toList());
+        assertEquals(List.of("call-a", "call-b", "call-c"), messages.subList(5, 8).stream()
+                .map(ModelMessage::toolCallId).toList());
+        assertEquals(List.of("result-A", "result-B", "result-C"), messages.subList(5, 8).stream()
+                .map(ModelMessage::content).toList());
     }
 
     @Test
@@ -585,6 +632,26 @@ class RunServiceTests {
 
         assertEquals(RunStatus.TIMED_OUT, result.run().status());
         assertEquals(StepStatus.TIMED_OUT, result.steps().get(1).status());
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<ModelMessage> agentMessagesFor(List<?> history) throws ReflectiveOperationException {
+        Method method = RunService.class.getDeclaredMethod("agentMessages",
+                String.class, String.class, List.class, int.class);
+        method.setAccessible(true);
+        RunService target = AopTestUtils.getTargetObject(runService);
+        return (List<ModelMessage>) method.invoke(target, "任务输入", "当前输入", history, 100_000);
+    }
+
+    private Object agentHistoryStep(int sequence, org.mingharness.runtime.domain.StepType type,
+                                    String name, String output) throws ReflectiveOperationException {
+        Class<?> historyType = Class.forName(
+                "org.mingharness.runtime.application.RunService$AgentHistoryStep");
+        Constructor<?> constructor = historyType.getDeclaredConstructor(
+                int.class, org.mingharness.runtime.domain.StepType.class,
+                String.class, String.class, boolean.class);
+        constructor.setAccessible(true);
+        return constructor.newInstance(sequence, type, name, output, false);
     }
 
     private CreateRunRequest request(String toolName, String input) {

@@ -1313,6 +1313,7 @@ public class RunService {
                                                         int currentSequence) {
         return steps.stream()
                 .filter(step -> step.sequence() < currentSequence && isAgentContextStep(step.status()))
+                .sorted(java.util.Comparator.comparingInt(RunExecutionStateService.StepExecutionSnapshot::sequence))
                 .map(step -> new AgentHistoryStep(step.sequence(), step.type(), step.name(), step.output(),
                         step.replaySourceStepId() != null && !step.replaySourceStepId().isBlank()))
                 .toList();
@@ -1321,6 +1322,7 @@ public class RunService {
     private List<AgentHistoryStep> historyFromEntities(List<Step> steps, int currentSequence) {
         return steps.stream()
                 .filter(step -> step.getSequence() < currentSequence && isAgentContextStep(step.getStatus()))
+                .sorted(java.util.Comparator.comparingInt(Step::getSequence))
                 .map(step -> new AgentHistoryStep(step.getSequence(), step.getType(), step.getName(), step.getOutput(),
                         step.getReplaySourceStepId() != null && !step.getReplaySourceStepId().isBlank()))
                 .toList();
@@ -1329,19 +1331,22 @@ public class RunService {
     /** 将已完成的 Agent 轮次转换为供应商理解的 assistant/tool 消息，并限制历史上下文总量。 */
     private List<ModelMessage> agentMessages(String runInput, String currentInput,
                                              List<AgentHistoryStep> history, int maximumChars) {
-        boolean hasPreviousModel = history.stream().anyMatch(step -> step.type() == StepType.MODEL);
+        List<AgentHistoryStep> orderedHistory = history == null ? List.of() : history.stream()
+                .sorted(java.util.Comparator.comparingInt(AgentHistoryStep::sequence))
+                .toList();
+        boolean hasPreviousModel = orderedHistory.stream().anyMatch(step -> step.type() == StepType.MODEL);
         String initialUser = hasPreviousModel ? runInput : currentInput;
         List<List<ModelMessage>> turns = new ArrayList<>();
 
-        for (int index = 0; index < history.size(); index++) {
-            AgentHistoryStep model = history.get(index);
+        for (int index = 0; index < orderedHistory.size(); index++) {
+            AgentHistoryStep model = orderedHistory.get(index);
             if (model.type() != StepType.MODEL) continue;
             AgentTurnCodec.AgentTurn turn = agentTurnCodec.decode(model.output());
             List<ModelMessage> messages = new ArrayList<>();
             messages.add(ModelMessage.assistant(turn.content(), turn.reasoningContent(), turn.toolCalls()));
             int callIndex = 0;
-            for (int next = index + 1; next < history.size(); next++) {
-                AgentHistoryStep tool = history.get(next);
+            for (int next = index + 1; next < orderedHistory.size(); next++) {
+                AgentHistoryStep tool = orderedHistory.get(next);
                 if (tool.type() == StepType.MODEL) break;
                 if (tool.type() != StepType.TOOL || callIndex >= turn.toolCalls().size()) continue;
                 messages.add(ModelMessage.tool(turn.toolCalls().get(callIndex).id(), tool.output()));
@@ -1352,7 +1357,7 @@ public class RunService {
 
         int maximum = Math.max(1, maximumChars);
         ModelMessage system = ModelMessage.system(AGENT_SYSTEM_PROMPT);
-        String userSuffix = latestAgentTurnWasReplayOnly(history)
+        String userSuffix = latestAgentTurnWasReplayOnly(orderedHistory)
                 ? AGENT_DUPLICATE_REPLAY_NOTICE : "";
         int userBudget = Math.max(1, maximum - messageChars(system)
                 - AGENT_HISTORY_COMPRESSION_NOTICE.length() - userSuffix.length());

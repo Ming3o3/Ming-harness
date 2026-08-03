@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Comparator;
 
 /**
  * Worker 执行期间的短事务状态边界。
@@ -736,7 +737,9 @@ public class RunExecutionStateService {
                 run.getModelName(), run.getModelConfigSnapshotId(), run.getPromptVersion(), run.getInput(), run.getBudget(),
                 run.getPermissionsSnapshot(), run.isAgentMode(), run.getMaxTurns(),
                 run.getWorkspaceId(),
-                run.getSteps().stream().map(this::stepSnapshot).toList());
+                run.getSteps().stream()
+                        .sorted(Comparator.comparingInt(Step::getSequence))
+                        .map(this::stepSnapshot).toList());
     }
 
     private StepExecutionSnapshot stepSnapshot(Step step) {
