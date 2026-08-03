@@ -2,6 +2,20 @@
 
 这是基于 Vue 3 和 Vite 的 Harness 聊天工作台，默认提供持久化会话、消息气泡、逐轮输入和 Agent 执行状态轮询；运行控制台仍覆盖 Run 操作、审批审计、上下文文档和快速回归评测。
 
+## 前端技术栈
+
+| 技术 | 版本/形态 | 用途 |
+| --- | --- | --- |
+| Vue | 3.5.x | 构建聊天工作台、Run 控制台和各类交互组件 |
+| Vite | 8.1.x | 前端开发服务器、`/api` 代理和生产构建 |
+| JavaScript | ES Modules | 前端业务代码；当前项目未引入 TypeScript |
+| Monaco Editor | 0.52.x | 工作区文件、代码和 JSON 的编辑/预览 |
+| Markdown-it + highlight.js | 14.3.x + 11.11.x | 渲染 Agent Markdown 回复并高亮代码块 |
+| Lucide Vue | 1.28.x | 提供统一的界面图标 |
+| Electron | 38.8.x | 桌面开发模式下的本地目录选择和安全桥接 |
+
+后端接口仍由仓库根目录的 Spring Boot Runtime 提供；前端通过 `fetch` 调用 REST API，并使用 SSE 接收 Run 实时事件、以轮询作为断线兜底。依赖版本以本目录的 [`package.json`](package.json) 为准，具体后端与基础设施技术栈见根目录的 [`README.md`](../README.md#技术栈)。
+
 创建 Run 时可以在“运行模式”中开启代码 Agent 多轮执行并设置最大轮数。Agent 运行会动态产生模型和工具步骤，详情页会展示 Tool Call、工具输出、审批和最终状态；非终态 Run 会自动轮询。工具白名单、权限和写入审批由后端统一控制，前端仅提交模式和轮数配置。
 
 聊天工作台中，每次发送都会形成一条 USER 消息和一条关联 Run 的 ASSISTANT 消息。异步 Worker 执行期间助手气泡显示排队/执行状态，完成后自动更新；“查看运行”可以打开当前消息的步骤、审批、取消和重试操作。对于 `workspace.edit`、`workspace.write`，在人工审批前会展示目标文件和拟修改内容，避免盲目批准代码变更。

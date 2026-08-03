@@ -2,6 +2,32 @@
 
 Ming Harness 是一个面向企业 Agent 的可运行 Harness：后端使用 Spring Boot 4，前端使用 Vue 3 + Vite。当前实现覆盖单 Agent Runtime、安全策略、上下文治理、离线评测和运行观测基线。
 
+## 技术栈
+
+项目采用前后端分层架构，默认提供零依赖的本地演示模式，也可以切换到 PostgreSQL、Redis 和 RabbitMQ 组成的异步运行模式。
+
+| 层次 | 技术 | 用途 |
+| --- | --- | --- |
+| 后端语言与构建 | Java 17、Maven Wrapper | 编写服务端业务代码，并统一本地构建与启动方式 |
+| Web/API | Spring Boot 4.1.0、Spring MVC、Spring Validation | 提供 REST API、参数校验、全局异常处理和 Run 实时 SSE 事件流 |
+| 模型访问 | Spring `RestClient`、OpenAI 兼容 Chat Completions API | 对接演示模型或外部模型供应商，支持重试、熔断、备用供应商和成本统计 |
+| 持久化 | Spring Data JPA、Hibernate、H2、PostgreSQL 17 | 保存 Run、Step、会话、上下文、审计、评测和 Outbox 等业务数据；H2 用于本地演示，PostgreSQL 用于基础设施模式 |
+| 数据库迁移 | Flyway | 以 `src/main/resources/db/migration` 中的版本脚本管理表结构演进，并可启用 PostgreSQL `pgvector` 扩展 |
+| 缓存与分布式治理 | Redis、Spring Data Redis | 跨实例限流、租户活动 Run 配额、执行锁和取消协作信号；不保存业务正文 |
+| 异步消息 | RabbitMQ、Spring AMQP、Outbox、死信队列 | 解耦 Run 投递与 Worker 执行，支持发布租约、重试、背压和失败恢复 |
+| 安全 | Spring Security、OAuth2 Resource Server、OIDC/JWT、API Key、RBAC | 支持本地演示身份、API Key 和企业 OIDC，执行租户隔离、接口权限和工作区审批控制 |
+| 可观测性 | Spring Boot Actuator、Micrometer、Prometheus、`X-Request-Id` / `X-Trace-Id` | 提供健康探针、运行指标、请求关联追踪以及 Run/Step 级耗时、Token 和成本观测 |
+| 前端 | Vue 3.5、JavaScript ES Modules、Vite 8.1 | 构建聊天工作台、Run 控制台、审批审计、上下文管理和评测页面；开发服务器代理 `/api` 到后端 |
+| 前端增强 | Monaco Editor、Markdown-it、highlight.js、Lucide Vue | 提供代码/JSON 编辑预览、Markdown 渲染、代码高亮和界面图标 |
+| 桌面端 | Electron 38.8、Node.js 20.19+ | 提供本地项目选择、受信任桌面桥接令牌和受控工作区能力；绝对路径只保留在主进程 |
+| 测试 | Spring Boot Test | 覆盖 Runtime、策略、工具、消息、认证、数据保留和 API 等服务端测试 |
+
+### 运行模式
+
+- `local`：H2 + 进程内执行，适合快速启动、功能演示和单元测试。
+- `local-infra`：PostgreSQL 17 + Redis + RabbitMQ，使用 Flyway、Outbox 和异步 Worker，适合验证多实例治理和生产接近的执行链路。
+- 模型层默认不访问外部服务；显式设置 `MODEL_ENABLED=true` 并提供模型地址与密钥后，才会调用 OpenAI 兼容接口。
+
 ## 已实现模块
 
 - Run / Step 持久化状态机：`QUEUED -> RUNNING -> WAITING_APPROVAL -> SUCCEEDED / REJECTED / FAILED / TIMED_OUT / CANCELLED`；Agent 的 `REJECTED` 工具步骤会携带人工意见进入下一轮模型
