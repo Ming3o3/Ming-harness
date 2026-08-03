@@ -773,3 +773,152 @@ h3 { margin: 0; font-size: 13px; }
   .chat-agent-settings-button::before { content: "⚙"; font-size: 13px; }
   .chat-send-button { margin-left: auto; }
 }
+
+/* Codex-inspired foundation: neutral surfaces, restrained borders and system typography. */
+:root {
+  color: #2f2f2f;
+  background: #ffffff;
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
+  --bg: #ffffff;
+  --panel: #ffffff;
+  --panel-soft: #f7f7f8;
+  --line: rgba(0, 0, 0, .09);
+  --muted: #737373;
+  --soft: #525252;
+  --accent: #3f3f46;
+  --accent-light: #27272a;
+  --cyan: #0f766e;
+  --green: #16803c;
+  --orange: #b45309;
+  --red: #b42318;
+  --text: #2f2f2f;
+  --heading: #18181b;
+  --sidebar-bg: #f7f7f8;
+  --panel-gradient-start: #ffffff;
+  --panel-gradient-end: #ffffff;
+  --input-bg: #fafafa;
+  --card-bg: #fafafa;
+  --governance-bg: #fafafa;
+  --hover-bg: rgba(0, 0, 0, .045);
+  --selected-bg: rgba(0, 0, 0, .065);
+  --panel-shadow: 0 8px 28px rgba(0, 0, 0, .06);
+}
+
+:root[data-theme="dark"] {
+  color: #ececec;
+  background: #171717;
+  color-scheme: dark;
+  --bg: #171717;
+  --panel: #202020;
+  --panel-soft: #242424;
+  --line: rgba(255, 255, 255, .12);
+  --muted: #a3a3a3;
+  --soft: #d4d4d4;
+  --accent: #d4d4d4;
+  --accent-light: #fafafa;
+  --cyan: #5eead4;
+  --green: #86efac;
+  --orange: #fdba74;
+  --red: #fca5a5;
+  --text: #ececec;
+  --heading: #fafafa;
+  --sidebar-bg: #202020;
+  --panel-gradient-start: #202020;
+  --panel-gradient-end: #202020;
+  --input-bg: #1c1c1c;
+  --card-bg: #242424;
+  --governance-bg: #242424;
+  --hover-bg: rgba(255, 255, 255, .07);
+  --selected-bg: rgba(255, 255, 255, .1);
+  --panel-shadow: 0 14px 42px rgba(0, 0, 0, .22);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
+button svg {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.brand-mark {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--heading);
+  box-shadow: none;
+  color: var(--bg);
+}
+
+.primary-button,
+.secondary-button,
+.danger-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.primary-button {
+  background: #2f2f2f;
+  box-shadow: none;
+}
+
+.primary-button:hover {
+  box-shadow: none;
+  transform: translateY(-1px);
+}
+
+:root[data-theme="dark"] .primary-button {
+  background: #f4f4f5;
+  color: #18181b;
+}
+
+.secondary-button {
+  border-color: var(--line);
+  background: var(--hover-bg);
+  color: var(--soft);
+}
+
+.secondary-button:hover:not(:disabled) {
+  border-color: rgba(0, 0, 0, .18);
+  background: var(--selected-bg);
+  color: var(--heading);
+}
+
+:root[data-theme="dark"] .secondary-button:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, .22);
+}
+
+.theme-toggle,
+.command-palette-trigger,
+.date-chip,
+.registry-count {
+  border-color: var(--line);
+  background: var(--hover-bg);
+  color: var(--muted);
+}
+
+.nav-item.active,
+.conversation-row.active {
+  border-color: var(--line);
+  background: var(--selected-bg);
+  color: var(--heading);
+}
+
+.nav-item:hover,
+.conversation-row:hover,
+.run-row:hover {
+  border-color: var(--line);
+  background: var(--hover-bg);
+}

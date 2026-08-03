@@ -1,5 +1,20 @@
 <script setup>
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import {
+  Bot,
+  Check,
+  CircleDot,
+  Command,
+  MessageSquarePlus,
+  Moon,
+  PanelRight,
+  Plus,
+  Settings2,
+  Sparkles,
+  Sun,
+  Wrench,
+  X,
+} from '@lucide/vue'
 import { api } from './api'
 import { highlightCode, languageFromPath, languageLabel, renderMarkdown } from './markdown'
 
@@ -162,14 +177,15 @@ let conversationListRequestToken = 0
 let runDetailRequestToken = 0
 
 function readTheme() {
-  if (typeof window === 'undefined') return 'dark'
+  if (typeof window === 'undefined') return 'light'
   try {
     const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY)
     if (storedTheme === 'light' || storedTheme === 'dark') return storedTheme
   } catch {
-    // 浏览器禁用本地存储时使用默认的黑夜模式。
+    // 浏览器禁用本地存储时使用默认的浅色模式。
   }
-  return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+  // Codex 风格以浅色工作台为默认入口；用户仍可手动切换深色主题。
+  return 'light'
 }
 
 function applyTheme(nextTheme) {
@@ -177,7 +193,7 @@ function applyTheme(nextTheme) {
     document.documentElement.dataset.theme = nextTheme
     document.querySelector('meta[name="theme-color"]')?.setAttribute(
       'content',
-      nextTheme === 'dark' ? '#080d1a' : '#f5f7fb',
+      nextTheme === 'dark' ? '#171717' : '#ffffff',
     )
   }
   if (typeof window !== 'undefined') {
@@ -2786,19 +2802,19 @@ onBeforeUnmount(() => {
     <div class="chat-app">
       <header class="chat-topbar">
         <div class="chat-brand">
-          <div class="brand-mark">MH</div>
+          <div class="brand-mark" aria-hidden="true"><Sparkles :size="17" :stroke-width="1.8" /></div>
           <div><strong>Ming Harness</strong><span>CODE AGENT WORKSPACE</span></div>
         </div>
         <div class="chat-topbar-actions">
           <span class="chat-identity">{{ form.tenantId }} / {{ form.userId }}</span>
           <span class="chat-health" :class="infraOnline ? 'health-up' : 'health-warning'"><i></i>{{ infraLabel }}</span>
           <span class="chat-model-status" :class="modelStatusClass" :title="modelConfig?.enabled ? `当前用户模型：${modelConfig.modelName || '外部模型'}` : '当前使用本地演示模型，不会访问外部模型服务'"><i></i>{{ modelLabel }}</span>
-          <button class="secondary-button chat-console-button" type="button" @click="showModelSettings = true">模型设置</button>
-          <button class="command-palette-trigger" type="button" title="打开命令面板（⌘/Ctrl + K）" @click="openCommandPalette"><span>⌘K</span><em>命令</em></button>
+          <button class="secondary-button chat-console-button" type="button" title="打开模型设置" @click="showModelSettings = true"><Settings2 :size="15" />模型设置</button>
+          <button class="command-palette-trigger" type="button" title="打开命令面板（⌘/Ctrl + K）" @click="openCommandPalette"><Command :size="14" /><span>⌘K</span><em>命令</em></button>
           <button class="theme-toggle" type="button" :aria-label="theme === 'dark' ? '切换到白天模式' : '切换到黑夜模式'" @click="toggleTheme">
-            <span aria-hidden="true">{{ theme === 'dark' ? '☼' : '☾' }}</span>{{ theme === 'dark' ? '白天' : '黑夜' }}
+            <Sun v-if="theme === 'dark'" :size="15" aria-hidden="true" /><Moon v-else :size="15" aria-hidden="true" />{{ theme === 'dark' ? '白天' : '黑夜' }}
           </button>
-          <button class="secondary-button chat-console-button" type="button" @click="chatMode = false">运行控制台</button>
+          <button class="secondary-button chat-console-button" type="button" title="打开运行控制台" @click="chatMode = false"><PanelRight :size="15" />运行控制台</button>
         </div>
       </header>
 
@@ -2809,12 +2825,12 @@ onBeforeUnmount(() => {
         <aside class="conversation-sidebar">
           <div class="conversation-sidebar-heading">
             <div><p class="eyebrow">CONVERSATIONS</p><h2>对话</h2></div>
-            <button class="icon-button" type="button" aria-label="新建对话" title="新建对话" :disabled="chatLoading || chatSending || chatUploading" @click="createChatConversation">＋</button>
+            <button class="icon-button" type="button" aria-label="新建对话" title="新建对话" :disabled="chatLoading || chatSending || chatUploading" @click="createChatConversation"><MessageSquarePlus :size="17" /></button>
           </div>
           <label class="conversation-search">
             <span class="sr-only">搜索对话</span>
             <input v-model="conversationQuery" type="search" placeholder="搜索对话…" aria-label="搜索对话" @keydown.esc="conversationQuery = ''" />
-            <button v-if="conversationQuery" type="button" aria-label="清除对话搜索" @click="conversationQuery = ''">×</button>
+            <button v-if="conversationQuery" type="button" aria-label="清除对话搜索" @click="conversationQuery = ''"><X :size="14" /></button>
           </label>
           <div v-if="chatLoading && !conversations.length" class="chat-sidebar-empty">正在读取对话…</div>
           <div v-else-if="!conversations.length" class="chat-sidebar-empty">还没有对话</div>
@@ -2829,7 +2845,7 @@ onBeforeUnmount(() => {
               :disabled="chatSending || chatUploading"
               @click="selectConversation(conversation.id)"
             >
-              <span class="conversation-row-icon">⌁</span>
+              <span class="conversation-row-icon" aria-hidden="true"><Bot :size="15" /></span>
               <span class="conversation-row-body">
                 <strong>{{ conversation.title }}</strong>
                 <small>{{ conversation.lastMessagePreview || '开始一轮新的 Agent 对话' }}</small>
@@ -2907,7 +2923,7 @@ onBeforeUnmount(() => {
           <div class="chat-messages" aria-live="polite">
             <div v-if="chatLoading && !chatMessages.length" class="chat-empty-state">正在加载会话…</div>
             <div v-else-if="!chatMessages.length" class="chat-empty-state">
-              <div class="chat-empty-mark">⌘</div>
+              <div class="chat-empty-mark" aria-hidden="true"><Sparkles :size="23" /></div>
               <strong>从一个问题开始</strong>
               <span>Agent 会读取工作区、运行工具并把每轮结果留在这里。</span>
             </div>
@@ -3261,7 +3277,7 @@ onBeforeUnmount(() => {
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-mark">MH</div>
+        <div class="brand-mark" aria-hidden="true"><Sparkles :size="17" :stroke-width="1.8" /></div>
         <div>
           <strong>Ming Harness</strong>
           <span>Agent Operations</span>
@@ -3269,9 +3285,9 @@ onBeforeUnmount(() => {
       </div>
 
       <nav class="side-nav" aria-label="主导航">
-        <a class="nav-item" :class="{ active: activeConsoleSection === 'runtime' }" href="#runtime" :aria-current="activeConsoleSection === 'runtime' ? 'page' : undefined" @click="setActiveConsoleSection('runtime')"><span class="nav-icon">◈</span>运行中心</a>
-        <a class="nav-item" :class="{ active: activeConsoleSection === 'tools' }" href="#tools" :aria-current="activeConsoleSection === 'tools' ? 'page' : undefined" @click="setActiveConsoleSection('tools')"><span class="nav-icon">⌘</span>工具注册</a>
-        <a class="nav-item" :class="{ active: activeConsoleSection === 'audit' }" href="#audit" :aria-current="activeConsoleSection === 'audit' ? 'page' : undefined" @click="setActiveConsoleSection('audit')"><span class="nav-icon">↯</span>审计追踪</a>
+        <a class="nav-item" :class="{ active: activeConsoleSection === 'runtime' }" href="#runtime" :aria-current="activeConsoleSection === 'runtime' ? 'page' : undefined" @click="setActiveConsoleSection('runtime')"><span class="nav-icon"><CircleDot :size="16" /></span>运行中心</a>
+        <a class="nav-item" :class="{ active: activeConsoleSection === 'tools' }" href="#tools" :aria-current="activeConsoleSection === 'tools' ? 'page' : undefined" @click="setActiveConsoleSection('tools')"><span class="nav-icon"><Wrench :size="16" /></span>工具注册</a>
+        <a class="nav-item" :class="{ active: activeConsoleSection === 'audit' }" href="#audit" :aria-current="activeConsoleSection === 'audit' ? 'page' : undefined" @click="setActiveConsoleSection('audit')"><span class="nav-icon"><Check :size="16" /></span>审计追踪</a>
       </nav>
 
       <div class="sidebar-foot">
@@ -3287,9 +3303,9 @@ onBeforeUnmount(() => {
           <h1>运行中心</h1>
         </div>
         <div class="topbar-actions">
-          <button class="secondary-button" type="button" @click="chatMode = true">聊天工作台</button>
-          <button class="secondary-button" type="button" @click="showModelSettings = true">模型设置</button>
-          <button class="command-palette-trigger" type="button" title="打开命令面板（⌘/Ctrl + K）" @click="openCommandPalette"><span>⌘K</span><em>命令</em></button>
+          <button class="secondary-button" type="button" title="打开聊天工作台" @click="chatMode = true"><MessageSquarePlus :size="15" />聊天工作台</button>
+          <button class="secondary-button" type="button" title="打开模型设置" @click="showModelSettings = true"><Settings2 :size="15" />模型设置</button>
+          <button class="command-palette-trigger" type="button" title="打开命令面板（⌘/Ctrl + K）" @click="openCommandPalette"><Command :size="14" /><span>⌘K</span><em>命令</em></button>
           <button
             class="theme-toggle"
             type="button"
@@ -3297,12 +3313,12 @@ onBeforeUnmount(() => {
             :title="theme === 'dark' ? '切换到白天模式' : '切换到黑夜模式'"
             @click="toggleTheme"
           >
-            <span aria-hidden="true">{{ theme === 'dark' ? '☼' : '☾' }}</span>
+            <Sun v-if="theme === 'dark'" :size="15" aria-hidden="true" /><Moon v-else :size="15" aria-hidden="true" />
             {{ theme === 'dark' ? '白天' : '黑夜' }}
           </button>
           <span class="date-chip">本地演示环境</span>
           <button class="primary-button" type="button" @click="showCreateForm = !showCreateForm">
-            <span>＋</span> 新建 Run
+            <Plus :size="16" /> 新建 Run
           </button>
         </div>
       </header>
