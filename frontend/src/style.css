@@ -1447,11 +1447,11 @@ button svg {
 }
 
 .main-content {
-  background: #f7f7f8;
+  background: var(--bg);
 }
 
 .sidebar {
-  background: #ffffff;
+  background: var(--sidebar-bg);
 }
 
 .eyebrow {
