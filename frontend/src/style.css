@@ -1244,6 +1244,10 @@ button svg {
   color: var(--bg);
 }
 
+.chat-send-label {
+  margin: 0;
+}
+
 .chat-run-panel,
 .chat-workspace-panel {
   border-left-color: var(--line);
@@ -1269,6 +1273,24 @@ button svg {
     padding-right: 24px;
     padding-left: 24px;
   }
+
+  .chat-composer-footer {
+    justify-content: flex-end;
+  }
+
+  .chat-composer-footer > span {
+    display: none;
+  }
+
+  .chat-composer-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+
+  .chat-composer-actions button {
+    white-space: nowrap;
+  }
 }
 
 @media (max-width: 720px) {
@@ -1278,6 +1300,14 @@ button svg {
 
   .chat-topbar-actions {
     gap: 4px;
+  }
+
+  .chat-topbar .chat-console-button,
+  .chat-topbar .theme-toggle {
+    width: 34px;
+    padding: 7px;
+    overflow: hidden;
+    font-size: 0;
   }
 
   .chat-health,
@@ -1300,9 +1330,42 @@ button svg {
     padding: 24px 15px 28px;
   }
 
+  .chat-heading-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .chat-heading-actions > * {
+    max-width: 100%;
+  }
+
   .chat-composer {
     width: calc(100% - 28px);
     border-radius: 14px;
+  }
+
+  .chat-composer-actions {
+    gap: 5px;
+  }
+
+  .chat-agent-settings-button,
+  .chat-attachment-button,
+  .chat-stop-button {
+    width: 34px;
+    min-width: 34px;
+    padding: 7px;
+    font-size: 0;
+  }
+
+  .chat-send-button {
+    width: 42px;
+    min-width: 42px;
+    padding: 7px;
+    font-size: 0;
+  }
+
+  .chat-send-label {
+    display: none;
   }
 }
 
@@ -1426,4 +1489,25 @@ button svg {
 
 .footer {
   color: var(--muted);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--heading);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
 }
