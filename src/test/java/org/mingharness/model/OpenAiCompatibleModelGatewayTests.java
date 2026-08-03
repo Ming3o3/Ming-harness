@@ -176,7 +176,7 @@ class OpenAiCompatibleModelGatewayTests {
                 List.of(
                         ModelMessage.system("工具历史是有状态的"),
                         ModelMessage.user("请理解项目"),
-                        ModelMessage.assistant("", List.of(call)),
+                        ModelMessage.assistant("", "先保留上一轮思考链", List.of(call)),
                         ModelMessage.tool(call.id(), "{\"entries\":[]}"))));
 
         assertEquals("目录已经读取完成", response.content());
@@ -185,6 +185,45 @@ class OpenAiCompatibleModelGatewayTests {
         assertTrue(requestBody.get().contains("\"name\":\"workspace_read\""));
         assertTrue(requestBody.get().contains("\"tool_call_id\":\"call-list\""));
         assertTrue(requestBody.get().contains("\"role\":\"tool\""));
+        assertTrue(requestBody.get().contains("\"reasoning_content\":\"先保留上一轮思考链\""));
+    }
+
+    @Test
+    void shouldParseReasoningContentFromStreamingToolResponse() throws IOException {
+        HttpServer server = server(exchange -> respondSse(exchange, """
+                data: {"model":"provider-model","choices":[{"delta":{"reasoning_content":"先分析工具结果。"}}]}
+
+                data: {"model":"provider-model","choices":[{"delta":{"reasoning_content":"再决定下一步。"}}]}
+
+                data: {"model":"provider-model","choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-next","function":{"name":"workspace_read","arguments":"{\\"path\\":\\"README.md\\"}"}}]}}]}
+
+                data: [DONE]
+
+                """));
+        OpenAiCompatibleModelGateway gateway = gateway(config(url(server), 1, null, null));
+
+        ModelResponse response = gateway.completeStreaming(new ModelRequest(
+                "继续检查", "", "prompt-agent",
+                List.of(new ModelToolDefinition("workspace.read", "读取文件",
+                        java.util.Map.of("type", "object")))), ignored -> {
+        });
+
+        assertEquals("先分析工具结果。再决定下一步。", response.reasoningContent());
+        assertEquals("call-next", response.toolCalls().get(0).id());
+        assertEquals("workspace.read", response.toolCalls().get(0).name());
+    }
+
+    @Test
+    void shouldExposeSanitizedProviderErrorBody() throws IOException {
+        HttpServer server = server(exchange -> respond(exchange, 400,
+                "{\"error\":{\"message\":\"reasoning_content is required; api_key=secret-value\"}}"));
+        OpenAiCompatibleModelGateway gateway = gateway(config(url(server), 1, null, null));
+
+        ModelGatewayException exception = assertThrows(ModelGatewayException.class,
+                () -> gateway.complete(new ModelRequest("继续检查", "", "prompt-agent")));
+
+        assertTrue(exception.getMessage().contains("reasoning_content is required"));
+        assertFalse(exception.getMessage().contains("secret-value"));
     }
 
     private OpenAiCompatibleModelGateway gateway(ModelConfig config) {
@@ -226,6 +265,15 @@ class OpenAiCompatibleModelGatewayTests {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
         exchange.sendResponseHeaders(status, bytes.length);
+        exchange.getResponseBody().write(bytes);
+        exchange.close();
+    }
+
+    private void respondSse(HttpExchange exchange, String body) throws IOException {
+        exchange.getRequestBody().readAllBytes();
+        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+        exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=utf-8");
+        exchange.sendResponseHeaders(200, bytes.length);
         exchange.getResponseBody().write(bytes);
         exchange.close();
     }

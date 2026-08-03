@@ -23,6 +23,7 @@ public class AgentTurnCodec {
     public String encode(ModelResponse response) {
         Map<String, Object> value = new LinkedHashMap<>();
         value.put("content", response.content());
+        value.put("reasoningContent", response.reasoningContent());
         value.put("toolCalls", response.toolCalls().stream().map(call -> Map.of(
                 "id", call.id(), "name", call.name(), "arguments", call.arguments())).toList());
         try {
@@ -42,6 +43,8 @@ public class AgentTurnCodec {
                 return new AgentTurn(output, List.of());
             }
             String content = root.get("content") == null ? "" : root.get("content").asText("");
+            String reasoningContent = root.get("reasoningContent") == null
+                    ? "" : root.get("reasoningContent").asText("");
             List<ModelToolCall> calls = new ArrayList<>();
             JsonNode rawCalls = root.get("toolCalls");
             if (rawCalls != null && rawCalls.isArray()) {
@@ -55,17 +58,22 @@ public class AgentTurnCodec {
                     }
                 }
             }
-            return new AgentTurn(content, List.copyOf(calls));
+            return new AgentTurn(content, List.copyOf(calls), reasoningContent);
         } catch (JacksonException exception) {
             // 兼容历史/自定义模型直接返回纯文本，纯文本意味着本轮没有 Tool Call。
             return new AgentTurn(output, List.of());
         }
     }
 
-    public record AgentTurn(String content, List<ModelToolCall> toolCalls) {
+    public record AgentTurn(String content, List<ModelToolCall> toolCalls, String reasoningContent) {
+        public AgentTurn(String content, List<ModelToolCall> toolCalls) {
+            this(content, toolCalls, "");
+        }
+
         public AgentTurn {
             content = content == null ? "" : content;
             toolCalls = toolCalls == null ? List.of() : List.copyOf(toolCalls);
+            reasoningContent = reasoningContent == null ? "" : reasoningContent;
         }
     }
 }

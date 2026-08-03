@@ -179,7 +179,8 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
             return parseResponse(provider, request, response, preparedTools);
         } catch (RestClientResponseException exception) {
             throw new ModelGatewayException(provider.name(), isRetryableStatus(exception.getStatusCode().value()),
-                    "模型供应商返回 HTTP " + exception.getStatusCode().value(), exception);
+                    providerErrorMessage(provider.name(), exception.getStatusCode().value(),
+                            exception.getResponseBodyAsString()), exception);
         } catch (RestClientException exception) {
             throw new ModelGatewayException(provider.name(), true, "模型供应商网络调用失败", exception);
         }
@@ -200,7 +201,7 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
                         HttpStatusCode status = response.getStatusCode();
                         if (status.isError()) {
                             throw new ModelGatewayException(provider.name(), isRetryableStatus(status.value()),
-                                    "模型供应商返回 HTTP " + status.value());
+                                    providerErrorMessage(provider.name(), status.value(), readErrorBody(response)));
                         }
                         return parseStreamingResponse(provider, request, preparedTools, response, onContent);
                     });
@@ -208,7 +209,8 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
             throw exception;
         } catch (RestClientResponseException exception) {
             throw new ModelGatewayException(provider.name(), isRetryableStatus(exception.getStatusCode().value()),
-                    "模型供应商返回 HTTP " + exception.getStatusCode().value(), exception);
+                    providerErrorMessage(provider.name(), exception.getStatusCode().value(),
+                            exception.getResponseBodyAsString()), exception);
         } catch (RestClientException exception) {
             throw new ModelGatewayException(provider.name(), true, "模型供应商网络调用失败", exception);
         }
@@ -239,12 +241,20 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
         }
         if ("assistant".equals(message.role()) && !message.toolCalls().isEmpty()) {
             value.put("content", message.content().isBlank() ? null : sanitizer.sanitize(message.content()));
+            if (!message.reasoningContent().isBlank()) {
+                value.put("reasoning_content", sanitizer.sanitize(message.reasoningContent()));
+            }
             value.put("tool_calls", message.toolCalls().stream().map(call -> Map.of(
                             "id", call.id(),
                             "type", "function",
                             "function", Map.of(
                             "name", preparedTools.providerName(call.name()),
                             "arguments", sanitizer.sanitize(call.arguments())))).toList());
+            return value;
+        }
+        if ("assistant".equals(message.role()) && !message.reasoningContent().isBlank()) {
+            value.put("content", sanitizer.sanitize(message.content()));
+            value.put("reasoning_content", sanitizer.sanitize(message.reasoningContent()));
             return value;
         }
         value.put("content", sanitizer.sanitize(message.content()));
@@ -255,6 +265,7 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
                                                  RestClient.RequestHeadersSpec.ConvertibleClientHttpResponse response,
                                                  Consumer<String> onContent) throws IOException {
         StringBuilder content = new StringBuilder();
+        StringBuilder reasoningContent = new StringBuilder();
         Map<Integer, StreamToolCall> toolCalls = new LinkedHashMap<>();
         Usage usage = new Usage(0, 0);
         String responseModel = provider.model();
@@ -276,6 +287,13 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
                 JsonNode choices = event.path("choices");
                 if (!choices.isArray() || choices.isEmpty()) continue;
                 JsonNode delta = choices.get(0).path("delta");
+                String reasoningChunk = delta.path("reasoning_content").asText("");
+                if (!reasoningChunk.isEmpty()) {
+                    reasoningContent.append(reasoningChunk);
+                    if (reasoningContent.length() > config.maxResponseChars()) {
+                        throw new ModelGatewayException(provider.name(), false, "模型思考内容超过字符上限");
+                    }
+                }
                 String chunk = delta.path("content").asText("");
                 if (!chunk.isEmpty()) {
                     content.append(chunk);
@@ -294,7 +312,8 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
         int inputTokens = usage.inputTokens();
         int outputTokens = usage.outputTokens() == 0 ? estimateTokens(content.toString()) : usage.outputTokens();
         return new ModelResponse(sanitizer.sanitize(content.toString()), responseModel, request.promptVersion(),
-                inputTokens, outputTokens, usageCost(inputTokens, outputTokens), completedToolCalls);
+                inputTokens, outputTokens, usageCost(inputTokens, outputTokens), completedToolCalls,
+                sanitizer.sanitize(reasoningContent.toString()));
     }
 
     private void appendStreamToolCalls(JsonNode rawCalls, Map<Integer, StreamToolCall> calls) {
@@ -346,6 +365,7 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
             throw new ModelGatewayException(provider.name(), false, "模型响应缺少 message");
         }
         String content = message.get("content") instanceof String value ? value : "";
+        String reasoningContent = message.get("reasoning_content") instanceof String value ? value : "";
         List<ModelToolCall> toolCalls = parseToolCalls(message.get("tool_calls"), provider.name(), preparedTools);
         if (content.isBlank() && toolCalls.isEmpty()) {
             throw new ModelGatewayException(provider.name(), false, "模型响应缺少 content 或 tool_calls");
@@ -353,12 +373,16 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
         if (content.length() > config.maxResponseChars()) {
             throw new ModelGatewayException(provider.name(), false, "模型响应超过字符上限");
         }
+        if (reasoningContent.length() > config.maxResponseChars()) {
+            throw new ModelGatewayException(provider.name(), false, "模型思考内容超过字符上限");
+        }
         Usage usage = usage(response.get("usage"));
         String responseModel = response.get("model") instanceof String value && !value.isBlank()
                 ? value : provider.model();
         BigDecimal cost = usageCost(usage.inputTokens(), usage.outputTokens());
         return new ModelResponse(sanitizer.sanitize(content), responseModel,
-                request.promptVersion(), usage.inputTokens(), usage.outputTokens(), cost, toolCalls);
+                request.promptVersion(), usage.inputTokens(), usage.outputTokens(), cost, toolCalls,
+                sanitizer.sanitize(reasoningContent));
     }
 
     /** 严格解析供应商 tool_calls，未知结构直接失败，避免把未经校验的参数交给工具。 */
@@ -587,6 +611,27 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
 
     private String safeMessage(ModelGatewayException exception) {
         return exception == null || exception.getMessage() == null ? "unknown" : sanitizer.sanitize(exception.getMessage());
+    }
+
+    /** 将供应商错误体限制长度并脱敏，保留参数校验提示以便定位 4xx。 */
+    private String providerErrorMessage(String providerName, int status, String responseBody) {
+        String detail = responseBody == null ? "" : sanitizer.sanitize(responseBody).trim();
+        if (detail.length() > 2_000) {
+            detail = detail.substring(0, 2_000) + "...";
+        }
+        if (detail.isBlank()) {
+            return "模型供应商返回 HTTP " + status;
+        }
+        return "模型供应商返回 HTTP " + status + " (" + providerName + "): " + detail;
+    }
+
+    private String readErrorBody(RestClient.RequestHeadersSpec.ConvertibleClientHttpResponse response) {
+        try {
+            byte[] bytes = response.getBody().readNBytes(4_096);
+            return new String(bytes, StandardCharsets.UTF_8);
+        } catch (IOException exception) {
+            return "无法读取供应商错误响应体";
+        }
     }
 
     private record Provider(String name, String model, RestClient client, ModelCircuitBreaker breaker) {

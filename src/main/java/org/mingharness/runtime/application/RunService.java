@@ -1338,7 +1338,7 @@ public class RunService {
             if (model.type() != StepType.MODEL) continue;
             AgentTurnCodec.AgentTurn turn = agentTurnCodec.decode(model.output());
             List<ModelMessage> messages = new ArrayList<>();
-            messages.add(ModelMessage.assistant(turn.content(), turn.toolCalls()));
+            messages.add(ModelMessage.assistant(turn.content(), turn.reasoningContent(), turn.toolCalls()));
             int callIndex = 0;
             for (int next = index + 1; next < history.size(); next++) {
                 AgentHistoryStep tool = history.get(next);
@@ -1448,7 +1448,8 @@ public class RunService {
         int calls = message.toolCalls().stream()
                 .mapToInt(call -> call.id().length() + call.name().length() + call.arguments().length())
                 .sum();
-        return message.role().length() + message.content().length() + message.toolCallId().length() + calls;
+        return message.role().length() + message.content().length() + message.reasoningContent().length()
+                + message.toolCallId().length() + calls;
     }
 
     private void persistStreamingModelContent(StreamingRunContext run, String stepId, String workerId,
