@@ -60,8 +60,10 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Arrays;
@@ -523,6 +525,18 @@ public class RunService {
                     activeStepId = step.id();
                     ensureNotCancelled(current.id(), current.tenantId());
                     refreshLease(current, lockToken);
+                    // 同一模型响应中的重复调用只等待首个步骤并复制结果，不能再次进入真实工具执行器。
+                    if (step.type() == StepType.TOOL && step.status() == StepStatus.QUEUED
+                            && step.replaySourceStepId() != null
+                            && !step.replaySourceStepId().isBlank()) {
+                        if (!executionStateService.completeReplayedStep(
+                                current.id(), current.tenantId(), workerId,
+                                step.id(), step.replaySourceStepId())) {
+                            return;
+                        }
+                        activeStepId = null;
+                        continue;
+                    }
                     if (step.type() == StepType.TOOL) {
                         HarnessTool tool = toolRegistry.get(step.name());
                         ToolDefinition definition = tool.definition();
@@ -812,49 +826,109 @@ public class RunService {
 
     private void appendAgentToolStepsInMemory(Run run, Step modelStep, List<ModelToolCall> calls) {
         TenantPolicyLimits limits = tenantPolicyService.limitsFor(run.getTenantId());
-        if (run.getSteps().stream().noneMatch(step -> step.getType() == StepType.TOOL
-                && step.getSequence() > modelStep.getSequence())) {
-            rejectRepeatedToolCalls(run, modelStep, calls);
-        }
         if (run.getSteps().size() + calls.size() > limits.maxStepsPerRun()) {
             throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "STEP_LIMIT_EXCEEDED",
                     "Agent 动态步骤超过租户运行上限");
         }
+        Map<String, Step> reusable = previousSuccessfulTools(run, modelStep);
+        if (!reusable.isEmpty() && calls.stream()
+                .allMatch(call -> reusable.containsKey(toolCallKey(call)))) {
+            rejectRepeatedToolCalls(run, modelStep, calls);
+        }
         int sequence = run.getSteps().stream().mapToInt(Step::getSequence).max().orElse(0) + 1;
+        Map<String, Step> planned = new HashMap<>();
+        run.getSteps().stream()
+                .filter(step -> step.getType() == StepType.TOOL
+                        && step.getSequence() > modelStep.getSequence())
+                .sorted(java.util.Comparator.comparingInt(Step::getSequence))
+                .forEach(step -> planned.putIfAbsent(
+                        toolCallKey(step.getName(), step.getInput()), step));
         for (ModelToolCall call : calls) {
             Step toolStep = new Step(sequence++, StepType.TOOL, call.name(), sanitizer.sanitize(call.arguments()));
+            String key = toolCallKey(call);
+            Step plannedSource = planned.get(key);
+            Step reusableSource = reusable.get(key);
+            String replayEventType = null;
+            String replayMessage = null;
+            String replayMetadata = null;
+            if (plannedSource != null) {
+                if (plannedSource.getStatus() == StepStatus.SUCCEEDED) {
+                    toolStep.replayFrom(plannedSource);
+                    replayEventType = "AGENT_TOOL_CALL_REPLAYED";
+                    replayMessage = "复用本轮已成功工具结果";
+                    replayMetadata = "sourceStepId=" + plannedSource.getId();
+                } else {
+                    toolStep.queueReplayFrom(plannedSource.getId());
+                    replayEventType = "AGENT_TOOL_CALL_REPLAY_QUEUED";
+                    replayMessage = "等待本轮首个相同工具调用完成";
+                    replayMetadata = "sourceStepId=" + plannedSource.getId();
+                }
+            } else if (reusableSource != null) {
+                toolStep.replayFrom(reusableSource);
+                replayEventType = "AGENT_TOOL_CALL_REPLAYED";
+                replayMessage = "复用上一轮已成功工具结果";
+                replayMetadata = "sourceStepId=" + reusableSource.getId();
+            }
             run.addStep(toolStep);
             record(run.getId(), toolStep.getId(), "AGENT_TOOL_CALL_REQUESTED",
                     "模型请求调用工具: " + call.name());
+            if (replayEventType != null) {
+                record(run.getId(), toolStep.getId(), replayEventType, replayMessage,
+                        run.getUserId(), replayMetadata);
+            }
+            planned.putIfAbsent(key, toolStep);
         }
     }
 
-    /** 同步执行路径也必须阻止模型重复请求上一轮已经成功的工具调用。 */
+    /** 全部调用都已成功执行过时仍然快速失败，防止 Agent 复用结果后无限空转。 */
     private void rejectRepeatedToolCalls(Run run, Step modelStep, List<ModelToolCall> calls) {
+        String toolName = calls == null || calls.isEmpty() ? "" : calls.get(0).name();
+        String message = "模型重复请求已成功执行的工具: " + toolName;
+        record(run.getId(), modelStep.getId(), "AGENT_DUPLICATE_TOOL_CALL", message);
+        throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "AGENT_DUPLICATE_TOOL_CALL", message);
+    }
+
+    private void completeReplayedStepInMemory(Run run, Step replayStep) {
+        Step source = run.getSteps().stream()
+                .filter(candidate -> Objects.equals(candidate.getId(), replayStep.getReplaySourceStepId()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("复用来源步骤不存在: "
+                        + replayStep.getReplaySourceStepId()));
+        if (source.getStatus() != StepStatus.SUCCEEDED) {
+            throw new IllegalStateException("复用来源步骤尚未成功: " + source.getId());
+        }
+        replayStep.replayFrom(source);
+        record(run.getId(), replayStep.getId(), "AGENT_TOOL_CALL_REPLAYED",
+                "复用已成功工具结果", run.getUserId(), "sourceStepId=" + source.getId());
+    }
+
+    private Map<String, Step> previousSuccessfulTools(Run run, Step modelStep) {
         Step previousModel = run.getSteps().stream()
                 .filter(step -> step.getType() == StepType.MODEL
                         && step.getSequence() < modelStep.getSequence()
                         && step.getStatus() == StepStatus.SUCCEEDED)
                 .max(java.util.Comparator.comparingInt(Step::getSequence))
                 .orElse(null);
-        if (previousModel == null) return;
-        List<Step> previousTools = run.getSteps().stream()
+        if (previousModel == null) return Map.of();
+        Map<String, Step> result = new HashMap<>();
+        run.getSteps().stream()
                 .filter(step -> step.getType() == StepType.TOOL
                         && step.getSequence() > previousModel.getSequence()
                         && step.getSequence() < modelStep.getSequence()
                         && step.getStatus() == StepStatus.SUCCEEDED)
-                .toList();
-        for (ModelToolCall call : calls) {
-            String arguments = sanitizer.sanitize(call.arguments());
-            boolean repeated = previousTools.stream().anyMatch(step -> step.getName().equals(call.name())
-                    && Objects.equals(step.getInput(), arguments));
-            if (repeated) {
-                String message = "模型重复请求已成功执行的工具: " + call.name();
-                record(run.getId(), modelStep.getId(), "AGENT_DUPLICATE_TOOL_CALL", message);
-                throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
-                        "AGENT_DUPLICATE_TOOL_CALL", message);
-            }
-        }
+                .sorted(java.util.Comparator.comparingInt(Step::getSequence))
+                .forEach(step -> result.putIfAbsent(
+                        toolCallKey(step.getName(), step.getInput()), step));
+        return result;
+    }
+
+    private String toolCallKey(ModelToolCall call) {
+        return AgentToolCallKey.of(call.name(), sanitizer.sanitize(call.arguments()));
+    }
+
+    private String toolCallKey(String name, String input) {
+        return AgentToolCallKey.of(name, sanitizer.sanitize(input));
     }
 
     private boolean appendNextAgentModelInMemory(Run run) {
@@ -1053,6 +1127,10 @@ public class RunService {
                     }
                     ensureNotCancelled(run);
                     refreshLease(run, lockToken);
+                    if (step.isReplayPending()) {
+                        completeReplayedStepInMemory(run, step);
+                        continue;
+                    }
                     if (step.getType() == StepType.TOOL) {
                         PolicyDecision decision = policyEngine.evaluate(
                                 new PolicyContext(run.getTenantId(), run.getUserId(), permissions(run),

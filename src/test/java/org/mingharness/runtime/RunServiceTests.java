@@ -36,6 +36,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -57,6 +58,8 @@ class RunServiceTests {
     @Autowired
     private AgentModelToolsState agentModelToolsState;
     @Autowired
+    private MixedReplayState mixedReplayState;
+    @Autowired
     private ModelProviderConfigService modelProviderConfigService;
 
     @BeforeEach
@@ -64,6 +67,7 @@ class RunServiceTests {
         auditEventRepository.deleteAll();
         runRepository.deleteAll();
         agentModelToolsState.reset();
+        mixedReplayState.reset();
     }
 
     @Test
@@ -206,6 +210,45 @@ class RunServiceTests {
         assertTrue(result.run().error().contains("重复请求"));
         assertTrue(auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
                 .anyMatch(event -> "AGENT_DUPLICATE_TOOL_CALL".equals(event.getEventType())));
+    }
+
+    @Test
+    void shouldReplayDuplicateToolAndContinueWithNewToolInSyncAgent() {
+        RunSummary created = runService.create(new CreateRunRequest(
+                "tenant-demo", "user-demo", "混合重复工具调用", "混合重复重放测试",
+                null, null, "prompt-agent", "policy-v1", BigDecimal.TEN,
+                null, null, true, 5));
+
+        RunDetail result = runService.start(created.id(), "tenant-demo");
+
+        assertEquals(RunStatus.SUCCEEDED, result.run().status(), result.run().error());
+        List<org.mingharness.runtime.api.StepView> tools = result.steps().stream()
+                .filter(step -> org.mingharness.runtime.domain.StepType.TOOL == step.type())
+                .toList();
+        assertEquals(4, tools.size());
+        assertEquals(List.of("result-A", "result-A", "result-B", "result-B"),
+                tools.stream().map(org.mingharness.runtime.api.StepView::output).toList());
+        assertEquals(1, mixedReplayState.toolInvocations("\"A\""));
+        assertEquals(1, mixedReplayState.toolInvocations("\"B\""));
+        assertTrue(auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
+                .anyMatch(event -> "AGENT_TOOL_CALL_REPLAYED".equals(event.getEventType())
+                        && event.getMetadata() != null && event.getMetadata().contains("sourceStepId=")));
+
+        List<ModelMessage> finalRequest = agentModelToolsState.requestMessages(2);
+        ModelMessage mixedAssistant = finalRequest.stream()
+                .filter(message -> "assistant".equals(message.role()) && message.toolCalls().size() == 3)
+                .findFirst().orElseThrow();
+        List<ModelMessage> mixedTools = finalRequest.stream()
+                .filter(message -> "tool".equals(message.role()))
+                .filter(message -> mixedAssistant.toolCalls().stream()
+                        .anyMatch(call -> call.id().equals(message.toolCallId())))
+                .toList();
+        assertEquals(List.of("call-replay-a", "call-replay-b", "call-replay-b-duplicate"),
+                mixedAssistant.toolCalls().stream().map(ModelToolCall::id).toList());
+        assertEquals(List.of("call-replay-a", "call-replay-b", "call-replay-b-duplicate"),
+                mixedTools.stream().map(ModelMessage::toolCallId).toList());
+        assertEquals(List.of("result-A", "result-B", "result-B"),
+                mixedTools.stream().map(ModelMessage::content).toList());
     }
 
     @Test
@@ -671,14 +714,54 @@ class RunServiceTests {
         }
 
         @Bean
+        MixedReplayState mixedReplayState() {
+            return new MixedReplayState();
+        }
+
+        @Bean
+        HarnessTool mixedReplayCounterTool(MixedReplayState state) {
+            return new HarnessTool() {
+                @Override
+                public ToolDefinition definition() {
+                    return new ToolDefinition("test.replay.counter", "用于验证工具结果重放的计数工具",
+                            true, "LOW", false, Map.of("type", "string"));
+                }
+
+                @Override
+                public String execute(String input) {
+                    state.recordTool(input);
+                    String value = input == null ? "" : input.replace("\"", "");
+                    return "result-" + value;
+                }
+            };
+        }
+
+        @Bean
         @org.springframework.context.annotation.Primary
-        ModelGateway agentModelGateway(AgentModelToolsState state) {
+        ModelGateway agentModelGateway(AgentModelToolsState state, MixedReplayState mixedReplayState) {
             DemoModelGateway fallback = new DemoModelGateway();
             return new ModelGateway() {
                 @Override
                 public ModelResponse complete(ModelRequest request) {
                     state.record(request);
                     if (request.tools().isEmpty()) return fallback.complete(request);
+                    if (request.input().contains("混合重复重放测试")) {
+                        int turn = mixedReplayState.nextModelCall();
+                        if (turn == 1) {
+                            return new ModelResponse("", "agent-test", request.promptVersion(), 5, 4,
+                                    BigDecimal.ZERO,
+                                    List.of(new ModelToolCall("call-replay-first", "test.replay.counter", "\"A\"")));
+                        }
+                        if (turn == 2) {
+                            return new ModelResponse("", "agent-test", request.promptVersion(), 5, 4,
+                                    BigDecimal.ZERO,
+                                    List.of(
+                                            new ModelToolCall("call-replay-a", "test.replay.counter", "\"A\""),
+                                            new ModelToolCall("call-replay-b", "test.replay.counter", "\"B\""),
+                                            new ModelToolCall("call-replay-b-duplicate", "test.replay.counter", "\"B\"")));
+                        }
+                        return new ModelResponse("混合重放已继续完成", "agent-test", request.promptVersion(), 5, 3);
+                    }
                     if (request.input().contains("审批拒绝反馈") && request.messages().stream()
                             .anyMatch(message -> "tool".equals(message.role())
                                     && message.content().contains("人工审批已拒绝"))) {
@@ -770,6 +853,30 @@ class RunServiceTests {
             calls.clear();
             systemPrompts.clear();
             requestMessages.clear();
+        }
+    }
+
+    static class MixedReplayState {
+        private final AtomicInteger modelCalls = new AtomicInteger();
+        private final Map<String, AtomicInteger> toolCalls = new ConcurrentHashMap<>();
+
+        int nextModelCall() {
+            return modelCalls.incrementAndGet();
+        }
+
+        void recordTool(String input) {
+            toolCalls.computeIfAbsent(input == null ? "" : input, ignored -> new AtomicInteger())
+                    .incrementAndGet();
+        }
+
+        int toolInvocations(String input) {
+            AtomicInteger count = toolCalls.get(input);
+            return count == null ? 0 : count.get();
+        }
+
+        void reset() {
+            modelCalls.set(0);
+            toolCalls.clear();
         }
     }
 }

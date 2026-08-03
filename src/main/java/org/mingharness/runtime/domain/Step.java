@@ -37,6 +37,12 @@ public class Step {
     private String output;
     @Column(columnDefinition = "text")
     private String error;
+    /**
+     * 当前 Tool Call 复用了哪个已成功步骤的结果。保留来源可使模型消息仍能按原调用顺序配对，
+     * 同时避免工具因模型重复规划而再次执行。
+     */
+    @Column(name = "replay_source_step_id", length = 255)
+    private String replaySourceStepId;
     private int attempt;
     private int inputTokens;
     private int outputTokens;
@@ -91,6 +97,39 @@ public class Step {
         this.status = StepStatus.SUCCEEDED;
         this.finishedAt = Instant.now();
         this.durationMs = elapsedMs();
+    }
+
+    /**
+     * 标记为复用结果的工具步骤。复用步骤不会调用外部工具，因此不计入工具尝试次数或成本。
+     */
+    public void replayFrom(Step source) {
+        if (status != StepStatus.QUEUED) {
+            throw new IllegalStateException("只有排队中的步骤可以复用工具结果: " + status);
+        }
+        if (source == null || source.getStatus() != StepStatus.SUCCEEDED) {
+            throw new IllegalStateException("只能复用已成功工具步骤的结果");
+        }
+        this.replaySourceStepId = source.getId();
+        this.output = source.getOutput();
+        this.inputTokens = 0;
+        this.outputTokens = 0;
+        this.cost = BigDecimal.ZERO;
+        this.finishedAt = Instant.now();
+        this.durationMs = 0;
+        this.status = StepStatus.SUCCEEDED;
+    }
+
+    /**
+     * 同一模型响应内的重复调用会等待首个工具步骤完成后再复用其结果。
+     */
+    public void queueReplayFrom(String sourceStepId) {
+        if (status != StepStatus.QUEUED) {
+            throw new IllegalStateException("只有排队中的步骤可以等待复用工具结果: " + status);
+        }
+        if (sourceStepId == null || sourceStepId.isBlank()) {
+            throw new IllegalArgumentException("复用来源步骤不能为空");
+        }
+        this.replaySourceStepId = sourceStepId;
     }
 
     /** 外部模型仍在生成时保存最新输出快照，最终状态仍须通过 {@link #succeed} 写入。 */
@@ -210,6 +249,10 @@ public class Step {
     public Instant getFinishedAt() { return finishedAt; }
     public long getDurationMs() { return durationMs; }
     public BigDecimal getCost() { return cost; }
+    public String getReplaySourceStepId() { return replaySourceStepId; }
+    public boolean isReplayPending() {
+        return status == StepStatus.QUEUED && replaySourceStepId != null && !replaySourceStepId.isBlank();
+    }
 
     private long elapsedMs() {
         return startedAt == null || finishedAt == null

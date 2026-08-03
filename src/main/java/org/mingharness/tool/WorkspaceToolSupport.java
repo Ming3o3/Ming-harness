@@ -386,13 +386,97 @@ public class WorkspaceToolSupport {
                     Map<String, Object> match = new LinkedHashMap<>();
                     match.put("path", root().relativize(path).toString().replace(path.getFileSystem().getSeparator(), "/"));
                     match.put("line", index + 1);
-                    match.put("text", sanitizer.sanitize(line));
+                    String text = sanitizer.sanitize(line);
+                    if (text != null && text.length() > properties.maxSearchMatchChars()) {
+                        match.put("text", truncateText(text, properties.maxSearchMatchChars()));
+                        match.put("textTruncated", true);
+                    } else {
+                        match.put("text", text);
+                    }
                     result.add(match);
                 }
             }
         } catch (IOException | RuntimeException ignored) {
             // 二进制文件或被并发删除的文件不应阻断其他文件的搜索结果。
         }
+    }
+
+    /**
+     * 构建有界的搜索结果。搜索命中本身受 {@code maxResults} 限制，但单行内容和命中数量
+     * 仍可能在一次调用中产生远超模型上下文的 JSON；这里按完整条目裁剪，绝不直接截断 JSON
+     * 字符串，以保证模型始终收到可解析的结果。
+     */
+    public String boundedSearchJson(String query, String displayPath,
+                                    List<Map<String, Object>> matches,
+                                    boolean searchTruncated) {
+        List<Map<String, Object>> boundedMatches = matches == null
+                ? new ArrayList<>() : new ArrayList<>(matches);
+        String boundedQuery = query == null ? "" : query;
+        String boundedPath = displayPath == null || displayPath.isBlank() ? "." : displayPath;
+        boolean truncated = searchTruncated;
+        String serialized = serializeSearchResult(boundedQuery, boundedPath, boundedMatches,
+                truncated, matches == null ? 0 : matches.size());
+
+        // 只移除完整的尾部命中，避免 JSON 结构被破坏；一旦移除则明确告诉 Agent。
+        while (serialized.length() > properties.maxToolOutputChars() && !boundedMatches.isEmpty()) {
+            boundedMatches.remove(boundedMatches.size() - 1);
+            truncated = true;
+            serialized = serializeSearchResult(boundedQuery, boundedPath, boundedMatches,
+                    true, matches == null ? 0 : matches.size());
+        }
+
+        // 查询路径通常很短，但输入来自模型，仍需防止异常长的元数据挤占输出预算。
+        if (serialized.length() > properties.maxToolOutputChars()) {
+            truncated = true;
+            boundedQuery = truncateText(boundedQuery, 128);
+            boundedPath = truncateText(boundedPath, 128);
+            serialized = serializeSearchResult(boundedQuery, boundedPath, boundedMatches,
+                    true, matches == null ? 0 : matches.size());
+        }
+        if (serialized.length() > properties.maxToolOutputChars()) {
+            boundedQuery = "";
+            boundedPath = ".";
+            serialized = serializeSearchResult(boundedQuery, boundedPath, boundedMatches,
+                    true, matches == null ? 0 : matches.size());
+        }
+
+        // maxToolOutputChars 经过配置归一化后至少足以容纳此最小结构；保留最后一道兜底，
+        // 以防未来增加字段或外部构造了异常小的配置值。
+        if (serialized.length() > properties.maxToolOutputChars()) {
+            serialized = serializeSearchResult("", ".", List.of(), true,
+                    matches == null ? 0 : matches.size());
+        }
+        return serialized;
+    }
+
+    private String serializeSearchResult(String query, String displayPath,
+                                         List<Map<String, Object>> matches,
+                                         boolean truncated, int observedMatches) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("query", query);
+        result.put("path", displayPath);
+        result.put("matches", matches);
+        result.put("truncated", truncated);
+        if (truncated) {
+            Map<String, Object> summary = new LinkedHashMap<>();
+            summary.put("returned", matches.size());
+            summary.put("observed", observedMatches);
+            summary.put("maxOutputChars", properties.maxToolOutputChars());
+            result.put("summary", summary);
+        }
+        return json(result);
+    }
+
+    private String truncateText(String value, int maxChars) {
+        if (value == null || value.length() <= maxChars) return value;
+        int end = Math.max(0, Math.min(maxChars, value.length()));
+        // 不切开一个 UTF-16 代理对，避免把单条命中的文本变成非法字符。
+        if (end > 0 && end < value.length()
+                && Character.isHighSurrogate(value.charAt(end - 1))
+                && Character.isLowSurrogate(value.charAt(end))) {
+            end--;
+        }
+        return value.substring(0, end);
     }
 
     public String json(Map<String, Object> value) {

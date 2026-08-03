@@ -27,7 +27,9 @@ public record WorkspaceProperties(
         List<String> allowedCommands,
         int maxCommandTimeoutMs,
         int maxCommandOutputBytes,
-        int maxCommandArgs
+        int maxCommandArgs,
+        int maxSearchMatchChars,
+        int maxToolOutputChars
 ) {
 
     /** 兼容工作区文件工具阶段的旧构造方式。 */
@@ -36,7 +38,18 @@ public record WorkspaceProperties(
                                int maxReadLines, boolean allowHiddenFiles) {
         this(enabled, root, maxReadBytes, maxWriteBytes, maxListEntries, maxSearchFiles,
                 maxSearchResults, maxReadLines, allowHiddenFiles, false, List.of(),
-                120_000, 200_000, 32);
+                120_000, 200_000, 32, 512, 4_000);
+    }
+
+    /** 兼容执行工具阶段的旧构造方式。 */
+    public WorkspaceProperties(boolean enabled, String root, int maxReadBytes, int maxWriteBytes,
+                               int maxListEntries, int maxSearchFiles, int maxSearchResults,
+                               int maxReadLines, boolean allowHiddenFiles, boolean execEnabled,
+                               List<String> allowedCommands, int maxCommandTimeoutMs,
+                               int maxCommandOutputBytes, int maxCommandArgs) {
+        this(enabled, root, maxReadBytes, maxWriteBytes, maxListEntries, maxSearchFiles,
+                maxSearchResults, maxReadLines, allowHiddenFiles, execEnabled, allowedCommands,
+                maxCommandTimeoutMs, maxCommandOutputBytes, maxCommandArgs, 512, 4_000);
     }
 
     @ConstructorBinding
@@ -60,6 +73,8 @@ public record WorkspaceProperties(
         maxCommandTimeoutMs = boundedOrDefault(maxCommandTimeoutMs, 120_000, 1_000, 600_000);
         maxCommandOutputBytes = boundedOrDefault(maxCommandOutputBytes, 200_000, 1_024, 5_000_000);
         maxCommandArgs = boundedOrDefault(maxCommandArgs, 32, 1, 128);
+        maxSearchMatchChars = positiveOrDefault(maxSearchMatchChars, 512);
+        maxToolOutputChars = boundedOrDefault(maxToolOutputChars, 4_000, 256, 1_000_000);
     }
 
     private static int positiveOrDefault(int value, int fallback) {

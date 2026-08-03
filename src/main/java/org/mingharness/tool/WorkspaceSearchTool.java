@@ -5,7 +5,6 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 
 import java.nio.file.Path;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -28,7 +27,7 @@ public class WorkspaceSearchTool implements HarnessTool {
     public ToolDefinition definition() {
         return new ToolDefinition(
                 "workspace.search",
-                "在工作区内搜索文本，返回文件路径、行号和脱敏后的行内容；目录错误时返回 recoverable=true",
+                "在工作区内搜索文本，返回文件路径、行号和脱敏后的行内容；结果过大时以 truncated=true 和 summary 说明截断；目录错误时返回 recoverable=true",
                 true,
                 "LOW",
                 false,
@@ -63,12 +62,7 @@ public class WorkspaceSearchTool implements HarnessTool {
             Path directory = support.resolve(rawPath, false);
             java.util.List<Map<String, Object>> matches = support.search(
                     query, directory, rawPath, caseSensitive, maxResults);
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("query", query);
-            result.put("path", rawPath == null || rawPath.isBlank() ? "." : rawPath);
-            result.put("matches", matches);
-            result.put("truncated", matches.size() >= maxResults);
-            return support.json(result);
+            return support.boundedSearchJson(query, rawPath, matches, matches.size() >= maxResults);
         } catch (BusinessException exception) {
             if (!support.isRecoverableReadFailure(exception)) throw exception;
             return support.recoverableReadFailure(definition().name(), exception,

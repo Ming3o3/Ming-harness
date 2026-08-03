@@ -21,7 +21,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -228,27 +231,14 @@ public class RunExecutionStateService {
         if (!run.isAgentMode() || !ownsRunningRun(run, workerId)) return false;
         Step modelStep = findStep(run, modelStepId);
         if (modelStep.getStatus() != StepStatus.SUCCEEDED) return false;
-        int maxSteps = tenantPolicyService.limitsFor(run.getTenantId()).maxStepsPerRun();
-        List<Step> existing = stepsAfterModel(run, modelStep);
-        if (existing.isEmpty()) {
-            rejectRepeatedToolCalls(run, modelStep, calls);
+        try {
+            if (appendAgentToolStepsInternal(run, modelStep, calls)) runRepository.save(run);
+            return true;
+        } catch (BusinessException exception) {
+            if (!"AGENT_DUPLICATE_TOOL_CALL".equals(exception.getCode())) throw exception;
+            failDuplicateAgentRun(run, modelStep, exception.getMessage());
+            return false;
         }
-        validateExistingAgentSteps(existing, calls);
-        int missing = Math.max(0, calls.size() - existing.size());
-        if (run.getSteps().size() + missing > maxSteps) {
-            throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "AGENT_STEP_LIMIT_EXCEEDED",
-                    "Agent 动态步骤超过租户运行上限");
-        }
-        int nextSequence = run.getSteps().stream().mapToInt(Step::getSequence).max().orElse(0) + 1;
-        for (int index = existing.size(); index < calls.size(); index++) {
-            ModelToolCall call = calls.get(index);
-            Step toolStep = new Step(nextSequence++, StepType.TOOL, call.name(),
-                    sanitizer.sanitize(call.arguments()));
-            run.addStep(toolStep);
-            append(run, toolStep, "AGENT_TOOL_CALL_REQUESTED", "模型请求调用工具: " + call.name());
-        }
-        if (missing > 0) runRepository.save(run);
-        return true;
     }
 
     /** Worker 在模型结果已提交但进程尚未来得及追加工具步骤时，按已持久化结果补齐后续步骤。 */
@@ -264,7 +254,13 @@ public class RunExecutionStateService {
             AgentTurnCodec.AgentTurn turn = agentTurnCodec.decode(modelStep.getOutput());
             if (!turn.toolCalls().isEmpty()) {
                 int before = stepsAfterModel(run, modelStep).size();
-                appendAgentToolStepsInternal(run, modelStep, turn.toolCalls());
+                try {
+                    appendAgentToolStepsInternal(run, modelStep, turn.toolCalls());
+                } catch (BusinessException exception) {
+                    if (!"AGENT_DUPLICATE_TOOL_CALL".equals(exception.getCode())) throw exception;
+                    failDuplicateAgentRun(run, modelStep, exception.getMessage());
+                    return false;
+                }
                 changed = changed || stepsAfterModel(run, modelStep).size() > before;
             }
         }
@@ -337,6 +333,29 @@ public class RunExecutionStateService {
         Step step = findStep(run, stepId);
         step.retryAutomatically();
         append(run, step, "STEP_RETRY_SCHEDULED", "只读工具瞬态错误，准备第 " + nextAttempt + " 次尝试");
+        runRepository.save(run);
+        return true;
+    }
+
+    /** Worker 执行同批重复 Tool Call 时，只复制首个调用的结果，不再次触发外部副作用。 */
+    @Transactional
+    public boolean completeReplayedStep(String runId, String tenantId, String workerId,
+                                         String stepId, String sourceStepId) {
+        Run run = loadForUpdate(runId);
+        assertTenant(run, tenantId);
+        if (!ownsRunningRun(run, workerId)) return false;
+        Step step = findStep(run, stepId);
+        Step source = findStep(run, sourceStepId);
+        if (step.getStatus() == StepStatus.SUCCEEDED) return true;
+        if (!step.isReplayPending() || !Objects.equals(step.getReplaySourceStepId(), source.getId())) {
+            return false;
+        }
+        if (source.getStatus() != StepStatus.SUCCEEDED) {
+            throw new IllegalStateException("复用来源步骤尚未成功: " + source.getId());
+        }
+        step.replayFrom(source);
+        append(run, step, "AGENT_TOOL_CALL_REPLAYED", "复用已成功工具结果",
+                "sourceStepId=" + source.getId());
         runRepository.save(run);
         return true;
     }
@@ -531,11 +550,8 @@ public class RunExecutionStateService {
                 .toList();
     }
 
-    private void appendAgentToolStepsInternal(Run run, Step modelStep, List<ModelToolCall> calls) {
+    private boolean appendAgentToolStepsInternal(Run run, Step modelStep, List<ModelToolCall> calls) {
         List<Step> existing = stepsAfterModel(run, modelStep);
-        if (existing.isEmpty()) {
-            rejectRepeatedToolCalls(run, modelStep, calls);
-        }
         validateExistingAgentSteps(existing, calls);
         int maxSteps = tenantPolicyService.limitsFor(run.getTenantId()).maxStepsPerRun();
         int missing = Math.max(0, calls.size() - existing.size());
@@ -544,13 +560,72 @@ public class RunExecutionStateService {
                     "Agent 动态步骤超过租户运行上限");
         }
         int nextSequence = run.getSteps().stream().mapToInt(Step::getSequence).max().orElse(0) + 1;
+        Map<String, Step> planned = new HashMap<>();
+        for (int index = 0; index < existing.size() && index < calls.size(); index++) {
+            planned.putIfAbsent(toolCallKey(calls.get(index)), existing.get(index));
+        }
+        Map<String, Step> reusable = previousSuccessfulTools(run, modelStep);
+        // 如果本批没有任何新的调用，直接复用会让 Agent 无限空转；保留原有的
+        // 重复调用保护。但重复项与新调用混在一起时，重复项可以安全复用，
+        // 新调用仍应继续入队执行。
+        if (existing.isEmpty() && !reusable.isEmpty()
+                && calls.stream().allMatch(call -> reusable.containsKey(toolCallKey(call)))) {
+            rejectRepeatedToolCalls(run, modelStep, calls);
+        }
         for (int index = existing.size(); index < calls.size(); index++) {
             ModelToolCall call = calls.get(index);
+            String key = toolCallKey(call);
             Step toolStep = new Step(nextSequence++, StepType.TOOL, call.name(),
                     sanitizer.sanitize(call.arguments()));
+            Step plannedSource = planned.get(key);
+            Step reusableSource = reusable.get(key);
+            String replayEventType = null;
+            String replayMessage = null;
+            String replayMetadata = null;
+            if (plannedSource != null) {
+                if (plannedSource.getStatus() == StepStatus.SUCCEEDED) {
+                    toolStep.replayFrom(plannedSource);
+                    replayEventType = "AGENT_TOOL_CALL_REPLAYED";
+                    replayMessage = "复用本轮已成功工具结果";
+                    replayMetadata = "sourceStepId=" + plannedSource.getId();
+                } else {
+                    toolStep.queueReplayFrom(plannedSource.getId());
+                    replayEventType = "AGENT_TOOL_CALL_REPLAY_QUEUED";
+                    replayMessage = "等待本轮首个相同工具调用完成";
+                    replayMetadata = "sourceStepId=" + plannedSource.getId();
+                }
+            } else if (reusableSource != null) {
+                toolStep.replayFrom(reusableSource);
+                replayEventType = "AGENT_TOOL_CALL_REPLAYED";
+                replayMessage = "复用上一轮已成功工具结果";
+                replayMetadata = "sourceStepId=" + reusableSource.getId();
+            }
             run.addStep(toolStep);
             append(run, toolStep, "AGENT_TOOL_CALL_REQUESTED", "模型请求调用工具: " + call.name());
+            if (replayEventType != null) {
+                append(run, toolStep, replayEventType, replayMessage, replayMetadata);
+            }
+            planned.putIfAbsent(key, toolStep);
         }
+        return missing > 0;
+    }
+
+    /** 纯重复批次仍然失败，避免模型在复用结果后无界地产生相同轮次。 */
+    private void rejectRepeatedToolCalls(Run run, Step modelStep, List<ModelToolCall> calls) {
+        String toolName = calls == null || calls.isEmpty() ? "" : calls.get(0).name();
+        String message = "模型重复请求已成功执行的工具: " + toolName;
+        throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "AGENT_DUPLICATE_TOOL_CALL", message);
+    }
+
+    private void failDuplicateAgentRun(Run run, Step modelStep, String reason) {
+        String message = sanitizer.sanitize(reason == null || reason.isBlank()
+                ? "模型重复请求已成功执行的工具" : reason);
+        append(run, modelStep, "AGENT_DUPLICATE_TOOL_CALL", message);
+        run.fail(message);
+        append(run, null, "RUN_FAILED", message);
+        runRepository.save(run);
+        conversationMessageWriter.updateForTerminalRun(run);
     }
 
     private void validateExistingAgentSteps(List<Step> existing, List<ModelToolCall> calls) {
@@ -558,35 +633,34 @@ public class RunExecutionStateService {
         for (int index = 0; index < comparable; index++) {
             Step step = existing.get(index);
             ModelToolCall call = calls.get(index);
-            if (!step.getName().equals(call.name())
-                    || !step.getInput().equals(sanitizer.sanitize(call.arguments()))) {
+            if (!Objects.equals(toolCallKey(step.getName(), step.getInput()), toolCallKey(call))) {
                 throw new BusinessException(HttpStatus.CONFLICT, "AGENT_TOOL_STATE_CONFLICT",
                         "Agent 工具步骤与已持久化模型结果不一致");
             }
         }
     }
 
-    /** 同一轮已经成功执行过的完全相同工具调用不能再次消耗 Agent 轮数。 */
-    private void rejectRepeatedToolCalls(Run run, Step modelStep, List<ModelToolCall> calls) {
+    private Map<String, Step> previousSuccessfulTools(Run run, Step modelStep) {
         Step previousModel = run.getSteps().stream()
                 .filter(step -> step.getType() == StepType.MODEL
                         && step.getSequence() < modelStep.getSequence()
                         && step.getStatus() == StepStatus.SUCCEEDED)
                 .max(java.util.Comparator.comparingInt(Step::getSequence))
                 .orElse(null);
-        if (previousModel == null) return;
-        List<Step> previousTools = stepsAfterModel(run, previousModel).stream()
+        if (previousModel == null) return Map.of();
+        Map<String, Step> result = new HashMap<>();
+        stepsAfterModel(run, previousModel).stream()
                 .filter(step -> step.getStatus() == StepStatus.SUCCEEDED)
-                .toList();
-        for (ModelToolCall call : calls) {
-            String arguments = sanitizer.sanitize(call.arguments());
-            boolean repeated = previousTools.stream().anyMatch(step -> step.getName().equals(call.name())
-                    && java.util.Objects.equals(step.getInput(), arguments));
-            if (repeated) {
-                throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "AGENT_DUPLICATE_TOOL_CALL",
-                        "模型重复请求已成功执行的工具: " + call.name());
-            }
-        }
+                .forEach(step -> result.putIfAbsent(toolCallKey(step.getName(), step.getInput()), step));
+        return result;
+    }
+
+    private String toolCallKey(ModelToolCall call) {
+        return toolCallKey(call.name(), sanitizer.sanitize(call.arguments()));
+    }
+
+    private String toolCallKey(String name, String arguments) {
+        return AgentToolCallKey.of(name, arguments);
     }
 
     private boolean exceedsBudget(Run run, BigDecimal additionalCost) {
@@ -638,7 +712,8 @@ public class RunExecutionStateService {
 
     private StepExecutionSnapshot stepSnapshot(Step step) {
         return new StepExecutionSnapshot(step.getId(), step.getSequence(), step.getType(),
-                step.getName(), step.getInput(), step.getOutput(), step.getStatus(), step.isApprovalGranted());
+                step.getName(), step.getInput(), step.getOutput(), step.getStatus(), step.isApprovalGranted(),
+                step.getReplaySourceStepId());
     }
 
     public enum StepCompletionResult {
@@ -672,7 +747,15 @@ public class RunExecutionStateService {
             String input,
             String output,
             StepStatus status,
-            boolean approvalGranted
+            boolean approvalGranted,
+            String replaySourceStepId
     ) {
+
+        /** 兼容未携带 replay 来源的旧 Worker/测试构造方式。 */
+        public StepExecutionSnapshot(String id, int sequence, StepType type, String name,
+                                     String input, String output, StepStatus status,
+                                     boolean approvalGranted) {
+            this(id, sequence, type, name, input, output, status, approvalGranted, null);
+        }
     }
 }

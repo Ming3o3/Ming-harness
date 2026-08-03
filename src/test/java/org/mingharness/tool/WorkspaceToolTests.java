@@ -5,6 +5,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mingharness.common.BusinessException;
 import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.config.WorkspaceProperties;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.nio.file.Files;
@@ -43,6 +44,44 @@ class WorkspaceToolTests {
                 "{\"query\":\"harness\",\"path\":\"src\"}");
         assertTrue(search.contains("App.java"));
         assertTrue(search.contains("\"line\":2"));
+    }
+
+    @Test
+    void shouldBoundLongSearchLinesWithoutBreakingJson() throws Exception {
+        Files.createDirectories(tempDir.resolve("src"));
+        Files.writeString(tempDir.resolve("src/Long.txt"), "needle-" + "x".repeat(200) + "\n");
+        WorkspaceToolSupport support = boundedSupport(32, 2_048, 20);
+
+        String raw = new WorkspaceSearchTool(support).execute(
+                "{\"query\":\"needle\",\"path\":\"src\"}");
+        JsonNode result = new ObjectMapper().reader().readTree(raw);
+        JsonNode match = result.path("matches").get(0);
+
+        assertTrue(raw.length() <= 2_048);
+        assertTrue(match.path("text").asText().length() <= 32);
+        assertTrue(match.path("textTruncated").asBoolean());
+    }
+
+    @Test
+    void shouldBoundSearchJsonByCompleteMatchesAndIncludeSummary() throws Exception {
+        Files.createDirectories(tempDir.resolve("src"));
+        for (int index = 0; index < 20; index++) {
+            Files.writeString(tempDir.resolve("src/Match-" + index + ".txt"),
+                    "needle-" + "x".repeat(32) + "\n");
+        }
+        WorkspaceToolSupport support = boundedSupport(64, 512, 100);
+
+        String raw = new WorkspaceSearchTool(support).execute(
+                "{\"query\":\"needle\",\"path\":\"src\"}");
+        JsonNode result = new ObjectMapper().reader().readTree(raw);
+        JsonNode summary = result.path("summary");
+
+        assertTrue(raw.length() <= 512);
+        assertTrue(result.path("truncated").asBoolean());
+        assertTrue(result.path("matches").size() < 20);
+        assertTrue(summary.isObject());
+        assertTrue(summary.path("returned").asInt() < summary.path("observed").asInt());
+        assertEquals(512, summary.path("maxOutputChars").asInt());
     }
 
     @Test
@@ -285,6 +324,15 @@ class WorkspaceToolTests {
     private WorkspaceToolSupport support() {
         WorkspaceProperties properties = new WorkspaceProperties(true, tempDir.toString(),
                 100_000, 100_000, 100, 100, 20, 100, false);
+        return new WorkspaceToolSupport(properties, new ObjectMapper(), new SensitiveDataSanitizer());
+    }
+
+    private WorkspaceToolSupport boundedSupport(int maxSearchMatchChars, int maxToolOutputChars,
+                                                int maxSearchResults) {
+        WorkspaceProperties properties = new WorkspaceProperties(true, tempDir.toString(),
+                100_000, 100_000, 100, 100, maxSearchResults, 100, false,
+                false, List.of(), 120_000, 200_000, 32,
+                maxSearchMatchChars, maxToolOutputChars);
         return new WorkspaceToolSupport(properties, new ObjectMapper(), new SensitiveDataSanitizer());
     }
 

@@ -29,6 +29,8 @@ import org.springframework.context.annotation.Import;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Map;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -51,12 +53,15 @@ class RunWorkerExecutionTests {
     private AuditEventRepository auditEventRepository;
     @Autowired
     private WorkerFlakyState workerFlakyState;
+    @Autowired
+    private WorkerMixedReplayState workerMixedReplayState;
 
     @BeforeEach
     void cleanDatabase() {
         auditEventRepository.deleteAll();
         runRepository.deleteAll();
         workerFlakyState.reset();
+        workerMixedReplayState.reset();
     }
 
     @Test
@@ -118,6 +123,41 @@ class RunWorkerExecutionTests {
         assertEquals("Worker Agent 最终结果", completed.getOutput());
         assertTrue(auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(run.getId()).stream()
                 .anyMatch(event -> "AGENT_MODEL_TURN_QUEUED".equals(event.getEventType())));
+    }
+
+    @Test
+    void shouldReplayDuplicateToolAndContinueWithNewToolInWorkerAgent() {
+        RunSummary created = runService.create(new CreateRunRequest(
+                "tenant-worker-mixed", "worker-user", "Worker 混合重复重放", "Worker 混合重复重放",
+                null, null, "prompt-agent", "policy-v1", BigDecimal.TEN,
+                null, null, true, 5));
+        Run run = runRepository.findById(created.id()).orElseThrow();
+        run.start();
+        runRepository.saveAndFlush(run);
+
+        runService.executeFromWorker(new RunExecutionMessage(
+                "worker-mixed-replay-event", run.getId(), run.getTenantId(), run.getTraceId(),
+                "START", Instant.now()));
+
+        Run completed = runRepository.findById(run.getId()).orElseThrow();
+        assertEquals(RunStatus.SUCCEEDED, completed.getStatus(), completed.getError());
+        List<org.mingharness.runtime.domain.Step> tools = completed.getSteps().stream()
+                .filter(step -> org.mingharness.runtime.domain.StepType.TOOL == step.getType())
+                .toList();
+        assertEquals(4, tools.size());
+        assertEquals(List.of("result-A", "result-A", "result-B", "result-B"),
+                tools.stream().map(org.mingharness.runtime.domain.Step::getOutput).toList());
+        assertEquals(StepStatus.SUCCEEDED, tools.get(1).getStatus());
+        assertTrue(tools.get(1).getReplaySourceStepId() != null
+                && !tools.get(1).getReplaySourceStepId().isBlank());
+        assertEquals(StepStatus.SUCCEEDED, tools.get(3).getStatus());
+        assertTrue(tools.get(3).getReplaySourceStepId() != null
+                && !tools.get(3).getReplaySourceStepId().isBlank());
+        assertEquals(1, workerMixedReplayState.toolInvocations("\"A\""));
+        assertEquals(1, workerMixedReplayState.toolInvocations("\"B\""));
+        assertTrue(auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(run.getId()).stream()
+                .anyMatch(event -> "AGENT_TOOL_CALL_REPLAYED".equals(event.getEventType())
+                        && event.getMetadata() != null && event.getMetadata().contains("sourceStepId=")));
     }
 
     @Test
@@ -294,6 +334,11 @@ class RunWorkerExecutionTests {
         }
 
         @Bean
+        WorkerMixedReplayState workerMixedReplayState() {
+            return new WorkerMixedReplayState();
+        }
+
+        @Bean
         HarnessTool flakyWorkerTool(WorkerFlakyState state) {
             return new HarnessTool() {
                 @Override
@@ -309,6 +354,24 @@ class RunWorkerExecutionTests {
                         throw new RetryableToolException("模拟瞬态工具错误");
                     }
                     return "重试成功: " + input;
+                }
+            };
+        }
+
+        @Bean
+        HarnessTool workerMixedReplayCounterTool(WorkerMixedReplayState state) {
+            return new HarnessTool() {
+                @Override
+                public ToolDefinition definition() {
+                    return new ToolDefinition("test.worker.replay.counter", "Worker 工具结果重放计数工具",
+                            true, "LOW", false, Map.of("type", "string"));
+                }
+
+                @Override
+                public String execute(String input) {
+                    state.recordTool(input);
+                    String value = input == null ? "" : input.replace("\"", "");
+                    return "result-" + value;
                 }
             };
         }
@@ -337,12 +400,34 @@ class RunWorkerExecutionTests {
 
         @Bean
         @org.springframework.context.annotation.Primary
-        ModelGateway agentWorkerModelGateway() {
+        ModelGateway agentWorkerModelGateway(WorkerMixedReplayState mixedReplayState) {
             DemoModelGateway fallback = new DemoModelGateway();
             return new ModelGateway() {
                 @Override
                 public ModelResponse complete(ModelRequest request) {
                     if (request.tools().isEmpty()) return fallback.complete(request);
+                    if (request.input().contains("Worker 混合重复重放")) {
+                        int turn = mixedReplayState.nextModelCall();
+                        if (turn == 1) {
+                            return new ModelResponse("", "agent-worker-test", request.promptVersion(), 5, 4,
+                                    BigDecimal.ZERO,
+                                    List.of(new ModelToolCall("worker-replay-first",
+                                            "test.worker.replay.counter", "\"A\"")));
+                        }
+                        if (turn == 2) {
+                            return new ModelResponse("", "agent-worker-test", request.promptVersion(), 5, 4,
+                                    BigDecimal.ZERO,
+                                    List.of(
+                                            new ModelToolCall("worker-replay-a",
+                                                    "test.worker.replay.counter", "\"A\""),
+                                            new ModelToolCall("worker-replay-b",
+                                                    "test.worker.replay.counter", "\"B\""),
+                                            new ModelToolCall("worker-replay-b-duplicate",
+                                                    "test.worker.replay.counter", "\"B\"")));
+                        }
+                        return new ModelResponse("Worker 混合重放已完成", "agent-worker-test",
+                                request.promptVersion(), 5, 3);
+                    }
                     if (request.input().contains("权限拒绝")) {
                         return new ModelResponse("", "agent-worker-test", request.promptVersion(), 5, 4,
                                 java.math.BigDecimal.ZERO,
@@ -371,6 +456,30 @@ class RunWorkerExecutionTests {
 
         int invocations() {
             return invocations.get();
+        }
+    }
+
+    static class WorkerMixedReplayState {
+        private final AtomicInteger modelCalls = new AtomicInteger();
+        private final Map<String, AtomicInteger> toolCalls = new ConcurrentHashMap<>();
+
+        int nextModelCall() {
+            return modelCalls.incrementAndGet();
+        }
+
+        void recordTool(String input) {
+            toolCalls.computeIfAbsent(input == null ? "" : input, ignored -> new AtomicInteger())
+                    .incrementAndGet();
+        }
+
+        int toolInvocations(String input) {
+            AtomicInteger count = toolCalls.get(input);
+            return count == null ? 0 : count.get();
+        }
+
+        void reset() {
+            modelCalls.set(0);
+            toolCalls.clear();
         }
     }
 }
