@@ -1305,3 +1305,125 @@ button svg {
     border-radius: 14px;
   }
 }
+
+/* Neutralize legacy purple gradients in the management console. */
+:root[data-theme="light"] {
+  --accent: #3f3f46;
+  --accent-light: #27272a;
+  --selected-bg: rgba(0, 0, 0, .065);
+  --panel-gradient-start: #ffffff;
+  --panel-gradient-end: #ffffff;
+}
+
+:root[data-theme="light"] body {
+  background: #f7f7f8;
+}
+
+.main-content {
+  background: #f7f7f8;
+}
+
+.sidebar {
+  background: #ffffff;
+}
+
+.eyebrow {
+  color: var(--muted);
+}
+
+.nav-icon {
+  color: var(--muted);
+}
+
+.nav-item.active .nav-icon,
+.nav-item:hover .nav-icon {
+  color: var(--heading);
+}
+
+.stats-grid {
+  gap: 12px;
+}
+
+.stat-card::after {
+  display: none;
+}
+
+.stat-card,
+.panel,
+.create-panel {
+  border-color: var(--line);
+  background: var(--panel);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .035);
+}
+
+.stat-card {
+  border-radius: 12px;
+}
+
+.stat-card strong {
+  color: var(--heading);
+}
+
+.stat-total,
+.stat-running,
+.stat-success,
+.stat-failed {
+  color: var(--muted);
+}
+
+.infra-strip {
+  min-height: 82px;
+  padding: 16px 19px;
+}
+
+.health-items span {
+  border-color: var(--line);
+  background: var(--panel-soft);
+}
+
+.create-panel,
+.panel {
+  border-radius: 12px;
+}
+
+.field input,
+.field textarea,
+.field select,
+.run-filter {
+  border-color: var(--line);
+  background: var(--input-bg);
+}
+
+.field input:focus,
+.field textarea:focus,
+.field select:focus,
+.run-filter:focus {
+  border-color: rgba(0, 0, 0, .28);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, .06);
+}
+
+.run-row.selected {
+  border-color: var(--line);
+  background: var(--selected-bg);
+}
+
+.tool-card,
+.governance-card {
+  border-color: var(--line);
+  background: var(--panel-soft);
+}
+
+.tool-symbol {
+  background: var(--selected-bg);
+  color: var(--heading);
+}
+
+.empty-orb {
+  border-color: var(--line);
+  background: var(--panel-soft);
+  color: var(--heading);
+}
+
+.footer {
+  color: var(--muted);
+}

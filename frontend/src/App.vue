@@ -1,13 +1,16 @@
 <script setup>
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import {
+  Activity,
   Bot,
   ArrowUp,
+  CircleAlert,
   Check,
   CircleDot,
   Command,
   FolderGit2,
   FolderOpen,
+  ListChecks,
   MessageSquarePlus,
   Moon,
   PanelRight,
@@ -3352,22 +3355,22 @@ onBeforeUnmount(() => {
 
       <section class="stats-grid" aria-label="运行统计">
         <div class="stat-card stat-total">
-          <div class="stat-top"><span>全部 Run</span><span class="stat-icon">∑</span></div>
+          <div class="stat-top"><span>全部 Run</span><span class="stat-icon"><ListChecks :size="16" /></span></div>
           <strong>{{ stats.total }}</strong>
           <small>最近 50 条执行记录</small>
         </div>
         <div class="stat-card stat-running">
-          <div class="stat-top"><span>执行中</span><span class="stat-icon">◌</span></div>
+          <div class="stat-top"><span>执行中</span><span class="stat-icon"><Activity :size="16" /></span></div>
           <strong>{{ stats.running }}</strong>
           <small>{{ stats.queued }} 条排队等待</small>
         </div>
         <div class="stat-card stat-success">
-          <div class="stat-top"><span>成功率</span><span class="stat-icon">↗</span></div>
+          <div class="stat-top"><span>成功率</span><span class="stat-icon"><Check :size="16" /></span></div>
           <strong>{{ stats.total ? Math.round((stats.succeeded / stats.total) * 100) : 0 }}<em>%</em></strong>
           <small>{{ stats.succeeded }} 条任务已完成</small>
         </div>
         <div class="stat-card stat-failed">
-          <div class="stat-top"><span>需关注</span><span class="stat-icon">!</span></div>
+          <div class="stat-top"><span>需关注</span><span class="stat-icon"><CircleAlert :size="16" /></span></div>
           <strong>{{ stats.failed }}</strong>
           <small>失败或需要人工处理</small>
         </div>
@@ -3379,7 +3382,7 @@ onBeforeUnmount(() => {
             <p class="eyebrow">CREATE EXECUTION</p>
             <h2>创建一次可追溯执行</h2>
           </div>
-          <button class="icon-button" type="button" aria-label="关闭创建表单" @click="showCreateForm = false">×</button>
+          <button class="icon-button" type="button" aria-label="关闭创建表单" @click="showCreateForm = false"><X :size="15" /></button>
         </div>
         <form class="run-form" @submit.prevent="createAndStartRun">
           <label class="field field-wide">
@@ -3461,12 +3464,12 @@ onBeforeUnmount(() => {
                 <option v-for="status in runStatusOptions" :key="status" :value="status">{{ statusLabel(status) }}</option>
               </select>
               <span v-if="runsLoading" class="run-list-loading">加载中…</span>
-              <button class="refresh-button" type="button" :disabled="runsLoading" @click="loadDashboard" aria-label="刷新列表">⟳</button>
+              <button class="refresh-button" type="button" :disabled="runsLoading" @click="loadDashboard" aria-label="刷新列表"><RefreshCw :size="15" /></button>
             </div>
           </div>
           <div v-if="runsLoading && !runs.length" class="loading-state run-list-loading-state">正在加载 Run 列表…</div>
           <div v-else-if="!runs.length" class="empty-state">
-            <div class="empty-orb">◈</div>
+            <div class="empty-orb"><ListChecks :size="19" /></div>
             <strong>{{ runStatusFilter ? '没有匹配的 Run' : '还没有执行记录' }}</strong>
             <span>{{ runStatusFilter ? '可以切换状态筛选，或创建一个新的 Run。' : '创建第一个 Run，开始观察执行链。' }}</span>
           </div>
