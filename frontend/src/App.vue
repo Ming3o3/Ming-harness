@@ -2848,9 +2848,22 @@ onBeforeUnmount(() => {
 
       <div class="chat-layout">
         <aside class="conversation-sidebar">
+          <nav class="chat-primary-nav" aria-label="工作台导航">
+            <button class="chat-primary-nav-item chat-primary-nav-item-primary" type="button" :disabled="chatLoading || chatSending || chatUploading" @click="createChatConversation">
+              <MessageSquarePlus :size="15" /><span>新对话</span><kbd>⌘N</kbd>
+            </button>
+            <button class="chat-primary-nav-item" type="button" @click="chatMode = false; setActiveConsoleSection('runtime')">
+              <CircleDot :size="15" /><span>运行中心</span>
+            </button>
+            <button class="chat-primary-nav-item" type="button" @click="chatMode = false; setActiveConsoleSection('tools')">
+              <Wrench :size="15" /><span>工具注册</span>
+            </button>
+            <button class="chat-primary-nav-item" type="button" @click="chatMode = false; setActiveConsoleSection('audit')">
+              <Check :size="15" /><span>审计追踪</span>
+            </button>
+          </nav>
           <div class="conversation-sidebar-heading">
-            <div><p class="eyebrow">CONVERSATIONS</p><h2>对话</h2></div>
-            <button class="icon-button" type="button" aria-label="新建对话" title="新建对话" :disabled="chatLoading || chatSending || chatUploading" @click="createChatConversation"><MessageSquarePlus :size="17" /></button>
+            <div><p class="eyebrow">RECENT CHATS</p><h2>最近对话</h2></div>
           </div>
           <label class="conversation-search">
             <span class="sr-only">搜索对话</span>
