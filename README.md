@@ -103,7 +103,7 @@ npm run dev
 | `MAX_CREATES_PER_MINUTE` | `60` | 平台单租户每分钟创建 Run 硬上限；可通过租户策略进一步收紧 |
 | `MAX_INPUT_LENGTH` | `10000` | 平台单次输入字符硬上限；可通过租户策略进一步收紧 |
 | `MAX_RUN_BUDGET` | `1000` | 平台单次 Run 预算硬上限；可通过租户策略进一步收紧 |
-| `MAX_CONTEXT_CHARS` | `4000` | 注入模型的上下文最大字符数 |
+| `MAX_CONTEXT_CHARS` | `64000` | 注入模型的上下文最大字符数 |
 | `RECOVERY_TIMEOUT_MS` | `120000` | Worker 中断后将 RUNNING 任务转为超时的阈值 |
 | `MAX_TOOL_ATTEMPTS` | `3` | 单个只读工具的自动重试次数上限，副作用工具固定为 1 |
 | `RUN_EVENT_STREAM_POLL_MS` | `750` | 已订阅 Run 的持久化快照检查间隔；可跨 Worker 实例推送状态变化 |
