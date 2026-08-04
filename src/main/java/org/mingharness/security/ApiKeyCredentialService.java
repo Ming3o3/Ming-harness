@@ -101,7 +101,7 @@ public class ApiKeyCredentialService {
     }
 
     /**
-     * 原子轮换数据库 API Key：新凭证沿用旧租户、用户和权限，旧凭证在同一事务内立即撤销。
+     * 原子轮换数据库 API Key：新凭证沿用旧组织、用户和权限，旧凭证在同一事务内立即撤销。
      * 新 secret 只在本次响应中返回，避免先创建新 Key 再人工撤销旧 Key 造成长期双活。
      */
     @Transactional
@@ -134,7 +134,7 @@ public class ApiKeyCredentialService {
 
     @Transactional(readOnly = true)
     public List<ApiKeyView> list(String tenantId) {
-        requireIdentifier(tenantId, "租户标识");
+        requireIdentifier(tenantId, "组织标识");
         return credentialRepository.findByTenantIdOrderByCreatedAtDesc(tenantId, PageRequest.of(0, MAX_LIST_SIZE))
                 .stream()
                 .map(credential -> toView(credential, null))
@@ -164,7 +164,7 @@ public class ApiKeyCredentialService {
 
     @Transactional(readOnly = true)
     public List<ApiKeyAuditView> auditTrail(String tenantId) {
-        requireIdentifier(tenantId, "租户标识");
+        requireIdentifier(tenantId, "组织标识");
         return auditRepository.findByTenantIdOrderByCreatedAtDesc(tenantId, PageRequest.of(0, MAX_LIST_SIZE))
                 .stream()
                 .map(audit -> new ApiKeyAuditView(audit.getId(), audit.getKeyId(), audit.getTenantId(),
@@ -176,7 +176,7 @@ public class ApiKeyCredentialService {
         if (request == null) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "API_KEY_REQUEST_REQUIRED", "API Key 创建请求不能为空");
         }
-        requireIdentifier(request.tenantId(), "租户标识");
+        requireIdentifier(request.tenantId(), "组织标识");
         requireIdentifier(request.userId(), "用户标识");
         validatePermissions(request.permissions());
         if (request.expiresAt() != null && !request.expiresAt().isAfter(Instant.now())) {
@@ -202,7 +202,7 @@ public class ApiKeyCredentialService {
                 throw new IllegalArgumentException(
                         "harness.auth.api-keys 格式错误，应为 key|tenant|user|permission1,permission2");
             }
-            requireIdentifier(parts[1].trim(), "配置租户标识");
+            requireIdentifier(parts[1].trim(), "配置组织标识");
             requireIdentifier(parts[2].trim(), "配置用户标识");
             Set<String> permissions = parsePermissions(parts[3]);
             validatePermissions(permissions);

@@ -458,7 +458,7 @@ class RunServiceTests {
 
     @Test
     void shouldBlockCrossTenantAccess() {
-        RunSummary created = runService.create(request("demo.echo", "跨租户访问"));
+        RunSummary created = runService.create(request("demo.echo", "跨组织访问"));
 
         BusinessException exception = assertThrows(
                 BusinessException.class,

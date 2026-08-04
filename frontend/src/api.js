@@ -119,7 +119,7 @@ export const api = {
   resetModelConfig: () => request('/model-config', { method: 'DELETE' }),
   // 仅返回工作区名称和能力摘要，绝对路径始终只保留在本地后端进程。
   workspace: () => request('/workspace'),
-  // 工作区浏览接口只接受相对路径；后端会按当前租户、用户和 workspaceId 再次解析根目录。
+  // 工作区浏览接口只接受相对路径；后端会按当前组织、用户和 workspaceId 再次解析根目录。
   browseWorkspaceFiles: ({ workspaceId = '', path = '.' } = {}) => {
     const params = new URLSearchParams({ path })
     if (workspaceId) params.set('workspaceId', workspaceId)

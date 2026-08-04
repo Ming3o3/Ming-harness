@@ -9,7 +9,7 @@ import jakarta.validation.constraints.Min;
 import java.math.BigDecimal;
 
 public record CreateRunRequest(
-        @NotBlank(message = "租户不能为空") String tenantId,
+        @NotBlank(message = "组织不能为空") String tenantId,
         @NotBlank(message = "用户不能为空") String userId,
         @NotBlank(message = "任务名称不能为空") String title,
         @NotBlank(message = "任务输入不能为空") String input,

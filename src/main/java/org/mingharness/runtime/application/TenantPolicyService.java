@@ -21,9 +21,9 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * 解析和维护租户级运行资源策略。
+ * 解析和维护组织级运行资源策略。
  *
- * <p>查询未配置策略的租户时返回平台默认限制，不在数据库中惰性写入默认记录，
+ * <p>查询未配置策略的组织时返回平台默认限制，不在数据库中惰性写入默认记录，
  * 避免每一次普通 Run 创建都造成无意义的配置写放大。</p>
  */
 @Service
@@ -64,7 +64,7 @@ public class TenantPolicyService {
                 .orElseGet(() -> TenantPolicyView.from(tenantId, platformDefaults(), true, null, null, 0));
     }
 
-    /** 使用完整配置快照创建或更新租户策略，并记录操作人和前后差异。 */
+    /** 使用完整配置快照创建或更新组织策略，并记录操作人和前后差异。 */
     @Transactional
     public TenantPolicyView upsert(String tenantId, TenantPolicyRequest request, String actorId) {
         requireTenantId(tenantId);
@@ -109,7 +109,7 @@ public class TenantPolicyService {
 
     private TenantPolicyLimits validateAgainstPlatform(TenantPolicyRequest request) {
         if (request == null) {
-            throw new BusinessException(HttpStatus.BAD_REQUEST, "TENANT_POLICY_REQUIRED", "租户运行策略不能为空");
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "TENANT_POLICY_REQUIRED", "组织运行策略不能为空");
         }
         TenantPolicyLimits requested;
         try {
@@ -126,7 +126,7 @@ public class TenantPolicyService {
                 || requested.maxBudget().compareTo(platform.maxBudget()) > 0
                 || requested.maxCreatesPerMinute() > platform.maxCreatesPerMinute()) {
             throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "TENANT_POLICY_EXCEEDS_PLATFORM_LIMIT",
-                    "租户策略不能超过平台配置的硬上限");
+                    "组织策略不能超过平台配置的硬上限");
         }
         return requested;
     }
@@ -149,7 +149,7 @@ public class TenantPolicyService {
 
     private void requireTenantId(String tenantId) {
         if (tenantId == null || tenantId.isBlank() || tenantId.length() > 255) {
-            throw new BusinessException(HttpStatus.BAD_REQUEST, "INVALID_TENANT_ID", "租户标识不合法");
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "INVALID_TENANT_ID", "组织标识不合法");
         }
     }
 
@@ -178,7 +178,7 @@ public class TenantPolicyService {
             if (rawTool == null || rawTool.isBlank()
                     || !rawTool.matches("[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}")) {
                 throw new BusinessException(HttpStatus.BAD_REQUEST, "INVALID_TENANT_TOOL_NAME",
-                        "租户工具白名单包含不合法的工具名称");
+                        "组织工具白名单包含不合法的工具名称");
             }
             normalized.add(rawTool.trim());
         }
@@ -188,7 +188,7 @@ public class TenantPolicyService {
         Set<String> unknown = normalized.stream().filter(name -> !registered.contains(name)).collect(java.util.stream.Collectors.toSet());
         if (!unknown.isEmpty()) {
             throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "TENANT_TOOL_NOT_FOUND",
-                    "租户工具白名单包含未注册工具: " + String.join(",", unknown));
+                    "组织工具白名单包含未注册工具: " + String.join(",", unknown));
         }
         return Set.copyOf(normalized);
     }

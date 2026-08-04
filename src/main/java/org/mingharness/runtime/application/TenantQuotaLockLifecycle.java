@@ -3,7 +3,7 @@ package org.mingharness.runtime.application;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-/** 将租户锁释放延后到数据库事务完成，避免提交前释放造成计数竞态。 */
+/** 将组织锁释放延后到数据库事务完成，避免提交前释放造成计数竞态。 */
 final class TenantQuotaLockLifecycle {
 
     private TenantQuotaLockLifecycle() {

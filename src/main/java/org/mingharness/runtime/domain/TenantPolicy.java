@@ -10,10 +10,10 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
- * 租户级运行资源策略。
+ * 组织级运行资源策略。
  *
- * <p>平台级 {@code RuntimeLimits} 是所有租户都不能突破的硬上限，本实体只保存租户更严格的覆盖值，
- * 从而避免单个租户占满共享 Worker、数据库连接或模型预算。</p>
+ * <p>平台级 {@code RuntimeLimits} 是所有组织都不能突破的硬上限，本实体只保存组织更严格的覆盖值，
+ * 从而避免单个组织占满共享 Worker、数据库连接或模型预算。</p>
  */
 @Entity
 @Table(name = "harness_tenant_policies")

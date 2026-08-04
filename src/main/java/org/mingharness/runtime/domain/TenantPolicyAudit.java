@@ -8,7 +8,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
 
-/** 记录租户资源策略的创建、修改和恢复默认操作，便于运维追溯配置漂移。 */
+/** 记录组织资源策略的创建、修改和恢复默认操作，便于运维追溯配置漂移。 */
 @Entity
 @Table(name = "harness_tenant_policy_audits")
 public class TenantPolicyAudit {

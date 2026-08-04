@@ -2,7 +2,7 @@ package org.mingharness.runtime.application;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** 运行时的确定性资源边界，避免单个租户拖垮整个 Harness。 */
+/** 运行时的确定性资源边界，避免单个组织拖垮整个 Harness。 */
 @ConfigurationProperties(prefix = "harness.runtime")
 public record RuntimeLimits(
         int maxActiveRunsPerTenant,

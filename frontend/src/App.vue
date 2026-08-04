@@ -1574,7 +1574,7 @@ async function copyWorkspaceGitDiff() {
   }
 }
 
-/** 请求始终携带当前会话绑定的 workspaceId，后端会再次验证所属租户和用户。 */
+/** 请求始终携带当前会话绑定的 workspaceId，后端会再次验证所属组织和用户。 */
 async function loadWorkspaceDirectory(path = '.') {
   if (!workspaceExplorerAvailable.value) return
   if (!confirmWorkspaceEditorDiscard()) return
@@ -2349,7 +2349,7 @@ async function saveTenantPolicy() {
       allowedTools: String(tenantPolicyForm.allowedTools || '').split(',').map((item) => item.trim()).filter(Boolean),
     })
     tenantPolicyAudits.value = await api.listTenantPolicyAudits(form.tenantId)
-    noticeMessage.value = '租户资源策略已保存，新的 Run 会立即使用最新限制'
+    noticeMessage.value = '组织资源策略已保存，新的 Run 会立即使用最新限制'
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
@@ -2372,7 +2372,7 @@ async function resetTenantPolicy() {
       maxCreatesPerMinute: tenantPolicy.value.maxCreatesPerMinute,
       allowedTools: (tenantPolicy.value.allowedTools || []).join(', '),
     })
-    noticeMessage.value = '租户策略已恢复为平台默认值'
+    noticeMessage.value = '组织策略已恢复为平台默认值'
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
@@ -2481,7 +2481,7 @@ async function createDocument() {
   loading.value = true
   try {
     await api.createDocument({ ...documentForm })
-    noticeMessage.value = '知识文档已保存，后续模型步骤会按租户和用户权限检索'
+    noticeMessage.value = '知识文档已保存，后续模型步骤会按组织和用户权限检索'
     await loadDashboard()
   } catch (error) {
     errorMessage.value = errorText(error)
@@ -3513,7 +3513,7 @@ onBeforeUnmount(() => {
             <input v-model="form.title" required maxlength="120" placeholder="例如：分析一条退款申请" />
           </label>
           <label class="field">
-            <span>租户 ID</span>
+            <span>组织 ID</span>
             <input v-model="form.tenantId" required maxlength="64" />
           </label>
           <label class="field">
@@ -3647,7 +3647,7 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="run-meta-grid">
-              <div><span>租户 / 用户</span><strong>{{ selectedRun.run.tenantId }} / {{ selectedRun.run.userId }}</strong></div>
+              <div><span>组织 / 用户</span><strong>{{ selectedRun.run.tenantId }} / {{ selectedRun.run.userId }}</strong></div>
               <div><span>模型</span><strong>{{ selectedRun.run.modelName }}</strong></div>
               <div><span>Prompt / 策略</span><strong>{{ selectedRun.run.promptVersion }} · {{ selectedRun.run.policyVersion }}</strong></div>
               <div><span>模式 / 轮数</span><strong>{{ runModeLabel(selectedRun.run) }}</strong></div>
@@ -3776,12 +3776,12 @@ onBeforeUnmount(() => {
             <label class="field"><span>内容</span><textarea v-model="documentForm.content" required rows="3"></textarea></label>
             <label class="field"><span>可见用户（逗号分隔，可留空）</span><input v-model="documentForm.allowedUsers" /></label>
             <button class="secondary-button" type="submit" :disabled="loading">保存文档</button>
-            <small class="form-hint">当前 {{ documents.length }} 篇文档；模型检索前会先执行租户和用户过滤。</small>
+            <small class="form-hint">当前 {{ documents.length }} 篇文档；模型检索前会先执行组织和用户过滤。</small>
             <div v-if="documents.length" class="document-list" aria-label="已保存知识文档">
               <div v-for="document in documents" :key="document.id" class="document-row">
                 <div class="document-row-content">
                   <strong>{{ document.title }}</strong>
-                  <small>{{ document.allowedUsers ? `授权：${document.allowedUsers}` : '租户内可见' }} · {{ formatDate(document.createdAt) }}</small>
+                  <small>{{ document.allowedUsers ? `授权：${document.allowedUsers}` : '组织内可见' }} · {{ formatDate(document.createdAt) }}</small>
                 </div>
                 <button
                   v-if="document.ownerUserId === form.userId"
@@ -3803,7 +3803,7 @@ onBeforeUnmount(() => {
             <small class="form-hint">历史报告 {{ evaluations.length }} 份；每份报告绑定模型、Prompt 和策略版本。</small>
           </form>
           <form class="governance-card policy-card" @submit.prevent="saveTenantPolicy">
-            <div class="subsection-title"><h3>租户资源策略</h3><span v-if="tenantPolicy">{{ tenantPolicy.defaulted ? '平台默认' : '租户覆盖' }}</span></div>
+            <div class="subsection-title"><h3>组织资源策略</h3><span v-if="tenantPolicy">{{ tenantPolicy.defaulted ? '平台默认' : '组织覆盖' }}</span></div>
             <p v-if="tenantPolicyError" class="policy-error">{{ tenantPolicyError }}</p>
             <label class="field"><span>最大活动 Run 数</span><input v-model.number="tenantPolicyForm.maxActiveRuns" type="number" min="1" required /></label>
             <label class="field"><span>单次最大步骤数</span><input v-model.number="tenantPolicyForm.maxStepsPerRun" type="number" min="1" required /></label>
@@ -3821,7 +3821,7 @@ onBeforeUnmount(() => {
             </div>
             <p v-if="apiKeyError" class="policy-error">{{ apiKeyError }}</p>
             <div class="api-key-create-grid">
-              <label class="field"><span>租户 ID</span><input v-model="apiKeyForm.tenantId" required maxlength="128" /></label>
+              <label class="field"><span>组织 ID</span><input v-model="apiKeyForm.tenantId" required maxlength="128" /></label>
               <label class="field"><span>用户 ID</span><input v-model="apiKeyForm.userId" required maxlength="128" /></label>
               <label class="field api-key-expiry-field"><span>过期时间（可选）</span><input v-model="apiKeyForm.expiresAt" type="datetime-local" /></label>
               <label class="field api-key-permissions-field"><span>权限（逗号分隔）</span><input v-model="apiKeyForm.permissions" maxlength="2000" placeholder="例如：run.read, run.create" /></label>
@@ -3836,7 +3836,7 @@ onBeforeUnmount(() => {
               <div class="policy-actions"><button class="secondary-button" type="button" @click="copyApiKeySecret">复制明文</button><small>请保存到密码管理器；关闭后服务端不会再次返回。</small></div>
             </div>
             <div class="api-key-list">
-              <div class="subsection-title"><h3>当前租户密钥</h3><span>{{ apiKeys.length }} keys</span></div>
+              <div class="subsection-title"><h3>当前组织密钥</h3><span>{{ apiKeys.length }} keys</span></div>
               <div v-if="!apiKeys.length" class="muted-line">暂无数据库 API Key，或当前身份没有读取权限。</div>
               <div v-for="key in apiKeys" :key="key.id" class="api-key-row">
                 <div class="api-key-row-main"><strong>{{ key.keyPrefix }}…</strong><small>{{ key.userId }} · 创建于 {{ formatDate(key.createdAt) }}</small></div>

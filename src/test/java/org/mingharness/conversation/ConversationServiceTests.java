@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 验证多轮消息、上下文延续和租户/用户边界。 */
+/** 验证多轮消息、上下文延续和组织/用户边界。 */
 @SpringBootTest
 class ConversationServiceTests {
 

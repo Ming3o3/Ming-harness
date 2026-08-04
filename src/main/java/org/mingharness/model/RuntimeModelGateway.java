@@ -12,7 +12,7 @@ import java.util.function.Consumer;
 
 /**
  * 按 Run 所属用户动态选择演示模型或用户配置的 OpenAI 兼容供应商。
- * 默认配置仍来自环境变量，控制台保存的配置只影响该租户/用户的新执行。
+ * 默认配置仍来自环境变量，控制台保存的配置只影响该组织/用户的新执行。
  */
 @Component
 public class RuntimeModelGateway implements ModelGateway {

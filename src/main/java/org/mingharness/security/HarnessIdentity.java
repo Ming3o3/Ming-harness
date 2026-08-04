@@ -3,7 +3,7 @@ package org.mingharness.security;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-/** 当前请求经过认证后的租户、用户和权限快照。 */
+/** 当前请求经过认证后的组织、用户和权限快照。 */
 public record HarnessIdentity(
         String tenantId,
         String userId,

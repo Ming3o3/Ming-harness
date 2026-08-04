@@ -40,7 +40,7 @@ class ContextServiceTests {
         contextService.createDocument("tenant-a", "owner", new CreateDocumentRequest(
                 "私有规则", "只有 other 可以看到的订单规则", "INTERNAL", "other"));
         contextService.createDocument("tenant-b", "owner", new CreateDocumentRequest(
-                "其他租户", "订单规则不能跨租户读取", "INTERNAL", "operator"));
+                "其他组织", "订单规则不能跨组织读取", "INTERNAL", "operator"));
 
         ContextResult result = contextBuilder.build("tenant-a", "operator", "订单规则", 4_000);
 

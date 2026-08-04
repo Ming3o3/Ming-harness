@@ -44,7 +44,7 @@ public class RunEventStreamService {
         this.subscriberPermits = new Semaphore(this.maxSubscribers);
     }
 
-    /** 创建订阅前先执行既有租户校验，跨租户请求不会得到连接或任务存在性信息。 */
+    /** 创建订阅前先执行既有组织校验，跨组织请求不会得到连接或任务存在性信息。 */
     public SseEmitter subscribe(String runId, String tenantId) {
         RunDetail initial = runService.getDetail(runId, tenantId);
         // size() 不是并发配额原语；用信号量确保同时建立连接时也不会突破实例上限。

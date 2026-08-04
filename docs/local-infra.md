@@ -63,7 +63,7 @@ SPRING_PROFILES_ACTIVE=local-infra \
 ./mvnw spring-boot:run
 ```
 
-`local-infra` 启动时会执行 Flyway 迁移，创建 Run、Step、审计、上下文、评测、Outbox 和租户资源策略表，并声明 RabbitMQ 主队列和死信队列。
+`local-infra` 启动时会执行 Flyway 迁移，创建 Run、Step、审计、上下文、评测、Outbox 和组织资源策略表，并声明 RabbitMQ 主队列和死信队列。
 Outbox Relay 会先在 PostgreSQL 中抢占短期发布租约，再在租约外等待 RabbitMQ 发布确认；多实例不会同时发送同一条待处理事件。进程在确认前中断时，租约到期后允许重新投递，Run 执行锁负责去重。当同一事件达到 `RABBITMQ_MAX_ATTEMPTS` 仍无法获得发布确认时，Outbox 会进入 `FAILED`，对应 Run 会在带行锁的短事务中立即落为 `FAILED`，并追加 `RUN_DISPATCH_FAILED` 审计事件，不再等待 Worker 租约超时后才让用户看到失败。
 
 Rabbit Worker 的模型和工具调用在数据库事务之外执行；领取租约、步骤开始/完成、心跳、审计和终态写回分别是短事务。每个步骤前后都会续租 Redis 锁并刷新 PostgreSQL Worker 租约，旧 Worker 丢失所有权后不能覆盖新 Worker 或取消操作的结果。Worker 执行锁会自动使用不小于 `RECOVERY_TIMEOUT_MS` 的租期，避免数据库恢复器在一个受控长步骤期间过早回收 Run。
@@ -87,7 +87,7 @@ export RABBITMQ_QUEUE_METRICS_POLL_MS=5000
 
 恢复器每 30 秒扫描一次过期 Worker 租约；候选 Run 使用 PostgreSQL/H2 悲观行锁读取，等待正在提交的 Worker 后重新判断状态，避免多实例恢复器把已经成功的结果覆盖为 `TIMED_OUT`。恢复操作会追加带 HMAC 的 `RUN_RECOVERED_AS_TIMED_OUT` 审计事件；`RECOVERY_TIMEOUT_MS` 默认 120 秒，生产环境应结合最长模型/工具调用和告警延迟设置。
 
-取消 RUNNING 任务时，应用会先写入带租户范围、自动过期的 Redis 协作信号；Worker 会在每个步骤边界检查该信号，再检查 PostgreSQL 中的最终 Run 状态。这样即使 Worker 长事务暂时占用 Run 行，取消请求也能先让 Worker 停止后续步骤并释放锁。已开始的外部工具调用不能被安全地强制中断，因此仍应为工具配置超时、幂等键和可取消协议；Redis 不可用时取消接口会明确返回基础设施错误，不会静默降级。
+取消 RUNNING 任务时，应用会先写入带组织范围、自动过期的 Redis 协作信号；Worker 会在每个步骤边界检查该信号，再检查 PostgreSQL 中的最终 Run 状态。这样即使 Worker 长事务暂时占用 Run 行，取消请求也能先让 Worker 停止后续步骤并释放锁。已开始的外部工具调用不能被安全地强制中断，因此仍应为工具配置超时、幂等键和可取消协议；Redis 不可用时取消接口会明确返回基础设施错误，不会静默降级。
 
 如果使用真实模型服务，建议同时设置供应商可靠性和成本参数：
 
@@ -115,7 +115,7 @@ export HARNESS_AUTH_MODE=api-key
 export HARNESS_API_KEYS='demo-key|tenant-demo|operator|run.read,run.create,run.execute,run.approve,run.cancel,audit.read,context.read,context.write,evaluation.read,evaluation.run,tool.read,ops.read,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage'
 ```
 
-调用时使用 `Authorization: Bearer demo-key`。API Key 绑定的租户和用户会覆盖请求头，Run 创建请求中的 `tenantId/userId` 必须与认证身份一致。默认 `local` 模式仍兼容 `X-Tenant-Id`、`X-User-Id` 和 `X-Permissions`，仅适合本地演示。
+调用时使用 `Authorization: Bearer demo-key`。API Key 绑定的组织和用户会覆盖请求头，Run 创建请求中的 `tenantId/userId` 必须与认证身份一致。默认 `local` 模式仍兼容 `X-Tenant-Id`、`X-User-Id` 和 `X-Permissions`，仅适合本地演示。
 
 `HARNESS_API_KEYS` 适合作为初始运维密钥；它们来自启动配置，撤销需要替换密钥系统配置并重启。共享环境应使用该初始密钥（或具备 `auth.key.manage` 的 OIDC 服务账号）创建可即时撤销的数据库 Key，明文仅在响应中显示一次：
 
@@ -126,11 +126,11 @@ curl -X POST http://localhost:8080/api/admin/api-keys \
   -d '{"tenantId":"tenant-demo","userId":"analyst","permissions":["run.read","run.create","run.execute"],"expiresAt":"2027-01-01T00:00:00Z"}'
 ```
 
-保存响应中的 `secret` 后，可用 `GET /api/admin/api-keys` 查看前缀、状态和过期时间；使用 `POST /api/admin/api-keys/{keyId}/rotate` 会原子创建同权限新 Key 并立即使旧 Key 失效，`DELETE /api/admin/api-keys/{keyId}` 也可以直接撤销。创建或轮换响应之外，API、数据库、日志和审计均不会返回完整 Key 或摘要。查询需要 `auth.key.read`，创建/轮换/撤销需要 `auth.key.manage`，跨租户操作另需 `auth.key.cross-tenant`。
+保存响应中的 `secret` 后，可用 `GET /api/admin/api-keys` 查看前缀、状态和过期时间；使用 `POST /api/admin/api-keys/{keyId}/rotate` 会原子创建同权限新 Key 并立即使旧 Key 失效，`DELETE /api/admin/api-keys/{keyId}` 也可以直接撤销。创建或轮换响应之外，API、数据库、日志和审计均不会返回完整 Key 或摘要。查询需要 `auth.key.read`，创建/轮换/撤销需要 `auth.key.manage`，跨组织操作另需 `auth.key.cross-tenant`。
 
-### 租户级资源治理
+### 组织级资源治理
 
-平台环境变量定义所有租户都不能突破的硬上限。拥有 `tenant.policy.read`/`tenant.policy.write` 权限的身份可以通过管理接口为自己的租户设置更严格的活动 Run 数、步骤数、输入长度、单次预算、创建速率和工具白名单；跨租户运维还需要额外的 `tenant.policy.cross-tenant` 权限。未配置覆盖策略的租户自动使用平台默认值。工具白名单为空表示允许所有已注册工具，非空时 Run 创建阶段会在任何执行前拒绝未列出的工具。
+平台环境变量定义所有组织都不能突破的硬上限。拥有 `tenant.policy.read`/`tenant.policy.write` 权限的身份可以通过管理接口为自己的组织设置更严格的活动 Run 数、步骤数、输入长度、单次预算、创建速率和工具白名单；跨组织运维还需要额外的 `tenant.policy.cross-tenant` 权限。未配置覆盖策略的组织自动使用平台默认值。工具白名单为空表示允许所有已注册工具，非空时 Run 创建阶段会在任何执行前拒绝未列出的工具。
 
 ```bash
 curl -X PUT http://localhost:8080/api/admin/tenants/tenant-demo/policy \
@@ -139,7 +139,7 @@ curl -X PUT http://localhost:8080/api/admin/tenants/tenant-demo/policy \
   -d '{"maxActiveRuns":5,"maxStepsPerRun":10,"maxInputLength":5000,"maxBudget":50,"maxCreatesPerMinute":20,"allowedTools":["demo.echo"]}'
 ```
 
-`GET /api/admin/tenants/{tenantId}/policy` 查看当前生效策略，`DELETE` 恢复平台默认值，`GET .../policy/audits` 查看最近策略变更。策略变更与前后数值会单独留痕；策略只能收紧平台硬上限，不会因为租户配置错误而突破系统容量边界。
+`GET /api/admin/tenants/{tenantId}/policy` 查看当前生效策略，`DELETE` 恢复平台默认值，`GET .../policy/audits` 查看最近策略变更。策略变更与前后数值会单独留痕；策略只能收紧平台硬上限，不会因为组织配置错误而突破系统容量边界。
 
 企业 OIDC/JWT：
 
@@ -151,7 +151,7 @@ export AUDIT_INTEGRITY_KEY='由密钥系统注入的长随机字符串'
 ./mvnw spring-boot:run
 ```
 
-JWT 必须包含 `sub`、`tenant_id`（或 `tenant`）以及配置的 `aud`（`OIDC_AUDIENCE`，多个值逗号分隔），权限可放在 `permissions`、`scope` 或 `scp` 声明中。Spring Security Resource Server 负责 JWT 验签及 issuer/audience 校验，Harness 负责租户绑定和接口 RBAC。未配置 audience 时 OIDC 模式会快速失败，不允许无受众保护地上线。
+JWT 必须包含 `sub`、`tenant_id`（或 `tenant`）以及配置的 `aud`（`OIDC_AUDIENCE`，多个值逗号分隔），权限可放在 `permissions`、`scope` 或 `scp` 声明中。Spring Security Resource Server 负责 JWT 验签及 issuer/audience 校验，Harness 负责组织绑定和接口 RBAC。未配置 audience 时 OIDC 模式会快速失败，不允许无受众保护地上线。
 
 审计完整性密钥通过 `AUDIT_INTEGRITY_KEY` 注入。审计查询接口之外，还可以校验指定 Run：
 

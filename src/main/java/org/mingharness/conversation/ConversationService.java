@@ -338,7 +338,7 @@ public class ConversationService {
                 "幂等键已经用于其他对话消息");
     }
 
-    /** 领取尚未绑定的附件，防止跨租户、跨会话或跨消息复用。 */
+    /** 领取尚未绑定的附件，防止跨组织、跨会话或跨消息复用。 */
     private List<ConversationAttachment> loadPendingAttachments(Conversation conversation,
                                                                  String tenantId, String userId,
                                                                  List<String> attachmentIds) {

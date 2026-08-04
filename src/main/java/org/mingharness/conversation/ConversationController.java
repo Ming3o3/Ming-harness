@@ -27,7 +27,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
-/** 面向 Vue 聊天工作台的会话接口，身份和租户边界复用现有适配器。 */
+/** 面向 Vue 聊天工作台的会话接口，身份和组织边界复用现有适配器。 */
 @RestController
 @RequestMapping("/api/conversations")
 public class ConversationController {

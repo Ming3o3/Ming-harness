@@ -109,7 +109,7 @@ public class ApiKeyManagementController {
     private void assertTenantScope(HarnessIdentity identity, String targetTenant) {
         if (!identity.tenantId().equals(targetTenant)
                 && !identity.hasPermission("auth.key.cross-tenant")) {
-            throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_SCOPE_DENIED", "当前身份无权管理其他租户的 API Key");
+            throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_SCOPE_DENIED", "当前身份无权管理其他组织的 API Key");
         }
     }
 }

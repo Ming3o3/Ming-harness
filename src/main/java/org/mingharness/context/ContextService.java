@@ -83,7 +83,7 @@ public class ContextService {
 
     private void assertTenant(String actualTenantId, String expectedTenantId) {
         if (expectedTenantId == null || !expectedTenantId.equals(actualTenantId)) {
-            throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_ACCESS_DENIED", "无权访问其他租户的上下文数据");
+            throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_ACCESS_DENIED", "无权访问其他组织的上下文数据");
         }
     }
 }

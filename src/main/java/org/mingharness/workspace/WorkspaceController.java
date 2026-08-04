@@ -38,7 +38,7 @@ public class WorkspaceController {
         return workspaceStatusService.status();
     }
 
-    /** 只读项目浏览器：workspaceId 来自当前会话，服务端会再次校验租户和用户归属。 */
+    /** 只读项目浏览器：workspaceId 来自当前会话，服务端会再次校验组织和用户归属。 */
     @GetMapping("/files")
     public WorkspaceExplorerView files(@RequestParam(required = false) String workspaceId,
                                        @RequestParam(defaultValue = ".") String path) {

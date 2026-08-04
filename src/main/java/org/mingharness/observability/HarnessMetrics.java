@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
-/** Harness 运行指标，避免把租户 ID 等高基数字段作为标签。 */
+/** Harness 运行指标，避免把组织 ID 等高基数字段作为标签。 */
 @Component
 public class HarnessMetrics {
 

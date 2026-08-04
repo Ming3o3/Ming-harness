@@ -17,7 +17,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** 验证 Redis 租户配额锁的 key 约定和故障快速失败行为。 */
+/** 验证 Redis 组织配额锁的 key 约定和故障快速失败行为。 */
 class RedisTenantRunQuotaGuardTests {
 
     @Test

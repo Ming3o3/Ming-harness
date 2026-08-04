@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.function.Supplier;
 
-/** 使用 Redis SET NX 为多实例活动 Run 配额检查提供租户级互斥。 */
+/** 使用 Redis SET NX 为多实例活动 Run 配额检查提供组织级互斥。 */
 @Component
 @ConditionalOnProperty(prefix = "harness.redis", name = "enabled", havingValue = "true")
 public class RedisTenantRunQuotaGuard implements TenantRunQuotaGuard {
@@ -33,7 +33,7 @@ public class RedisTenantRunQuotaGuard implements TenantRunQuotaGuard {
     @Override
     public <T> T withLock(String tenantId, Supplier<T> action) {
         if (tenantId == null || tenantId.isBlank()) {
-            throw new IllegalArgumentException("租户不能为空");
+            throw new IllegalArgumentException("组织不能为空");
         }
         String key = "harness:tenant:" + tenantId + ":run-quota-lock";
         String token = UUID.randomUUID().toString();
@@ -59,7 +59,7 @@ public class RedisTenantRunQuotaGuard implements TenantRunQuotaGuard {
                 }
                 if (System.nanoTime() >= deadline) {
                     throw new BusinessException(HttpStatus.TOO_MANY_REQUESTS, "TENANT_QUOTA_BUSY",
-                            "租户运行配额正在由其他请求更新，请稍后重试");
+                            "组织运行配额正在由其他请求更新，请稍后重试");
                 }
                 Thread.sleep(10);
             }
@@ -68,10 +68,10 @@ public class RedisTenantRunQuotaGuard implements TenantRunQuotaGuard {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new BusinessException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "TENANT_QUOTA_COORDINATION_INTERRUPTED", "租户运行配额协调被中断");
+                    "TENANT_QUOTA_COORDINATION_INTERRUPTED", "组织运行配额协调被中断");
         } catch (Exception exception) {
             throw new BusinessException(HttpStatus.SERVICE_UNAVAILABLE,
-                    "TENANT_QUOTA_COORDINATION_UNAVAILABLE", "Redis 租户配额协调不可用，请稍后重试");
+                    "TENANT_QUOTA_COORDINATION_UNAVAILABLE", "Redis 组织配额协调不可用，请稍后重试");
         }
     }
 

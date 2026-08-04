@@ -520,7 +520,7 @@ public class RunExecutionStateService {
 
     private void assertTenant(Run run, String tenantId) {
         if (tenantId == null || tenantId.isBlank() || !run.getTenantId().equals(tenantId)) {
-            throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_ACCESS_DENIED", "无权访问其他租户的执行任务");
+            throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_ACCESS_DENIED", "无权访问其他组织的执行任务");
         }
     }
 
@@ -558,7 +558,7 @@ public class RunExecutionStateService {
         int missing = Math.max(0, calls.size() - existing.size());
         if (run.getSteps().size() + missing > maxSteps) {
             throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "AGENT_STEP_LIMIT_EXCEEDED",
-                    "Agent 动态步骤超过租户运行上限");
+                    "Agent 动态步骤超过组织运行上限");
         }
         int nextSequence = run.getSteps().stream().mapToInt(Step::getSequence).max().orElse(0) + 1;
         Map<String, Step> planned = new HashMap<>();

@@ -53,7 +53,7 @@ public class GlobalExceptionHandler {
         return jsonResponse(HttpStatus.BAD_REQUEST, response);
     }
 
-    /** 并发修改带版本字段的运行或租户策略时，要求客户端重新读取后再提交，不能伪装成服务故障。 */
+    /** 并发修改带版本字段的运行或组织策略时，要求客户端重新读取后再提交，不能伪装成服务故障。 */
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
     public ResponseEntity<ErrorResponse> handleOptimisticLockingFailure(
             ObjectOptimisticLockingFailureException exception) {

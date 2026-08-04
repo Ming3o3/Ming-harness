@@ -24,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 验证租户策略默认值、平台硬上限、审计留痕以及 Run 创建链路的实际约束。 */
+/** 验证组织策略默认值、平台硬上限、审计留痕以及 Run 创建链路的实际约束。 */
 @SpringBootTest
 class TenantPolicyServiceTests {
 

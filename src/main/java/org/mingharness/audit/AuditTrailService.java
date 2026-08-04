@@ -46,7 +46,7 @@ public class AuditTrailService {
         Run run = runRepository.findByIdForAuditUpdate(event.getRunId())
                 .orElseThrow(() -> new IllegalArgumentException("审计事件关联的 Run 不存在"));
         if (!Objects.equals(run.getTenantId(), event.getTenantId())) {
-            throw new IllegalArgumentException("审计事件租户与 Run 不一致");
+            throw new IllegalArgumentException("审计事件组织与 Run 不一致");
         }
         long sequence = run.getAuditEventCount() + 1;
         String previousHash = run.getAuditHeadHash() == null ? GENESIS_HASH : run.getAuditHeadHash();

@@ -216,7 +216,7 @@ public class RunService {
         String idempotencyKey = normalizeIdempotencyKey(request.idempotencyKey());
         return tenantRunQuotaGuard.withLock(request.tenantId(), () -> {
             TenantPolicyLimits tenantLimits = tenantPolicyService.limitsFor(request.tenantId());
-            // 幂等查询必须与配额计数处于同一个租户互斥区，避免并发重复创建或误占用配额。
+            // 幂等查询必须与配额计数处于同一个组织互斥区，避免并发重复创建或误占用配额。
             if (idempotencyKey != null) {
                 Optional<Run> existing = runRepository.findByTenantIdAndIdempotencyKey(
                         request.tenantId(), idempotencyKey);
@@ -230,7 +230,7 @@ public class RunService {
             }
             if (!effectiveAgentMode && !tenantLimits.allowsTool(effectiveToolName)) {
                 throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_TOOL_NOT_ALLOWED",
-                        "当前租户策略不允许使用工具: " + effectiveToolName);
+                        "当前组织策略不允许使用工具: " + effectiveToolName);
             }
             // 参数/配额校验失败的请求不应消耗 Redis 或内存速率桶中的合法创建额度。
             validateRuntimeLimits(request, tenantLimits);
@@ -262,7 +262,7 @@ public class RunService {
             }
             if (run.getSteps().size() > tenantLimits.maxStepsPerRun()) {
                 throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "STEP_LIMIT_EXCEEDED",
-                        "任务步骤数超过租户运行上限");
+                        "任务步骤数超过组织运行上限");
             }
             Run saved = runRepository.save(run);
             metrics.runCreated();
@@ -302,7 +302,7 @@ public class RunService {
     }
 
     /**
-     * 按租户分页查询 Run，供历史控制台和外部调用方避免一次加载全部记录。
+     * 按组织分页查询 Run，供历史控制台和外部调用方避免一次加载全部记录。
      *
      * <p>保留旧的 {@link #list(String)} 接口用于兼容已有控制台；分页接口使用
      * createdAt 和 id 的稳定倒序排序，避免同一创建时间的记录在翻页时抖动。</p>
@@ -346,7 +346,7 @@ public class RunService {
 
     @Transactional
     public void cancel(String runId, String tenantId) {
-        // 先写入租户绑定的短期信号；即使数据库行正被 Worker 锁定，也能让它在步骤边界停止。
+        // 先写入组织绑定的短期信号；即使数据库行正被 Worker 锁定，也能让它在步骤边界停止。
         cancellationSignal.request(runId, tenantId, Duration.ofMillis(runtimeLimits.recoveryTimeoutMs()));
         // 悲观锁查询会在 Worker 释放行锁后读取最新 version，避免取消与步骤完成发生乐观锁竞态。
         Run run = runRepository.findByIdForCancelUpdate(runId).orElseThrow(() ->
@@ -830,7 +830,7 @@ public class RunService {
         TenantPolicyLimits limits = tenantPolicyService.limitsFor(run.getTenantId());
         if (run.getSteps().size() + calls.size() > limits.maxStepsPerRun()) {
             throw new BusinessException(HttpStatus.UNPROCESSABLE_ENTITY, "STEP_LIMIT_EXCEEDED",
-                    "Agent 动态步骤超过租户运行上限");
+                    "Agent 动态步骤超过组织运行上限");
         }
         Map<String, Step> reusable = previousSuccessfulTools(run, modelStep);
         if (!reusable.isEmpty() && calls.stream()
@@ -1521,7 +1521,7 @@ public class RunService {
 
     private void assertTenant(Run run, String tenantId) {
         if (tenantId == null || tenantId.isBlank() || !run.getTenantId().equals(tenantId)) {
-            throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_ACCESS_DENIED", "无权访问其他租户的执行任务");
+            throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_ACCESS_DENIED", "无权访问其他组织的执行任务");
         }
     }
 
@@ -1589,7 +1589,7 @@ public class RunService {
                 request.tenantId(), List.of(RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.WAITING_APPROVAL));
         if (activeRuns >= tenantLimits.maxActiveRuns()) {
             throw new BusinessException(HttpStatus.TOO_MANY_REQUESTS, "TENANT_RUN_QUOTA_EXCEEDED",
-                    "租户当前运行数已达到上限");
+                    "组织当前运行数已达到上限");
         }
     }
 
@@ -1638,7 +1638,7 @@ public class RunService {
                 .collect(Collectors.toUnmodifiableSet());
     }
 
-    /** 只把当前租户和当前执行身份都可使用的工具契约发给模型，避免模型反复请求必然被拒绝的工具。 */
+    /** 只把当前组织和当前执行身份都可使用的工具契约发给模型，避免模型反复请求必然被拒绝的工具。 */
     private List<ModelToolDefinition> availableModelTools(String tenantId, Set<String> grantedPermissions) {
         TenantPolicyLimits limits = tenantPolicyService.limitsFor(tenantId);
         Set<String> permissions = grantedPermissions == null ? Set.of() : grantedPermissions;
@@ -1651,7 +1651,7 @@ public class RunService {
                 .toList();
     }
 
-    /** 模型提出的工具调用先做注册表、租户白名单和 JSON Schema 校验，再进入持久化流程。 */
+    /** 模型提出的工具调用先做注册表、组织白名单和 JSON Schema 校验，再进入持久化流程。 */
     private void validateAgentToolCalls(RunExecutionStateService.RunExecutionSnapshot run,
                                         List<ModelToolCall> calls) {
         if (calls == null) return;
@@ -1662,7 +1662,7 @@ public class RunService {
             ToolDefinition definition = tool.definition();
             if (!limits.allowsTool(call.name())) {
                 throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_TOOL_NOT_ALLOWED",
-                        "当前租户策略不允许使用工具: " + call.name());
+                        "当前组织策略不允许使用工具: " + call.name());
             }
             if (!tool.available()) {
                 throw new BusinessException(HttpStatus.SERVICE_UNAVAILABLE, "AGENT_TOOL_UNAVAILABLE",

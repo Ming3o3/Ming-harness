@@ -17,9 +17,9 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 租户运行资源策略管理接口。
+ * 组织运行资源策略管理接口。
  *
- * <p>默认仅能管理自身租户；跨租户运维必须同时拥有普通读写权限和
+ * <p>默认仅能管理自身组织；跨组织运维必须同时拥有普通读写权限和
  * {@code tenant.policy.cross-tenant} 权限，避免一个客户的 API Key 修改其他客户配额。</p>
  */
 @RestController
@@ -62,7 +62,7 @@ public class TenantPolicyController {
         if (!identity.tenantId().equals(tenantId)
                 && !identity.hasPermission("tenant.policy.cross-tenant")) {
             throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_POLICY_SCOPE_DENIED",
-                    "当前身份无权管理其他租户的资源策略");
+                    "当前身份无权管理其他组织的资源策略");
         }
         return identity;
     }

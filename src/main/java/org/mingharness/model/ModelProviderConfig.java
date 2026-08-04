@@ -11,7 +11,7 @@ import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.UUID;
 
-/** 按租户和用户隔离的模型供应商配置；API Key 只保存密文和不可逆掩码。 */
+/** 按组织和用户隔离的模型供应商配置；API Key 只保存密文和不可逆掩码。 */
 @Entity
 @Table(name = "harness_model_provider_configs", indexes = {
         @Index(name = "idx_harness_model_provider_configs_owner_updated",

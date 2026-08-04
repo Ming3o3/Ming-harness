@@ -7,7 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 import java.util.Set;
 
-/** 租户资源策略的完整替换请求；数值只能收紧，不能突破平台全局硬上限。 */
+/** 组织资源策略的完整替换请求；数值只能收紧，不能突破平台全局硬上限。 */
 public record TenantPolicyRequest(
         @Min(value = 1, message = "最大活动 Run 数必须大于 0") int maxActiveRuns,
         @Min(value = 1, message = "单次最大步骤数必须大于 0") int maxStepsPerRun,

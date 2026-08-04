@@ -72,7 +72,7 @@ public class RunController {
             permissions = identity.permissionsCsv();
         }
         if (!tenantId.equals(request.tenantId())) {
-            throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_ACCESS_DENIED", "请求租户与当前租户不一致");
+            throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_ACCESS_DENIED", "请求组织与当前组织不一致");
         }
         if (!identity.userId().equals(request.userId())) {
             throw new BusinessException(HttpStatus.FORBIDDEN, "USER_ACCESS_DENIED", "请求用户与当前认证用户不一致");

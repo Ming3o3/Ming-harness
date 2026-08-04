@@ -18,7 +18,7 @@ import java.util.List;
 /**
  * 将 API Key 身份桥接到 Spring Security，仅用于 Actuator 管理端点。
  *
- * <p>业务 API 仍由 HarnessIdentityInterceptor 绑定租户和用户；Actuator Endpoint
+ * <p>业务 API 仍由 HarnessIdentityInterceptor 绑定组织和用户；Actuator Endpoint
  * 不一定经过 MVC HandlerInterceptor，因此必须在 Security Filter 层完成 ops.read 授权。</p>
  */
 public class HarnessApiKeyManagementFilter extends OncePerRequestFilter {

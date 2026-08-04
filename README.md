@@ -13,9 +13,9 @@ Ming Harness 是一个面向企业 Agent 的可运行 Harness：后端使用 Spr
 | 模型访问 | Spring `RestClient`、OpenAI 兼容 Chat Completions API | 对接演示模型或外部模型供应商，支持重试、熔断、备用供应商和成本统计 |
 | 持久化 | Spring Data JPA、Hibernate、H2、PostgreSQL 17 | 保存 Run、Step、会话、上下文、审计、评测和 Outbox 等业务数据；H2 用于本地演示，PostgreSQL 用于基础设施模式 |
 | 数据库迁移 | Flyway | 以 `src/main/resources/db/migration` 中的版本脚本管理表结构演进，并可启用 PostgreSQL `pgvector` 扩展 |
-| 缓存与分布式治理 | Redis、Spring Data Redis | 跨实例限流、租户活动 Run 配额、执行锁和取消协作信号；不保存业务正文 |
+| 缓存与分布式治理 | Redis、Spring Data Redis | 跨实例限流、组织活动 Run 配额、执行锁和取消协作信号；不保存业务正文 |
 | 异步消息 | RabbitMQ、Spring AMQP、Outbox、死信队列 | 解耦 Run 投递与 Worker 执行，支持发布租约、重试、背压和失败恢复 |
-| 安全 | Spring Security、OAuth2 Resource Server、OIDC/JWT、API Key、RBAC | 支持本地演示身份、API Key 和企业 OIDC，执行租户隔离、接口权限和工作区审批控制 |
+| 安全 | Spring Security、OAuth2 Resource Server、OIDC/JWT、API Key、RBAC | 支持本地演示身份、API Key 和企业 OIDC，执行组织隔离、接口权限和工作区审批控制 |
 | 可观测性 | Spring Boot Actuator、Micrometer、Prometheus、`X-Request-Id` / `X-Trace-Id` | 提供健康探针、运行指标、请求关联追踪以及 Run/Step 级耗时、Token 和成本观测 |
 | 前端 | Vue 3.5、JavaScript ES Modules、Vite 8.1 | 构建聊天工作台、Run 控制台、审批审计、上下文管理和评测页面；开发服务器代理 `/api` 到后端 |
 | 前端增强 | Monaco Editor、Markdown-it、highlight.js、Lucide Vue | 提供代码/JSON 编辑预览、Markdown 渲染、代码高亮和界面图标 |
@@ -31,15 +31,15 @@ Ming Harness 是一个面向企业 Agent 的可运行 Harness：后端使用 Spr
 ## 已实现模块
 
 - Run / Step 持久化状态机：`QUEUED -> RUNNING -> WAITING_APPROVAL -> SUCCEEDED / REJECTED / FAILED / TIMED_OUT / CANCELLED`；Agent 的 `REJECTED` 工具步骤会携带人工意见进入下一轮模型
-- 幂等与资源边界：支持 `Idempotency-Key`、租户活动 Run 配额、创建速率、输入/预算/步骤数限制
+- 幂等与资源边界：支持 `Idempotency-Key`、组织活动 Run 配额、创建速率、输入/预算/步骤数限制
 - 可插拔模型网关：默认演示模型，也支持 OpenAI 兼容的 `/chat/completions` 接口
 - 工具注册表与确定性策略：权限、风险、审批、网络策略、超时和输入校验
 - 受控代码工作区工具：目录浏览、UTF-8 文件读取、文本搜索、带哈希并发保护的原子写入和白名单命令沙箱
-- 审计与观测：Run `traceId`、Step `spanId`、Token、耗时、成本和租户/操作者快照，审计事件支持 HMAC 完整性校验
-- 租户隔离：读写 Run、Step、审计事件都需要 `X-Tenant-Id`
-- 可插拔认证与 RBAC：`local` 兼容演示请求头，`api-key` 和 `oidc` 支持租户、用户和接口权限快照
+- 审计与观测：Run `traceId`、Step `spanId`、Token、耗时、成本和组织/操作者快照，审计事件支持 HMAC 完整性校验
+- 组织隔离：读写 Run、Step、审计事件都需要 `X-Tenant-Id`
+- 可插拔认证与 RBAC：`local` 兼容演示请求头，`api-key` 和 `oidc` 支持组织、用户和接口权限快照
 - 失败重试：只读工具可用 `RetryableToolException` 触发有限自动重试；有副作用的工具禁止自动重试，人工重试前会重新走审批
-- 协作式取消：取消请求先写入租户绑定的短期协调信号，Worker 会在每个步骤和最终完成前检查，避免长步骤后的后续副作用继续执行
+- 协作式取消：取消请求先写入组织绑定的短期协调信号，Worker 会在每个步骤和最终完成前检查，避免长步骤后的后续副作用继续执行
 - 上下文与记忆：授权文档检索、引用来源、过期记忆、删除和敏感凭证拦截
 - 敏感数据治理：Run、Step、审计、模型、工具和上下文边界统一凭证脱敏，长期记忆拒绝写入疑似凭证
 - 数据保留策略：终态 Run 与审计链原子清理，过期记忆/文档/评测和已完成 Outbox 定时删除，待投递消息不自动删除
@@ -98,11 +98,11 @@ npm run dev
 | `MODEL_OUTPUT_COST_PER_1K_TOKENS` | `0` | 输出每 1000 token 成本，按实际 usage 计算 |
 | `MODEL_MAX_RESPONSE_CHARS` | `100000` | 单次模型响应正文上限 |
 | `MODEL_TIMEOUT_MS` | `30000` | 模型调用超时；前端连接测试会使用不超过 10 秒的快速边界 |
-| `MAX_ACTIVE_RUNS_PER_TENANT` | `20` | 平台单租户活动 Run 硬上限；可通过租户策略进一步收紧 |
-| `MAX_STEPS_PER_RUN` | `1000` | 平台单次 Run 的动态步骤硬上限；可通过租户策略进一步收紧 |
-| `MAX_CREATES_PER_MINUTE` | `60` | 平台单租户每分钟创建 Run 硬上限；可通过租户策略进一步收紧 |
-| `MAX_INPUT_LENGTH` | `10000` | 平台单次输入字符硬上限；可通过租户策略进一步收紧 |
-| `MAX_RUN_BUDGET` | `1000` | 平台单次 Run 预算硬上限；可通过租户策略进一步收紧 |
+| `MAX_ACTIVE_RUNS_PER_TENANT` | `20` | 平台单组织活动 Run 硬上限；可通过组织策略进一步收紧 |
+| `MAX_STEPS_PER_RUN` | `1000` | 平台单次 Run 的动态步骤硬上限；可通过组织策略进一步收紧 |
+| `MAX_CREATES_PER_MINUTE` | `60` | 平台单组织每分钟创建 Run 硬上限；可通过组织策略进一步收紧 |
+| `MAX_INPUT_LENGTH` | `10000` | 平台单次输入字符硬上限；可通过组织策略进一步收紧 |
+| `MAX_RUN_BUDGET` | `1000` | 平台单次 Run 预算硬上限；可通过组织策略进一步收紧 |
 | `MAX_CONTEXT_CHARS` | `64000` | 注入模型的上下文最大字符数 |
 | `RECOVERY_TIMEOUT_MS` | `120000` | Worker 中断后将 RUNNING 任务转为超时的阈值 |
 | `MAX_TOOL_ATTEMPTS` | `3` | 单个只读工具的自动重试次数上限，副作用工具固定为 1 |
@@ -131,7 +131,7 @@ npm run dev
 | `DOCUMENT_RETENTION_DAYS` | `30` | 已删除知识文档的保留天数 |
 | `EVALUATION_RETENTION_DAYS` | `90` | 评测报告保留天数 |
 | `OUTBOX_RETENTION_DAYS` | `14` | 已发布/最终失败 Outbox 保留天数，`PENDING` 永不自动清理 |
-| `TENANT_POLICY_AUDIT_RETENTION_DAYS` | `365` | 租户资源策略变更审计保留天数 |
+| `TENANT_POLICY_AUDIT_RETENTION_DAYS` | `365` | 组织资源策略变更审计保留天数 |
 | `API_KEY_AUDIT_RETENTION_DAYS` | `365` | 数据库 API Key 生命周期审计保留天数 |
 | `RETENTION_BATCH_SIZE` | `100` | 每轮最多清理的终态 Run 数量 |
 | `SPRING_PROFILES_ACTIVE` | `local` | `local`、`local-infra`，可组合 `oidc` |
@@ -139,7 +139,7 @@ npm run dev
 | `EVALUATION_WAIT_TIMEOUT_MS` | `120000` | Rabbit 异步评测等待单个 Run 到终态的最长时间；超时记录当前状态并继续后续用例 |
 | `EVALUATION_POLL_INTERVAL_MS` | `250` | Rabbit 异步评测查询 Run 状态的间隔，不能小于 1 毫秒 |
 | `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | Redis 连接参数 |
-| `REDIS_LOCK_TTL_MS` | `30000` | Redis 执行锁和租户配额锁基础租约；Worker 执行锁会自动取不小于 `RECOVERY_TIMEOUT_MS` 的时长，不能低于 1000 毫秒 |
+| `REDIS_LOCK_TTL_MS` | `30000` | Redis 执行锁和组织配额锁基础租约；Worker 执行锁会自动取不小于 `RECOVERY_TIMEOUT_MS` 的时长，不能低于 1000 毫秒 |
 | `REDIS_QUOTA_LOCK_WAIT_MS` | `1000` | 活动 Run 配额锁等待时长；Redis 不可用时快速失败 |
 | `RABBITMQ_HOST` / `RABBITMQ_PORT` | `localhost` / `5672` | RabbitMQ 连接参数 |
 | `OUTBOX_CLAIM_LEASE_MS` | `30000` | Outbox Relay 发布租约时长；实例中断后过期租约可被其他实例接管 |
@@ -153,7 +153,7 @@ npm run dev
 
 ### 控制台模型设置
 
-聊天工作台和运行控制台都提供“模型设置”入口。用户可以输入 OpenAI 兼容 API 地址、模型名称和 API Key；保存后只影响当前租户/用户创建的新 Run，用户覆盖配置会在 Run 创建时固化供应商快照，因此正在排队、审批或执行的 Run 不会被中途切换。后端通过 `GET/PUT/DELETE /api/model-config` 管理设置，API Key 使用 AES-GCM 加密保存，读取接口只返回掩码，不写入浏览器 localStorage。使用 api-key/OIDC 认证时，当前身份需要 `model.configure` 权限。
+聊天工作台和运行控制台都提供“模型设置”入口。用户可以输入 OpenAI 兼容 API 地址、模型名称和 API Key；保存后只影响当前组织/用户创建的新 Run，用户覆盖配置会在 Run 创建时固化供应商快照，因此正在排队、审批或执行的 Run 不会被中途切换。后端通过 `GET/PUT/DELETE /api/model-config` 管理设置，API Key 使用 AES-GCM 加密保存，读取接口只返回掩码，不写入浏览器 localStorage。使用 api-key/OIDC 认证时，当前身份需要 `model.configure` 权限。
 
 聊天和运行控制台都支持 `⌘/Ctrl + K` 命令面板，可搜索并执行新建对话、聚焦输入框、打开项目文件、查看当前 Run、模型设置、工作台切换和主题切换等操作；面板会根据当前会话和权限自动隐藏不可用命令。
 
@@ -161,11 +161,11 @@ npm run dev
 
 ### API Key / OIDC 认证
 
-生产或共享环境建议设置 `HARNESS_AUTH_MODE=api-key`。调用方使用 `Authorization: Bearer <key>` 或 `X-Api-Key`，服务端根据配置或数据库凭证将请求绑定到固定租户和用户，并按接口校验权限，例如 `run.read`、`run.create`、`run.execute`、`run.approve`、`context.read`、`context.write`、`audit.read`、`evaluation.run`、`tool.read`、`model.configure` 和 `ops.read`。工作区读取工具还需要 `workspace.read`，写入工具需要 `workspace.write` 并进入人工审批；`model.configure` 允许当前用户在控制台保存自己的模型 URL、模型名和加密 API Key；`ops.read` 用于读取 `/api/health`、Actuator 指标、Prometheus 和应用信息。
+生产或共享环境建议设置 `HARNESS_AUTH_MODE=api-key`。调用方使用 `Authorization: Bearer <key>` 或 `X-Api-Key`，服务端根据配置或数据库凭证将请求绑定到固定组织和用户，并按接口校验权限，例如 `run.read`、`run.create`、`run.execute`、`run.approve`、`context.read`、`context.write`、`audit.read`、`evaluation.run`、`tool.read`、`model.configure` 和 `ops.read`。工作区读取工具还需要 `workspace.read`，写入工具需要 `workspace.write` 并进入人工审批；`model.configure` 允许当前用户在控制台保存自己的模型 URL、模型名和加密 API Key；`ops.read` 用于读取 `/api/health`、Actuator 指标、Prometheus 和应用信息。
 
-通过具有 `auth.key.manage` 权限的引导 Key 或 OIDC 服务账号，可调用 `POST /api/admin/api-keys` 创建数据库 API Key；明文 `secret` 仅在创建响应中出现一次，数据库只保存 SHA-256 摘要。`GET /api/admin/api-keys` 只返回前缀和元数据，`POST /api/admin/api-keys/{keyId}/rotate` 会在同一事务中创建同权限新 Key 并立即撤销旧 Key，`DELETE /api/admin/api-keys/{keyId}` 可即时撤销，`GET /api/admin/api-keys/audits` 可查看生命周期审计。读取接口需要 `auth.key.read`，跨租户管理还需 `auth.key.cross-tenant`。环境变量 `HARNESS_API_KEYS` 保留为紧急引导兼容方案，变更或撤销需要重启；正式环境应逐步迁移至数据库生命周期 Key。
+通过具有 `auth.key.manage` 权限的引导 Key 或 OIDC 服务账号，可调用 `POST /api/admin/api-keys` 创建数据库 API Key；明文 `secret` 仅在创建响应中出现一次，数据库只保存 SHA-256 摘要。`GET /api/admin/api-keys` 只返回前缀和元数据，`POST /api/admin/api-keys/{keyId}/rotate` 会在同一事务中创建同权限新 Key 并立即撤销旧 Key，`DELETE /api/admin/api-keys/{keyId}` 可即时撤销，`GET /api/admin/api-keys/audits` 可查看生命周期审计。读取接口需要 `auth.key.read`，跨组织管理还需 `auth.key.cross-tenant`。环境变量 `HARNESS_API_KEYS` 保留为紧急引导兼容方案，变更或撤销需要重启；正式环境应逐步迁移至数据库生命周期 Key。
 
-企业环境接入 OIDC/JWT 时使用 `SPRING_PROFILES_ACTIVE=local-infra,oidc`，并设置 `OIDC_ISSUER_URI` 与 `OIDC_AUDIENCE`。Spring Security Resource Server 负责验签和明确校验 issuer/audience，Harness 从 JWT 的 `sub`、`tenant_id`（兼容 `tenant`）以及 `permissions`/`scope`/`scp` 声明映射用户、租户和 RBAC 权限。
+企业环境接入 OIDC/JWT 时使用 `SPRING_PROFILES_ACTIVE=local-infra,oidc`，并设置 `OIDC_ISSUER_URI` 与 `OIDC_AUDIENCE`。Spring Security Resource Server 负责验签和明确校验 issuer/audience，Harness 从 JWT 的 `sub`、`tenant_id`（兼容 `tenant`）以及 `permissions`/`scope`/`scp` 声明映射用户、组织和 RBAC 权限。
 
 ### 审计完整性
 
@@ -218,7 +218,7 @@ npm run desktop:dev
 - Electron 主进程持有绝对路径和桥接令牌；Vue 渲染层、模型、API 返回值和聊天记录均不会获得真实路径。
 - 后端只保存 AES-GCM 密文路径；`GET /api/workspaces` 仅返回项目名称、可访问状态与 Git 状态。
 - `POST /api/workspaces` 除了 `workspace.manage` 权限外，还需要 `X-Harness-Desktop-Bridge` 令牌。普通浏览器请求会被拒绝。
-- 新建会话时携带 `workspaceId`，Run 在创建时复制该 ID；Worker 每次工具调用都会重新验证项目仍存在且归属当前租户/用户。
+- 新建会话时携带 `workspaceId`，Run 在创建时复制该 ID；Worker 每次工具调用都会重新验证项目仍存在且归属当前组织/用户。
 
 在 Electron 桌面版中，也可以把**一个项目文件夹直接拖到聊天输入框**。preload 会从原生 `File` 受控取得路径并交给主进程，主进程确认它是一个真实目录后登记工作区；Vue 只收到工作区摘要，并自动创建绑定该项目的新会话。一次只接受一个项目目录，多目录拖入会明确拒绝，普通文件仍按附件导入。绝对路径不会进入页面、模型、聊天记录或 API 响应。
 
@@ -228,7 +228,7 @@ npm run desktop:dev
 
 聊天工作台右上角的“项目文件”会打开当前会话绑定工作区的只读浏览器。它可逐层查看目录、预览 UTF-8 文本文件，并显示 Git 分支和未提交变更数量；这让用户能够在让 Agent 修改前核验当前项目与代码内容。
 
-浏览器使用 `GET /api/workspace/files` 和 `GET /api/workspace/files/content`，均需要 `workspace.read` 权限，并通过 `workspaceId` 重新校验租户和用户归属。它只接受工作区内的相对路径，复用工具层的隐藏文件、符号链接、大小和行数限制；预览中的疑似凭证会显示为 `[REDACTED]`，不会返回本机绝对路径。文件浏览器仅提供查看能力，代码修改仍必须由 Agent 调用 `workspace.edit` / `workspace.write` 并经过既有审批策略。
+浏览器使用 `GET /api/workspace/files` 和 `GET /api/workspace/files/content`，均需要 `workspace.read` 权限，并通过 `workspaceId` 重新校验组织和用户归属。它只接受工作区内的相对路径，复用工具层的隐藏文件、符号链接、大小和行数限制；预览中的疑似凭证会显示为 `[REDACTED]`，不会返回本机绝对路径。文件浏览器仅提供查看能力，代码修改仍必须由 Agent 调用 `workspace.edit` / `workspace.write` 并经过既有审批策略。
 
 ### Git 变更审阅
 
@@ -260,7 +260,7 @@ npm run desktop:dev
 
 聊天工作台和 Run 详情会订阅 `GET /api/runs/{runId}/events`。连接建立后先收到 `snapshot`，之后只有 Run、Step、结果或错误发生持久化变化时才收到 `run` 事件；任务进入 `SUCCEEDED`、`FAILED`、`CANCELLED` 或 `TIMED_OUT` 后服务端自动关闭连接。每条事件正文与 `GET /api/runs/{runId}` 的既有 `RunDetail` 结构一致，不额外推送审计正文或本机工作区路径。
 
-该接口需要 `run.read` 权限，并沿用 API Key、OIDC 或本地身份请求头。前端通过 `fetch` 而不是浏览器原生 `EventSource` 建立连接，因而能够携带 `Authorization` 等认证头；临时断线会自动重连，原有 HTTP 轮询仍是兜底。跨租户、无权限或其他连接失败会返回既有 JSON 错误结构，即使请求的 `Accept` 为 `text/event-stream` 也不会错误地变为 500。
+该接口需要 `run.read` 权限，并沿用 API Key、OIDC 或本地身份请求头。前端通过 `fetch` 而不是浏览器原生 `EventSource` 建立连接，因而能够携带 `Authorization` 等认证头；临时断线会自动重连，原有 HTTP 轮询仍是兜底。跨组织、无权限或其他连接失败会返回既有 JSON 错误结构，即使请求的 `Accept` 为 `text/event-stream` 也不会错误地变为 500。
 
 ```bash
 curl -N http://localhost:8080/api/runs/<RUN_ID>/events \
@@ -274,7 +274,7 @@ curl -N http://localhost:8080/api/runs/<RUN_ID>/events \
 
 ### 持久化聊天会话
 
-聊天工作台使用会话接口将每轮用户消息和助手结果持久化到数据库。每条用户消息都会创建一个关联 Run；上下文未接近租户输入上限时保留最近的已完成消息，超过预算后把较早消息压缩到会话上下文快照中，同时保留完整原始消息。这样长会话不会因为历史累积直接超过 `maxInputLength`，Rabbit 异步模式下助手气泡先显示“Agent 执行中”，Worker 完成后自动回写最终内容。新会话在首条消息发送后会从用户输入生成简洁标题；已自定义的标题不会被覆盖。当前会话可在标题栏或 `⌘/Ctrl + K` 命令面板中重命名，修改只影响当前租户/用户可见的会话标题，不改变工作区绑定或既有 Run。
+聊天工作台使用会话接口将每轮用户消息和助手结果持久化到数据库。每条用户消息都会创建一个关联 Run；上下文未接近组织输入上限时保留最近的已完成消息，超过预算后把较早消息压缩到会话上下文快照中，同时保留完整原始消息。这样长会话不会因为历史累积直接超过 `maxInputLength`，Rabbit 异步模式下助手气泡先显示“Agent 执行中”，Worker 完成后自动回写最终内容。新会话在首条消息发送后会从用户输入生成简洁标题；已自定义的标题不会被覆盖。当前会话可在标题栏或 `⌘/Ctrl + K` 命令面板中重命名，修改只影响当前组织/用户可见的会话标题，不改变工作区绑定或既有 Run。
 
 ```bash
 # 创建会话
@@ -316,7 +316,7 @@ curl -X POST http://localhost:8080/api/conversations/{conversationId}/messages \
   -d '{"content":"请阅读并修改已附加的文件","maxTurns":8,"attachmentIds":["<attachment-id>"]}'
 ```
 
-相关接口：`GET /api/conversations`、`GET /api/conversations/{id}`、`POST /api/conversations/{id}/attachments`、`DELETE /api/conversations/{id}/attachments/{attachmentId}`、`POST /api/conversations/{id}/messages`。聊天框可拖入文件或文件夹，也可点击“文件夹”选择本地目录；文件夹会保留相对层级，以一个目录附件写入 `HARNESS_WORKSPACE_ROOT/attachments/<conversation-id>/`，Agent 会先通过 `workspace.list` 获取目录信息，再按需 `workspace.read` 或编写代码。附件仅接受 UTF-8 文本，单次最多 200 个文件、20 MB，单条消息最多 8 个文件或文件夹。浏览器不会暴露本机绝对路径，返回的 `workspacePath` 是 Agent 唯一可见、并受工作区安全边界保护的路径；文件会在消息发送成功时绑定到该轮记录，发送失败时前端会尽力回收未绑定文件。会话按租户和用户隔离，消息中的 `runId` 可以继续调用原有 Run 详情、审批、取消和重试接口。
+相关接口：`GET /api/conversations`、`GET /api/conversations/{id}`、`POST /api/conversations/{id}/attachments`、`DELETE /api/conversations/{id}/attachments/{attachmentId}`、`POST /api/conversations/{id}/messages`。聊天框可拖入文件或文件夹，也可点击“文件夹”选择本地目录；文件夹会保留相对层级，以一个目录附件写入 `HARNESS_WORKSPACE_ROOT/attachments/<conversation-id>/`，Agent 会先通过 `workspace.list` 获取目录信息，再按需 `workspace.read` 或编写代码。附件仅接受 UTF-8 文本，单次最多 200 个文件、20 MB，单条消息最多 8 个文件或文件夹。浏览器不会暴露本机绝对路径，返回的 `workspacePath` 是 Agent 唯一可见、并受工作区安全边界保护的路径；文件会在消息发送成功时绑定到该轮记录，发送失败时前端会尽力回收未绑定文件。会话按组织和用户隔离，消息中的 `runId` 可以继续调用原有 Run 详情、审批、取消和重试接口。
 
 聊天输入框旁的“Agent”设置可以调整本轮模型轮数上限，预设为 8、24、100 或平台上限 1000；该值会随消息发送到 `maxTurns`，并保存在浏览器中用于下次继续使用。较低的轮数适合快速问答，较高的轮数适合需要多次读取、修改和核验的代码任务。
 
@@ -331,7 +331,7 @@ curl -X POST http://localhost:8080/api/runs \
   -d '{"tenantId":"tenant-demo","userId":"operator","title":"分析项目结构","input":"请读取项目并总结入口模块","agentMode":true,"maxTurns":8,"budget":10,"permissions":"workspace.read"}'
 ```
 
-Agent 模式下 `toolName` 不参与选择，模型只会收到当前租户工具白名单、工具可用性和当前执行身份权限都满足的工具契约；工具注册表、JSON Schema、租户策略、权限和审批仍是最终授权边界。默认演示模型在工作区工具可用时会先浏览根目录，再深入典型源码目录并读取一个代表性文本文件，把受限内容片段和 `sha256` 带入最终结论；没有工作区工具时退回安全的回显工具，便于本地验证真实的“模型 → 工具 → 模型”链路。接入外部模型后由模型自行决定工具调用。`maxTurns` 范围为 1 到 1000，超过后 Run 以 `FAILED` 结束并记录 `AGENT_MAX_TURNS_EXCEEDED`；重试时也会要求最后一轮模型明确结束，避免把未完成工具调用误判为成功。控制台创建表单可以直接开启 Agent 模式，详情页会展示模型轮次、Tool Call、工具输出和审批状态。
+Agent 模式下 `toolName` 不参与选择，模型只会收到当前组织工具白名单、工具可用性和当前执行身份权限都满足的工具契约；工具注册表、JSON Schema、组织策略、权限和审批仍是最终授权边界。默认演示模型在工作区工具可用时会先浏览根目录，再深入典型源码目录并读取一个代表性文本文件，把受限内容片段和 `sha256` 带入最终结论；没有工作区工具时退回安全的回显工具，便于本地验证真实的“模型 → 工具 → 模型”链路。接入外部模型后由模型自行决定工具调用。`maxTurns` 范围为 1 到 1000，超过后 Run 以 `FAILED` 结束并记录 `AGENT_MAX_TURNS_EXCEEDED`；重试时也会要求最后一轮模型明确结束，避免把未完成工具调用误判为成功。控制台创建表单可以直接开启 Agent 模式，详情页会展示模型轮次、Tool Call、工具输出和审批状态。
 
 当前工作区工具支持浏览、读取、搜索、精确增量编辑、原子写入、Git 状态/差异查看和受控命令执行。写入和编辑工具需要 `workspace.write` 权限、人工审批以及读取时返回的 `sha256` 并发校验；编辑工具只接受精确文本替换，匹配不唯一时会拒绝执行，避免误改代码。Git 工具只查看工作区范围内的变更，不执行 Hook、外部 Diff 或 TextConv，不需要人工审批；为防止 Git 配置越界，工作区根目录必须是包含普通 `.git` 目录的仓库根目录。若目录不是 Git 仓库，工具会把原因和替代建议交给 Agent，默认演示模型会自动降级到 `workspace.read`，但该结果不会满足“修改后必须核验”的策略。命令工具需要 `workspace.exec` 权限、白名单和人工审批。Agent Run 的人工拒绝会作为带原因的工具结果反馈给下一轮模型，Agent 可调整计划后继续；普通 Run 仍会在拒绝后结束。所有工作目录仍受工作区根目录、隐藏路径和符号链接边界保护，Agent 不会获得任意 Shell 拼接能力。
 
@@ -367,7 +367,7 @@ export WORKSPACE_ALLOWED_COMMANDS=./mvnw,npm,node
 
 ### 协作式取消
 
-在 Rabbit/Redis 模式下，取消接口会先写入租户绑定、自动过期的 Redis 取消信号，再等待数据库行锁释放并将 Run 状态写为 `CANCELLED`。Worker 在每个步骤和最终成功落库前读取该信号及数据库状态；发现取消时不会执行后续步骤，也不会用长事务中的旧状态覆盖取消结果。已经开始的外部工具调用不能被安全地强制中断，因此工具本身仍应实现超时、幂等和可取消协议。Redis 取消协调不可用时，`local-infra` 会返回基础设施不可用，而不会静默继续执行。
+在 Rabbit/Redis 模式下，取消接口会先写入组织绑定、自动过期的 Redis 取消信号，再等待数据库行锁释放并将 Run 状态写为 `CANCELLED`。Worker 在每个步骤和最终成功落库前读取该信号及数据库状态；发现取消时不会执行后续步骤，也不会用长事务中的旧状态覆盖取消结果。已经开始的外部工具调用不能被安全地强制中断，因此工具本身仍应实现超时、幂等和可取消协议。Redis 取消协调不可用时，`local-infra` 会返回基础设施不可用，而不会静默继续执行。
 
 Rabbit Worker 仅在抛出临时基础设施异常时由队列重试；业务、策略和工具错误会持久化为 Run 的 `FAILED` 状态并确认消息。Worker 的模型/工具网络调用在数据库事务之外执行，领取、步骤状态、心跳、结果和审计分别使用短事务，避免长调用占用连接和行锁；每个步骤前后都会续租并再次校验 Worker 所有权。每个实例的消费者并发和预取量都有上限；Outbox Relay 发布前读取队列深度，达到 `RABBITMQ_MAX_QUEUE_DEPTH` 或无法读取队列状态时会暂停抢占，等待下一轮重试。Outbox 耗尽发布重试次数后会立即将尚未执行的 Run 标记为 `FAILED` 并记录 `RUN_DISPATCH_FAILED` 审计事件，避免任务无 Worker 执行却长时间显示为 `RUNNING`。可通过 `harness.rabbit.queue.depth`、`harness.rabbit.queue.capacity`、`harness.worker.active`、`harness.worker.concurrency`、`harness.rabbit.backpressure`、`harness.rabbit.queue.poll_failures` 以及原有的 `harness.rabbit.retries`、`harness.rabbit.dead_letters` 指标观察背压和 Worker 状态。
 
@@ -398,8 +398,8 @@ curl -X POST http://localhost:8080/api/runs \
 
 上下文与评测接口：
 
-- `GET /api/runs/page?page=0&size=20&status=RUNNING`：按租户分页查询 Run，`status` 可选，单页最多 100 条；原 `GET /api/runs` 继续返回最近 50 条数组
-- `POST/GET/DELETE /api/context/documents`：管理租户隔离的知识文档
+- `GET /api/runs/page?page=0&size=20&status=RUNNING`：按组织分页查询 Run，`status` 可选，单页最多 100 条；原 `GET /api/runs` 继续返回最近 50 条数组
+- `POST/GET/DELETE /api/context/documents`：管理组织隔离的知识文档
 - `POST/GET/DELETE /api/context/memories`：管理用户范围的长期记忆
 - `GET /api/context/preview?query=...`：预览授权来源和引用
 - `POST/GET /api/evaluations`：运行固定回归用例并查询评测报告；`rabbit` 模式下接口会等待每个 Run 到终态，等待审批的用例不会自动审批，单个用例超时会记录当前状态并继续后续用例

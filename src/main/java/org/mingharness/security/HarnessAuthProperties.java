@@ -4,7 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * Harness 身份认证配置。
- * apiKeys 每项格式为：明文Key|租户ID|用户ID|权限1,权限2；生产环境应由密钥系统注入。
+ * apiKeys 每项格式为：明文Key|组织ID|用户ID|权限1,权限2；生产环境应由密钥系统注入。
  */
 @ConfigurationProperties(prefix = "harness.auth")
 public class HarnessAuthProperties {
