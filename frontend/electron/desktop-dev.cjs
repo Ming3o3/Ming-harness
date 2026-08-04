@@ -1,5 +1,6 @@
 const { randomBytes } = require('node:crypto')
 const { spawn } = require('node:child_process')
+const net = require('node:net')
 const path = require('node:path')
 
 const frontendRoot = path.resolve(__dirname, '..')
@@ -36,9 +37,33 @@ function stop(exitCode = 0) {
   process.exit(exitCode)
 }
 
-async function waitFor(url, label) {
+function assertPortAvailable(url, label) {
+  const parsed = new URL(url)
+  const port = Number(parsed.port || (parsed.protocol === 'https:' ? 443 : 80))
+  const host = parsed.hostname
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection({ host, port })
+    socket.once('connect', () => {
+      socket.destroy()
+      reject(new Error(`${label} 端口 ${port} 已被占用，请先关闭已有 Runtime 或修改端口配置。`))
+    })
+    socket.once('error', (error) => {
+      socket.destroy()
+      if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
+        resolve()
+        return
+      }
+      reject(new Error(`${label} 端口 ${port} 无法检查：${error.message}`))
+    })
+  })
+}
+
+async function waitFor(url, label, child) {
   const deadline = Date.now() + 90_000
   while (Date.now() < deadline) {
+    if (child?.exitCode !== null && child?.exitCode !== undefined) {
+      throw new Error(`${label} 进程已提前退出（退出码 ${child.exitCode}）。`)
+    }
     try {
       const response = await fetch(url)
       if (response.status < 500) return
@@ -61,12 +86,16 @@ async function main() {
     HARNESS_FRONTEND_URL: frontendUrl,
   }
   console.log(`启动本地桌面 Runtime（Profile: ${runtimeProfile}）`)
-  start(path.join(projectRoot, process.platform === 'win32' ? 'mvnw.cmd' : 'mvnw'),
-    ['spring-boot:run'], projectRoot, sharedEnv)
-  start(command('npm'), ['run', 'dev', '--', '--host', '127.0.0.1'], frontendRoot, sharedEnv)
   await Promise.all([
-    waitFor('http://127.0.0.1:8080/actuator/health', 'Spring Boot Runtime'),
-    waitFor(frontendUrl, 'Vite 前端'),
+    assertPortAvailable('http://127.0.0.1:8080', 'Spring Boot Runtime'),
+    assertPortAvailable(frontendUrl, 'Vite 前端'),
+  ])
+  const runtimeProcess = start(path.join(projectRoot, process.platform === 'win32' ? 'mvnw.cmd' : 'mvnw'),
+    ['spring-boot:run'], projectRoot, sharedEnv)
+  const frontendProcess = start(command('npm'), ['run', 'dev', '--', '--host', '127.0.0.1', '--strictPort'], frontendRoot, sharedEnv)
+  await Promise.all([
+    waitFor('http://127.0.0.1:8080/actuator/health', 'Spring Boot Runtime', runtimeProcess),
+    waitFor(frontendUrl, 'Vite 前端', frontendProcess),
   ])
   console.log('打开 Ming Harness 桌面窗口；关闭窗口将停止本地开发进程。')
   start(path.join(frontendRoot, 'node_modules', '.bin', process.platform === 'win32' ? 'electron.cmd' : 'electron'),
