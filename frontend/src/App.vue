@@ -136,6 +136,32 @@ const showCommandPalette = ref(false)
 const commandQuery = ref('')
 const commandSelectedIndex = ref(0)
 const commandPaletteInputRef = ref(null)
+const quickStartPrompts = [
+  {
+    id: 'understand-project',
+    label: '理解项目结构',
+    description: '先浏览目录，再说明主要模块和入口。',
+    prompt: '请先浏览当前项目结构，说明主要模块、启动入口和关键依赖；先不要修改代码。',
+  },
+  {
+    id: 'find-symbol',
+    label: '查找一个函数',
+    description: '定位函数或类，并解释它的调用链。',
+    prompt: '请在当前项目中定位这个函数或类并解释它的调用链：',
+  },
+  {
+    id: 'review-changes',
+    label: '检查 Git 变更',
+    description: '总结当前改动、风险和待验证项。',
+    prompt: '请检查当前 Git 变更，按文件总结改动、潜在风险和建议验证项；不要修改代码。',
+  },
+  {
+    id: 'fix-bug',
+    label: '修复一个 Bug',
+    description: '描述现象，Agent 会先定位再给出最小修复。',
+    prompt: '请帮我修复这个问题：\n\n',
+  },
+]
 const CHAT_DRAFT_STORAGE_KEY = 'mingHarnessChatDrafts'
 const ACTIVE_CONVERSATION_STORAGE_KEY = 'mingHarnessActiveConversation'
 const commandIconComponents = {
@@ -904,6 +930,12 @@ function setChatInput(value, focus = false) {
     resizeChatInput()
     if (focus) chatInputRef.value?.focus()
   })
+}
+
+// 快速开始只填充草稿，不直接提交 Run，给用户留下补充约束和确认范围的机会。
+function useQuickStartPrompt(prompt) {
+  if (!activeConversationId.value || chatSending.value || chatUploading.value) return
+  setChatInput(prompt, true)
 }
 
 function openCommandPalette() {
@@ -2984,7 +3016,24 @@ onBeforeUnmount(() => {
             <div v-else-if="!chatMessages.length" class="chat-empty-state">
               <div class="chat-empty-mark" aria-hidden="true"><Sparkles :size="23" /></div>
               <strong>从一个问题开始</strong>
-              <span>Agent 会读取工作区、运行工具并把每轮结果留在这里。</span>
+              <span>{{ workspaceConnected ? 'Agent 已连接当前项目，会先理解结构，再按需读取、修改和验证代码。' : '选择本地项目或附加文件后，Agent 会先理解上下文，再按需运行工具。' }}</span>
+              <div class="chat-quick-start" aria-label="快速开始">
+                <button
+                  v-for="item in quickStartPrompts"
+                  :key="item.id"
+                  class="chat-quick-start-card"
+                  type="button"
+                  :disabled="!activeConversationId || chatSending || chatUploading"
+                  @click="useQuickStartPrompt(item.prompt)"
+                >
+                  <span class="chat-quick-start-card-icon" aria-hidden="true"><Sparkles :size="14" /></span>
+                  <span class="chat-quick-start-card-copy"><strong>{{ item.label }}</strong><small>{{ item.description }}</small></span>
+                  <ArrowUp :size="14" aria-hidden="true" />
+                </button>
+              </div>
+              <button v-if="desktopWorkspaceAvailable && !workspaceConnected" class="chat-empty-workspace-action" type="button" :disabled="desktopWorkspacePicking || chatSending || chatUploading" @click="chooseDesktopWorkspace">
+                <FolderGit2 :size="14" />{{ desktopWorkspacePicking ? '选择中…' : '选择本地项目' }}
+              </button>
             </div>
             <article
               v-for="message in chatMessages"
