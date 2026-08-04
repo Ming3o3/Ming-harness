@@ -1058,6 +1058,26 @@ async function copyChatMessage(message) {
   }
 }
 
+async function handleChatMarkdownClick(event) {
+  const target = event.target instanceof Element ? event.target.closest('[data-copy-code="true"]') : null
+  if (!target) return
+  const code = target.closest('.markdown-code-block')?.querySelector('code')?.textContent || ''
+  if (!code) return
+  event.preventDefault()
+  event.stopPropagation()
+  try {
+    await navigator.clipboard.writeText(code)
+    target.textContent = '已复制'
+    target.dataset.copyState = 'copied'
+    window.setTimeout(() => {
+      target.textContent = '复制'
+      delete target.dataset.copyState
+    }, 1400)
+  } catch {
+    errorMessage.value = '复制代码失败，请检查浏览器剪贴板权限。'
+  }
+}
+
 /** 失败气泡直接重试原 Run，保留同一轮上下文并立即恢复实时执行状态。 */
 async function retryChatMessage(message) {
   if (!canRetryChatMessage(message) || retryingMessageId.value) return
@@ -2981,7 +3001,7 @@ onBeforeUnmount(() => {
                     <span class="chat-thinking"><i></i><i></i><i></i>{{ chatRunActivity || messageStatusLabel(message.status) }}</span>
                   </template>
                   <template v-else>
-                    <div v-if="message.content" class="chat-markdown" v-html="renderMarkdown(message.content)"></div>
+                    <div v-if="message.content" class="chat-markdown" v-html="renderMarkdown(message.content)" @click="handleChatMarkdownClick"></div>
                     <p v-else>{{ messageStatusLabel(message.status) }}</p>
                     <small v-if="message.role === 'ASSISTANT' && message.status !== 'COMPLETED'">{{ messageStatusLabel(message.status) }}</small>
                   </template>

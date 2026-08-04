@@ -108,7 +108,7 @@ const markdown = new MarkdownIt({
     const languageClass = safeLanguageClass(highlighted.language)
     const className = languageClass ? `hljs language-${languageClass}` : 'hljs'
     const label = languageClass || 'code'
-    return `<pre class="markdown-code-block ${className}" data-language="${label}"><code>${highlighted.html}</code></pre>`
+    return `<pre class="markdown-code-block ${className}" data-language="${label}"><button type="button" class="markdown-code-copy" data-copy-code="true" aria-label="复制代码块">复制</button><code>${highlighted.html}</code></pre>`
   },
 })
 

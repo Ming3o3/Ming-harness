@@ -444,8 +444,11 @@ h3 { margin: 0; font-size: 13px; }
 .chat-markdown strong { color: var(--heading); font-weight: 700; }
 .chat-markdown em { color: var(--soft); }
 .chat-markdown code { border: 1px solid rgba(141,124,255,.2); border-radius: 4px; background: rgba(141,124,255,.1); color: var(--accent-light); padding: 2px 5px; font: 10px/1.4 "DM Mono", monospace; }
-.chat-markdown .markdown-code-block { overflow: auto; max-height: 420px; margin: 13px 0; border: 1px solid rgba(153,174,218,.14); border-radius: 8px; background: var(--input-bg); padding: 12px 13px; white-space: pre; font: 10px/1.65 "DM Mono", monospace; scrollbar-gutter: stable; }
+.chat-markdown .markdown-code-block { position: relative; overflow: auto; max-height: 420px; margin: 13px 0; border: 1px solid rgba(153,174,218,.14); border-radius: 8px; background: var(--input-bg); padding: 12px 13px; white-space: pre; font: 10px/1.65 "DM Mono", monospace; scrollbar-gutter: stable; }
 .chat-markdown .markdown-code-block::before { display: block; margin: -3px -1px 9px; border-bottom: 1px solid rgba(153,174,218,.12); padding: 0 0 8px; color: var(--muted); content: attr(data-language); font: 8px "DM Mono", monospace; letter-spacing: .08em; text-transform: uppercase; }
+.chat-markdown .markdown-code-copy { position: absolute; top: 6px; right: 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--muted); padding: 3px 6px; font: 8px "DM Mono", monospace; opacity: .86; transition: border-color .16s ease, color .16s ease, background .16s ease; }
+.chat-markdown .markdown-code-copy:hover { border-color: var(--accent); background: var(--hover-bg); color: var(--heading); }
+.chat-markdown .markdown-code-copy[data-copy-state="copied"] { border-color: rgba(85,214,138,.45); color: var(--green); }
 .chat-markdown .markdown-code-block code { border: 0; background: transparent; padding: 0; color: inherit; font: inherit; }
 .chat-markdown hr { margin: 16px 0; border: 0; border-top: 1px solid var(--line); }
 .chat-markdown table { width: 100%; margin: 12px 0; border-collapse: collapse; font-size: 11px; }
@@ -1209,6 +1212,10 @@ button svg {
   border-color: var(--line);
   border-radius: 9px;
   background: var(--input-bg);
+}
+
+.chat-markdown .markdown-code-copy {
+  background: var(--panel);
 }
 
 .chat-empty-state {
