@@ -482,6 +482,36 @@ h3 { margin: 0; font-size: 13px; }
 .chat-thinking i:nth-child(2) { animation-delay: .14s; }
 .chat-thinking i:nth-child(3) { animation-delay: .28s; margin-right: 4px; }
 @keyframes chat-pulse { 0%, 80%, 100% { opacity: .3; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+.chat-inline-trace { display: grid; gap: 10px; margin-top: 9px; border: 1px solid rgba(141,124,255,.24); border-radius: 9px; background: rgba(141,124,255,.055); padding: 10px 11px; text-align: left; }
+.chat-inline-trace.status-succeeded { border-color: rgba(85,214,138,.25); background: rgba(85,214,138,.045); }
+.chat-inline-trace.status-failed, .chat-inline-trace.status-timed_out { border-color: rgba(255,114,123,.28); background: rgba(255,114,123,.045); }
+.chat-inline-trace.status-cancelled { border-color: rgba(255,182,95,.28); background: rgba(255,182,95,.045); }
+.chat-inline-trace-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.chat-inline-trace-title { display: grid; gap: 4px; min-width: 0; }
+.chat-inline-trace-kicker { display: inline-flex; align-items: center; gap: 5px; color: var(--accent-light); font: 8px "DM Mono", monospace; letter-spacing: .08em; }
+.chat-inline-trace-kicker i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.chat-inline-trace.status-succeeded .chat-inline-trace-kicker { color: var(--green); }
+.chat-inline-trace.status-failed .chat-inline-trace-kicker, .chat-inline-trace.status-timed_out .chat-inline-trace-kicker { color: var(--red); }
+.chat-inline-trace.status-cancelled .chat-inline-trace-kicker { color: var(--orange); }
+.chat-inline-trace-title strong { overflow: hidden; color: var(--soft); font-size: 10px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.chat-inline-trace-heading > button { flex-shrink: 0; border: 0; background: transparent; color: var(--accent-light); padding: 1px 0; font: 8px "DM Mono", monospace; }
+.chat-inline-trace-heading > button:hover { color: var(--accent); text-decoration: underline; }
+.chat-inline-trace-progress { display: grid; gap: 5px; }
+.chat-inline-trace-progress-meta { display: flex; justify-content: space-between; color: var(--muted); font: 8px "DM Mono", monospace; }
+.chat-inline-trace-progress-meta em { color: var(--accent-light); font-style: normal; }
+.chat-inline-trace.status-succeeded .chat-inline-trace-progress-meta em { color: var(--green); }
+.chat-inline-trace.status-failed .chat-inline-trace-progress-meta em, .chat-inline-trace.status-timed_out .chat-inline-trace-progress-meta em { color: var(--red); }
+.chat-inline-trace-progress-bar { height: 3px; overflow: hidden; border-radius: 999px; background: rgba(153,174,218,.13); }
+.chat-inline-trace-progress-bar span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--cyan)); transition: width .35s ease; }
+.chat-inline-trace.status-succeeded .chat-inline-trace-progress-bar span { background: var(--green); }
+.chat-inline-trace.status-failed .chat-inline-trace-progress-bar span, .chat-inline-trace.status-timed_out .chat-inline-trace-progress-bar span { background: var(--red); }
+.chat-inline-trace-steps { display: grid; gap: 5px; min-width: 0; }
+.chat-inline-trace-steps > span { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; color: var(--muted); font: 8px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.chat-inline-trace-steps > span i { flex: 0 0 auto; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.chat-inline-trace-steps > span.status-succeeded { color: var(--green); }
+.chat-inline-trace-steps > span.status-running, .chat-inline-trace-steps > span.status-queued { color: var(--cyan); }
+.chat-inline-trace-steps > span.status-waiting_approval { color: var(--orange); }
+.chat-inline-trace-steps > span.status-failed, .chat-inline-trace-steps > span.status-timed_out { color: var(--red); }
 .message-run-link { border: 0; background: none; color: var(--accent-light); padding: 7px 2px 0; font: 9px "DM Mono", monospace; }
 .message-run-link:hover { color: var(--accent); text-decoration: underline; }
 .chat-empty-state { display: grid; min-height: 100%; place-items: center; align-content: center; gap: 9px; color: var(--muted); font-size: 11px; text-align: center; }
