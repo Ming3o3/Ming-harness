@@ -12,6 +12,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @SpringBootTest
@@ -64,6 +65,23 @@ class ContextServiceTests {
         ContextResult result = contextBuilder.build("tenant-a", "operator", "接口说明", 4_000);
         assertEquals(1, result.evidences().size());
         assertEquals("api_key=[REDACTED]", result.evidences().get(0).excerpt());
+    }
+
+    @Test
+    void shouldRetrieveOnlyActiveMemoryOwnedByCurrentUser() {
+        MemoryEntry visible = contextService.createMemory("tenant-a", "operator",
+                new CreateMemoryRequest("preference", "项目默认使用 Java 17", "run-visible", Instant.now().plusSeconds(60)));
+        contextService.createMemory("tenant-a", "other",
+                new CreateMemoryRequest("preference", "其他用户的 Java 17 约束", "run-other", Instant.now().plusSeconds(60)));
+        contextService.createMemory("tenant-a", "operator",
+                new CreateMemoryRequest("stale", "过期的 Java 17 约束", "run-stale", Instant.now().minusSeconds(60)));
+
+        ContextResult result = contextBuilder.build("tenant-a", "operator", "Java 17", 4_000);
+
+        assertEquals(1, result.evidences().size());
+        assertEquals(visible.getId(), result.evidences().get(0).documentId());
+        assertTrue(result.text().contains("memory:" + visible.getId()));
+        assertTrue(result.text().contains("项目默认使用 Java 17"));
     }
 
     @Test
