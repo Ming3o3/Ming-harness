@@ -48,6 +48,7 @@ const apiKeyAudits = ref([])
 const apiKeyError = ref('')
 const createdApiKeySecret = ref('')
 const loading = ref(false)
+const documentDeletingId = ref('')
 const detailLoading = ref(false)
 const errorMessage = ref('')
 const noticeMessage = ref('')
@@ -2489,6 +2490,23 @@ async function createDocument() {
   }
 }
 
+async function deleteDocument(document) {
+  if (!document?.id || documentDeletingId.value) return
+  if (typeof window !== 'undefined'
+    && !window.confirm(`确认删除知识文档“${document.title}”吗？`)) return
+  clearMessages()
+  documentDeletingId.value = document.id
+  try {
+    await api.deleteDocument(document.id)
+    documents.value = documents.value.filter((item) => item.id !== document.id)
+    noticeMessage.value = `知识文档“${document.title}”已删除`
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    documentDeletingId.value = ''
+  }
+}
+
 async function runQuickEvaluation() {
   clearMessages()
   loading.value = true
@@ -3130,7 +3148,10 @@ onBeforeUnmount(() => {
               @keydown="handleChatKeydown"
             ></textarea>
             <div class="chat-composer-footer">
-              <span><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行<span v-if="canCancelChat"> · <kbd>Esc</kbd> 停止</span> · 草稿自动保存 · {{ desktopWorkspaceDropping ? '正在授权拖入的本地项目…' : workspaceConnected ? 'Agent 可直接操作本会话绑定的本地项目' : '文件夹导入后保留层级' }}</span>
+              <span class="chat-composer-hint">
+                <span class="chat-composer-hint-primary"><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行<span v-if="canCancelChat"> · <kbd>Esc</kbd> 停止</span></span>
+                <span class="chat-composer-hint-context">{{ desktopWorkspaceDropping ? '正在授权拖入的本地项目…' : workspaceConnected ? 'Agent 可直接操作本会话绑定的本地项目' : '文件夹导入后保留层级' }}</span>
+              </span>
               <div class="chat-composer-actions">
                 <button class="secondary-button chat-agent-settings-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="showChatAgentSettings = !showChatAgentSettings"><Settings2 :size="14" /><span>Agent · {{ chatMaxTurns }} 轮</span></button>
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatAttachmentPicker"><Paperclip :size="14" /><span>附件</span></button>
@@ -3499,17 +3520,17 @@ onBeforeUnmount(() => {
             <span>执行用户</span>
             <input v-model="form.userId" required maxlength="64" />
           </label>
-          <label class="field field-wide">
+          <label class="field field-wide run-input-field">
             <span>任务输入</span>
             <textarea v-model="form.input" required maxlength="4000" rows="3" placeholder="输入用户任务或上下文"></textarea>
           </label>
-          <label class="field">
+          <label class="field run-input-field">
             <span>工具</span>
             <select v-model="form.toolName" :disabled="form.agentMode">
               <option v-for="tool in tools" :key="tool.name" :value="tool.name">{{ tool.name }}</option>
             </select>
           </label>
-          <label class="field">
+          <label class="field run-input-field">
             <span>模型（可选）</span>
             <input v-model="form.modelName" placeholder="默认演示模型" />
           </label>
@@ -3756,6 +3777,22 @@ onBeforeUnmount(() => {
             <label class="field"><span>可见用户（逗号分隔，可留空）</span><input v-model="documentForm.allowedUsers" /></label>
             <button class="secondary-button" type="submit" :disabled="loading">保存文档</button>
             <small class="form-hint">当前 {{ documents.length }} 篇文档；模型检索前会先执行租户和用户过滤。</small>
+            <div v-if="documents.length" class="document-list" aria-label="已保存知识文档">
+              <div v-for="document in documents" :key="document.id" class="document-row">
+                <div class="document-row-content">
+                  <strong>{{ document.title }}</strong>
+                  <small>{{ document.allowedUsers ? `授权：${document.allowedUsers}` : '租户内可见' }} · {{ formatDate(document.createdAt) }}</small>
+                </div>
+                <button
+                  v-if="document.ownerUserId === form.userId"
+                  class="danger-button document-delete-button"
+                  type="button"
+                  :disabled="loading || documentDeletingId === document.id"
+                  @click="deleteDocument(document)"
+                >{{ documentDeletingId === document.id ? '删除中…' : '删除' }}</button>
+                <small v-else class="document-owner-hint">仅所有者可删</small>
+              </div>
+            </div>
           </form>
           <form class="governance-card" @submit.prevent="runQuickEvaluation">
             <h3>运行快速回归评测</h3>

@@ -119,6 +119,13 @@ h3 { margin: 0; font-size: 13px; }
 .field input, .field textarea, .field select { width: 100%; border: 1px solid rgba(153,174,218,.16); border-radius: 7px; outline: 0; background: var(--input-bg); color: var(--text); padding: 10px 11px; font-size: 12px; transition: .2s ease; }
 .field input:disabled, .field select:disabled { cursor: not-allowed; opacity: .58; }
 .field textarea { resize: vertical; min-height: 78px; line-height: 1.6; }
+.run-input-field > input,
+.run-input-field > select,
+.run-input-field > textarea {
+  height: 78px;
+  min-height: 78px;
+}
+.run-input-field > textarea { resize: none; }
 .field input::placeholder, .field textarea::placeholder { color: #4e5b76; }
 .field input:focus, .field textarea:focus, .field select:focus { border-color: rgba(141,124,255,.75); box-shadow: 0 0 0 3px rgba(141,124,255,.1); }
 .agent-mode-field { gap: 8px; }
@@ -275,6 +282,12 @@ h3 { margin: 0; font-size: 13px; }
 .evaluation-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 12px; border-bottom: 1px solid rgba(153,174,218,.08); padding: 9px 0; color: var(--soft); font-size: 11px; }
 .evaluation-row span { color: var(--green); font: 10px "DM Mono", monospace; }
 .evaluation-row small { color: var(--muted); font: 9px "DM Mono", monospace; }
+.document-list { display: grid; gap: 5px; margin-top: 4px; border-top: 1px solid var(--line); padding-top: 13px; }
+.document-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; border-bottom: 1px solid rgba(153,174,218,.08); padding: 9px 0; }
+.document-row-content { min-width: 0; }
+.document-row-content strong { display: block; overflow: hidden; color: var(--soft); font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.document-row-content small, .document-owner-hint { display: block; margin-top: 4px; color: var(--muted); font: 9px "DM Mono", monospace; overflow-wrap: anywhere; }
+.document-delete-button { padding: 7px 10px; font-size: 10px; white-space: nowrap; }
 .footer { padding: 28px 0 0; color: #4d5b75; font: 9px "DM Mono", monospace; letter-spacing: .04em; }
 
 /* 白天模式覆盖色板，保留状态色和品牌紫色的识别度。 */
@@ -515,6 +528,10 @@ h3 { margin: 0; font-size: 13px; }
 .chat-composer textarea::placeholder { color: var(--muted); }
 .chat-composer-footer { justify-content: space-between; gap: 8px; border-top: 1px solid var(--line); padding-top: 9px; color: var(--muted); font: 9px "DM Mono", monospace; }
 .chat-composer-footer kbd { border: 1px solid var(--line); border-radius: 4px; background: var(--hover-bg); padding: 2px 4px; color: var(--soft); font: 8px "DM Mono", monospace; }
+.chat-composer-hint { display: grid; min-width: 0; gap: 3px; line-height: 1.35; }
+.chat-composer-hint-primary,
+.chat-composer-hint-context { min-width: 0; }
+.chat-composer-hint-context { color: var(--muted); }
 .chat-composer-actions { display: flex; align-items: center; gap: 7px; margin-left: auto; }
 .chat-agent-settings-button { padding: 8px 9px; font-size: 9px; white-space: nowrap; }
 .chat-attachment-button { padding: 8px 10px; font-size: 10px; }
@@ -1155,6 +1172,28 @@ button svg {
   font-size: 9px;
 }
 
+/* Keep the two-line workspace status card aligned with the controls beside it. */
+.chat-workspace-chip,
+.chat-workspace-selector select,
+.chat-workspace-selector .chat-project-button,
+.chat-heading-actions > .secondary-button {
+  height: 34px;
+  min-height: 34px;
+  box-sizing: border-box;
+}
+
+.chat-workspace-chip {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.chat-workspace-selector select,
+.chat-workspace-selector .chat-project-button,
+.chat-heading-actions > .secondary-button {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
 .chat-messages {
   position: relative;
   padding: 42px 32px 36px;
@@ -1441,9 +1480,13 @@ button svg {
 .chat-attachment-button,
 .chat-stop-button,
 .chat-send-button {
+  height: 34px;
+  min-height: 34px;
+  flex: 0 0 auto;
   border-radius: 9px;
   padding: 7px 9px;
   font-size: 9px;
+  white-space: nowrap;
 }
 
 .chat-send-button {
