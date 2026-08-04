@@ -424,16 +424,6 @@ const chatRunActivity = computed(() => {
   }
   return agentActivityLabel(activeStep)
 })
-const chatTraceByMessageId = computed(() => {
-  const detail = selectedRun.value
-  const runId = detail?.run?.id
-  const steps = detail?.steps || []
-  if (!runId || !steps.length) return {}
-  const trace = summarizeChatRun(detail)
-  return Object.fromEntries(chatMessages.value
-    .filter((message) => message.role === 'ASSISTANT' && message.runId === runId)
-    .map((message) => [message.id, trace]))
-})
 const chatUserMessages = computed(() => chatMessages.value
   .filter((message) => message.role === 'USER'))
 const canSendChat = computed(() => Boolean(activeConversationId.value) && !chatSending.value && !chatUploading.value
@@ -636,35 +626,6 @@ function agentActivityLabel(step) {
     'workspace.git.diff': path ? `正在核对 ${path}…` : '正在核对代码变更…',
     'workspace.exec': command ? `正在运行 ${command}…` : '正在运行命令…',
   }[step.name] || `正在使用 ${step.name}…`
-}
-
-function summarizeChatRun(detail) {
-  const steps = detail?.steps || []
-  const activeStep = steps.find((step) => ['RUNNING', 'WAITING_APPROVAL', 'QUEUED'].includes(step.status)) || null
-  const finishedStatuses = new Set(['SUCCEEDED', 'FAILED', 'CANCELLED', 'TIMED_OUT', 'REJECTED'])
-  const finishedCount = steps.filter((step) => finishedStatuses.has(step.status)).length
-  const progressPercent = detail?.run?.status === 'SUCCEEDED'
-    ? 100
-    : Math.min(96, Math.round((finishedCount / Math.max(steps.length, 1)) * 100))
-  let headline = activeStep ? agentActivityLabel(activeStep) : statusLabel(detail?.run?.status)
-  if (detail?.run?.status === 'SUCCEEDED') headline = 'Agent 已完成任务'
-  if (detail?.run?.status === 'FAILED') headline = 'Agent 执行失败'
-  if (detail?.run?.status === 'CANCELLED') headline = 'Agent 已停止'
-  if (detail?.run?.status === 'TIMED_OUT') headline = 'Agent 执行超时'
-  return {
-    runStatus: detail?.run?.status || 'RUNNING',
-    headline,
-    activeStep,
-    steps: steps.slice(-4),
-    finishedCount,
-    totalCount: steps.length,
-    progressPercent,
-  }
-}
-
-function chatTraceStepLabel(step) {
-  const name = step?.type === 'MODEL' ? '模型推理' : (step?.name || stepLabel(step?.type))
-  return `${name} · ${statusLabel(step?.status)}`
 }
 
 function decodeAgentStep(step) {
@@ -3050,28 +3011,6 @@ onBeforeUnmount(() => {
                     </span>
                   </div>
                 </div>
-                <section
-                  v-if="message.role === 'ASSISTANT' && chatTraceByMessageId[message.id]"
-                  class="chat-inline-trace"
-                  :class="statusClass(chatTraceByMessageId[message.id].runStatus)"
-                  aria-label="Agent 执行进度"
-                  :aria-busy="!isTerminal(chatTraceByMessageId[message.id].runStatus)"
-                >
-                  <div class="chat-inline-trace-heading">
-                    <div class="chat-inline-trace-title">
-                      <span class="chat-inline-trace-kicker"><i></i>{{ isTerminal(chatTraceByMessageId[message.id].runStatus) ? 'RUN SUMMARY' : 'AGENT ACTIVITY' }}</span>
-                      <strong>{{ chatTraceByMessageId[message.id].headline }}</strong>
-                    </div>
-                    <button type="button" @click="openRunPanel(message.runId)">查看详情</button>
-                  </div>
-                  <div class="chat-inline-trace-progress" aria-label="执行步骤进度">
-                    <div class="chat-inline-trace-progress-meta"><span>{{ chatTraceByMessageId[message.id].finishedCount }} / {{ chatTraceByMessageId[message.id].totalCount }} steps</span><em>{{ chatTraceByMessageId[message.id].progressPercent }}%</em></div>
-                    <div class="chat-inline-trace-progress-bar"><span :style="{ width: `${chatTraceByMessageId[message.id].progressPercent}%` }"></span></div>
-                  </div>
-                  <div class="chat-inline-trace-steps">
-                    <span v-for="step in chatTraceByMessageId[message.id].steps" :key="step.id" :class="statusClass(step.status)"><i></i>{{ chatTraceStepLabel(step) }}</span>
-                  </div>
-                </section>
                 <div v-if="message.role === 'ASSISTANT' && (message.content || canRetryChatMessage(message))" class="chat-message-actions">
                   <button v-if="message.content" type="button" :disabled="copyingMessageId === message.id" @click="copyChatMessage(message)">{{ copyingMessageId === message.id ? '复制中…' : '复制回复' }}</button>
                   <button v-if="canRetryChatMessage(message)" type="button" :disabled="retryingMessageId === message.id" @click="retryChatMessage(message)">{{ retryingMessageId === message.id ? '重试中…' : '重试本轮' }}</button>
