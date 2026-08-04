@@ -3485,31 +3485,17 @@ onBeforeUnmount(() => {
     </div>
   </template>
   <template v-else>
-  <div class="app-shell">
-    <aside class="sidebar">
-      <div class="brand">
+  <div class="console-app">
+    <header class="console-topbar">
+      <div class="brand console-topbar-brand">
         <div class="brand-mark" aria-hidden="true"><Sparkles :size="17" :stroke-width="1.8" /></div>
         <div>
           <strong>Ming Harness</strong>
           <span>Agent Operations</span>
         </div>
       </div>
-
-      <nav class="side-nav" aria-label="主导航">
-        <a class="nav-item" :class="{ active: activeConsoleSection === 'runtime' }" href="#runtime" :aria-current="activeConsoleSection === 'runtime' ? 'page' : undefined" @click="setActiveConsoleSection('runtime')"><span class="nav-icon"><CircleDot :size="16" /></span>运行中心</a>
-        <a class="nav-item" :class="{ active: activeConsoleSection === 'tools' }" href="#tools" :aria-current="activeConsoleSection === 'tools' ? 'page' : undefined" @click="setActiveConsoleSection('tools')"><span class="nav-icon"><Wrench :size="16" /></span>工具注册</a>
-        <a class="nav-item" :class="{ active: activeConsoleSection === 'audit' }" href="#audit" :aria-current="activeConsoleSection === 'audit' ? 'page' : undefined" @click="setActiveConsoleSection('audit')"><span class="nav-icon"><Check :size="16" /></span>审计追踪</a>
-      </nav>
-
-      <div class="sidebar-foot">
-        <div class="system-state"><span class="pulse" :class="{ offline: !infraOnline }"></span><span>{{ infraLabel }}</span></div>
-        <small>Runtime v0.1 · Java 17</small>
-      </div>
-    </aside>
-
-    <main class="main-content" id="runtime">
-      <header class="topbar">
-        <div>
+      <div class="console-topbar-content">
+        <div class="console-page-heading">
           <p class="eyebrow">RUNTIME / OVERVIEW</p>
           <h1>运行中心</h1>
         </div>
@@ -3527,13 +3513,28 @@ onBeforeUnmount(() => {
             <Sun v-if="theme === 'dark'" :size="15" aria-hidden="true" /><Moon v-else :size="15" aria-hidden="true" />
             {{ theme === 'dark' ? '白天' : '黑夜' }}
           </button>
-          <span class="date-chip">本地演示环境</span>
           <button class="primary-button" type="button" @click="showCreateForm = !showCreateForm">
             <Plus :size="16" /> 新建 Run
           </button>
         </div>
-      </header>
+      </div>
+    </header>
 
+    <div class="console-layout">
+      <aside class="sidebar">
+      <nav class="side-nav" aria-label="主导航">
+        <a class="nav-item" :class="{ active: activeConsoleSection === 'runtime' }" href="#runtime" :aria-current="activeConsoleSection === 'runtime' ? 'page' : undefined" @click="setActiveConsoleSection('runtime')"><span class="nav-icon"><CircleDot :size="16" /></span>运行中心</a>
+        <a class="nav-item" :class="{ active: activeConsoleSection === 'tools' }" href="#tools" :aria-current="activeConsoleSection === 'tools' ? 'page' : undefined" @click="setActiveConsoleSection('tools')"><span class="nav-icon"><Wrench :size="16" /></span>工具注册</a>
+        <a class="nav-item" :class="{ active: activeConsoleSection === 'audit' }" href="#audit" :aria-current="activeConsoleSection === 'audit' ? 'page' : undefined" @click="setActiveConsoleSection('audit')"><span class="nav-icon"><Check :size="16" /></span>审计追踪</a>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="system-state"><span class="pulse" :class="{ offline: !infraOnline }"></span><span>{{ infraLabel }}</span></div>
+        <small>Runtime v0.1 · Java 17</small>
+      </div>
+    </aside>
+
+    <main class="main-content" id="runtime">
       <div v-if="errorMessage" class="message error-message">{{ errorMessage }}</div>
       <div v-if="noticeMessage" class="message notice-message">{{ noticeMessage }}</div>
 
@@ -3948,6 +3949,7 @@ onBeforeUnmount(() => {
 
       <footer class="footer">Ming Harness · 每次执行都可恢复、可解释、可审计、可限制</footer>
     </main>
+  </div>
   </div>
   </template>
   <div

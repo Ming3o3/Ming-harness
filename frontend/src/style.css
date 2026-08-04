@@ -1562,6 +1562,193 @@ button svg {
   font-size: 15px;
 }
 
+/* Runtime console chrome mirrors the chat workspace: one persistent bar,
+ * followed by a fixed-width navigation rail and an independently scrolling
+ * content surface. The 252px rail is intentionally shared with .chat-layout.
+ */
+.console-app {
+  display: flex;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.console-topbar {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  gap: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--sidebar-bg);
+  padding: 10px 18px;
+}
+
+.console-topbar-brand {
+  flex: 0 0 252px;
+  padding: 0 11px;
+}
+
+.console-topbar-content {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding-left: 48px;
+}
+
+.console-page-heading {
+  min-width: 0;
+}
+
+.console-page-heading .eyebrow {
+  margin-bottom: 3px;
+}
+
+.console-page-heading h1 {
+  color: var(--heading);
+  font-size: 20px;
+  letter-spacing: -.035em;
+}
+
+.console-topbar .topbar-actions {
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.console-topbar .topbar-actions > .secondary-button,
+.console-topbar .topbar-actions > .theme-toggle,
+.console-topbar .topbar-actions > .command-palette-trigger {
+  padding-top: 7px;
+  padding-bottom: 7px;
+  font-size: 9px;
+}
+
+.console-layout {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  grid-template-columns: 252px minmax(0, 1fr);
+}
+
+.console-layout .sidebar {
+  position: static;
+  width: auto;
+  min-height: 0;
+  height: 100%;
+  overflow: auto;
+  padding: 20px 12px 15px;
+}
+
+.console-layout .side-nav {
+  margin-top: 0;
+}
+
+.console-layout .main-content {
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  margin-left: 0;
+  overflow: auto;
+  padding: 24px 48px 50px;
+}
+
+@media (max-width: 1300px) {
+  .console-topbar-content {
+    padding-left: 28px;
+  }
+
+  .console-layout .main-content {
+    padding-right: 28px;
+    padding-left: 28px;
+  }
+}
+
+@media (max-width: 900px) {
+  .console-topbar {
+    align-items: flex-start;
+  }
+
+  .console-topbar-content {
+    align-items: flex-start;
+  }
+
+  .console-page-heading {
+    padding-top: 2px;
+  }
+
+  .console-topbar .topbar-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 720px) {
+  .console-topbar {
+    min-height: 52px;
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 10px 14px;
+  }
+
+  .console-topbar-brand {
+    flex-basis: auto;
+  }
+
+  .console-topbar-content {
+    width: 100%;
+    align-items: flex-start;
+    padding-left: 0;
+  }
+
+  .console-page-heading {
+    display: none;
+  }
+
+  .console-topbar .topbar-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .console-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .console-layout .sidebar {
+    height: auto;
+    max-height: 170px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 13px 12px;
+  }
+
+  .console-layout .side-nav {
+    display: flex;
+    overflow-x: auto;
+    margin-bottom: 0;
+  }
+
+  .console-layout .nav-item {
+    min-width: 118px;
+    white-space: nowrap;
+  }
+
+  .console-layout .sidebar-foot {
+    display: none;
+  }
+
+  .console-layout .main-content {
+    padding: 20px 14px 34px;
+  }
+}
+
 @media (max-width: 1080px) {
   .chat-layout:has(> .chat-run-panel),
   .chat-layout:has(> .chat-workspace-panel) {
