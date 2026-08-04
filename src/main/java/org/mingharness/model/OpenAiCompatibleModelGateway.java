@@ -6,6 +6,7 @@ import tools.jackson.databind.ObjectMapper;
 import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.observability.HarnessMetrics;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -25,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 /**
@@ -66,7 +68,7 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
     @Override
     public ModelResponse complete(ModelRequest request) {
         if (request == null) {
-            throw new ModelGatewayException("primary", false, "模型请求不能为空");
+            throw new ModelGatewayException("primary", ModelErrorCode.INVALID_REQUEST, false, "模型请求不能为空");
         }
         ModelGatewayException primaryFailure = null;
         try {
@@ -82,7 +84,8 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
         try {
             return invokeWithPolicy(fallback, request);
         } catch (ModelGatewayException fallbackFailure) {
-            throw new ModelGatewayException("fallback", fallbackFailure.retryable(),
+            throw new ModelGatewayException("fallback", ModelErrorCode.FALLBACK_FAILED,
+                    fallbackFailure.retryable(),
                     "主模型和备用模型均调用失败: primary=" + safeMessage(primaryFailure)
                             + "; fallback=" + safeMessage(fallbackFailure), fallbackFailure);
         }
@@ -91,22 +94,31 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
     @Override
     public ModelResponse completeStreaming(ModelRequest request, Consumer<String> onContent) {
         if (request == null) {
-            throw new ModelGatewayException("primary", false, "模型请求不能为空");
+            throw new ModelGatewayException("primary", ModelErrorCode.INVALID_REQUEST, false, "模型请求不能为空");
         }
+        AtomicBoolean outputStarted = new AtomicBoolean();
         ModelGatewayException primaryFailure = null;
         try {
-            return invokeStreamingWithPolicy(primary, request, onContent);
+            return invokeStreamingWithPolicy(primary, request, onContent, outputStarted);
         } catch (ModelGatewayException exception) {
             primaryFailure = exception;
+            // 已经向客户端发送正文、思考内容或 tool_call 后不能静默切换供应商，否则会重复输出或重复执行工具。
+            if (outputStarted.get()) {
+                throw partialResponseFailure(primaryFailure);
+            }
             if (!exception.retryable() || fallback == null) {
                 throw exception;
             }
             metrics.modelFallback();
         }
         try {
-            return invokeStreamingWithPolicy(fallback, request, onContent);
+            return invokeStreamingWithPolicy(fallback, request, onContent, outputStarted);
         } catch (ModelGatewayException fallbackFailure) {
-            throw new ModelGatewayException("fallback", fallbackFailure.retryable(),
+            if (outputStarted.get()) {
+                throw partialResponseFailure(fallbackFailure);
+            }
+            throw new ModelGatewayException("fallback", ModelErrorCode.FALLBACK_FAILED,
+                    fallbackFailure.retryable(),
                     "主模型和备用模型均调用失败: primary=" + safeMessage(primaryFailure)
                             + "; fallback=" + safeMessage(fallbackFailure), fallbackFailure);
         }
@@ -114,7 +126,8 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
 
     private ModelResponse invokeWithPolicy(Provider provider, ModelRequest request) {
         if (!provider.breaker().allowRequest()) {
-            throw new ModelGatewayException(provider.name(), true, "模型供应商熔断中: " + provider.name());
+            throw new ModelGatewayException(provider.name(), ModelErrorCode.CIRCUIT_OPEN, true,
+                    "模型供应商熔断中: " + provider.name());
         }
         ModelGatewayException lastFailure = null;
         for (int attempt = 1; attempt <= config.maxAttempts(); attempt++) {
@@ -135,25 +148,28 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
             }
         }
         throw lastFailure == null
-                ? new ModelGatewayException(provider.name(), true, "模型调用没有返回结果") : lastFailure;
+                ? new ModelGatewayException(provider.name(), ModelErrorCode.PROVIDER_UNAVAILABLE, true,
+                "模型调用没有返回结果") : lastFailure;
     }
 
     private ModelResponse invokeStreamingWithPolicy(Provider provider, ModelRequest request,
-                                                    Consumer<String> onContent) {
+                                                    Consumer<String> onContent,
+                                                    AtomicBoolean outputStarted) {
         if (!provider.breaker().allowRequest()) {
-            throw new ModelGatewayException(provider.name(), true, "模型供应商熔断中: " + provider.name());
+            throw new ModelGatewayException(provider.name(), ModelErrorCode.CIRCUIT_OPEN, true,
+                    "模型供应商熔断中: " + provider.name());
         }
         ModelGatewayException lastFailure = null;
         for (int attempt = 1; attempt <= config.maxAttempts(); attempt++) {
             try {
-                ModelResponse response = invokeStreamingOnce(provider, request, onContent);
+                ModelResponse response = invokeStreamingOnce(provider, request, onContent, outputStarted);
                 provider.breaker().recordSuccess();
                 return response;
             } catch (ModelGatewayException exception) {
                 lastFailure = exception;
                 provider.breaker().recordFailure();
                 if (!exception.retryable() || attempt >= config.maxAttempts()
-                        || !provider.breaker().allowRequest()) {
+                        || outputStarted.get() || !provider.breaker().allowRequest()) {
                     metrics.modelFailed();
                     throw exception;
                 }
@@ -162,7 +178,8 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
             }
         }
         throw lastFailure == null
-                ? new ModelGatewayException(provider.name(), true, "模型调用没有返回结果") : lastFailure;
+                ? new ModelGatewayException(provider.name(), ModelErrorCode.PROVIDER_UNAVAILABLE, true,
+                "模型调用没有返回结果") : lastFailure;
     }
 
     @SuppressWarnings("unchecked")
@@ -178,16 +195,18 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
                     .body(Map.class);
             return parseResponse(provider, request, response, preparedTools);
         } catch (RestClientResponseException exception) {
-            throw new ModelGatewayException(provider.name(), isRetryableStatus(exception.getStatusCode().value()),
+            throw providerHttpFailure(provider.name(), exception.getStatusCode().value(),
                     providerErrorMessage(provider.name(), exception.getStatusCode().value(),
-                            exception.getResponseBodyAsString()), exception);
+                            exception.getResponseBodyAsString()), exception.getResponseHeaders(), exception);
         } catch (RestClientException exception) {
-            throw new ModelGatewayException(provider.name(), true, "模型供应商网络调用失败", exception);
+            throw new ModelGatewayException(provider.name(), ModelErrorCode.PROVIDER_UNAVAILABLE, true,
+                    "模型供应商网络调用失败", exception);
         }
     }
 
     private ModelResponse invokeStreamingOnce(Provider provider, ModelRequest request,
-                                              Consumer<String> onContent) {
+                                              Consumer<String> onContent,
+                                              AtomicBoolean outputStarted) {
         PreparedTools preparedTools = prepareTools(request.tools());
         Map<String, Object> body = requestBody(provider, request, preparedTools);
         body.put("stream", true);
@@ -200,19 +219,22 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
                     .exchange((clientRequest, response) -> {
                         HttpStatusCode status = response.getStatusCode();
                         if (status.isError()) {
-                            throw new ModelGatewayException(provider.name(), isRetryableStatus(status.value()),
-                                    providerErrorMessage(provider.name(), status.value(), readErrorBody(response)));
+                            throw providerHttpFailure(provider.name(), status.value(),
+                                    providerErrorMessage(provider.name(), status.value(), readErrorBody(response)),
+                                    response.getHeaders(), null);
                         }
-                        return parseStreamingResponse(provider, request, preparedTools, response, onContent);
+                        return parseStreamingResponse(provider, request, preparedTools, response, onContent,
+                                outputStarted);
                     });
         } catch (ModelGatewayException exception) {
             throw exception;
         } catch (RestClientResponseException exception) {
-            throw new ModelGatewayException(provider.name(), isRetryableStatus(exception.getStatusCode().value()),
+            throw providerHttpFailure(provider.name(), exception.getStatusCode().value(),
                     providerErrorMessage(provider.name(), exception.getStatusCode().value(),
-                            exception.getResponseBodyAsString()), exception);
+                            exception.getResponseBodyAsString()), exception.getResponseHeaders(), exception);
         } catch (RestClientException exception) {
-            throw new ModelGatewayException(provider.name(), true, "模型供应商网络调用失败", exception);
+            throw new ModelGatewayException(provider.name(), ModelErrorCode.PROVIDER_UNAVAILABLE, true,
+                    "模型供应商网络调用失败", exception);
         }
     }
 
@@ -263,7 +285,8 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
 
     private ModelResponse parseStreamingResponse(Provider provider, ModelRequest request, PreparedTools preparedTools,
                                                  RestClient.RequestHeadersSpec.ConvertibleClientHttpResponse response,
-                                                 Consumer<String> onContent) throws IOException {
+                                                 Consumer<String> onContent,
+                                                 AtomicBoolean outputStarted) throws IOException {
         StringBuilder content = new StringBuilder();
         StringBuilder reasoningContent = new StringBuilder();
         Map<Integer, StreamToolCall> toolCalls = new LinkedHashMap<>();
@@ -279,7 +302,8 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
                 try {
                     event = objectMapper.readTree(payload);
                 } catch (JacksonException exception) {
-                    throw new ModelGatewayException(provider.name(), false, "模型流式响应不是有效 JSON", exception);
+                    throw new ModelGatewayException(provider.name(), ModelErrorCode.BAD_RESPONSE, false,
+                            "模型流式响应不是有效 JSON", exception);
                 }
                 if (event == null || !event.isObject()) continue;
                 responseModel = event.path("model").asText(responseModel);
@@ -289,25 +313,34 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
                 JsonNode delta = choices.get(0).path("delta");
                 String reasoningChunk = delta.path("reasoning_content").asText("");
                 if (!reasoningChunk.isEmpty()) {
+                    outputStarted.set(true);
                     reasoningContent.append(reasoningChunk);
                     if (reasoningContent.length() > config.maxResponseChars()) {
-                        throw new ModelGatewayException(provider.name(), false, "模型思考内容超过字符上限");
+                        throw new ModelGatewayException(provider.name(), ModelErrorCode.RESPONSE_TOO_LARGE, false,
+                                "模型思考内容超过字符上限");
                     }
                 }
                 String chunk = delta.path("content").asText("");
                 if (!chunk.isEmpty()) {
+                    outputStarted.set(true);
                     content.append(chunk);
                     if (content.length() > config.maxResponseChars()) {
-                        throw new ModelGatewayException(provider.name(), false, "模型响应超过字符上限");
+                        throw new ModelGatewayException(provider.name(), ModelErrorCode.RESPONSE_TOO_LARGE, false,
+                                "模型响应超过字符上限");
                     }
                     if (onContent != null) onContent.accept(content.toString());
                 }
-                appendStreamToolCalls(delta.path("tool_calls"), toolCalls);
+                JsonNode rawToolCalls = delta.path("tool_calls");
+                if (rawToolCalls.isArray() && !rawToolCalls.isEmpty()) {
+                    outputStarted.set(true);
+                }
+                appendStreamToolCalls(rawToolCalls, toolCalls);
             }
         }
         List<ModelToolCall> completedToolCalls = completeStreamToolCalls(toolCalls, provider.name(), preparedTools);
         if (content.isEmpty() && completedToolCalls.isEmpty()) {
-            throw new ModelGatewayException(provider.name(), false, "模型响应缺少 content 或 tool_calls");
+            throw new ModelGatewayException(provider.name(), ModelErrorCode.BAD_RESPONSE, false,
+                    "模型响应缺少 content 或 tool_calls");
         }
         int inputTokens = usage.inputTokens();
         int outputTokens = usage.outputTokens() == 0 ? estimateTokens(content.toString()) : usage.outputTokens();
@@ -336,11 +369,12 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
             String providerToolName = raw.name.toString();
             String arguments = raw.arguments.toString();
             if (id.isBlank() || providerToolName.isBlank() || arguments.isBlank()) {
-                throw new ModelGatewayException(providerName, false, "模型流式 tool_call 缺少必填字段");
+                throw new ModelGatewayException(providerName, ModelErrorCode.INVALID_TOOL_CALL, false,
+                        "模型流式 tool_call 缺少必填字段");
             }
             String internalToolName = preparedTools.internalName(providerToolName);
             if (internalToolName == null) {
-                throw new ModelGatewayException(providerName, false,
+                throw new ModelGatewayException(providerName, ModelErrorCode.INVALID_TOOL_CALL, false,
                         "模型响应 tool_call 使用未声明的工具: " + providerToolName);
             }
             calls.add(new ModelToolCall(id, internalToolName,
@@ -353,28 +387,33 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
     private ModelResponse parseResponse(Provider provider, ModelRequest request, Map<String, Object> response,
                                         PreparedTools preparedTools) {
         if (response == null) {
-            throw new ModelGatewayException(provider.name(), false, "模型响应为空");
+            throw new ModelGatewayException(provider.name(), ModelErrorCode.BAD_RESPONSE, false, "模型响应为空");
         }
         Object choicesValue = response.get("choices");
         if (!(choicesValue instanceof List<?> choices) || choices.isEmpty()
                 || !(choices.get(0) instanceof Map<?, ?> firstChoice)) {
-            throw new ModelGatewayException(provider.name(), false, "模型响应缺少有效 choices");
+            throw new ModelGatewayException(provider.name(), ModelErrorCode.BAD_RESPONSE, false,
+                    "模型响应缺少有效 choices");
         }
         Object messageValue = firstChoice.get("message");
         if (!(messageValue instanceof Map<?, ?> message)) {
-            throw new ModelGatewayException(provider.name(), false, "模型响应缺少 message");
+            throw new ModelGatewayException(provider.name(), ModelErrorCode.BAD_RESPONSE, false,
+                    "模型响应缺少 message");
         }
         String content = message.get("content") instanceof String value ? value : "";
         String reasoningContent = message.get("reasoning_content") instanceof String value ? value : "";
         List<ModelToolCall> toolCalls = parseToolCalls(message.get("tool_calls"), provider.name(), preparedTools);
         if (content.isBlank() && toolCalls.isEmpty()) {
-            throw new ModelGatewayException(provider.name(), false, "模型响应缺少 content 或 tool_calls");
+            throw new ModelGatewayException(provider.name(), ModelErrorCode.BAD_RESPONSE, false,
+                    "模型响应缺少 content 或 tool_calls");
         }
         if (content.length() > config.maxResponseChars()) {
-            throw new ModelGatewayException(provider.name(), false, "模型响应超过字符上限");
+            throw new ModelGatewayException(provider.name(), ModelErrorCode.RESPONSE_TOO_LARGE, false,
+                    "模型响应超过字符上限");
         }
         if (reasoningContent.length() > config.maxResponseChars()) {
-            throw new ModelGatewayException(provider.name(), false, "模型思考内容超过字符上限");
+            throw new ModelGatewayException(provider.name(), ModelErrorCode.RESPONSE_TOO_LARGE, false,
+                    "模型思考内容超过字符上限");
         }
         Usage usage = usage(response.get("usage"));
         String responseModel = response.get("model") instanceof String value && !value.isBlank()
@@ -390,30 +429,35 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
                                                PreparedTools preparedTools) {
         if (rawValue == null) return List.of();
         if (!(rawValue instanceof List<?> values)) {
-            throw new ModelGatewayException(providerName, false, "模型响应 tool_calls 格式无效");
+            throw new ModelGatewayException(providerName, ModelErrorCode.INVALID_TOOL_CALL, false,
+                    "模型响应 tool_calls 格式无效");
         }
         List<ModelToolCall> calls = new ArrayList<>();
         for (Object value : values) {
             if (!(value instanceof Map<?, ?> call)) {
-                throw new ModelGatewayException(providerName, false, "模型响应 tool_call 项格式无效");
+                throw new ModelGatewayException(providerName, ModelErrorCode.INVALID_TOOL_CALL, false,
+                        "模型响应 tool_call 项格式无效");
             }
             String id = stringValue(call.get("id"));
             Object functionValue = call.get("function");
             if (id == null || !(functionValue instanceof Map<?, ?> function)) {
-                throw new ModelGatewayException(providerName, false, "模型响应 tool_call 缺少 id 或 function");
+                throw new ModelGatewayException(providerName, ModelErrorCode.INVALID_TOOL_CALL, false,
+                        "模型响应 tool_call 缺少 id 或 function");
             }
             String providerToolName = stringValue(function.get("name"));
             String arguments = stringValue(function.get("arguments"));
             if (providerToolName == null || arguments == null
                     || providerToolName.isBlank() || arguments.isBlank()) {
-                throw new ModelGatewayException(providerName, false, "模型响应 tool_call 缺少工具名称或参数");
+                throw new ModelGatewayException(providerName, ModelErrorCode.INVALID_TOOL_CALL, false,
+                        "模型响应 tool_call 缺少工具名称或参数");
             }
             if (arguments.length() > config.maxResponseChars()) {
-                throw new ModelGatewayException(providerName, false, "模型 tool_call 参数超过字符上限");
+                throw new ModelGatewayException(providerName, ModelErrorCode.RESPONSE_TOO_LARGE, false,
+                        "模型 tool_call 参数超过字符上限");
             }
             String internalToolName = preparedTools.internalName(providerToolName);
             if (internalToolName == null) {
-                throw new ModelGatewayException(providerName, false,
+                throw new ModelGatewayException(providerName, ModelErrorCode.INVALID_TOOL_CALL, false,
                         "模型响应 tool_call 使用未声明的工具: " + providerToolName);
             }
             calls.add(new ModelToolCall(id, internalToolName,
@@ -433,7 +477,8 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
         for (ModelToolDefinition tool : tools) {
             String internalName = tool.name();
             if (internalName == null || internalName.isBlank()) {
-                throw new ModelGatewayException("model", false, "模型工具定义缺少工具名称");
+                throw new ModelGatewayException("model", ModelErrorCode.INVALID_TOOL_CALL, false,
+                        "模型工具定义缺少工具名称");
             }
             String providerToolName = providerToolName(internalName, usedProviderNames);
             boolean legacyText = isLegacyTextSchema(tool.inputSchema());
@@ -531,13 +576,13 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
                     return value.asText();
                 }
                 if (value == null || !value.isObject() || value.size() != 1
-                        || value.get("input") == null || !value.get("input").isTextual()) {
-                    throw new ModelGatewayException(modelProvider, false,
+                    || value.get("input") == null || !value.get("input").isTextual()) {
+                    throw new ModelGatewayException(modelProvider, ModelErrorCode.INVALID_TOOL_CALL, false,
                             "模型响应 legacy tool_call 参数必须是 {input: string}");
                 }
                 return value.get("input").asText();
             } catch (JacksonException exception) {
-                throw new ModelGatewayException(modelProvider, false,
+                throw new ModelGatewayException(modelProvider, ModelErrorCode.INVALID_TOOL_CALL, false,
                         "模型响应 legacy tool_call 参数不是有效 JSON", exception);
             }
         }
@@ -592,6 +637,50 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
                 new ModelCircuitBreaker(config.circuitFailureThreshold(), config.circuitOpenMs()));
     }
 
+    private ModelGatewayException partialResponseFailure(ModelGatewayException cause) {
+        return new ModelGatewayException(cause == null ? "model" : cause.provider(),
+                ModelErrorCode.PARTIAL_RESPONSE, false,
+                "模型流式响应已经输出部分内容，不能切换备用供应商", cause);
+    }
+
+    private ModelGatewayException providerHttpFailure(String provider, int status, String message,
+                                                      HttpHeaders headers, Throwable cause) {
+        return new ModelGatewayException(provider, errorCodeForStatus(status), isRetryableStatus(status),
+                message, status, retryAfterMs(headers), requestId(headers), cause);
+    }
+
+    private ModelErrorCode errorCodeForStatus(int status) {
+        return switch (status) {
+            case 400, 422 -> ModelErrorCode.INVALID_REQUEST;
+            case 401 -> ModelErrorCode.AUTHENTICATION_FAILED;
+            case 403 -> ModelErrorCode.PERMISSION_DENIED;
+            case 404 -> ModelErrorCode.MODEL_NOT_FOUND;
+            case 408 -> ModelErrorCode.TIMEOUT;
+            case 425, 429 -> ModelErrorCode.RATE_LIMITED;
+            default -> status >= 500 ? ModelErrorCode.PROVIDER_UNAVAILABLE : ModelErrorCode.UNKNOWN;
+        };
+    }
+
+    private Long retryAfterMs(HttpHeaders headers) {
+        if (headers == null) return null;
+        String value = headers.getFirst("Retry-After");
+        if (value == null || value.isBlank()) return null;
+        try {
+            long seconds = Long.parseLong(value.trim());
+            if (seconds <= 0) return 0L;
+            return seconds >= 600 ? 600_000L : seconds * 1_000L;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private String requestId(HttpHeaders headers) {
+        if (headers == null) return null;
+        String value = headers.getFirst("x-request-id");
+        if (value == null || value.isBlank()) value = headers.getFirst("request-id");
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
     private boolean isRetryableStatus(int status) {
         return status == 408 || status == 425 || status == 429 || status >= 500;
     }
@@ -605,7 +694,8 @@ public class OpenAiCompatibleModelGateway implements ModelGateway {
             Thread.sleep(delay);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new ModelGatewayException("model", true, "模型重试等待被中断", exception);
+            throw new ModelGatewayException("model", ModelErrorCode.RETRY_INTERRUPTED, true,
+                    "模型重试等待被中断", exception);
         }
     }
 

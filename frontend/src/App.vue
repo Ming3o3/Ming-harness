@@ -2206,6 +2206,7 @@ async function testModelConfig() {
       message: errorText(error),
       modelName: modelConfigForm.modelName.trim(),
       latencyMs: 0,
+      errorCode: 'CLIENT_ERROR',
     }
   } finally {
     modelConfigTesting.value = false
@@ -3826,6 +3827,7 @@ onBeforeUnmount(() => {
         </label>
         <p v-if="modelConfig?.apiKeyConfigured" class="model-settings-hint">当前密钥：{{ modelConfig.apiKeyHint || '已配置（不显示明文）' }}</p>
         <p v-if="modelConfigTestResult" class="model-settings-test-result" :class="modelConfigTestResult.success ? 'success' : 'failed'" role="status" aria-live="polite">
+          <span v-if="modelConfigTestResult.errorCode" class="model-settings-test-code">{{ modelConfigTestResult.errorCode }}</span>
           {{ modelConfigTestResult.message }}<span v-if="modelConfigTestResult.latencyMs"> · {{ modelConfigTestResult.latencyMs }} ms</span>
         </p>
         <p v-if="modelConfigError" class="policy-error">{{ modelConfigError }}</p>

@@ -62,13 +62,16 @@ public class ModelConnectionTester {
                     response.model(), elapsedMs(startedAt));
         } catch (ExecutionTimeoutException exception) {
             return new ModelConnectionTestView(false, "TIMEOUT",
-                    "连接测试超时，请检查模型地址、网络或服务状态。", candidate.modelName(), elapsedMs(startedAt));
+                    "连接测试超时，请检查模型地址、网络或服务状态。", candidate.modelName(),
+                    elapsedMs(startedAt), ModelErrorCode.TIMEOUT.name());
         } catch (ModelGatewayException exception) {
             return new ModelConnectionTestView(false, "FAILED",
-                    "连接失败：" + safeMessage(exception), candidate.modelName(), elapsedMs(startedAt));
+                    "连接失败：" + safeMessage(exception), candidate.modelName(), elapsedMs(startedAt),
+                    exception.code().name());
         } catch (RuntimeException exception) {
             return new ModelConnectionTestView(false, "FAILED",
-                    "连接失败：模型供应商暂时不可用。", candidate.modelName(), elapsedMs(startedAt));
+                    "连接失败：模型供应商暂时不可用。", candidate.modelName(), elapsedMs(startedAt),
+                    ModelErrorCode.PROVIDER_UNAVAILABLE.name());
         }
     }
 

@@ -6,6 +6,13 @@ public record ModelConnectionTestView(
         String status,
         String message,
         String modelName,
-        long latencyMs
+        long latencyMs,
+        String errorCode
 ) {
+
+    /** 兼容旧的连接测试调用方；失败语义由后端版本逐步补充。 */
+    public ModelConnectionTestView(boolean success, String status, String message,
+                                   String modelName, long latencyMs) {
+        this(success, status, message, modelName, latencyMs, null);
+    }
 }

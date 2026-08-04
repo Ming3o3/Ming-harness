@@ -214,6 +214,56 @@ class OpenAiCompatibleModelGatewayTests {
     }
 
     @Test
+    void shouldExposeStableProviderErrorCodeAndRetryMetadata() throws IOException {
+        HttpServer server = server(exchange -> {
+            exchange.getResponseHeaders().set("Retry-After", "3");
+            exchange.getResponseHeaders().set("x-request-id", "provider-request-42");
+            respond(exchange, 429, "{\"error\":{\"message\":\"rate limited\"}}");
+        });
+        OpenAiCompatibleModelGateway gateway = gateway(config(url(server), 1, null, null));
+
+        ModelGatewayException exception = assertThrows(ModelGatewayException.class,
+                () -> gateway.complete(new ModelRequest("继续检查", "", "prompt-agent")));
+
+        assertEquals(ModelErrorCode.RATE_LIMITED, exception.code());
+        assertTrue(exception.retryable());
+        assertEquals(429, exception.httpStatus());
+        assertEquals(3_000L, exception.retryAfterMs());
+        assertEquals("provider-request-42", exception.requestId());
+    }
+
+    @Test
+    void shouldNotRetryOrFallbackAfterStreamingOutputStarted() throws IOException {
+        AtomicInteger primaryCalls = new AtomicInteger();
+        AtomicInteger fallbackCalls = new AtomicInteger();
+        HttpServer primary = server(exchange -> {
+            primaryCalls.incrementAndGet();
+            exchange.getRequestBody().readAllBytes();
+            byte[] bytes = ("data: {\"model\":\"provider-model\",\"choices\":[{\"delta\":{\"content\":\"已经输出\"}}]}\n\n"
+                    + "data: {not-valid-json}\n\n").getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "text/event-stream; charset=utf-8");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        HttpServer fallback = server(exchange -> {
+            fallbackCalls.incrementAndGet();
+            respond(exchange, 200, success("备用供应商不应被调用"));
+        });
+        OpenAiCompatibleModelGateway gateway = gateway(config(url(primary), 3, url(fallback), "fallback-model"));
+        List<String> snapshots = new ArrayList<>();
+
+        ModelGatewayException exception = assertThrows(ModelGatewayException.class,
+                () -> gateway.completeStreaming(new ModelRequest("继续检查", "", "prompt-agent"), snapshots::add));
+
+        assertEquals(ModelErrorCode.PARTIAL_RESPONSE, exception.code());
+        assertFalse(exception.retryable());
+        assertEquals(1, primaryCalls.get());
+        assertEquals(0, fallbackCalls.get());
+        assertEquals(List.of("已经输出"), snapshots);
+    }
+
+    @Test
     void shouldExposeSanitizedProviderErrorBody() throws IOException {
         HttpServer server = server(exchange -> respond(exchange, 400,
                 "{\"error\":{\"message\":\"reasoning_content is required; api_key=secret-value\"}}"));
