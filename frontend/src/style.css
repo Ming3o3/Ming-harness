@@ -834,6 +834,51 @@ h3 { margin: 0; font-size: 13px; }
   --panel-shadow: 0 14px 42px rgba(0, 0, 0, .22);
 }
 
+/*
+ * Keep scrollbars visually attached to the surface they belong to. Chromium's
+ * default scrollbar paints an opaque track, which is especially noticeable in
+ * the conversation list and the full-height chat pane. The transparent track
+ * lets the panel/sidebar background show through while the thumb remains easy
+ * to discover and drag.
+ */
+:root {
+  --scrollbar-thumb: rgba(82, 82, 82, .34);
+  --scrollbar-thumb-hover: rgba(82, 82, 82, .52);
+}
+
+:root[data-theme="dark"] {
+  --scrollbar-thumb: rgba(255, 255, 255, .28);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, .44);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  min-height: 24px;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: var(--scrollbar-thumb);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
 body {
   background: var(--bg);
   color: var(--text);
