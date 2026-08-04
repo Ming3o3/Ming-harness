@@ -40,6 +40,9 @@ const selectedRun = ref(null)
 const auditEvents = ref([])
 const documents = ref([])
 const evaluations = ref([])
+const selectedEvaluationReport = ref(null)
+const evaluationReportLoadingRunId = ref('')
+const selectedEvaluationCases = computed(() => evaluationCases(selectedEvaluationReport.value))
 const tenantPolicy = ref(null)
 const tenantPolicyAudits = ref([])
 const tenantPolicyError = ref('')
@@ -812,6 +815,75 @@ function formatDate(value) {
   }).format(new Date(value))
 }
 
+function evaluationRateLabel(report) {
+  if (!report || report.totalCases <= 0) return '—'
+  return `${Math.round(Number(report.successRate || 0) * 100)}%`
+}
+
+function evaluationCases(report) {
+  if (!report?.details) return []
+  return report.details.split('\n').filter(Boolean).map((line, index) => {
+    const separatorIndex = line.indexOf('=')
+    const name = separatorIndex >= 0 ? line.slice(0, separatorIndex) : `用例 ${index + 1}`
+    const tokens = (separatorIndex >= 0 ? line.slice(separatorIndex + 1) : line).split(':')
+    const outcome = tokens.shift() || 'UNKNOWN'
+    const fields = Object.fromEntries(tokens.map((token) => {
+      const fieldSeparator = token.indexOf('=')
+      return fieldSeparator >= 0
+        ? [token.slice(0, fieldSeparator), token.slice(fieldSeparator + 1)]
+        : [token, '']
+    }))
+    return {
+      id: `${report.id}-${index}`,
+      name,
+      outcome,
+      runId: fields.run || '',
+      status: fields.status || '—',
+      message: Object.prototype.hasOwnProperty.call(fields, '等待超时')
+        ? '等待异步 Run 超时，记录的是当时状态'
+        : '',
+    }
+  })
+}
+
+function evaluationOutcomeLabel(outcome) {
+  return {
+    PASSED: '通过',
+    FAILED: '失败',
+    TIMEOUT: '超时',
+  }[outcome] || '未知'
+}
+
+function evaluationOutcomeClass(outcome) {
+  return outcome === 'PASSED' ? 'evaluation-case-passed'
+    : outcome === 'TIMEOUT' ? 'evaluation-case-timeout'
+      : 'evaluation-case-failed'
+}
+
+function openEvaluationReport(report) {
+  selectedEvaluationReport.value = report
+}
+
+function closeEvaluationReport() {
+  if (evaluationReportLoadingRunId.value) return
+  selectedEvaluationReport.value = null
+}
+
+async function openEvaluationRun(runId) {
+  if (!runId || evaluationReportLoadingRunId.value) return
+  evaluationReportLoadingRunId.value = runId
+  try {
+    await selectRun(runId, false)
+    selectedEvaluationReport.value = null
+    activeConsoleSection.value = 'runtime'
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    evaluationReportLoadingRunId.value = ''
+  }
+}
+
 function clearMessages() {
   errorMessage.value = ''
   noticeMessage.value = ''
@@ -1003,6 +1075,13 @@ function handleChatGlobalKeydown(event) {
     } else if (event.key === 'Enter') {
       event.preventDefault()
       executeSelectedCommand()
+    }
+    return
+  }
+  if (selectedEvaluationReport.value) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      closeEvaluationReport()
     }
     return
   }
@@ -3800,7 +3879,7 @@ onBeforeUnmount(() => {
             <label class="field"><span>测试输入</span><textarea v-model="evaluationForm.input" required rows="2"></textarea></label>
             <label class="field"><span>期望包含</span><input v-model="evaluationForm.expectedContains" /></label>
             <button class="secondary-button" type="submit" :disabled="loading">执行评测</button>
-            <small class="form-hint">历史报告 {{ evaluations.length }} 份；每份报告绑定模型、Prompt 和策略版本。</small>
+            <small class="form-hint">历史报告 {{ evaluations.length }} 份；执行完成后点击下方记录查看用例结果、Run 状态和版本绑定。</small>
           </form>
           <form class="governance-card policy-card" @submit.prevent="saveTenantPolicy">
             <div class="subsection-title"><h3>组织资源策略</h3><span v-if="tenantPolicy">{{ tenantPolicy.defaulted ? '平台默认' : '组织覆盖' }}</span></div>
@@ -3855,10 +3934,15 @@ onBeforeUnmount(() => {
             </div>
           </form>
         </div>
-        <div v-if="showGovernance && evaluations.length" class="evaluation-list">
-          <div v-for="report in evaluations.slice(0, 5)" :key="report.id" class="evaluation-row">
-            <strong>{{ report.name }}</strong><span>{{ report.passedCases }}/{{ report.totalCases }} 通过</span><small>{{ report.promptVersion }} · {{ formatDate(report.createdAt) }}</small>
-          </div>
+        <div v-if="showGovernance && evaluations.length" class="evaluation-list" aria-label="历史评测报告">
+          <button v-for="report in evaluations.slice(0, 5)" :key="report.id" class="evaluation-row" type="button" @click="openEvaluationReport(report)">
+            <span class="evaluation-row-main">
+              <strong>{{ report.name }}</strong>
+              <small>{{ report.modelName || '未指定模型' }} · Prompt {{ report.promptVersion || '—' }} · 策略 {{ report.policyVersion || '—' }}</small>
+            </span>
+            <span class="evaluation-row-result" :class="report.passedCases === report.totalCases ? 'evaluation-case-passed' : 'evaluation-case-failed'">{{ report.passedCases }}/{{ report.totalCases }} 通过</span>
+            <span class="evaluation-row-meta"><small>{{ formatDate(report.createdAt) }}</small><em>查看详情 →</em></span>
+          </button>
         </div>
       </section>
 
@@ -3866,6 +3950,54 @@ onBeforeUnmount(() => {
     </main>
   </div>
   </template>
+  <div
+    v-if="selectedEvaluationReport"
+    class="evaluation-report-overlay"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="evaluation-report-title"
+    @click.self="closeEvaluationReport"
+  >
+    <section class="evaluation-report-dialog">
+      <header class="evaluation-report-heading">
+        <div>
+          <p class="eyebrow">EVALUATION REPORT</p>
+          <h2 id="evaluation-report-title">{{ selectedEvaluationReport.name }}</h2>
+          <span>{{ formatDate(selectedEvaluationReport.createdAt) }} · {{ selectedEvaluationReport.id.slice(0, 12) }}</span>
+        </div>
+        <button class="icon-button" type="button" aria-label="关闭评测报告" :disabled="Boolean(evaluationReportLoadingRunId)" @click="closeEvaluationReport">×</button>
+      </header>
+      <div class="evaluation-report-body">
+        <div class="evaluation-report-overview">
+          <div class="evaluation-report-score" :class="selectedEvaluationReport.passedCases === selectedEvaluationReport.totalCases ? 'evaluation-case-passed' : 'evaluation-case-failed'">
+            <strong>{{ selectedEvaluationReport.passedCases }}/{{ selectedEvaluationReport.totalCases }}</strong>
+            <span>用例通过</span>
+          </div>
+          <div class="evaluation-report-rate"><strong>{{ evaluationRateLabel(selectedEvaluationReport) }}</strong><span>成功率</span></div>
+          <div class="evaluation-report-binding"><span>模型</span><strong>{{ selectedEvaluationReport.modelName || '未指定' }}</strong></div>
+          <div class="evaluation-report-binding"><span>Prompt</span><strong>{{ selectedEvaluationReport.promptVersion || '—' }}</strong></div>
+          <div class="evaluation-report-binding"><span>策略</span><strong>{{ selectedEvaluationReport.policyVersion || '—' }}</strong></div>
+        </div>
+        <div class="evaluation-report-section">
+          <div class="subsection-title"><h3>用例结果</h3><span>{{ selectedEvaluationCases.length }} cases</span></div>
+          <div v-if="selectedEvaluationCases.length" class="evaluation-case-list">
+            <article v-for="item in selectedEvaluationCases" :key="item.id" class="evaluation-case-row">
+              <div class="evaluation-case-copy">
+                <div><strong>{{ item.name }}</strong><span class="evaluation-case-status" :class="evaluationOutcomeClass(item.outcome)">{{ evaluationOutcomeLabel(item.outcome) }}</span></div>
+                <small>{{ item.status }}<span v-if="item.message"> · {{ item.message }}</span></small>
+              </div>
+              <button v-if="item.runId" class="secondary-button evaluation-run-button" type="button" :disabled="Boolean(evaluationReportLoadingRunId)" @click="openEvaluationRun(item.runId)">{{ evaluationReportLoadingRunId === item.runId ? '打开中…' : '打开 Run 详情' }}</button>
+            </article>
+          </div>
+          <p v-else class="evaluation-report-empty">该报告没有可展开的用例明细。</p>
+        </div>
+        <details v-if="selectedEvaluationReport.details" class="evaluation-report-raw">
+          <summary>查看技术记录</summary>
+          <pre>{{ selectedEvaluationReport.details }}</pre>
+        </details>
+      </div>
+    </section>
+  </div>
   <div
     v-if="showRejectDialog"
     class="reject-dialog-overlay"
