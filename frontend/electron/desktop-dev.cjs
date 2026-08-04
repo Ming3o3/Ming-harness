@@ -7,8 +7,8 @@ const frontendRoot = path.resolve(__dirname, '..')
 const projectRoot = path.resolve(frontendRoot, '..')
 const bridgeToken = randomBytes(32).toString('base64url')
 const runtimeProfile = process.env.SPRING_PROFILES_ACTIVE || 'local'
-const frontendUrl = process.env.HARNESS_FRONTEND_URL || 'http://127.0.0.1:5173'
-const apiBaseUrl = process.env.HARNESS_API_BASE_URL || 'http://127.0.0.1:8080/api'
+const requestedFrontendUrl = process.env.HARNESS_FRONTEND_URL || 'http://127.0.0.1:5173'
+const requestedApiBaseUrl = process.env.HARNESS_API_BASE_URL || 'http://127.0.0.1:8080/api'
 let children = []
 let stopping = false
 
@@ -37,7 +37,7 @@ function stop(exitCode = 0) {
   process.exit(exitCode)
 }
 
-function assertPortAvailable(url, label) {
+function portAvailable(url) {
   const parsed = new URL(url)
   const port = Number(parsed.port || (parsed.protocol === 'https:' ? 443 : 80))
   const host = parsed.hostname
@@ -45,17 +45,39 @@ function assertPortAvailable(url, label) {
     const socket = net.createConnection({ host, port })
     socket.once('connect', () => {
       socket.destroy()
-      reject(new Error(`${label} 端口 ${port} 已被占用，请先关闭已有 Runtime 或修改端口配置。`))
+      resolve(false)
     })
     socket.once('error', (error) => {
       socket.destroy()
       if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
-        resolve()
+        resolve(true)
         return
       }
-      reject(new Error(`${label} 端口 ${port} 无法检查：${error.message}`))
+      reject(error)
     })
   })
+}
+
+async function resolveLocalUrl(requestedUrl, label, fallbackStartPort, suffix = '') {
+  const parsed = new URL(requestedUrl)
+  if (parsed.hostname !== '127.0.0.1' && parsed.hostname !== 'localhost') {
+    throw new Error(`${label} 必须指向本机地址`)
+  }
+  if (await portAvailable(requestedUrl)) return requestedUrl
+  if (process.env.HARNESS_ALLOW_PORT_FALLBACK === 'false') {
+    throw new Error(`${label} 端口 ${parsed.port} 已被占用，请关闭已有实例或设置 HARNESS_ALLOW_PORT_FALLBACK=true。`)
+  }
+
+  const preferredPort = Number(parsed.port)
+  const startPort = Math.max(fallbackStartPort, preferredPort + 1)
+  for (let port = startPort; port < startPort + 100; port += 1) {
+    const candidate = `${parsed.protocol}//${parsed.hostname}:${port}${suffix}`
+    if (await portAvailable(candidate)) {
+      console.warn(`${label} 端口 ${preferredPort} 已被占用，自动切换到 ${port}`)
+      return candidate
+    }
+  }
+  throw new Error(`${label} 没有找到可用端口，请关闭已有实例后重试。`)
 }
 
 async function waitFor(url, label, child) {
@@ -76,26 +98,27 @@ async function waitFor(url, label, child) {
 }
 
 async function main() {
+  const apiUrl = await resolveLocalUrl(requestedApiBaseUrl, 'Spring Boot Runtime', 8081, '/api')
+  const uiUrl = await resolveLocalUrl(requestedFrontendUrl, 'Vite 前端', 5174)
+  const apiPort = Number(new URL(apiUrl).port)
   const sharedEnv = {
     ...process.env,
     SPRING_PROFILES_ACTIVE: runtimeProfile,
+    SERVER_PORT: String(apiPort),
+    CORS_ALLOWED_ORIGINS: uiUrl,
     WORKSPACE_ENABLED: 'true',
     WORKSPACE_LOCAL_REGISTRATION_ENABLED: 'true',
     HARNESS_DESKTOP_BRIDGE_TOKEN: bridgeToken,
-    HARNESS_API_BASE_URL: apiBaseUrl,
-    HARNESS_FRONTEND_URL: frontendUrl,
+    HARNESS_API_BASE_URL: apiUrl,
+    HARNESS_FRONTEND_URL: uiUrl,
   }
   console.log(`启动本地桌面 Runtime（Profile: ${runtimeProfile}）`)
-  await Promise.all([
-    assertPortAvailable('http://127.0.0.1:8080', 'Spring Boot Runtime'),
-    assertPortAvailable(frontendUrl, 'Vite 前端'),
-  ])
   const runtimeProcess = start(path.join(projectRoot, process.platform === 'win32' ? 'mvnw.cmd' : 'mvnw'),
     ['spring-boot:run'], projectRoot, sharedEnv)
-  const frontendProcess = start(command('npm'), ['run', 'dev', '--', '--host', '127.0.0.1', '--strictPort'], frontendRoot, sharedEnv)
+  const frontendProcess = start(command('npm'), ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(new URL(uiUrl).port), '--strictPort'], frontendRoot, sharedEnv)
   await Promise.all([
-    waitFor('http://127.0.0.1:8080/actuator/health', 'Spring Boot Runtime', runtimeProcess),
-    waitFor(frontendUrl, 'Vite 前端', frontendProcess),
+    waitFor(`${apiUrl.replace(/\/api$/, '')}/actuator/health`, 'Spring Boot Runtime', runtimeProcess),
+    waitFor(uiUrl, 'Vite 前端', frontendProcess),
   ])
   console.log('打开 Ming Harness 桌面窗口；关闭窗口将停止本地开发进程。')
   start(path.join(frontendRoot, 'node_modules', '.bin', process.platform === 'win32' ? 'electron.cmd' : 'electron'),
