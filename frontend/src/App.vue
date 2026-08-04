@@ -262,9 +262,35 @@ function setActiveConsoleSection(section) {
   activeConsoleSection.value = section
 }
 
+function scrollToConsoleSection(section, behavior = 'smooth') {
+  if (typeof document === 'undefined') return
+  window.requestAnimationFrame(() => {
+    const container = document.querySelector('.console-layout .main-content')
+    if (!container) return
+    const target = section === 'runtime' ? container : document.getElementById(section)
+    if (!target) return
+    if (section === 'runtime') {
+      container.scrollTo({ top: 0, behavior })
+      return
+    }
+    const containerRect = container.getBoundingClientRect()
+    const targetRect = target.getBoundingClientRect()
+    const top = container.scrollTop + targetRect.top - containerRect.top - 16
+    container.scrollTo({ top: Math.max(0, top), behavior })
+  })
+}
+
+function navigateConsoleSection(section) {
+  setActiveConsoleSection(section)
+  if (window.location.hash !== `#${section}`) window.location.hash = section
+  scrollToConsoleSection(section)
+}
+
 function syncActiveConsoleSectionFromHash() {
   const section = window.location.hash.slice(1)
-  activeConsoleSection.value = ['runtime', 'tools', 'audit'].includes(section) ? section : 'runtime'
+  const nextSection = ['runtime', 'tools', 'audit'].includes(section) ? section : 'runtime'
+  activeConsoleSection.value = nextSection
+  scrollToConsoleSection(nextSection, 'auto')
 }
 
 function readStoredValue(key, fallback) {
@@ -3002,13 +3028,13 @@ onBeforeUnmount(() => {
             <button class="chat-primary-nav-item chat-primary-nav-item-primary" type="button" :disabled="chatLoading || chatSending || chatUploading" @click="createChatConversation">
               <MessageSquarePlus :size="15" /><span>新对话</span><kbd>⌘N</kbd>
             </button>
-            <button class="chat-primary-nav-item" type="button" @click="chatMode = false; setActiveConsoleSection('runtime')">
+            <button class="chat-primary-nav-item" type="button" @click="chatMode = false; navigateConsoleSection('runtime')">
               <CircleDot :size="15" /><span>运行中心</span>
             </button>
-            <button class="chat-primary-nav-item" type="button" @click="chatMode = false; setActiveConsoleSection('tools')">
+            <button class="chat-primary-nav-item" type="button" @click="chatMode = false; navigateConsoleSection('tools')">
               <Wrench :size="15" /><span>工具注册</span>
             </button>
-            <button class="chat-primary-nav-item" type="button" @click="chatMode = false; setActiveConsoleSection('audit')">
+            <button class="chat-primary-nav-item" type="button" @click="chatMode = false; navigateConsoleSection('audit')">
               <Check :size="15" /><span>审计追踪</span>
             </button>
           </nav>
@@ -3495,10 +3521,6 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="console-topbar-content">
-        <div class="console-page-heading">
-          <p class="eyebrow">RUNTIME / OVERVIEW</p>
-          <h1>运行中心</h1>
-        </div>
         <div class="topbar-actions">
           <button class="secondary-button" type="button" title="打开聊天工作台" @click="chatMode = true"><MessageSquarePlus :size="15" />聊天工作台</button>
           <button class="secondary-button" type="button" title="打开模型设置" @click="showModelSettings = true"><Settings2 :size="15" />模型设置</button>
@@ -3523,9 +3545,9 @@ onBeforeUnmount(() => {
     <div class="console-layout">
       <aside class="sidebar">
       <nav class="side-nav" aria-label="主导航">
-        <a class="nav-item" :class="{ active: activeConsoleSection === 'runtime' }" href="#runtime" :aria-current="activeConsoleSection === 'runtime' ? 'page' : undefined" @click="setActiveConsoleSection('runtime')"><span class="nav-icon"><CircleDot :size="16" /></span>运行中心</a>
-        <a class="nav-item" :class="{ active: activeConsoleSection === 'tools' }" href="#tools" :aria-current="activeConsoleSection === 'tools' ? 'page' : undefined" @click="setActiveConsoleSection('tools')"><span class="nav-icon"><Wrench :size="16" /></span>工具注册</a>
-        <a class="nav-item" :class="{ active: activeConsoleSection === 'audit' }" href="#audit" :aria-current="activeConsoleSection === 'audit' ? 'page' : undefined" @click="setActiveConsoleSection('audit')"><span class="nav-icon"><Check :size="16" /></span>审计追踪</a>
+        <a class="nav-item" :class="{ active: activeConsoleSection === 'runtime' }" href="#runtime" :aria-current="activeConsoleSection === 'runtime' ? 'page' : undefined" @click.prevent="navigateConsoleSection('runtime')"><span class="nav-icon"><CircleDot :size="16" /></span>运行中心</a>
+        <a class="nav-item" :class="{ active: activeConsoleSection === 'tools' }" href="#tools" :aria-current="activeConsoleSection === 'tools' ? 'page' : undefined" @click.prevent="navigateConsoleSection('tools')"><span class="nav-icon"><Wrench :size="16" /></span>工具注册</a>
+        <a class="nav-item" :class="{ active: activeConsoleSection === 'audit' }" href="#audit" :aria-current="activeConsoleSection === 'audit' ? 'page' : undefined" @click.prevent="navigateConsoleSection('audit')"><span class="nav-icon"><Check :size="16" /></span>审计追踪</a>
       </nav>
 
       <div class="sidebar-foot">

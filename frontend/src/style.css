@@ -1597,23 +1597,9 @@ button svg {
   min-width: 0;
   flex: 1 1 auto;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 18px;
   padding-left: 48px;
-}
-
-.console-page-heading {
-  min-width: 0;
-}
-
-.console-page-heading .eyebrow {
-  margin-bottom: 3px;
-}
-
-.console-page-heading h1 {
-  color: var(--heading);
-  font-size: 20px;
-  letter-spacing: -.035em;
 }
 
 .console-topbar .topbar-actions {
@@ -1679,10 +1665,6 @@ button svg {
     align-items: flex-start;
   }
 
-  .console-page-heading {
-    padding-top: 2px;
-  }
-
   .console-topbar .topbar-actions {
     flex-wrap: wrap;
     justify-content: flex-end;
@@ -1705,10 +1687,6 @@ button svg {
     width: 100%;
     align-items: flex-start;
     padding-left: 0;
-  }
-
-  .console-page-heading {
-    display: none;
   }
 
   .console-topbar .topbar-actions {
