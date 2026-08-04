@@ -3,6 +3,7 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, r
 import {
   Activity,
   Bot,
+  ArrowDown,
   ArrowUp,
   CircleAlert,
   Check,
@@ -115,6 +116,8 @@ const chatInputRef = ref(null)
 const chatLoading = ref(false)
 const chatSending = ref(false)
 const chatCancellingRunId = ref('')
+// 流式输出默认跟随底部；用户主动向上浏览历史后暂停跟随，避免新内容抢走阅读位置。
+const chatFollowOutput = ref(true)
 const copyingMessageId = ref('')
 const retryingMessageId = ref('')
 // 文件仅在点击发送时才上传，切换会话不会在后端留下未绑定的附件。
@@ -1075,7 +1078,7 @@ async function retryChatMessage(message) {
       selectRun(message.runId, false, false),
     ])
     showChatRun.value = false
-    scrollChatToBottom()
+    scrollChatToBottom(true)
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
@@ -1240,6 +1243,13 @@ function jumpToChatMessage(messageId) {
   target.classList.add('chat-message-highlighted')
   window.clearTimeout(chatHighlightTimer)
   chatHighlightTimer = window.setTimeout(() => target.classList.remove('chat-message-highlighted'), 1600)
+}
+
+function updateChatFollowOutput(event) {
+  const element = event?.currentTarget || event
+  if (!element) return
+  const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight
+  chatFollowOutput.value = distanceFromBottom <= 72
 }
 
 function latestConversationRun(detail) {
@@ -1811,7 +1821,7 @@ async function selectConversation(conversationId, announce = true) {
     const shouldReloadWorkspace = showChatWorkspace.value
     resetWorkspaceExplorerState({ keepPanel: shouldReloadWorkspace })
     if (showChatWorkspace.value) void loadWorkspaceDirectory('.')
-    scrollChatToBottom()
+    scrollChatToBottom(true)
     focusChatComposer()
   } catch (error) {
     if (selectionToken === conversationSelectionToken) errorMessage.value = errorText(error)
@@ -1820,11 +1830,13 @@ async function selectConversation(conversationId, announce = true) {
   }
 }
 
-function scrollChatToBottom() {
+function scrollChatToBottom(force = false) {
   if (typeof window === 'undefined') return
   window.requestAnimationFrame(() => {
     const element = document.querySelector('.chat-messages')
-    if (element) element.scrollTop = element.scrollHeight
+    if (!element || (!force && !chatFollowOutput.value)) return
+    element.scrollTop = element.scrollHeight
+    chatFollowOutput.value = true
   })
 }
 
@@ -1887,7 +1899,7 @@ async function sendChatMessage() {
         },
       ],
     }
-    scrollChatToBottom()
+    scrollChatToBottom(true)
   }
   try {
     if (files.length) {
@@ -1905,7 +1917,7 @@ async function sendChatMessage() {
     const runId = latestConversationRun(detail)
     if (runId) void selectRun(runId, false, false)
     void loadConversations(conversationId)
-    scrollChatToBottom()
+    scrollChatToBottom(true)
   } catch (error) {
     if (!messageSubmitted) {
       // 消息提交失败时尽力回收未绑定附件；回收失败不掩盖原始请求错误。
@@ -1998,7 +2010,7 @@ async function refreshActiveConversation() {
   if (selectionToken !== conversationSelectionToken || activeConversationId.value !== conversationId) return
   conversations.value = await api.listConversations()
   if (selectionToken !== conversationSelectionToken || activeConversationId.value !== conversationId) return
-  scrollChatToBottom()
+  scrollChatToBottom(true)
 }
 
 async function loadDashboard() {
@@ -2946,7 +2958,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <div class="chat-messages" aria-live="polite">
+          <div class="chat-messages" aria-live="polite" @scroll="updateChatFollowOutput">
             <div v-if="chatLoading && !chatMessages.length" class="chat-empty-state">正在加载会话…</div>
             <div v-else-if="!chatMessages.length" class="chat-empty-state">
               <div class="chat-empty-mark" aria-hidden="true"><Sparkles :size="23" /></div>
@@ -2985,6 +2997,15 @@ onBeforeUnmount(() => {
                 <button v-if="message.runId && message.role === 'ASSISTANT'" class="message-run-link" type="button" @click="openRunPanel(message.runId)">查看执行步骤 · {{ message.runId.slice(0, 8) }}</button>
               </div>
             </article>
+            <button
+              v-if="!chatFollowOutput && pendingChatMessage"
+              class="chat-jump-latest"
+              type="button"
+              aria-label="回到最新消息"
+              @click="scrollChatToBottom(true)"
+            >
+              <ArrowDown :size="13" />回到最新
+            </button>
           </div>
 
           <form

@@ -1107,7 +1107,39 @@ button svg {
 }
 
 .chat-messages {
+  position: relative;
   padding: 42px 32px 36px;
+}
+
+.chat-jump-latest {
+  display: flex;
+  position: sticky;
+  z-index: 2;
+  bottom: 14px;
+  width: max-content;
+  align-items: center;
+  gap: 5px;
+  margin: 0 2px 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, .12);
+  color: var(--heading);
+  padding: 7px 10px;
+  font: 9px "DM Mono", monospace;
+  backdrop-filter: blur(12px);
+  transition: border-color .16s ease, background .16s ease, transform .16s ease;
+}
+
+.chat-jump-latest:hover {
+  border-color: var(--heading);
+  background: var(--panel);
+  transform: translateY(-1px);
+}
+
+:root[data-theme="dark"] .chat-jump-latest {
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, .28);
 }
 
 .chat-message {
