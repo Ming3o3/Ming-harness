@@ -37,6 +37,11 @@ jobs:
         shell: pwsh
         run: .\runtime\scripts\prepare-garnet-runtime.ps1 -ProjectRoot $env:GITHUB_WORKSPACE
 
+      - name: Set up MSVC x64 environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Check Visual Studio build tools
         shell: pwsh
         run: |
