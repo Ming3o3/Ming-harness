@@ -12,7 +12,14 @@ await prepareWinRuntime()
 
 function run(command, args, cwd) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, stdio: 'inherit', shell: false })
+    // Windows 的 Maven Wrapper 是 .cmd 批处理文件，CreateProcess 不能在
+    // shell=false 时直接启动它；仅对这个固定的构建入口启用系统解释器。
+    const useWindowsCmd = process.platform === 'win32' && command.toLowerCase().endsWith('.cmd')
+    const child = spawn(command, args, {
+      cwd,
+      stdio: 'inherit',
+      shell: useWindowsCmd,
+    })
     child.once('error', reject)
     child.once('close', (code) => {
       if (code === 0) resolve()
