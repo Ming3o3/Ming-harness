@@ -62,6 +62,10 @@ export async function prepareWinRuntime() {
   }
   await prunePortableRuntime(stagedRoot)
   await copyWindowsCrt(stagedJre, stagedRoot)
+  const longPaths = await findLongRelativePaths(stagedRoot, 180)
+  if (longPaths.length) {
+    throw new Error(`Windows 绿色运行时仍包含可能触发 Explorer 路径限制的文件（相对路径超过 180 个字符）：\n${longPaths.join('\n')}`)
+  }
 
   const missing = await missingRuntimeFiles(stagedRoot, false)
   missing.push(...await missingPgvectorProvenance(stagedRoot))
@@ -80,6 +84,7 @@ export async function prepareWinRuntime() {
 // managed local-infra process, but their nested names can exceed Explorer's
 // legacy MAX_PATH limit when the ZIP is extracted into a long user directory.
 async function prunePortableRuntime(infraRoot) {
+  const postgresRoot = path.join(infraRoot, 'postgres')
   const rabbitmqRoot = path.join(infraRoot, 'rabbitmq')
   const pluginRoot = path.join(rabbitmqRoot, 'plugins')
   const keepPlugins = new Set([
@@ -116,9 +121,20 @@ async function prunePortableRuntime(infraRoot) {
     }
   }
 
+  // The EDB PostgreSQL ZIP also contains pgAdmin 4, StackBuilder, source and
+  // development files. They are not used by the managed server and contain
+  // deeply nested Python/docs paths that Windows Explorer cannot extract.
+  await Promise.all([
+    rm(path.join(postgresRoot, 'pgAdmin 4'), { recursive: true, force: true }),
+    rm(path.join(postgresRoot, 'StackBuilder'), { recursive: true, force: true }),
+    rm(path.join(postgresRoot, 'doc'), { recursive: true, force: true }),
+    rm(path.join(postgresRoot, 'src'), { recursive: true, force: true }),
+    rm(path.join(postgresRoot, 'lib', 'pgxs'), { recursive: true, force: true }),
+    rm(path.join(postgresRoot, 'lib', 'pkgconfig'), { recursive: true, force: true }),
+  ])
   await removeNamedDirectories(rabbitmqRoot, new Set(['doc', 'docs', 'examples', 'include', 'src', 'test', 'tests']))
   await removeNamedDirectories(path.join(infraRoot, 'erlang'), new Set(['doc', 'docs', 'examples', 'include', 'man', 'test', 'tests']))
-  await rm(path.join(infraRoot, 'postgres', 'share', 'doc'), { recursive: true, force: true })
+  await rm(path.join(postgresRoot, 'share', 'doc'), { recursive: true, force: true })
 }
 
 async function removeNamedDirectories(root, names) {
@@ -135,6 +151,23 @@ async function removeNamedDirectories(root, names) {
       }
     }
   }
+}
+
+async function findLongRelativePaths(root, maxLength) {
+  const matches = []
+  const pending = [root]
+  while (pending.length) {
+    const current = pending.pop()
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      const child = path.join(current, entry.name)
+      if (entry.isDirectory()) {
+        pending.push(child)
+      } else if (path.relative(root, child).length > maxLength) {
+        matches.push(path.relative(root, child))
+      }
+    }
+  }
+  return matches.sort().slice(0, 50)
 }
 
 async function copyWindowsCrt(jreRoot, infraRoot) {
