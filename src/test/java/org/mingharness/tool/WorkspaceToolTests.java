@@ -10,10 +10,10 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.PosixFilePermission;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -147,11 +147,10 @@ class WorkspaceToolTests {
 
     @Test
     void shouldExecuteOnlyWhitelistedCommandWithoutShellInterpretation() throws Exception {
-        String command = executableScript("echo.sh", "#!/bin/sh\nprintf 'value:%s:%s' \"$1\" \"${MODEL_API_KEY:-missing}\"\n");
-        WorkspaceExecTool tool = new WorkspaceExecTool(execSupport(command, 5_000, 20_000, 8));
+        CommandFixture fixture = executableCommand("echo");
+        WorkspaceExecTool tool = new WorkspaceExecTool(execSupport(fixture.command(), 5_000, 20_000, 8));
 
-        String result = tool.execute("{\"command\":\"" + command
-                + "\",\"args\":[\"hello;touch should-not-exist\"]}");
+        String result = tool.execute(commandInput(fixture, List.of("hello;touch should-not-exist")));
 
         assertTrue(result.contains("\"exitCode\":0"));
         assertTrue(result.contains("value:hello;touch should-not-exist:missing"));
@@ -162,28 +161,28 @@ class WorkspaceToolTests {
 
     @Test
     void shouldRejectUnknownCommandAndDisabledExecution() throws Exception {
-        String command = executableScript("echo.sh", "#!/bin/sh\necho ok\n");
+        CommandFixture fixture = executableCommand("echo");
         WorkspaceExecTool disabledTool = new WorkspaceExecTool(support());
         BusinessException disabled = assertThrows(BusinessException.class,
-                () -> disabledTool.execute("{\"command\":\"" + command + "\"}"));
+                () -> disabledTool.execute(commandInput(fixture, List.of())));
         assertEquals("WORKSPACE_EXEC_DISABLED", disabled.getCode());
 
-        WorkspaceExecTool notAllowed = new WorkspaceExecTool(execSupport("./other.sh", 5_000, 20_000, 8));
+        WorkspaceExecTool notAllowed = new WorkspaceExecTool(execSupport("java", 5_000, 20_000, 8));
         BusinessException denied = assertThrows(BusinessException.class,
-                () -> notAllowed.execute("{\"command\":\"" + command + "\"}"));
+                () -> notAllowed.execute(commandInput(fixture, List.of())));
         assertEquals("WORKSPACE_COMMAND_NOT_ALLOWED", denied.getCode());
     }
 
     @Test
     void shouldStopTimedOutCommandAndLimitOutput() throws Exception {
-        String slow = executableScript("slow.sh", "#!/bin/sh\nsleep 2\necho late\n");
-        WorkspaceExecTool slowTool = new WorkspaceExecTool(execSupport(slow, 3_000, 20_000, 8));
-        String timeout = slowTool.execute("{\"command\":\"" + slow + "\",\"timeoutMs\":100}");
+        CommandFixture slow = executableCommand("slow");
+        WorkspaceExecTool slowTool = new WorkspaceExecTool(execSupport(slow.command(), 3_000, 20_000, 8));
+        String timeout = slowTool.execute(commandInput(slow, List.of(), Map.of("timeoutMs", 100)));
         assertTrue(timeout.contains("\"timedOut\":true"));
 
-        String noisy = executableScript("noisy.sh", "#!/bin/sh\nprintf '0123456789%.0s' $(seq 1 1000)\n");
-        WorkspaceExecTool noisyTool = new WorkspaceExecTool(execSupport(noisy, 5_000, 1_024, 8));
-        String limited = noisyTool.execute("{\"command\":\"" + noisy + "\",\"maxOutputBytes\":1024}");
+        CommandFixture noisy = executableCommand("noisy");
+        WorkspaceExecTool noisyTool = new WorkspaceExecTool(execSupport(noisy.command(), 5_000, 1_024, 8));
+        String limited = noisyTool.execute(commandInput(noisy, List.of(), Map.of("maxOutputBytes", 1_024)));
         assertTrue(limited.contains("\"outputTruncated\":true"));
     }
 
@@ -344,17 +343,32 @@ class WorkspaceToolTests {
         return new WorkspaceToolSupport(properties, new ObjectMapper(), new SensitiveDataSanitizer());
     }
 
-    private String executableScript(String name, String content) throws Exception {
-        Path script = tempDir.resolve(name);
-        Files.writeString(script, content);
-        try {
-            Files.setPosixFilePermissions(script, Set.of(
-                    PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE,
-                    PosixFilePermission.OWNER_EXECUTE));
-        } catch (UnsupportedOperationException exception) {
-            throw new IllegalStateException("当前测试环境不支持执行工作区脚本", exception);
-        }
-        return "./" + name;
+    private CommandFixture executableCommand(String mode) throws Exception {
+        String javaExecutable = Path.of(System.getProperty("java.home"), "bin",
+                System.getProperty("os.name").toLowerCase().contains("win") ? "java.exe" : "java")
+                .toString();
+        String fixtureClasses = Path.of(WorkspaceExecFixture.class.getProtectionDomain()
+                .getCodeSource().getLocation().toURI()).toString();
+        return new CommandFixture(javaExecutable, List.of(
+                "-cp", fixtureClasses, WorkspaceExecFixture.class.getName(), mode));
+    }
+
+    private String commandInput(CommandFixture fixture, List<String> userArgs) throws Exception {
+        return commandInput(fixture, userArgs, Map.of());
+    }
+
+    private String commandInput(CommandFixture fixture, List<String> userArgs,
+                                Map<String, Object> options) throws Exception {
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("command", fixture.command());
+        List<String> arguments = new ArrayList<>(fixture.prefixArguments());
+        arguments.addAll(userArgs);
+        request.put("args", arguments);
+        request.putAll(options);
+        return new ObjectMapper().writeValueAsString(request);
+    }
+
+    private record CommandFixture(String command, List<String> prefixArguments) {
     }
 
     private void runGit(Path directory, String... arguments) throws Exception {

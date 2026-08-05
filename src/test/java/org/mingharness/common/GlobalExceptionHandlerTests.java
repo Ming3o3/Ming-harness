@@ -40,10 +40,11 @@ class GlobalExceptionHandlerTests {
             assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
             assertNotNull(response.getBody());
             assertEquals("INTERNAL_ERROR", response.getBody().code());
-            assertTrue(output.getOut().contains("未处理的请求异常"));
-            assertTrue(output.getOut().contains(response.getBody().traceId()));
-            assertTrue(output.getOut().contains("IllegalStateException"));
-            assertTrue(output.getOut().contains("database unavailable"));
+            // ConsoleAppender 可能按平台写入 stdout 或 stderr；getAll() 才是完整日志。
+            assertTrue(output.getAll().contains("未处理的请求异常"));
+            assertTrue(output.getAll().contains(response.getBody().traceId()));
+            assertTrue(output.getAll().contains("IllegalStateException"));
+            assertTrue(output.getAll().contains("database unavailable"));
         } finally {
             HarnessRequestContext.clear();
         }
