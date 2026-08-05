@@ -86,12 +86,14 @@ function Expand-RuntimeArchive {
     $children = @(Get-ChildItem -LiteralPath $extractRoot -Force)
     $source = $extractRoot
     if ($ExpectedRootFile) {
-      $rootFiles = @(Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter $ExpectedRootFile)
+      $rootFiles = @(Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter $ExpectedRootFile |
+        Sort-Object @{ Expression = { $_.FullName.Length }; Ascending = $true }, FullName)
       if ($rootFiles.Count -eq 0) {
         throw "运行时压缩包中未找到 $ExpectedRootFile：$Archive"
       }
       if ($rootFiles.Count -gt 1) {
-        throw "运行时压缩包中存在多个 $ExpectedRootFile，无法确定根目录：$Archive"
+        $candidates = ($rootFiles | ForEach-Object { $_.FullName }) -join '; '
+        Write-Warning "运行时压缩包中存在多个 $ExpectedRootFile，将使用路径最短的发布目录：$candidates"
       }
       $source = $rootFiles[0].Directory.FullName
     } elseif ($children.Count -eq 1 -and $children[0].PSIsContainer) {
