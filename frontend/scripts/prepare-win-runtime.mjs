@@ -60,6 +60,7 @@ export async function prepareWinRuntime() {
   if (await isDirectory(projectLicenses)) {
     await cp(projectLicenses, path.join(stagedRoot, 'licenses'), { recursive: true })
   }
+  await prunePortableRuntime(stagedRoot)
   await copyWindowsCrt(stagedJre, stagedRoot)
 
   const missing = await missingRuntimeFiles(stagedRoot, false)
@@ -72,6 +73,68 @@ export async function prepareWinRuntime() {
   }
   console.log(`已准备 Windows runtime：${stagedRoot}`)
   console.log(`已准备 Spring Boot JAR：${stagedJar}`)
+}
+
+// RabbitMQ's Windows archive contains every optional plugin, plus Erlang
+// documentation and development headers. None of those files are used by the
+// managed local-infra process, but their nested names can exceed Explorer's
+// legacy MAX_PATH limit when the ZIP is extracted into a long user directory.
+async function prunePortableRuntime(infraRoot) {
+  const rabbitmqRoot = path.join(infraRoot, 'rabbitmq')
+  const pluginRoot = path.join(rabbitmqRoot, 'plugins')
+  const keepPlugins = new Set([
+    'amqp10_common-4.3.4',
+    'aten-0.6.0',
+    'cowlib-2.18.0',
+    'credentials_obfuscation-3.5.0',
+    'cuttlefish-3.9.1',
+    'enough-0.1.0',
+    'gen_batch_server-0.10.0',
+    'horus-0.4.0',
+    'khepri-0.18.0',
+    'khepri_mnesia_migration-0.8.1',
+    'observer_cli-1.8.2',
+    'osiris-1.13.1',
+    'ra-3.1.9',
+    'rabbit-4.3.4',
+    'rabbit_common-4.3.4',
+    'rabbitmq_prelaunch-4.3.4',
+    'ranch-2.2.0',
+    'recon-2.5.6',
+    'redbug-2.1.0',
+    'seshat-1.0.1',
+    'stdout_formatter-0.2.4',
+    'syslog-4.0.0',
+    'sysmon_handler-1.3.0',
+    'systemd-0.6.1',
+    'thoas-1.2.1',
+  ])
+
+  for (const entry of await readdir(pluginRoot, { withFileTypes: true })) {
+    if (entry.isDirectory() && !keepPlugins.has(entry.name)) {
+      await rm(path.join(pluginRoot, entry.name), { recursive: true, force: true })
+    }
+  }
+
+  await removeNamedDirectories(rabbitmqRoot, new Set(['doc', 'docs', 'examples', 'include', 'src', 'test', 'tests']))
+  await removeNamedDirectories(path.join(infraRoot, 'erlang'), new Set(['doc', 'docs', 'examples', 'include', 'man', 'test', 'tests']))
+  await rm(path.join(infraRoot, 'postgres', 'share', 'doc'), { recursive: true, force: true })
+}
+
+async function removeNamedDirectories(root, names) {
+  const pending = [root]
+  while (pending.length) {
+    const current = pending.pop()
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      const child = path.join(current, entry.name)
+      if (!entry.isDirectory()) continue
+      if (names.has(entry.name)) {
+        await rm(child, { recursive: true, force: true })
+      } else {
+        pending.push(child)
+      }
+    }
+  }
 }
 
 async function copyWindowsCrt(jreRoot, infraRoot) {
