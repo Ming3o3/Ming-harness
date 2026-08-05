@@ -48,6 +48,30 @@ function Copy-DirectoryContents {
   }
 }
 
+function Copy-GarnetLegalNotices {
+  $garnetRoot = Join-Path $runtimeRoot 'garnet'
+  $legalFiles = @(
+    [pscustomobject]@{
+      Source = (Join-Path $ProjectRoot 'runtime\licenses\GARNET-LICENSE.txt')
+      Destination = (Join-Path $garnetRoot 'LICENSE')
+      Label = 'Garnet LICENSE'
+    }
+    [pscustomobject]@{
+      Source = (Join-Path $ProjectRoot 'runtime\licenses\GARNET-NOTICE.md')
+      Destination = (Join-Path $garnetRoot 'NOTICE.md')
+      Label = 'Garnet NOTICE'
+    }
+  )
+
+  foreach ($legalFile in $legalFiles) {
+    if (-not (Test-Path -LiteralPath $legalFile.Source -PathType Leaf)) {
+      throw "$($legalFile.Label) 源文件不存在：$($legalFile.Source)"
+    }
+    Copy-Item -LiteralPath $legalFile.Source -Destination $legalFile.Destination -Force
+  }
+  Write-Host '已补齐 Garnet LICENSE 和 NOTICE.md'
+}
+
 function Expand-RuntimeArchive {
   param(
     [Parameter(Mandatory = $true)] [string] $Archive,
@@ -124,6 +148,9 @@ foreach ($archive in $archives) {
   $file = Join-Path $downloadRoot $archive.File
   Get-VerifiedDownload -Url $archive.Url -Sha256 $archive.Sha256 -Destination $file
   Expand-RuntimeArchive -Archive $file -Destination $archive.Destination
+  if ($archive.Name -eq 'Microsoft Garnet 2.1.1') {
+    Copy-GarnetLegalNotices
+  }
   Write-Host "Prepared $($archive.Name)"
 }
 
