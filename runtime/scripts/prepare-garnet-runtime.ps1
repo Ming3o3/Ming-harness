@@ -75,7 +75,8 @@ function Copy-GarnetLegalNotices {
 function Expand-RuntimeArchive {
   param(
     [Parameter(Mandatory = $true)] [string] $Archive,
-    [Parameter(Mandatory = $true)] [string] $Destination
+    [Parameter(Mandatory = $true)] [string] $Destination,
+    [string] $ExpectedRootFile
   )
 
   $extractRoot = Join-Path $temporaryRoot ([guid]::NewGuid().ToString('N'))
@@ -84,7 +85,16 @@ function Expand-RuntimeArchive {
     Expand-Archive -LiteralPath $Archive -DestinationPath $extractRoot -Force
     $children = @(Get-ChildItem -LiteralPath $extractRoot -Force)
     $source = $extractRoot
-    if ($children.Count -eq 1 -and $children[0].PSIsContainer) {
+    if ($ExpectedRootFile) {
+      $rootFiles = @(Get-ChildItem -LiteralPath $extractRoot -Recurse -File -Filter $ExpectedRootFile)
+      if ($rootFiles.Count -eq 0) {
+        throw "运行时压缩包中未找到 $ExpectedRootFile：$Archive"
+      }
+      if ($rootFiles.Count -gt 1) {
+        throw "运行时压缩包中存在多个 $ExpectedRootFile，无法确定根目录：$Archive"
+      }
+      $source = $rootFiles[0].Directory.FullName
+    } elseif ($children.Count -eq 1 -and $children[0].PSIsContainer) {
       $source = $children[0].FullName
     }
     if (Test-Path -LiteralPath $Destination) {
@@ -147,9 +157,11 @@ $archives = @(
 foreach ($archive in $archives) {
   $file = Join-Path $downloadRoot $archive.File
   Get-VerifiedDownload -Url $archive.Url -Sha256 $archive.Sha256 -Destination $file
-  Expand-RuntimeArchive -Archive $file -Destination $archive.Destination
   if ($archive.Name -eq 'Microsoft Garnet 2.1.1') {
+    Expand-RuntimeArchive -Archive $file -Destination $archive.Destination -ExpectedRootFile 'GarnetServer.exe'
     Copy-GarnetLegalNotices
+  } else {
+    Expand-RuntimeArchive -Archive $file -Destination $archive.Destination
   }
   Write-Host "Prepared $($archive.Name)"
 }
