@@ -63,9 +63,14 @@ try {
   $sourceCommit = $SourceRef
   $sourceTreeSha256 = $null
   if ($git) {
-    $sourceCommitValue = (& $git.Source -C $SourceDir rev-parse HEAD 2>$null).Trim()
+    # PowerShell returns $null when a successful Git command has no output
+    # (for example, status --porcelain on a clean checkout). Join the output
+    # first so calling Trim() is safe in both cases.
+    $sourceCommitOutput = @(& $git.Source -C $SourceDir rev-parse HEAD 2>$null)
+    $sourceCommitValue = ($sourceCommitOutput -join "`n").Trim()
     if ($LASTEXITCODE -eq 0 -and $sourceCommitValue) {
-      $dirty = (& $git.Source -C $SourceDir status --porcelain 2>$null).Trim()
+      $dirtyOutput = @(& $git.Source -C $SourceDir status --porcelain 2>$null)
+      $dirty = ($dirtyOutput -join "`n").Trim()
       if ($LASTEXITCODE -eq 0 -and $dirty) {
         throw "pgvector 源码目录存在未提交修改：$SourceDir"
       }
