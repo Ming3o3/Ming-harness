@@ -52,3 +52,27 @@ npm run desktop:dev
 启动脚本会一并启动 `local` Profile 的后端、Vite 和 Electron，并在当前进程内生成 `HARNESS_DESKTOP_BRIDGE_TOKEN`。默认端口被其他本地进程占用时，脚本会自动从下一个可用端口启动，并同步更新 Runtime、Vite、CORS 和 Electron 请求地址；如需严格禁止端口切换，可设置 `HARNESS_ALLOW_PORT_FALLBACK=false`。聊天页中的“选择本地项目”不会把绝对路径返回给 Vue；它会创建一条绑定该项目的新会话。退出桌面开发应用后，相应的本地开发进程会一起停止。
 
 `electron/preload.cjs` 只暴露 `pickWorkspace()`，不启用 Node Integration；目录路径、桥接令牌及登记 HTTP 请求都保留在 `electron/main.cjs`。不要把 `HARNESS_DESKTOP_BRIDGE_TOKEN` 写入 `.env`、前端代码或日志。
+
+## Windows 绿色版（Managed local-infra）
+
+Windows 绿色版由 Electron 主进程管理随包的 PostgreSQL 17 + pgvector、Garnet、RabbitMQ、Erlang、
+.NET Runtime 和 Java 17 Runtime。它启动 Spring Boot 时使用 `local-infra,desktop`，不会切换到 H2 或进程内执行。
+基础设施数据直接写入绿色版目录下的 `data/infra`，目录不可写时直接启动失败，不回退到用户目录。
+
+运行时文件不提交到 Git。请按根目录 [runtime/README.md](../runtime/README.md) 准备授权版本的
+`runtime/vendor/win-x64`，然后在 Windows x64 环境执行：
+
+```bash
+npm ci
+npm run verify:win-runtime
+npm run dist:win:green
+```
+
+`dist:win:green` 会在生成后自动检查最终包内含 Garnet 和 pgvector 来源材料，且不含 Memurai。
+
+构建机需要 JDK 17；JDK 只用于构建 Spring Boot JAR，最终用户不需要安装它。
+
+生成的 `release/win-green/win-unpacked` 可直接压缩为 ZIP 发布。Garnet 是 Windows 绿色版的
+Redis 兼容实现，启动时启用 Lua；发布前必须确认 Garnet/.NET、PostgreSQL/pgvector、RabbitMQ/Erlang
+和 Java Runtime 的版本、校验和与再分发许可。公开构建还要求 pgvector DLL 由发布者从源码构建，
+并随包保留 `postgres/share/extension/pgvector-build.json` 来源标记；不应发布来历不明的预编译 DLL。

@@ -1,0 +1,33 @@
+{
+  "platform": "win-x64",
+  "redisImplementation": "Microsoft Garnet",
+  "garnet": "2.x Windows x64 build with Lua enabled",
+  "dotnet": "8.x self-contained runtime bundled beside Garnet",
+  "postgresql": "17.x with pgvector",
+  "pgvectorBuild": "runtime/scripts/build-pgvector.ps1; provenance marker required",
+  "rabbitmq": "Windows distribution",
+  "erlang": "OTP version compatible with RabbitMQ",
+  "java": "17.x",
+  "sourceDirectory": "runtime/vendor/win-x64",
+  "requiredFiles": [
+    "jre/bin/java.exe",
+    "postgres/bin/initdb.exe",
+    "postgres/bin/postgres.exe",
+    "postgres/bin/pg_ctl.exe",
+    "postgres/bin/createdb.exe",
+    "postgres/lib/vector.dll",
+    "postgres/share/extension/vector.control",
+    "postgres/share/extension/vector--0.8.6.sql",
+    "postgres/share/extension/pgvector-build.json",
+    "garnet/GarnetServer.exe",
+    "garnet/LICENSE",
+    "garnet/NOTICE.md",
+    "garnet/dotnet/dotnet.exe",
+    "garnet/dotnet/LICENSE.txt",
+    "garnet/dotnet/ThirdPartyNotices.txt",
+    "rabbitmq/sbin/rabbitmq-server.bat",
+    "rabbitmq/sbin/rabbitmqctl.bat",
+    "erlang/bin/erl.exe"
+  ],
+  "licensesDirectory": "runtime/licenses"
+}

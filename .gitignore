@@ -33,3 +33,8 @@ build/
 
 ### VS Code ###
 .vscode/
+runtime/vendor/
+runtime/infra/
+runtime/jre/
+runtime/ming-harness.jar
+frontend/release/

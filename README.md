@@ -151,6 +151,24 @@ npm run dev
 
 默认演示网关不会访问外部模型服务，适合本地开发和联调。
 
+### Windows 绿色版
+
+前端桌面版支持 Windows x64 的 Managed `local-infra` 发布模式：Electron 主进程会启动随包的
+PostgreSQL 17 + pgvector、Garnet、RabbitMQ、Erlang、.NET Runtime 和 Java Runtime，再以
+`SPRING_PROFILES_ACTIVE=local-infra,desktop` 启动 Spring Boot。绿色版数据写在软件目录下的
+`data/infra`、`data/workspace` 和 `data/logs`，不使用系统服务，也不需要用户预装 Java、Node、
+.NET、PostgreSQL、Redis、RabbitMQ 或 Docker。
+
+运行时二进制因授权和平台差异不提交到仓库，准备方式与目录要求见
+[runtime/README.md](runtime/README.md)。Windows x64 构建在 `frontend` 目录执行：
+
+```bash
+npm ci
+npm run dist:win:green
+```
+
+构建完成后脚本会自动检查最终目录包含 Garnet 和 pgvector 来源材料，且不含 Memurai。
+
 ### 控制台模型设置
 
 聊天工作台和运行控制台都提供“模型设置”入口。用户可以输入 OpenAI 兼容 API 地址、模型名称和 API Key；保存后只影响当前组织/用户创建的新 Run，用户覆盖配置会在 Run 创建时固化供应商快照，因此正在排队、审批或执行的 Run 不会被中途切换。后端通过 `GET/PUT/DELETE /api/model-config` 管理设置，API Key 使用 AES-GCM 加密保存，读取接口只返回掩码，不写入浏览器 localStorage。使用 api-key/OIDC 认证时，当前身份需要 `model.configure` 权限。

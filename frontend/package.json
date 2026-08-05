@@ -9,7 +9,13 @@
     "build": "vite build",
     "preview": "vite preview",
     "desktop": "electron .",
-    "desktop:dev": "node electron/desktop-dev.cjs"
+    "desktop:dev": "node electron/desktop-dev.cjs",
+    "verify:win-runtime": "node scripts/verify-win-runtime.mjs",
+    "verify:public-package": "node scripts/verify-public-package.mjs",
+    "prepare:win-runtime": "node scripts/prepare-win-runtime.mjs",
+    "build:desktop-runtime": "node scripts/build-desktop-runtime.mjs",
+    "dist:win:green": "npm run build && npm run build:desktop-runtime && electron-builder --config electron-builder.win-green.yml --win dir zip --x64 && npm run verify:public-package",
+    "dist:win:installer": "npm run build && npm run build:desktop-runtime && electron-builder --config electron-builder.win.yml --win nsis --x64 && npm run verify:public-package release/win-installer/win-unpacked"
   },
   "dependencies": {
     "@lucide/vue": "^1.28.0",
@@ -21,6 +27,7 @@
   "devDependencies": {
     "@vitejs/plugin-vue": "^6.0.8",
     "electron": "^38.8.6",
+    "electron-builder": "^26.15.3",
     "vite": "^8.1.5"
   },
   "engines": {
