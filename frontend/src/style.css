@@ -1589,7 +1589,24 @@ button svg {
 
 .console-topbar-brand {
   flex: 0 0 252px;
-  padding: 0 11px;
+  gap: 9px;
+  padding: 0;
+}
+
+.console-topbar-brand strong {
+  color: var(--heading);
+  font-size: 13px;
+  letter-spacing: -.015em;
+}
+
+.console-topbar-brand span {
+  color: var(--muted);
+  font: 8px "DM Mono", monospace;
+  letter-spacing: .12em;
+}
+
+.create-panel-collapsed .section-heading {
+  margin-bottom: 0;
 }
 
 .console-topbar-content {
@@ -1610,8 +1627,7 @@ button svg {
 .console-topbar .topbar-actions > .secondary-button,
 .console-topbar .topbar-actions > .theme-toggle,
 .console-topbar .topbar-actions > .command-palette-trigger {
-  padding-top: 7px;
-  padding-bottom: 7px;
+  padding: 7px 9px;
   font-size: 9px;
 }
 

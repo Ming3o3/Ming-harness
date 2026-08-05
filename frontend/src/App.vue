@@ -3010,11 +3010,11 @@ onBeforeUnmount(() => {
           <span class="chat-identity">{{ form.tenantId }} / {{ form.userId }}</span>
           <span class="chat-health" :class="infraOnline ? 'health-up' : 'health-warning'"><i></i>{{ infraLabel }}</span>
           <span class="chat-model-status" :class="modelStatusClass" :title="modelConfig?.enabled ? `当前用户模型：${modelConfig.modelName || '外部模型'}` : '当前使用本地演示模型，不会访问外部模型服务'"><i></i>{{ modelLabel }}</span>
-          <button class="secondary-button chat-console-button" type="button" title="打开模型设置" @click="showModelSettings = true"><Settings2 :size="15" />模型设置</button>
           <button class="command-palette-trigger" type="button" title="打开命令面板（⌘/Ctrl + K）" @click="openCommandPalette"><Command :size="14" /><span>⌘K</span><em>命令</em></button>
           <button class="theme-toggle" type="button" :aria-label="theme === 'dark' ? '切换到白天模式' : '切换到黑夜模式'" @click="toggleTheme">
             <Sun v-if="theme === 'dark'" :size="15" aria-hidden="true" /><Moon v-else :size="15" aria-hidden="true" />{{ theme === 'dark' ? '白天' : '黑夜' }}
           </button>
+          <button class="secondary-button chat-console-button" type="button" title="打开模型设置" @click="showModelSettings = true"><Settings2 :size="15" />模型设置</button>
           <button class="secondary-button chat-console-button" type="button" title="打开运行控制台" @click="chatMode = false"><PanelRight :size="15" />运行控制台</button>
         </div>
       </header>
@@ -3522,8 +3522,6 @@ onBeforeUnmount(() => {
       </div>
       <div class="console-topbar-content">
         <div class="topbar-actions">
-          <button class="secondary-button" type="button" title="打开聊天工作台" @click="chatMode = true"><MessageSquarePlus :size="15" />聊天工作台</button>
-          <button class="secondary-button" type="button" title="打开模型设置" @click="showModelSettings = true"><Settings2 :size="15" />模型设置</button>
           <button class="command-palette-trigger" type="button" title="打开命令面板（⌘/Ctrl + K）" @click="openCommandPalette"><Command :size="14" /><span>⌘K</span><em>命令</em></button>
           <button
             class="theme-toggle"
@@ -3535,9 +3533,8 @@ onBeforeUnmount(() => {
             <Sun v-if="theme === 'dark'" :size="15" aria-hidden="true" /><Moon v-else :size="15" aria-hidden="true" />
             {{ theme === 'dark' ? '白天' : '黑夜' }}
           </button>
-          <button class="primary-button" type="button" @click="showCreateForm = !showCreateForm">
-            <Plus :size="16" /> 新建 Run
-          </button>
+          <button class="secondary-button" type="button" title="打开模型设置" @click="showModelSettings = true"><Settings2 :size="15" />模型设置</button>
+          <button class="secondary-button" type="button" title="打开聊天工作台" @click="chatMode = true"><MessageSquarePlus :size="15" />聊天工作台</button>
         </div>
       </div>
     </header>
@@ -3601,15 +3598,17 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section v-if="showCreateForm" class="create-panel">
+      <section class="create-panel" :class="{ 'create-panel-collapsed': !showCreateForm }">
         <div class="section-heading">
           <div>
             <p class="eyebrow">CREATE EXECUTION</p>
             <h2>创建一次可追溯执行</h2>
           </div>
-          <button class="icon-button" type="button" aria-label="关闭创建表单" @click="showCreateForm = false"><X :size="15" /></button>
+          <button class="secondary-button" type="button" :aria-expanded="showCreateForm" @click="showCreateForm = !showCreateForm">
+            {{ showCreateForm ? '收起创建面板' : '展开创建面板' }}
+          </button>
         </div>
-        <form class="run-form" @submit.prevent="createAndStartRun">
+        <form v-if="showCreateForm" class="run-form" @submit.prevent="createAndStartRun">
           <label class="field field-wide">
             <span>任务名称</span>
             <input v-model="form.title" required maxlength="120" placeholder="例如：分析一条退款申请" />
