@@ -41,7 +41,8 @@ class GlobalExceptionHandlerTests {
             assertNotNull(response.getBody());
             assertEquals("INTERNAL_ERROR", response.getBody().code());
             // ConsoleAppender 可能按平台写入 stdout 或 stderr；getAll() 才是完整日志。
-            assertTrue(output.getAll().contains("未处理的请求异常"));
+            // 使用日志中的 ASCII 字段，避免 Windows 控制台编码影响中文文案断言。
+            assertTrue(output.getAll().contains("traceId=trace-123"));
             assertTrue(output.getAll().contains(response.getBody().traceId()));
             assertTrue(output.getAll().contains("IllegalStateException"));
             assertTrue(output.getAll().contains("database unavailable"));
