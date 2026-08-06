@@ -59,6 +59,8 @@ Windows 绿色版由 Electron 主进程管理随包的 PostgreSQL 17 + pgvector�
 .NET Runtime 和 Java 17 Runtime。它启动 Spring Boot 时使用 `local-infra,desktop`，不会切换到 H2 或进程内执行。
 基础设施数据直接写入绿色版目录下的 `data/infra`，目录不可写时直接启动失败，不回退到用户目录。
 
+PostgreSQL 不允许服务器进程以 Windows 管理员令牌运行。启动 `Ming Harness.exe` 时不要选择“以管理员身份运行”，也不要从已提升的 PowerShell/CMD 启动；若快捷方式或 EXE 的“属性 > 兼容性”勾选了“以管理员身份运行此程序”，请取消该选项。绿色版应解压到当前用户可写的目录，例如 `%LOCALAPPDATA%\Ming-Harness`，而不是通过管理员权限写入 `Program Files`。
+
 运行时文件不提交到 Git。请按根目录 [runtime/README.md](../runtime/README.md) 准备授权版本的
 `runtime/vendor/win-x64`，然后在 Windows x64 环境执行：
 

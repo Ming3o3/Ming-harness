@@ -159,6 +159,11 @@ PostgreSQL 17 + pgvector、Garnet、RabbitMQ、Erlang、.NET Runtime 和 Java Ru
 `data/infra`、`data/workspace` 和 `data/logs`，不使用系统服务，也不需要用户预装 Java、Node、
 .NET、PostgreSQL、Redis、RabbitMQ 或 Docker。
 
+PostgreSQL 会拒绝由 Windows 管理员令牌启动的服务器进程。因此不要使用“以管理员身份运行”启动
+`Ming Harness.exe`，也不要从已提升的 PowerShell/CMD 启动；应取消 EXE 或快捷方式“属性 > 兼容性”中的
+“以管理员身份运行此程序”。绿色版请解压至当前用户有写入权限的目录，例如
+`%LOCALAPPDATA%\Ming-Harness`，而不是通过管理员权限写入 `Program Files`。
+
 运行时二进制因授权和平台差异不提交到仓库，准备方式与目录要求见
 [runtime/README.md](runtime/README.md)。Windows x64 构建在 `frontend` 目录执行：
 

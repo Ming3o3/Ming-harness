@@ -28,6 +28,7 @@ class ManagedInfrastructure {
     if (process.platform !== 'win32') {
       throw new Error('Managed local-infra 目前只实现 Windows 运行时')
     }
+    await assertNotElevatedWindowsProcess()
     await this.ensureDirectories()
     await this.assertRuntimeLayout()
     this.config = await this.loadOrCreateConfig()
@@ -409,6 +410,50 @@ async function runCommand(command, args, { cwd, env, logger = console } = {}) {
       }
     })
   })
+}
+
+/**
+ * PostgreSQL refuses to run with an elevated Windows token.  The managed
+ * runtime inherits Electron's token, so detect this before initdb/postgres
+ * and surface the actionable cause instead of a generic child exit code.
+ */
+async function assertNotElevatedWindowsProcess() {
+  if (process.platform !== 'win32') return
+
+  const elevated = await new Promise((resolve, reject) => {
+    const child = spawn(process.env.SystemRoot
+      ? path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
+      : 'powershell.exe', [
+      '-NoLogo',
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      '[bool](([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))',
+    ], {
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let output = ''
+    let stderr = ''
+    child.stdout?.on('data', (chunk) => { output += String(chunk) })
+    child.stderr?.on('data', (chunk) => { stderr += String(chunk) })
+    child.once('error', reject)
+    child.once('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`无法检查 Windows 进程权限（退出码 ${code ?? '未知'}）：${stderr.trim()}`))
+        return
+      }
+      resolve(output.trim().toLowerCase() === 'true')
+    })
+  })
+
+  if (elevated) {
+    throw new Error([
+      '检测到 Ming Harness 正以管理员权限运行。PostgreSQL 为避免安全风险，会拒绝由管理员进程启动，因此提前退出（退出码 1）。',
+      '请关闭当前程序，取消快捷方式或 Ming Harness.exe 的“以管理员身份运行”兼容性选项，并从普通用户的资源管理器或终端重新启动。',
+      '绿色版请解压到当前用户可写的目录，例如 %LOCALAPPDATA%\Ming-Harness；不要放在 Program Files 后再使用管理员权限启动。',
+    ].join('\n'))
+  }
 }
 
 async function runCommandWithRetry(command, args, options = {}, attempts = 30, waitMs = 1000) {
