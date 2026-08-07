@@ -249,6 +249,7 @@ export const api = {
     const params = new URLSearchParams({ query, maxChars: String(maxChars) })
     return request(`/context/preview?${params.toString()}`)
   },
+  contextConfiguration: () => request('/context/configuration'),
   reindexContext: (payload = {}) => request('/context/reindex', {
     method: 'POST',
     body: JSON.stringify(payload),

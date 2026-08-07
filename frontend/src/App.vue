@@ -56,6 +56,7 @@ const contextReindexForm = reactive({
 const contextReindexResult = ref(null)
 const contextReindexLoading = ref(false)
 const contextReindexError = ref('')
+const contextConfiguration = ref(null)
 const selectedEvaluationReport = ref(null)
 const evaluationReportLoadingRunId = ref('')
 const selectedEvaluationCases = computed(() => evaluationCases(selectedEvaluationReport.value))
@@ -2214,7 +2215,7 @@ async function refreshActiveConversation() {
 async function loadDashboard() {
   clearMessages()
   try {
-    const [, toolData, summaryData, documentData, memoryData, evaluationData, retrievalEvaluationData] = await Promise.all([
+    const [, toolData, summaryData, documentData, memoryData, evaluationData, retrievalEvaluationData, contextConfigurationData] = await Promise.all([
       loadRunsPage(),
       api.listTools(),
       api.dashboardSummary(),
@@ -2222,6 +2223,7 @@ async function loadDashboard() {
       api.listMemories(),
       api.listEvaluations(),
       api.listRetrievalEvaluations(),
+      api.contextConfiguration(),
     ])
     tools.value = toolData
     summary.value = summaryData
@@ -2229,6 +2231,7 @@ async function loadDashboard() {
     memories.value = memoryData
     evaluations.value = evaluationData
     retrievalEvaluations.value = retrievalEvaluationData
+    contextConfiguration.value = contextConfigurationData
     if (selectedRun.value) {
       await selectRun(selectedRun.value.run.id, false)
     } else if (runs.value.length) {
@@ -4109,6 +4112,28 @@ onBeforeUnmount(() => {
               <div><span>失败</span><strong :class="contextReindexResult.chunksFailed ? 'is-negative' : 'is-positive'">{{ contextReindexResult.chunksFailed }}</strong></div>
             </div>
             <small class="form-hint">需要 <code>context.reindex</code> 权限；开启“重新分块”后建议在低峰期执行。</small>
+          </section>
+          <section class="governance-card context-config-card">
+            <div class="context-workbench-heading">
+              <div>
+                <p class="eyebrow">RUNTIME CONFIG</p>
+                <h3>向量运行配置</h3>
+              </div>
+              <span class="context-index-status" :class="contextConfiguration?.embeddingReady ? 'is-ready' : 'is-warning'">{{ contextConfiguration?.embeddingReady ? 'READY' : 'OFFLINE' }}</span>
+            </div>
+            <p class="context-workbench-help">这是当前 Runtime 的脱敏快照。服务地址和 API Key 只由部署环境管理，不会回传到前端。</p>
+            <div v-if="contextConfiguration" class="context-config-grid">
+              <div><span>Embedding 模型</span><strong>{{ contextConfiguration.model }}</strong></div>
+              <div><span>模型版本</span><strong>{{ contextConfiguration.modelVersion }}</strong></div>
+              <div><span>向量维度</span><strong>{{ contextConfiguration.dimension }}</strong></div>
+              <div><span>批量大小</span><strong>{{ contextConfiguration.batchSize }}</strong></div>
+              <div><span>Chunk 上限</span><strong>{{ contextConfiguration.chunkMaxChars }}</strong></div>
+              <div><span>父窗口上限</span><strong>{{ contextConfiguration.parentWindowMaxChars }}</strong></div>
+              <div><span>最低相似度</span><strong>{{ contextConfiguration.minSimilarity }}</strong></div>
+              <div><span>混合排序</span><strong>{{ contextConfiguration.rrfEnabled ? 'RRF' : '向量优先' }}</strong></div>
+            </div>
+            <div v-else class="context-preview-empty">正在读取 Runtime 配置…</div>
+            <small class="form-hint">配置由环境变量注入；修改后重启 Runtime，并使用上方索引操作重新建立向量。</small>
           </section>
           <form class="governance-card" @submit.prevent="createDocument">
             <h3>添加授权知识文档</h3>
