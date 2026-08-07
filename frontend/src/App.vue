@@ -39,6 +39,7 @@ const summary = ref(null)
 const selectedRun = ref(null)
 const auditEvents = ref([])
 const documents = ref([])
+const memories = ref([])
 const evaluations = ref([])
 const contextPreviewQuery = ref('')
 const contextPreviewMaxChars = ref(4000)
@@ -341,6 +342,13 @@ const documentForm = reactive({
   sensitivity: 'INTERNAL',
   allowedUsers: '',
 })
+
+const memoryForm = reactive({
+  memoryType: 'USER_PREFERENCE',
+  content: '',
+  expiresAt: '',
+})
+const memoryDeletingId = ref('')
 
 const contextPreviewPresets = [
   '如何回滚发布',
@@ -2194,16 +2202,18 @@ async function refreshActiveConversation() {
 async function loadDashboard() {
   clearMessages()
   try {
-    const [, toolData, summaryData, documentData, evaluationData] = await Promise.all([
+    const [, toolData, summaryData, documentData, memoryData, evaluationData] = await Promise.all([
       loadRunsPage(),
       api.listTools(),
       api.dashboardSummary(),
       api.listDocuments(),
+      api.listMemories(),
       api.listEvaluations(),
     ])
     tools.value = toolData
     summary.value = summaryData
     documents.value = documentData
+    memories.value = memoryData
     evaluations.value = evaluationData
     if (selectedRun.value) {
       await selectRun(selectedRun.value.run.id, false)
@@ -2629,6 +2639,46 @@ async function deleteDocument(document) {
     errorMessage.value = errorText(error)
   } finally {
     documentDeletingId.value = ''
+  }
+}
+
+async function createMemory() {
+  const content = memoryForm.content.trim()
+  if (!content || loading.value) return
+  clearMessages()
+  loading.value = true
+  try {
+    const memory = await api.createMemory({
+      memoryType: memoryForm.memoryType.trim(),
+      content,
+      sourceRunId: null,
+      expiresAt: memoryForm.expiresAt ? new Date(memoryForm.expiresAt).toISOString() : null,
+    })
+    memories.value = [memory, ...memories.value]
+    memoryForm.content = ''
+    memoryForm.expiresAt = ''
+    noticeMessage.value = '长期记忆已保存，后续模型步骤会按当前用户权限检索'
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    loading.value = false
+  }
+}
+
+async function deleteMemory(memory) {
+  if (!memory?.id || memoryDeletingId.value) return
+  if (typeof window !== 'undefined'
+    && !window.confirm(`确认删除这条“${memory.memoryType}”长期记忆吗？`)) return
+  clearMessages()
+  memoryDeletingId.value = memory.id
+  try {
+    await api.deleteMemory(memory.id)
+    memories.value = memories.value.filter((item) => item.id !== memory.id)
+    noticeMessage.value = '长期记忆已删除'
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    memoryDeletingId.value = ''
   }
 }
 
@@ -4036,6 +4086,30 @@ onBeforeUnmount(() => {
                 <small v-else class="document-owner-hint">仅所有者可删</small>
               </div>
             </div>
+          </form>
+          <form class="governance-card memory-card" @submit.prevent="createMemory">
+            <div class="context-workbench-heading">
+              <div>
+                <p class="eyebrow">PERSONAL CONTEXT</p>
+                <h3>长期记忆</h3>
+              </div>
+              <span class="context-mode-chip">{{ memories.length }} 条</span>
+            </div>
+            <p class="context-workbench-help">仅当前用户可检索。适合保存偏好、工作习惯和可过期的运行背景，不建议写入密钥或凭证。</p>
+            <label class="field"><span>记忆类型</span><input v-model="memoryForm.memoryType" required maxlength="64" placeholder="例如：USER_PREFERENCE" /></label>
+            <label class="field"><span>记忆内容</span><textarea v-model="memoryForm.content" rows="3" required maxlength="20000" placeholder="例如：用户偏好在回答中给出文件路径和验证命令"></textarea></label>
+            <label class="field"><span>过期时间（可选）</span><input v-model="memoryForm.expiresAt" type="datetime-local" /></label>
+            <button class="secondary-button" type="submit" :disabled="loading || !memoryForm.content.trim()">保存记忆</button>
+            <div v-if="memories.length" class="memory-list" aria-label="已保存长期记忆">
+              <article v-for="memory in memories" :key="memory.id" class="memory-row">
+                <div class="memory-row-content">
+                  <div class="memory-row-heading"><strong>{{ memory.memoryType }}</strong><span>{{ memory.expiresAt ? `到期 ${formatDate(memory.expiresAt)}` : '长期有效' }}</span></div>
+                  <p>{{ memory.content }}</p>
+                </div>
+                <button class="danger-button document-delete-button" type="button" :disabled="loading || memoryDeletingId === memory.id" @click="deleteMemory(memory)">{{ memoryDeletingId === memory.id ? '删除中…' : '删除' }}</button>
+              </article>
+            </div>
+            <div v-else class="context-preview-empty">还没有当前用户的长期记忆。</div>
           </form>
           <form class="governance-card" @submit.prevent="runQuickEvaluation">
             <h3>运行快速回归评测</h3>
