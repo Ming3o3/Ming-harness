@@ -60,8 +60,18 @@ public class ContextEmbeddingIndexer {
             for (ContextEmbeddingUpdate update : updates) {
                 update.chunk().markEmbedded(update.vector().model());
             }
+            // indexChunks 也会被后台重建服务调用，不能依赖调用方恰好处于 JPA 事务中。
+            chunkRepository.saveAll(batch);
             indexed += updates.size();
         }
         return indexed;
+    }
+
+    public boolean ready() {
+        return embeddingGateway.enabled() && embeddingStore.supported();
+    }
+
+    public int batchSize() {
+        return properties.batchSize();
     }
 }

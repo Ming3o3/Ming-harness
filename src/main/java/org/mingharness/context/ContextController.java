@@ -2,6 +2,8 @@ package org.mingharness.context;
 
 import jakarta.validation.Valid;
 import org.mingharness.context.api.ContextBuilderResponse;
+import org.mingharness.context.api.ContextReindexRequest;
+import org.mingharness.context.api.ContextReindexResponse;
 import org.mingharness.context.api.CreateDocumentRequest;
 import org.mingharness.context.api.CreateMemoryRequest;
 import org.mingharness.context.api.DocumentView;
@@ -27,10 +29,13 @@ public class ContextController {
 
     private final ContextService contextService;
     private final ContextBuilder contextBuilder;
+    private final ContextIndexRebuildService indexRebuildService;
 
-    public ContextController(ContextService contextService, ContextBuilder contextBuilder) {
+    public ContextController(ContextService contextService, ContextBuilder contextBuilder,
+                             ContextIndexRebuildService indexRebuildService) {
         this.contextService = contextService;
         this.contextBuilder = contextBuilder;
+        this.indexRebuildService = indexRebuildService;
     }
 
     @PostMapping("/documents")
@@ -75,6 +80,12 @@ public class ContextController {
             @RequestParam(defaultValue = "4000") int maxChars) {
         var result = contextBuilder.build(identity().tenantId(), identity().userId(), query, Math.min(maxChars, 20_000));
         return new ContextBuilderResponse(result.text(), result.evidences());
+    }
+
+    @PostMapping("/reindex")
+    public ContextReindexResponse reindex(
+            @Valid @RequestBody(required = false) ContextReindexRequest request) {
+        return indexRebuildService.rebuild(identity().tenantId(), request);
     }
 
     private HarnessIdentity identity() {

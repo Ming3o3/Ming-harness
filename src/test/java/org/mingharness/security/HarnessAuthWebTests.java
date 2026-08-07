@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(properties = {
         "harness.auth.mode=api-key",
-        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,run.create,ops.read,model.configure,workspace.read,workspace.write,workspace.manage,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage;web-other-key|tenant-other|other-user|run.read,workspace.read",
+        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,run.create,ops.read,model.configure,workspace.read,workspace.write,workspace.manage,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage,context.reindex;web-other-key|tenant-other|other-user|run.read,workspace.read",
         "harness.workspace.enabled=true",
         "harness.workspace.local-registration-enabled=true",
         "management.endpoint.health.show-details=when_authorized",
@@ -41,6 +41,29 @@ class HarnessAuthWebTests {
     Path tempDir;
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
+
+    @Test
+    void shouldProtectContextReindexWithDedicatedPermission() throws Exception {
+        HttpResponse<String> authorized = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/context/reindex"))
+                        .header("Authorization", "Bearer web-test-key")
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, authorized.statusCode(), authorized.body());
+        assertTrue(authorized.body().contains("\"embeddingReady\":false"), authorized.body());
+
+        HttpResponse<String> denied = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/context/reindex"))
+                        .header("Authorization", "Bearer web-other-key")
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, denied.statusCode(), denied.body());
+        assertTrue(denied.body().contains("PERMISSION_DENIED"), denied.body());
+    }
 
     @Test
     void shouldReturnStructuredAuthenticationErrorWithoutApiKey() throws Exception {

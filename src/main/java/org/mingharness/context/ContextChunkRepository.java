@@ -16,6 +16,8 @@ public interface ContextChunkRepository extends JpaRepository<ContextChunk, Stri
 
     long countByParentTypeAndParentIdAndDeletedAtIsNull(String parentType, String parentId);
 
+    long countByTenantIdAndDeletedAtIsNullAndEmbeddedAtIsNull(String tenantId);
+
     List<ContextChunk> findByTenantIdAndDeletedAtIsNullAndEmbeddedAtIsNullOrderByCreatedAtAsc(
             String tenantId, Pageable pageable);
 

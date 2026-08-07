@@ -216,6 +216,7 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
             return "GET".equalsIgnoreCase(method) ? "run.read" : "run.create";
         }
         if (path.equals("/api/dashboard/summary")) return "run.read";
+        if (path.equals("/api/context/reindex")) return "context.reindex";
         if (path.matches("/api/context/(documents|memories)(/[^/]+)?")) {
             return "GET".equalsIgnoreCase(method) ? "context.read" : "context.write";
         }
