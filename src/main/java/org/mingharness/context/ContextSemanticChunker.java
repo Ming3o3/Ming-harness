@@ -22,7 +22,7 @@ public class ContextSemanticChunker {
 
     private static final Logger log = LoggerFactory.getLogger(ContextSemanticChunker.class);
     private static final String STRATEGY = "SEMANTIC";
-    private static final String VERSION = "semantic-v1";
+    private static final String VERSION = "semantic-v2";
     private static final String DETERMINISTIC_STRATEGY = "DETERMINISTIC";
     private static final String DETERMINISTIC_VERSION = "deterministic-v1";
 
@@ -133,15 +133,105 @@ public class ContextSemanticChunker {
 
     private List<String> atomicUnits(String normalized) {
         List<String> result = new ArrayList<>();
-        for (String paragraph : Arrays.stream(normalized.split("\\n\\s*\\n"))
-                .map(String::trim).filter(item -> !item.isBlank()).toList()) {
-            if (paragraph.startsWith("```") || paragraph.startsWith("~~~")) {
-                result.add(paragraph);
+        for (AtomicUnit unit : structuralUnits(normalized)) {
+            if (unit.protectedUnit()) {
+                result.add(unit.content());
             } else {
-                result.addAll(splitSentences(paragraph));
+                result.addAll(splitSentences(unit.content()));
             }
         }
         return result.stream().filter(item -> !item.isBlank()).toList();
+    }
+
+    /**
+     * 先识别 Markdown 结构，再把普通段落交给句子切分。
+     *
+     * <p>代码块和表格中的标点、竖线不代表正文语义边界；标题也必须和正文保持可追踪
+     * 的结构关系。因此它们作为 protected unit 直接进入 embedding 批次。</p>
+     */
+    private List<AtomicUnit> structuralUnits(String normalized) {
+        String[] lines = normalized.split("\\n", -1);
+        List<AtomicUnit> result = new ArrayList<>();
+        StringBuilder paragraph = new StringBuilder();
+        int index = 0;
+        while (index < lines.length) {
+            String line = lines[index];
+            String trimmed = line.trim();
+            if (trimmed.isBlank()) {
+                flushParagraph(paragraph, result);
+                index++;
+                continue;
+            }
+            if (isFenceStart(trimmed)) {
+                flushParagraph(paragraph, result);
+                String marker = trimmed.substring(0, 3);
+                StringBuilder fence = new StringBuilder(trimmed);
+                index++;
+                while (index < lines.length) {
+                    String next = lines[index];
+                    fence.append("\n").append(next);
+                    index++;
+                    if (next.trim().startsWith(marker)) break;
+                }
+                result.add(new AtomicUnit(fence.toString().trim(), true));
+                continue;
+            }
+            if (index + 1 < lines.length && isTableHeader(trimmed)
+                    && isTableDelimiter(lines[index + 1])) {
+                flushParagraph(paragraph, result);
+                StringBuilder table = new StringBuilder(trimmed);
+                table.append("\n").append(lines[index + 1].trim());
+                index += 2;
+                while (index < lines.length && isTableRow(lines[index])) {
+                    table.append("\n").append(lines[index].trim());
+                    index++;
+                }
+                result.add(new AtomicUnit(table.toString().trim(), true));
+                continue;
+            }
+            if (isHeading(trimmed)) {
+                flushParagraph(paragraph, result);
+                result.add(new AtomicUnit(trimmed, true));
+                index++;
+                continue;
+            }
+            if (!paragraph.isEmpty()) paragraph.append('\n');
+            paragraph.append(trimmed);
+            index++;
+        }
+        flushParagraph(paragraph, result);
+        return List.copyOf(result);
+    }
+
+    private boolean isFenceStart(String line) {
+        return line.startsWith("```") || line.startsWith("~~~");
+    }
+
+    private boolean isHeading(String line) {
+        return line.matches("#{1,6}\\s+.+");
+    }
+
+    private boolean isTableHeader(String line) {
+        return line.indexOf('|') >= 0;
+    }
+
+    private boolean isTableDelimiter(String line) {
+        String value = line.trim();
+        if (value.startsWith("|")) value = value.substring(1);
+        if (value.endsWith("|")) value = value.substring(0, value.length() - 1);
+        String[] cells = value.split("\\|");
+        if (cells.length < 2) return false;
+        return Arrays.stream(cells).allMatch(cell -> cell.trim().matches(":?-{3,}:?"));
+    }
+
+    private boolean isTableRow(String line) {
+        return !line.isBlank() && line.indexOf('|') >= 0;
+    }
+
+    private void flushParagraph(StringBuilder paragraph, List<AtomicUnit> result) {
+        String value = paragraph.toString().trim();
+        if (!value.isBlank()) result.add(new AtomicUnit(value, false));
+        paragraph.setLength(0);
     }
 
     private List<String> splitSentences(String paragraph) {
@@ -182,5 +272,8 @@ public class ContextSemanticChunker {
 
     private String normalize(String value) {
         return value == null ? "" : value.replace("\r\n", "\n").replace('\r', '\n').trim();
+    }
+
+    private record AtomicUnit(String content, boolean protectedUnit) {
     }
 }
