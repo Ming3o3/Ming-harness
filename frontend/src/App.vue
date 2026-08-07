@@ -41,6 +41,7 @@ const auditEvents = ref([])
 const documents = ref([])
 const memories = ref([])
 const evaluations = ref([])
+const retrievalEvaluations = ref([])
 const contextPreviewQuery = ref('')
 const contextPreviewMaxChars = ref(4000)
 const contextPreviewResult = ref(null)
@@ -349,6 +350,17 @@ const memoryForm = reactive({
   expiresAt: '',
 })
 const memoryDeletingId = ref('')
+
+const retrievalEvaluationForm = reactive({
+  name: '检索基线',
+  query: '',
+  relevantSources: '',
+  expectedContains: '',
+  topK: 5,
+  maxChars: 4000,
+})
+const retrievalEvaluationLoading = ref(false)
+const retrievalEvaluationError = ref('')
 
 const contextPreviewPresets = [
   '如何回滚发布',
@@ -2202,19 +2214,21 @@ async function refreshActiveConversation() {
 async function loadDashboard() {
   clearMessages()
   try {
-    const [, toolData, summaryData, documentData, memoryData, evaluationData] = await Promise.all([
+    const [, toolData, summaryData, documentData, memoryData, evaluationData, retrievalEvaluationData] = await Promise.all([
       loadRunsPage(),
       api.listTools(),
       api.dashboardSummary(),
       api.listDocuments(),
       api.listMemories(),
       api.listEvaluations(),
+      api.listRetrievalEvaluations(),
     ])
     tools.value = toolData
     summary.value = summaryData
     documents.value = documentData
     memories.value = memoryData
     evaluations.value = evaluationData
+    retrievalEvaluations.value = retrievalEvaluationData
     if (selectedRun.value) {
       await selectRun(selectedRun.value.run.id, false)
     } else if (runs.value.length) {
@@ -2745,6 +2759,39 @@ async function runQuickEvaluation() {
     errorMessage.value = errorText(error)
   } finally {
     loading.value = false
+  }
+}
+
+async function runRetrievalEvaluation() {
+  const query = retrievalEvaluationForm.query.trim()
+  const relevantSources = retrievalEvaluationForm.relevantSources
+    .split(/[\n,，]+/)
+    .map((value) => value.trim())
+    .filter(Boolean)
+  if (!query || !relevantSources.length || retrievalEvaluationLoading.value) return
+  retrievalEvaluationLoading.value = true
+  retrievalEvaluationError.value = ''
+  try {
+    const report = await api.runRetrievalEvaluation({
+      name: retrievalEvaluationForm.name.trim() || '检索基线',
+      topK: Number(retrievalEvaluationForm.topK) || 5,
+      maxChars: Number(retrievalEvaluationForm.maxChars) || 4000,
+      cases: [{
+        name: '控制台用例',
+        query,
+        relevantSources,
+        expectedContains: retrievalEvaluationForm.expectedContains
+          .split(/[\n,，]+/)
+          .map((value) => value.trim())
+          .filter(Boolean),
+      }],
+    })
+    retrievalEvaluations.value = [report, ...retrievalEvaluations.value]
+    noticeMessage.value = `检索评测完成，Recall@K ${report.recallAtK} · MRR ${report.mrr}`
+  } catch (error) {
+    retrievalEvaluationError.value = errorText(error)
+  } finally {
+    retrievalEvaluationLoading.value = false
   }
 }
 
@@ -4118,6 +4165,33 @@ onBeforeUnmount(() => {
             <label class="field"><span>期望包含</span><input v-model="evaluationForm.expectedContains" /></label>
             <button class="secondary-button" type="submit" :disabled="loading">执行评测</button>
             <small class="form-hint">历史报告 {{ evaluations.length }} 份；执行完成后点击下方记录查看用例结果、Run 状态和版本绑定。</small>
+          </form>
+          <form class="governance-card retrieval-evaluation-card" @submit.prevent="runRetrievalEvaluation">
+            <div class="context-workbench-heading">
+              <div>
+                <p class="eyebrow">RETRIEVAL QUALITY</p>
+                <h3>检索评测</h3>
+              </div>
+              <span class="context-mode-chip">Recall / MRR</span>
+            </div>
+            <p class="context-workbench-help">用固定的相关来源验证当前向量、关键词混排和上下文预算，来源填写 <code>document:id</code> 或 <code>memory:id</code>。</p>
+            <label class="field"><span>报告名称</span><input v-model="retrievalEvaluationForm.name" required maxlength="200" /></label>
+            <label class="field"><span>测试查询</span><textarea v-model="retrievalEvaluationForm.query" rows="2" required placeholder="例如：如何回滚发布？"></textarea></label>
+            <label class="field"><span>相关来源（逗号或换行分隔）</span><textarea v-model="retrievalEvaluationForm.relevantSources" rows="2" required placeholder="document:doc-id"></textarea></label>
+            <label class="field"><span>期望包含（可选）</span><input v-model="retrievalEvaluationForm.expectedContains" placeholder="例如：审批、回滚" /></label>
+            <div class="retrieval-evaluation-options">
+              <label class="field"><span>Top-K</span><input v-model.number="retrievalEvaluationForm.topK" type="number" min="1" max="50" /></label>
+              <label class="field"><span>上下文上限</span><select v-model.number="retrievalEvaluationForm.maxChars"><option :value="2000">2,000 字符</option><option :value="4000">4,000 字符</option><option :value="8000">8,000 字符</option></select></label>
+            </div>
+            <button class="secondary-button" type="submit" :disabled="retrievalEvaluationLoading || !retrievalEvaluationForm.query.trim() || !retrievalEvaluationForm.relevantSources.trim()">{{ retrievalEvaluationLoading ? '评测中…' : '运行检索评测' }}</button>
+            <p v-if="retrievalEvaluationError" class="policy-error">{{ retrievalEvaluationError }}</p>
+            <div v-if="retrievalEvaluations.length" class="retrieval-report-list" aria-label="检索评测报告">
+              <article v-for="report in retrievalEvaluations.slice(0, 5)" :key="report.id" class="retrieval-report-row">
+                <div class="retrieval-report-heading"><strong>{{ report.name }}</strong><span>{{ formatDate(report.createdAt) }}</span></div>
+                <div class="retrieval-report-metrics"><span>Hit@K <strong>{{ report.hitRateAtK }}</strong></span><span>Recall@K <strong>{{ report.recallAtK }}</strong></span><span>MRR <strong>{{ report.mrr }}</strong></span><span>Context <strong>{{ report.contextHitRate }}</strong></span></div>
+              </article>
+            </div>
+            <div v-else class="context-preview-empty">还没有检索评测报告。</div>
           </form>
           <form class="governance-card policy-card" @submit.prevent="saveTenantPolicy">
             <div class="subsection-title"><h3>组织资源策略</h3><span v-if="tenantPolicy">{{ tenantPolicy.defaulted ? '平台默认' : '组织覆盖' }}</span></div>

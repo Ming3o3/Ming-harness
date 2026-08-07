@@ -372,6 +372,17 @@ h3 { margin: 0; font-size: 13px; }
 .memory-row-heading strong { overflow: hidden; color: var(--soft); font: 10px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .memory-row-heading span { color: var(--muted); font: 8px "DM Mono", monospace; white-space: nowrap; }
 .memory-row p { display: -webkit-box; overflow: hidden; margin: 6px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.retrieval-evaluation-card { min-width: 0; }
+.retrieval-evaluation-card code { color: var(--accent-light); font: inherit; }
+.retrieval-evaluation-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.retrieval-report-list { display: grid; gap: 5px; margin-top: 3px; border-top: 1px solid var(--line); padding-top: 12px; }
+.retrieval-report-row { display: grid; gap: 8px; border-bottom: 1px solid rgba(153,174,218,.08); padding: 9px 0; }
+.retrieval-report-heading { display: flex; justify-content: space-between; gap: 10px; }
+.retrieval-report-heading strong { overflow: hidden; color: var(--soft); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.retrieval-report-heading span { color: var(--muted); font: 8px "DM Mono", monospace; white-space: nowrap; }
+.retrieval-report-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.retrieval-report-metrics span { border: 1px solid var(--line); border-radius: 6px; color: var(--muted); padding: 6px 7px; font: 8px "DM Mono", monospace; }
+.retrieval-report-metrics strong { display: block; margin-top: 3px; color: var(--accent-light); font-size: 11px; }
 .footer { padding: 28px 0 0; color: #4d5b75; font: 9px "DM Mono", monospace; letter-spacing: .04em; }
 
 /* 白天模式覆盖色板，保留状态色和品牌紫色的识别度。 */
