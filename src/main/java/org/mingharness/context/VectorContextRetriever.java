@@ -124,7 +124,7 @@ public class VectorContextRetriever {
                 .addValue("userId", userId)
                 .addValue("queryVector", vectorLiteral(queryVector))
                 .addValue("minSimilarity", retrievalProperties.minSimilarity())
-                .addValue("candidateLimit", retrievalProperties.candidateLimit())
+                .addValue("candidateLimit", retrievalProperties.expandedCandidateLimit())
                 .getValues();
         List<VectorHit> hits = jdbcTemplate.query(SEARCH_SQL, new MapSqlParameterSource(parameters),
                 (row, rowNumber) -> new VectorHit(
@@ -145,7 +145,8 @@ public class VectorContextRetriever {
             parents.computeIfAbsent(key, ignored -> new ParentHit(hit)).add(hit);
         }
         List<ParentHit> ordered = parents.values().stream()
-                .sorted(Comparator.comparingDouble(ParentHit::bestSimilarity).reversed())
+                .sorted(Comparator.comparingDouble(ParentHit::bestSimilarity).reversed()
+                        .thenComparing(Comparator.comparingInt(ParentHit::hitCount).reversed()))
                 .limit(retrievalProperties.maxParents())
                 .toList();
         StringBuilder context = new StringBuilder();
@@ -239,6 +240,10 @@ public class VectorContextRetriever {
 
         private double bestSimilarity() {
             return bestHit().similarity();
+        }
+
+        private int hitCount() {
+            return hits.size();
         }
     }
 }

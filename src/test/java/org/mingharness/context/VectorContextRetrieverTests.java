@@ -7,6 +7,7 @@ import org.mingharness.config.EmbeddingProperties;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 
@@ -15,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -51,6 +53,10 @@ class VectorContextRetrieverTests {
         assertTrue(result.text().contains("前置条件"));
         assertTrue(result.text().contains("回滚步骤"));
         assertTrue(result.text().contains("验证结果"));
+
+        ArgumentCaptor<SqlParameterSource> parameters = ArgumentCaptor.forClass(SqlParameterSource.class);
+        verify(jdbcTemplate).query(anyString(), parameters.capture(), any(RowMapper.class));
+        assertEquals(60, parameters.getValue().getValue("candidateLimit"));
     }
 
     @Test

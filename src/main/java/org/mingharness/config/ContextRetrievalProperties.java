@@ -13,14 +13,23 @@ public record ContextRetrievalProperties(
         boolean rrfEnabled,
         int rrfK,
         double vectorWeight,
-        double keywordWeight
+        double keywordWeight,
+        int candidateExpansionFactor
 ) {
 
     /** 保持已有测试和本地构造调用的默认混合排序行为。 */
     public ContextRetrievalProperties(int candidateLimit, int maxParents, int neighborRadius,
                                       double minSimilarity) {
         this(candidateLimit, maxParents, neighborRadius, minSimilarity,
-                true, 60, 1.0, 0.7);
+                true, 60, 1.0, 0.7, 3);
+    }
+
+    /** 保持显式 RRF 参数调用的兼容性；候选池默认扩展三倍。 */
+    public ContextRetrievalProperties(int candidateLimit, int maxParents, int neighborRadius,
+                                      double minSimilarity, boolean rrfEnabled, int rrfK,
+                                      double vectorWeight, double keywordWeight) {
+        this(candidateLimit, maxParents, neighborRadius, minSimilarity, rrfEnabled, rrfK,
+                vectorWeight, keywordWeight, 3);
     }
 
     @ConstructorBinding
@@ -32,9 +41,16 @@ public record ContextRetrievalProperties(
         rrfK = Math.min(1_000, Math.max(1, rrfK));
         vectorWeight = finiteNonNegative(vectorWeight, 1.0);
         keywordWeight = finiteNonNegative(keywordWeight, 0.7);
+        candidateExpansionFactor = Math.min(10, Math.max(1, candidateExpansionFactor));
         if (vectorWeight == 0.0 && keywordWeight == 0.0) {
             vectorWeight = 1.0;
         }
+    }
+
+    /** 返回用于 pgvector 查询的候选子块数量，防止单个父窗口垄断最终父来源。 */
+    public int expandedCandidateLimit() {
+        long expanded = (long) candidateLimit * candidateExpansionFactor;
+        return (int) Math.min(1_000L, Math.max(candidateLimit, expanded));
     }
 
     private static double finiteNonNegative(double value, double fallback) {
