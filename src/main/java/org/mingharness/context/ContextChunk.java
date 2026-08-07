@@ -50,6 +50,9 @@ public class ContextChunk {
     @Column(name = "chunker_version", nullable = false, length = 64)
     private String chunkerVersion;
 
+    @Column(name = "parent_window_id", length = 255)
+    private String parentWindowId;
+
     @Column(name = "character_count", nullable = false)
     private int characterCount;
 
@@ -78,6 +81,13 @@ public class ContextChunk {
 
     public ContextChunk(String tenantId, String parentType, String parentId, int chunkIndex,
                         String content, String contentHash, String chunkStrategy, String chunkerVersion) {
+        this(tenantId, parentType, parentId, chunkIndex, content, contentHash,
+                chunkStrategy, chunkerVersion, null);
+    }
+
+    public ContextChunk(String tenantId, String parentType, String parentId, int chunkIndex,
+                        String content, String contentHash, String chunkStrategy, String chunkerVersion,
+                        String parentWindowId) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = tenantId;
         this.parentType = parentType;
@@ -88,6 +98,7 @@ public class ContextChunk {
         this.chunkStrategy = chunkStrategy == null || chunkStrategy.isBlank() ? "DETERMINISTIC" : chunkStrategy;
         this.chunkerVersion = chunkerVersion == null || chunkerVersion.isBlank()
                 ? "deterministic-v1" : chunkerVersion;
+        this.parentWindowId = parentWindowId;
         this.characterCount = this.content.length();
         this.createdAt = Instant.now();
         this.updatedAt = this.createdAt;
@@ -115,6 +126,7 @@ public class ContextChunk {
     public String getContentHash() { return contentHash; }
     public String getChunkStrategy() { return chunkStrategy; }
     public String getChunkerVersion() { return chunkerVersion; }
+    public String getParentWindowId() { return parentWindowId; }
     public int getCharacterCount() { return characterCount; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

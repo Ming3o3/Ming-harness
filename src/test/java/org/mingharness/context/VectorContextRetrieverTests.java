@@ -72,4 +72,39 @@ class VectorContextRetrieverTests {
         assertTrue(result.isEmpty());
         verifyNoInteractions(jdbcTemplate, chunkRepository);
     }
+
+    @Test
+    void shouldReturnBoundedParentWindowForAChildVectorHit() {
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        ContextChunkRepository chunkRepository = mock(ContextChunkRepository.class);
+        ContextParentWindowRepository windowRepository = mock(ContextParentWindowRepository.class);
+        EmbeddingGateway gateway = mock(EmbeddingGateway.class);
+        ContextEmbeddingStore store = mock(ContextEmbeddingStore.class);
+        EmbeddingProperties embeddingProperties = new EmbeddingProperties(true, "http://embedding", "key", "model",
+                2, 8, 1_000, 100_000, 1, 0, 10_000);
+        ContextRetrievalProperties retrievalProperties = new ContextRetrievalProperties(20, 5, 1, 0.2);
+        VectorContextRetriever retriever = new VectorContextRetriever(jdbcTemplate, chunkRepository,
+                windowRepository, gateway, store, embeddingProperties, retrievalProperties,
+                new SensitiveDataSanitizer(), null);
+        String windowId = "window-1";
+        ContextParentWindow window = new ContextParentWindow("tenant-a", "DOCUMENT", "doc-1", 2,
+                "标题\n\n前置条件\n\n回滚步骤\n\n验证结果" + "x".repeat(500), "window-hash");
+        when(gateway.enabled()).thenReturn(true);
+        when(store.supported()).thenReturn(true);
+        when(gateway.embed(List.of("如何回滚发布")))
+                .thenReturn(List.of(new EmbeddingVector("model", List.of(0.1, 0.2))));
+        when(jdbcTemplate.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class)))
+                .thenReturn(List.of(new VectorContextRetriever.VectorHit("chunk-2", "DOCUMENT", "doc-1", 1,
+                        "回滚步骤", windowId, 2, "发布回滚", 0.91)));
+        when(windowRepository.findByIdAndTenantIdAndParentTypeAndParentIdAndDeletedAtIsNull(
+                windowId, "tenant-a", "DOCUMENT", "doc-1")).thenReturn(window);
+
+        var result = retriever.retrieve("tenant-a", "operator", "如何回滚发布", 400);
+
+        assertEquals(1, result.evidences().size());
+        assertEquals("document:doc-1#window:2#chunk:1", result.evidences().get(0).citation());
+        assertTrue(result.evidences().get(0).excerpt().length() <= 400);
+        assertTrue(result.evidences().get(0).excerpt().contains("标题"));
+        verifyNoInteractions(chunkRepository);
+    }
 }

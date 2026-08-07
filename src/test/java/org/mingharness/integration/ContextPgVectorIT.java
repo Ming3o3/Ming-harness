@@ -5,6 +5,8 @@ import org.mingharness.context.ContextChunk;
 import org.mingharness.context.ContextChunkRepository;
 import org.mingharness.context.ContextEmbeddingStore;
 import org.mingharness.context.ContextEmbeddingUpdate;
+import org.mingharness.context.ContextParentWindow;
+import org.mingharness.context.ContextParentWindowRepository;
 import org.mingharness.context.EmbeddingVector;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -38,6 +40,8 @@ class ContextPgVectorIT {
     private ContextChunkRepository chunkRepository;
     @Autowired
     private ContextEmbeddingStore embeddingStore;
+    @Autowired
+    private ContextParentWindowRepository parentWindowRepository;
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
@@ -74,6 +78,30 @@ class ContextPgVectorIT {
         assertEquals(1, hnswIndexes);
 
         jdbcTemplate.update("DELETE FROM harness_context_chunks WHERE id = ?", chunk.getId());
+    }
+
+    @Test
+    void shouldPersistParentWindowRelationForChildChunks() {
+        String tenantId = "tenant-window-" + UUID.randomUUID();
+        String parentId = "document-" + UUID.randomUUID();
+        ContextParentWindow window = parentWindowRepository.saveAndFlush(new ContextParentWindow(
+                tenantId, "DOCUMENT", parentId, 0, "标题\n\n正文窗口", "window-hash"));
+        ContextChunk chunk = chunkRepository.saveAndFlush(new ContextChunk(
+                tenantId, "DOCUMENT", parentId, 0, "正文窗口", "chunk-hash",
+                "DETERMINISTIC", "deterministic-v1", window.getId()));
+
+        String linkedWindowId = jdbcTemplate.queryForObject(
+                "SELECT parent_window_id FROM harness_context_chunks WHERE id = ?",
+                String.class, chunk.getId());
+        Integer windows = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM harness_context_parent_windows WHERE id = ? AND window_index = 0",
+                Integer.class, window.getId());
+
+        assertEquals(window.getId(), linkedWindowId);
+        assertEquals(1, windows);
+
+        jdbcTemplate.update("DELETE FROM harness_context_chunks WHERE id = ?", chunk.getId());
+        jdbcTemplate.update("DELETE FROM harness_context_parent_windows WHERE id = ?", window.getId());
     }
 
     private String vectorLiteral(List<Double> values) {

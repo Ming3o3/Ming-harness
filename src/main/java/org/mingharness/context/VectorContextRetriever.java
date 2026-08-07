@@ -30,6 +30,8 @@ public class VectorContextRetriever {
                    c.parent_id,
                    c.chunk_index,
                    c.content,
+                   c.parent_window_id,
+                   w.window_index AS parent_window_index,
                    CASE WHEN c.parent_type = 'DOCUMENT' THEN d.title
                         ELSE '记忆 · ' || m.memory_type END AS title,
                    1 - (c.embedding <=> CAST(:queryVector AS vector)) AS similarity
@@ -38,6 +40,12 @@ public class VectorContextRetriever {
                 ON c.parent_type = 'DOCUMENT' AND d.id = c.parent_id
               LEFT JOIN harness_context_memories m
                 ON c.parent_type = 'MEMORY' AND m.id = c.parent_id
+              LEFT JOIN harness_context_parent_windows w
+                ON c.parent_window_id = w.id
+               AND w.deleted_at IS NULL
+               AND w.tenant_id = c.tenant_id
+               AND w.parent_type = c.parent_type
+               AND w.parent_id = c.parent_id
              WHERE c.tenant_id = :tenantId
                AND c.deleted_at IS NULL
                AND c.embedding IS NOT NULL
@@ -59,6 +67,7 @@ public class VectorContextRetriever {
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final ContextChunkRepository chunkRepository;
+    private final ContextParentWindowRepository parentWindowRepository;
     private final EmbeddingGateway embeddingGateway;
     private final ContextEmbeddingStore embeddingStore;
     private final EmbeddingProperties embeddingProperties;
@@ -73,13 +82,14 @@ public class VectorContextRetriever {
                                   EmbeddingProperties embeddingProperties,
                                   ContextRetrievalProperties retrievalProperties,
                                   SensitiveDataSanitizer sanitizer) {
-        this(jdbcTemplate, chunkRepository, embeddingGateway, embeddingStore, embeddingProperties,
+        this(jdbcTemplate, chunkRepository, null, embeddingGateway, embeddingStore, embeddingProperties,
                 retrievalProperties, sanitizer, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
     public VectorContextRetriever(NamedParameterJdbcTemplate jdbcTemplate,
                                   ContextChunkRepository chunkRepository,
+                                  ContextParentWindowRepository parentWindowRepository,
                                   EmbeddingGateway embeddingGateway,
                                   ContextEmbeddingStore embeddingStore,
                                   EmbeddingProperties embeddingProperties,
@@ -88,6 +98,7 @@ public class VectorContextRetriever {
                                   HarnessMetrics metrics) {
         this.jdbcTemplate = jdbcTemplate;
         this.chunkRepository = chunkRepository;
+        this.parentWindowRepository = parentWindowRepository;
         this.embeddingGateway = embeddingGateway;
         this.embeddingStore = embeddingStore;
         this.embeddingProperties = embeddingProperties;
@@ -119,7 +130,8 @@ public class VectorContextRetriever {
                 (row, rowNumber) -> new VectorHit(
                         row.getString("chunk_id"), row.getString("parent_type"),
                         row.getString("parent_id"), row.getInt("chunk_index"),
-                        row.getString("content"), row.getString("title"),
+                        row.getString("content"), row.getString("parent_window_id"),
+                        row.getObject("parent_window_index", Integer.class), row.getString("title"),
                         row.getDouble("similarity")));
         if (metrics != null) metrics.contextVectorHits(hits.size());
         return buildResult(hits, tenantId, maxChars);
@@ -128,7 +140,8 @@ public class VectorContextRetriever {
     private ContextResult buildResult(List<VectorHit> hits, String tenantId, int maxChars) {
         Map<String, ParentHit> parents = new LinkedHashMap<>();
         for (VectorHit hit : hits) {
-            String key = hit.parentType() + ":" + hit.parentId();
+            String key = hit.parentType() + ":" + hit.parentId()
+                    + (hit.parentWindowId() == null ? "" : ":window:" + hit.parentWindowId());
             parents.computeIfAbsent(key, ignored -> new ParentHit(hit)).add(hit);
         }
         List<ParentHit> ordered = parents.values().stream()
@@ -139,10 +152,15 @@ public class VectorContextRetriever {
         List<ContextEvidence> evidences = new ArrayList<>();
         for (ParentHit parent : ordered) {
             VectorHit best = parent.bestHit();
-            List<ContextChunk> chunks = chunkRepository
+            ContextParentWindow parentWindow = findParentWindow(tenantId, best);
+            List<ContextChunk> chunks = parentWindow == null
+                    ? chunkRepository
                     .findByTenantIdAndParentTypeAndParentIdAndDeletedAtIsNullOrderByChunkIndexAsc(
-                            tenantId, best.parentType(), best.parentId());
-            String excerpt = expandedExcerpt(chunks, best.chunkIndex());
+                            tenantId, best.parentType(), best.parentId())
+                    : List.of();
+            String excerpt = parentWindow == null
+                    ? expandedExcerpt(chunks, best.chunkIndex())
+                    : boundedParentWindow(parentWindow.getContent(), maxChars);
             String displayId = "DOCUMENT".equals(best.parentType())
                     ? best.parentId() : "memory:" + best.parentId();
             String block = "[" + displayId + "#chunk:" + best.chunkIndex() + "] "
@@ -150,10 +168,24 @@ public class VectorContextRetriever {
             if (context.length() + block.length() > maxChars) continue;
             context.append(block);
             String citationPrefix = "DOCUMENT".equals(best.parentType()) ? "document:" : "memory:";
+            String windowCitation = best.parentWindowId() == null || best.parentWindowIndex() == null
+                    ? "" : "#window:" + best.parentWindowIndex();
             evidences.add(new ContextEvidence(best.parentId(), best.title(),
-                    citationPrefix + best.parentId() + "#chunk:" + best.chunkIndex(), excerpt));
+                    citationPrefix + best.parentId() + windowCitation + "#chunk:" + best.chunkIndex(), excerpt));
         }
         return new ContextResult(context.toString(), List.copyOf(evidences));
+    }
+
+    private ContextParentWindow findParentWindow(String tenantId, VectorHit hit) {
+        if (parentWindowRepository == null || hit.parentWindowId() == null) return null;
+        return parentWindowRepository.findByIdAndTenantIdAndParentTypeAndParentIdAndDeletedAtIsNull(
+                hit.parentWindowId(), tenantId, hit.parentType(), hit.parentId());
+    }
+
+    private String boundedParentWindow(String content, int maxChars) {
+        String sanitized = sanitizer.sanitize(content == null ? "" : content);
+        int limit = Math.max(1, maxChars - 256);
+        return sanitized.length() <= limit ? sanitized : sanitized.substring(0, limit).trim() + "...";
     }
 
     private String expandedExcerpt(List<ContextChunk> chunks, int hitIndex) {
@@ -181,7 +213,13 @@ public class VectorContextRetriever {
     }
 
     static record VectorHit(String chunkId, String parentType, String parentId, int chunkIndex,
-                            String content, String title, double similarity) {
+                            String content, String parentWindowId, Integer parentWindowIndex,
+                            String title, double similarity) {
+
+        VectorHit(String chunkId, String parentType, String parentId, int chunkIndex,
+                  String content, String title, double similarity) {
+            this(chunkId, parentType, parentId, chunkIndex, content, null, null, title, similarity);
+        }
     }
 
     private static final class ParentHit {

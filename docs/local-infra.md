@@ -91,6 +91,14 @@ export CONTEXT_SEMANTIC_MIN_UNITS=3
 
 代码块等结构单元仍优先于语义边界；embedding 服务暂时不可用时，写入和重建会回退到确定性分块，并留下待索引数量等待下次重建。生产环境建议把重建放在低峰期，并观察 `harness.context.embedding.*`、`harness.context.vector.*` 和 `harness.context.index.*` 指标。
 
+检索阶段使用“小块召回，大块推理”。每个子块单独写入 pgvector，向量命中后按连续子块聚合为有界父窗口，再将父窗口作为模型上下文返回。父窗口默认上限为 4800 字符，可通过 `CONTEXT_PARENT_WINDOW_MAX_CHARS` 调整；父窗口不单独参与向量召回，也不会绕过文档权限、租户隔离或记忆用户过滤。
+
+```bash
+export CONTEXT_PARENT_WINDOW_MAX_CHARS=4800
+```
+
+修改子块大小、语义分块阈值或父窗口上限后，应使用 `rechunk=true` 重新物化子块和父窗口，再补齐 embedding：
+
 正文写入默认只在事务中保存父对象和 chunk，事务提交后再由有界后台队列执行 embedding，避免供应商网络延迟占住数据库连接。可通过以下参数调整并发；队列满或进程在任务完成前退出时，数据库中仍保留 `embedded_at` 为空的 chunk，下一次重建会继续处理：
 
 ```bash

@@ -13,11 +13,20 @@ import org.springframework.boot.context.properties.bind.ConstructorBinding;
 public record ContextChunkingProperties(int chunkMaxChars, int chunkOverlapChars,
                                         boolean semanticEnabled,
                                         double semanticBreakpoint,
-                                        int semanticMinUnits) {
+                                        int semanticMinUnits,
+                                        int parentWindowMaxChars) {
 
     /** 兼容已有测试和本地构造调用，默认关闭外部语义分块。 */
     public ContextChunkingProperties(int chunkMaxChars, int chunkOverlapChars) {
-        this(chunkMaxChars, chunkOverlapChars, false, 0.35, 3);
+        this(chunkMaxChars, chunkOverlapChars, false, 0.35, 3, 4_800);
+    }
+
+    /** 兼容已有测试和本地构造调用，父窗口使用默认上限。 */
+    public ContextChunkingProperties(int chunkMaxChars, int chunkOverlapChars,
+                                     boolean semanticEnabled, double semanticBreakpoint,
+                                     int semanticMinUnits) {
+        this(chunkMaxChars, chunkOverlapChars, semanticEnabled, semanticBreakpoint,
+                semanticMinUnits, 4_800);
     }
 
     @ConstructorBinding
@@ -27,5 +36,7 @@ public record ContextChunkingProperties(int chunkMaxChars, int chunkOverlapChars
         semanticBreakpoint = Double.isFinite(semanticBreakpoint)
                 ? Math.min(1.0, Math.max(-1.0, semanticBreakpoint)) : 0.35;
         semanticMinUnits = Math.min(20, Math.max(2, semanticMinUnits));
+        parentWindowMaxChars = Math.min(48_000,
+                Math.max(chunkMaxChars, parentWindowMaxChars));
     }
 }

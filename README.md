@@ -108,6 +108,7 @@ npm run dev
 | `MAX_CONTEXT_CHARS` | `64000` | 注入模型的上下文最大字符数 |
 | `CONTEXT_CHUNK_MAX_CHARS` | `1600` | 上下文父文档子块的最大字符数 |
 | `CONTEXT_CHUNK_OVERLAP_CHARS` | `160` | 相邻上下文子块的尾部重叠字符数 |
+| `CONTEXT_PARENT_WINDOW_MAX_CHARS` | `4800` | 连续子块组成的父窗口最大字符数；只用于推理上下文，不参与向量召回 |
 | `CONTEXT_SEMANTIC_ENABLED` | `false` | 是否调用 embedding API 按语义边界分块 |
 | `CONTEXT_SEMANTIC_BREAKPOINT` | `0.35` | 相邻原子单元余弦相似度低于该值时允许切分 |
 | `CONTEXT_SEMANTIC_MIN_UNITS` | `3` | 语义切分前至少累计的原子单元数 |
