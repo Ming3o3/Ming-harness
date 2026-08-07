@@ -118,6 +118,27 @@ curl -X POST http://localhost:8080/api/context/reindex \
 
 `scope` 可取 `ALL`、`DOCUMENT` 或 `MEMORY`；`rechunk=true` 才会按当前分块配置替换已有子块，省略时只补齐缺失的 chunk 并为未向量化的 chunk 建索引。响应中的 `chunksFailed` 和 `pendingChunks` 可用于判断是否需要重试。
 
+可以使用检索评测接口比较不同的分块、父窗口和召回参数。`relevantSources` 填写授权父来源（例如 `document:<id>` 或 `memory:<id>`），服务会把 `#window`、`#chunk` citation 归一化后计算 Recall@K、MRR 和 HitRate@K；如果用例提供 `expectedContains`，还会在实际返回上下文中计算 `contextHitRate`。评测报告只保存聚合指标和脱敏的用例状态，不保存查询正文：
+
+```bash
+curl -X POST http://localhost:8080/api/evaluations/retrieval \
+  -H 'Authorization: Bearer demo-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name":"发布知识库检索基线",
+    "topK":5,
+    "maxChars":4000,
+    "cases":[{
+      "name":"回滚步骤",
+      "query":"如何回滚发布",
+      "relevantSources":["document:替换为真实文档ID"],
+      "expectedContains":["回滚"]
+    }]
+  }'
+```
+
+`contextCases` 表示提供了 `expectedContains` 的用例数；没有内容断言时，`contextHitRate` 为 0 且不影响 Recall/MRR。建议固定一组查询和来源标注，在修改 `CONTEXT_CHUNK_MAX_CHARS`、`CONTEXT_PARENT_WINDOW_MAX_CHARS`、相似度阈值或候选数量后重新运行并比较报告。
+
 Rabbit Worker 的模型和工具调用在数据库事务之外执行；领取租约、步骤开始/完成、心跳、审计和终态写回分别是短事务。每个步骤前后都会续租 Redis 锁并刷新 PostgreSQL Worker 租约，旧 Worker 丢失所有权后不能覆盖新 Worker 或取消操作的结果。Worker 执行锁会自动使用不小于 `RECOVERY_TIMEOUT_MS` 的租期，避免数据库恢复器在一个受控长步骤期间过早回收 Run。
 
 评测接口在 Rabbit 模式下会轮询每个 Run 的详情，直到成功、失败、取消、超时或等待审批；等待审批不会被评测逻辑自动批准。单个 Run 超过等待边界后，报告会记录 `TIMEOUT` 和当时的 `QUEUED/RUNNING` 状态，然后继续下一个用例，不会让整批评测持有长数据库事务。默认等待 120 秒、每 250 毫秒轮询一次，可按模型响应时间和 API 请求超时覆盖：

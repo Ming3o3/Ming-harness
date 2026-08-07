@@ -43,6 +43,7 @@ Ming Harness 是一个面向企业 Agent 的可运行 Harness：后端使用 Spr
 - 上下文与记忆：授权文档检索、引用来源、过期记忆、删除和敏感凭证拦截
 - 上下文父文档子块索引：文档和长期记忆写入时按结构和长度生成有序子块，为后续 embedding/pgvector 检索保留稳定的父子关系
 - embedding 索引写入：启用外部 embedding API 且使用 PostgreSQL 时，文档和长期记忆子块会批量写入 pgvector；供应商暂时不可用时保留关键词召回并等待后续重建
+- 上下文检索离线评测：按租户保存 Recall@K、MRR、HitRate@K 和可选的上下文命中率，用于比较分块、父窗口和召回参数
 - 敏感数据治理：Run、Step、审计、模型、工具和上下文边界统一凭证脱敏，长期记忆拒绝写入疑似凭证
 - 数据保留策略：终态 Run 与审计链原子清理，过期记忆/文档/评测和已完成 Outbox 定时删除，待投递消息不自动删除
 - 离线评测：固定用例回放并保存模型/Prompt/策略版本报告
@@ -446,6 +447,7 @@ curl -X POST http://localhost:8080/api/runs \
 - `POST/GET/DELETE /api/context/memories`：管理用户范围的长期记忆
 - `GET /api/context/preview?query=...`：预览授权来源和引用
 - `POST /api/context/reindex`：按租户有界重建上下文 chunk 和 embedding，需要 `context.reindex` 权限；`rechunk=true` 时按当前语义分块配置重新切块
+- `POST/GET /api/evaluations/retrieval`：运行或查询上下文检索离线评测，需要 `evaluation.run` / `evaluation.read` 权限；用例的 `relevantSources` 使用 `document:<id>` 或 `memory:<id>`，`expectedContains` 可选，用于计算上下文命中率
 - `POST/GET /api/evaluations`：运行固定回归用例并查询评测报告；`rabbit` 模式下接口会等待每个 Run 到终态，等待审批的用例不会自动审批，单个用例超时会记录当前状态并继续后续用例
 
 ## 设计约束
