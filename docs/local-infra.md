@@ -66,6 +66,42 @@ SPRING_PROFILES_ACTIVE=local-infra \
 `local-infra` 启动时会执行 Flyway 迁移，创建 Run、Step、审计、上下文、评测、Outbox 和组织资源策略表，并声明 RabbitMQ 主队列和死信队列。
 Outbox Relay 会先在 PostgreSQL 中抢占短期发布租约，再在租约外等待 RabbitMQ 发布确认；多实例不会同时发送同一条待处理事件。进程在确认前中断时，租约到期后允许重新投递，Run 执行锁负责去重。当同一事件达到 `RABBITMQ_MAX_ATTEMPTS` 仍无法获得发布确认时，Outbox 会进入 `FAILED`，对应 Run 会在带行锁的短事务中立即落为 `FAILED`，并追加 `RUN_DISPATCH_FAILED` 审计事件，不再等待 Worker 租约超时后才让用户看到失败。
 
+### 启用上下文向量检索
+
+`local-infra` 使用 PostgreSQL + pgvector 保存上下文子块向量。Flyway 会自动执行向量列和 HNSW 索引迁移；应用只有在 PostgreSQL、embedding 网关和 `EMBEDDING_ENABLED=true` 同时满足时才会执行向量召回，否则继续使用关键词召回。
+
+先配置一个 OpenAI 兼容的 `/embeddings` 服务：
+
+```bash
+export EMBEDDING_ENABLED=true
+export EMBEDDING_BASE_URL=https://api.example.com/v1
+export EMBEDDING_API_KEY='由密钥系统注入'
+export EMBEDDING_MODEL=text-embedding-3-small
+export EMBEDDING_DIMENSION=1536
+export EMBEDDING_BATCH_SIZE=32
+```
+
+`EMBEDDING_DIMENSION` 必须与数据库中的 `vector(1536)` 一致；更换模型、维度或语义分块版本后，应执行一次有界重建。语义分块默认关闭，开启后会对段落/句子原子单元批量向量化，按相邻单元余弦相似度寻找边界，同时保留最大长度、最小单元数和 overlap 约束：
+
+```bash
+export CONTEXT_SEMANTIC_ENABLED=true
+export CONTEXT_SEMANTIC_BREAKPOINT=0.35
+export CONTEXT_SEMANTIC_MIN_UNITS=3
+```
+
+代码块等结构单元仍优先于语义边界；embedding 服务暂时不可用时，写入和重建会回退到确定性分块，并留下待索引数量等待下次重建。生产环境建议把重建放在低峰期，并观察 `harness.context.embedding.*`、`harness.context.vector.*` 和 `harness.context.index.*` 指标。
+
+重建接口按租户、父对象和 chunk 数量设上限，不会一次性把整个租户发送给外部服务。调用方需要 `context.reindex` 权限：
+
+```bash
+curl -X POST http://localhost:8080/api/context/reindex \
+  -H 'Authorization: Bearer demo-key' \
+  -H 'Content-Type: application/json' \
+  -d '{"scope":"DOCUMENT","parentLimit":100,"chunkLimit":1000,"rechunk":true}'
+```
+
+`scope` 可取 `ALL`、`DOCUMENT` 或 `MEMORY`；`rechunk=true` 才会按当前分块配置替换已有子块，省略时只补齐缺失的 chunk 并为未向量化的 chunk 建索引。响应中的 `chunksFailed` 和 `pendingChunks` 可用于判断是否需要重试。
+
 Rabbit Worker 的模型和工具调用在数据库事务之外执行；领取租约、步骤开始/完成、心跳、审计和终态写回分别是短事务。每个步骤前后都会续租 Redis 锁并刷新 PostgreSQL Worker 租约，旧 Worker 丢失所有权后不能覆盖新 Worker 或取消操作的结果。Worker 执行锁会自动使用不小于 `RECOVERY_TIMEOUT_MS` 的租期，避免数据库恢复器在一个受控长步骤期间过早回收 Run。
 
 评测接口在 Rabbit 模式下会轮询每个 Run 的详情，直到成功、失败、取消、超时或等待审批；等待审批不会被评测逻辑自动批准。单个 Run 超过等待边界后，报告会记录 `TIMEOUT` 和当时的 `QUEUED/RUNNING` 状态，然后继续下一个用例，不会让整批评测持有长数据库事务。默认等待 120 秒、每 250 毫秒轮询一次，可按模型响应时间和 API 请求超时覆盖：
