@@ -35,6 +35,8 @@ public class HarnessMetrics {
     private final Counter contextEmbeddingFailures;
     private final Counter contextEmbeddingCacheHits;
     private final Counter contextEmbeddingCacheMisses;
+    private final Counter contextQueryEmbeddingCacheHits;
+    private final Counter contextQueryEmbeddingCacheMisses;
     private final Counter contextVectorQueries;
     private final Counter contextVectorHits;
     private final Counter contextKeywordSupplements;
@@ -82,6 +84,10 @@ public class HarnessMetrics {
                 .description("复用 embedding 缓存的 chunk 数量").register(registry);
         contextEmbeddingCacheMisses = Counter.builder("harness.context.embedding.cache.misses")
                 .description("未命中 embedding 缓存并需要调用 API 的 chunk 数量").register(registry);
+        contextQueryEmbeddingCacheHits = Counter.builder("harness.context.query_embedding.cache.hits")
+                .description("复用查询 embedding 缓存的查询次数").register(registry);
+        contextQueryEmbeddingCacheMisses = Counter.builder("harness.context.query_embedding.cache.misses")
+                .description("未命中查询 embedding 缓存并需要调用 API 的查询次数").register(registry);
         contextVectorQueries = Counter.builder("harness.context.vector.queries")
                 .description("上下文向量查询次数").register(registry);
         contextVectorHits = Counter.builder("harness.context.vector.hits")
@@ -142,6 +148,8 @@ public class HarnessMetrics {
     public void contextEmbeddingFailed() { contextEmbeddingFailures.increment(); }
     public void contextEmbeddingCacheHit() { contextEmbeddingCacheHits.increment(); }
     public void contextEmbeddingCacheMiss() { contextEmbeddingCacheMisses.increment(); }
+    public void contextQueryEmbeddingCacheHit() { contextQueryEmbeddingCacheHits.increment(); }
+    public void contextQueryEmbeddingCacheMiss() { contextQueryEmbeddingCacheMisses.increment(); }
     public void contextVectorQuery() { contextVectorQueries.increment(); }
     public void contextVectorHits(int count) { contextVectorHits.increment(Math.max(0, count)); }
     public void contextKeywordSupplements(int count) { contextKeywordSupplements.increment(Math.max(0, count)); }

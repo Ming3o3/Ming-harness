@@ -15,7 +15,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -112,5 +114,58 @@ class VectorContextRetrieverTests {
         assertTrue(result.evidences().get(0).excerpt().length() <= 400);
         assertTrue(result.evidences().get(0).excerpt().contains("标题"));
         verifyNoInteractions(chunkRepository);
+    }
+
+    @Test
+    void shouldReuseCachedQueryEmbeddingAndSkipProviderCall() {
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        ContextChunkRepository chunkRepository = mock(ContextChunkRepository.class);
+        ContextEmbeddingCache cache = mock(ContextEmbeddingCache.class);
+        EmbeddingGateway gateway = mock(EmbeddingGateway.class);
+        ContextEmbeddingStore store = mock(ContextEmbeddingStore.class);
+        EmbeddingProperties embeddingProperties = new EmbeddingProperties(true, "http://embedding", "key", "model",
+                2, 8, 1_000, 100_000, 1, 0, 10_000);
+        ContextRetrievalProperties retrievalProperties = new ContextRetrievalProperties(20, 5, 1, 0.2);
+        VectorContextRetriever retriever = new VectorContextRetriever(jdbcTemplate, chunkRepository, null, gateway,
+                store, embeddingProperties, retrievalProperties, new SensitiveDataSanitizer(), cache, null);
+        EmbeddingVector cached = new EmbeddingVector("model", List.of(0.1, 0.2));
+        when(gateway.enabled()).thenReturn(true);
+        when(store.supported()).thenReturn(true);
+        when(cache.find(eq("tenant-a"), anyString(), eq("model"), eq("v1"), eq(2)))
+                .thenReturn(java.util.Optional.of(cached));
+        when(jdbcTemplate.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class)))
+                .thenReturn(List.of());
+
+        var result = retriever.retrieve("tenant-a", "operator", "如何回滚发布", 4_000);
+
+        assertTrue(result.isEmpty());
+        verify(cache).find(eq("tenant-a"), anyString(), eq("model"), eq("v1"), eq(2));
+        verify(gateway, never()).embed(any());
+    }
+
+    @Test
+    void shouldCacheFreshQueryEmbeddingAfterProviderCall() {
+        NamedParameterJdbcTemplate jdbcTemplate = mock(NamedParameterJdbcTemplate.class);
+        ContextChunkRepository chunkRepository = mock(ContextChunkRepository.class);
+        ContextEmbeddingCache cache = mock(ContextEmbeddingCache.class);
+        EmbeddingGateway gateway = mock(EmbeddingGateway.class);
+        ContextEmbeddingStore store = mock(ContextEmbeddingStore.class);
+        EmbeddingProperties embeddingProperties = new EmbeddingProperties(true, "http://embedding", "key", "model",
+                2, 8, 1_000, 100_000, 1, 0, 10_000);
+        ContextRetrievalProperties retrievalProperties = new ContextRetrievalProperties(20, 5, 1, 0.2);
+        VectorContextRetriever retriever = new VectorContextRetriever(jdbcTemplate, chunkRepository, null, gateway,
+                store, embeddingProperties, retrievalProperties, new SensitiveDataSanitizer(), cache, null);
+        EmbeddingVector vector = new EmbeddingVector("model", List.of(0.1, 0.2));
+        when(gateway.enabled()).thenReturn(true);
+        when(store.supported()).thenReturn(true);
+        when(cache.find(eq("tenant-a"), anyString(), eq("model"), eq("v1"), eq(2)))
+                .thenReturn(java.util.Optional.empty());
+        when(gateway.embed(List.of("如何回滚发布"))).thenReturn(List.of(vector));
+        when(jdbcTemplate.query(anyString(), any(SqlParameterSource.class), any(RowMapper.class)))
+                .thenReturn(List.of());
+
+        retriever.retrieve("tenant-a", "operator", "如何回滚发布", 4_000);
+
+        verify(cache).save(eq("tenant-a"), anyString(), eq("model"), eq("v1"), eq(vector));
     }
 }

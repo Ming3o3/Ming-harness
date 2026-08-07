@@ -11,11 +11,15 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * 使用 pgvector 做权限感知的子块召回，并为命中子块补回相邻上下文。
@@ -70,6 +74,7 @@ public class VectorContextRetriever {
     private final ContextParentWindowRepository parentWindowRepository;
     private final EmbeddingGateway embeddingGateway;
     private final ContextEmbeddingStore embeddingStore;
+    private final ContextEmbeddingCache embeddingCache;
     private final EmbeddingProperties embeddingProperties;
     private final ContextRetrievalProperties retrievalProperties;
     private final SensitiveDataSanitizer sanitizer;
@@ -83,7 +88,20 @@ public class VectorContextRetriever {
                                   ContextRetrievalProperties retrievalProperties,
                                   SensitiveDataSanitizer sanitizer) {
         this(jdbcTemplate, chunkRepository, null, embeddingGateway, embeddingStore, embeddingProperties,
-                retrievalProperties, sanitizer, null);
+                retrievalProperties, sanitizer, new NoopContextEmbeddingCache(), null);
+    }
+
+    public VectorContextRetriever(NamedParameterJdbcTemplate jdbcTemplate,
+                                  ContextChunkRepository chunkRepository,
+                                  ContextParentWindowRepository parentWindowRepository,
+                                  EmbeddingGateway embeddingGateway,
+                                  ContextEmbeddingStore embeddingStore,
+                                  EmbeddingProperties embeddingProperties,
+                                  ContextRetrievalProperties retrievalProperties,
+                                  SensitiveDataSanitizer sanitizer,
+                                  HarnessMetrics metrics) {
+        this(jdbcTemplate, chunkRepository, parentWindowRepository, embeddingGateway, embeddingStore,
+                embeddingProperties, retrievalProperties, sanitizer, new NoopContextEmbeddingCache(), metrics);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -95,12 +113,14 @@ public class VectorContextRetriever {
                                   EmbeddingProperties embeddingProperties,
                                   ContextRetrievalProperties retrievalProperties,
                                   SensitiveDataSanitizer sanitizer,
+                                  ContextEmbeddingCache embeddingCache,
                                   HarnessMetrics metrics) {
         this.jdbcTemplate = jdbcTemplate;
         this.chunkRepository = chunkRepository;
         this.parentWindowRepository = parentWindowRepository;
         this.embeddingGateway = embeddingGateway;
         this.embeddingStore = embeddingStore;
+        this.embeddingCache = embeddingCache;
         this.embeddingProperties = embeddingProperties;
         this.retrievalProperties = retrievalProperties;
         this.sanitizer = sanitizer;
@@ -114,11 +134,7 @@ public class VectorContextRetriever {
         }
         if (metrics != null) metrics.contextVectorQuery();
         String boundedQuery = boundQuery(query);
-        List<EmbeddingVector> queryVectors = embeddingGateway.embed(List.of(boundedQuery));
-        if (queryVectors.size() != 1 || queryVectors.get(0).dimension() != embeddingProperties.dimension()) {
-            throw new EmbeddingGatewayException(false, "查询 embedding 维度不匹配");
-        }
-        EmbeddingVector queryVector = queryVectors.get(0);
+        EmbeddingVector queryVector = queryEmbedding(tenantId, boundedQuery);
         Map<String, Object> parameters = new MapSqlParameterSource()
                 .addValue("tenantId", tenantId)
                 .addValue("userId", userId)
@@ -208,6 +224,46 @@ public class VectorContextRetriever {
             normalized = normalized.substring(0, embeddingProperties.maxInputChars());
         }
         return EmbeddingTokenEstimator.truncate(normalized, embeddingProperties.maxInputTokens()).trim();
+    }
+
+    private EmbeddingVector queryEmbedding(String tenantId, String boundedQuery) {
+        String contentHash = sha256(boundedQuery);
+        try {
+            Optional<EmbeddingVector> cached = embeddingCache.find(tenantId, contentHash,
+                    embeddingProperties.model(), embeddingProperties.modelVersion(), embeddingProperties.dimension());
+            if (cached.isPresent() && cached.get().dimension() == embeddingProperties.dimension()) {
+                if (metrics != null) metrics.contextQueryEmbeddingCacheHit();
+                return cached.get();
+            }
+        } catch (RuntimeException ignored) {
+            // 缓存只是加速层，读取失败时继续调用 embedding 供应商。
+        }
+        if (metrics != null) metrics.contextQueryEmbeddingCacheMiss();
+
+        List<EmbeddingVector> queryVectors = embeddingGateway.embed(List.of(boundedQuery));
+        if (queryVectors.size() != 1 || queryVectors.get(0).dimension() != embeddingProperties.dimension()) {
+            throw new EmbeddingGatewayException(false, "查询 embedding 维度不匹配");
+        }
+        EmbeddingVector queryVector = queryVectors.get(0);
+        try {
+            embeddingCache.save(tenantId, contentHash, embeddingProperties.model(),
+                    embeddingProperties.modelVersion(), queryVector);
+        } catch (RuntimeException ignored) {
+            // 缓存写入失败不能影响本次检索结果。
+        }
+        return queryVector;
+    }
+
+    private String sha256(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder result = new StringBuilder(digest.length * 2);
+            for (byte item : digest) result.append(String.format("%02x", item));
+            return result.toString();
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("JVM 缺少 SHA-256 算法", exception);
+        }
     }
 
     private String vectorLiteral(EmbeddingVector vector) {

@@ -54,6 +54,8 @@ class HarnessMetricsTests {
         metrics.contextEmbeddingFailed();
         metrics.contextEmbeddingCacheHit();
         metrics.contextEmbeddingCacheMiss();
+        metrics.contextQueryEmbeddingCacheHit();
+        metrics.contextQueryEmbeddingCacheMiss();
         metrics.contextVectorQuery();
         metrics.contextVectorHits(3);
         metrics.contextKeywordSupplements(2);
@@ -68,6 +70,8 @@ class HarnessMetricsTests {
         assertEquals(1.0, registry.get("harness.context.embedding.failed").counter().count());
         assertEquals(1.0, registry.get("harness.context.embedding.cache.hits").counter().count());
         assertEquals(1.0, registry.get("harness.context.embedding.cache.misses").counter().count());
+        assertEquals(1.0, registry.get("harness.context.query_embedding.cache.hits").counter().count());
+        assertEquals(1.0, registry.get("harness.context.query_embedding.cache.misses").counter().count());
         assertEquals(1.0, registry.get("harness.context.vector.queries").counter().count());
         assertEquals(3.0, registry.get("harness.context.vector.hits").counter().count());
         assertEquals(2.0, registry.get("harness.context.keyword.supplements").counter().count());
