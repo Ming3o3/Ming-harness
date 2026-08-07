@@ -96,6 +96,7 @@ public class DataRetentionService {
         int auditEventsDeleted = 0;
         int stepsDeleted = 0;
         int outboxEventsDeleted = 0;
+        int chunksDeleted = 0;
 
         // 每轮只处理有限数量的 Run，避免历史数据很多时长事务阻塞线上写入。
         List<Run> candidates = runRepository.findByStatusInAndFinishedAtBeforeOrderByFinishedAtAsc(
@@ -113,7 +114,10 @@ public class DataRetentionService {
                 now.minus(properties.memoryDays(), ChronoUnit.DAYS)));
         int documentsDeleted = Math.toIntExact(documentRepository.deleteByDeletedAtBefore(
                 now.minus(properties.documentDays(), ChronoUnit.DAYS)));
-        contextChunkRepository.deleteByDeletedAtBefore(now.minus(properties.documentDays(), ChronoUnit.DAYS));
+        chunksDeleted += Math.toIntExact(contextChunkRepository.deleteByDeletedAtBefore(
+                now.minus(properties.documentDays(), ChronoUnit.DAYS)));
+        // 记忆过期和历史父记录清理使用硬删除，必须在父记录删除后补扫孤儿 chunk。
+        chunksDeleted += contextChunkRepository.deleteOrphanedChunks();
         int evaluationReportsDeleted = Math.toIntExact(evaluationReportRepository.deleteByCreatedAtBefore(
                 now.minus(properties.evaluationDays(), ChronoUnit.DAYS)));
         // 仅清理已经完成投递或已明确失败的历史 Outbox，PENDING 事件永远保留。
@@ -127,7 +131,8 @@ public class DataRetentionService {
 
         RetentionCleanupResult result = new RetentionCleanupResult(
                 runsDeleted, auditEventsDeleted, stepsDeleted, memoriesDeleted, documentsDeleted,
-                evaluationReportsDeleted, outboxEventsDeleted, tenantPolicyAuditsDeleted, apiKeyAuditsDeleted);
+                chunksDeleted, evaluationReportsDeleted, outboxEventsDeleted, tenantPolicyAuditsDeleted,
+                apiKeyAuditsDeleted);
         metrics.retentionDeleted(result.totalDeleted());
         return result;
     }

@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.mingharness.audit.AuditEvent;
 import org.mingharness.audit.AuditEventRepository;
 import org.mingharness.audit.AuditTrailService;
+import org.mingharness.context.ContextChunk;
+import org.mingharness.context.ContextChunkRepository;
 import org.mingharness.context.KnowledgeDocument;
 import org.mingharness.context.KnowledgeDocumentRepository;
 import org.mingharness.context.MemoryEntry;
@@ -50,6 +52,8 @@ class DataRetentionServiceTests {
     @Autowired
     private KnowledgeDocumentRepository documentRepository;
     @Autowired
+    private ContextChunkRepository contextChunkRepository;
+    @Autowired
     private EvaluationReportRepository evaluationReportRepository;
     @Autowired
     private TenantPolicyAuditRepository tenantPolicyAuditRepository;
@@ -65,6 +69,7 @@ class DataRetentionServiceTests {
         runRepository.deleteAll();
         memoryEntryRepository.deleteAll();
         documentRepository.deleteAll();
+        contextChunkRepository.deleteAll();
         evaluationReportRepository.deleteAll();
         tenantPolicyAuditRepository.deleteAll();
         apiKeyAuditRepository.deleteAll();
@@ -76,6 +81,8 @@ class DataRetentionServiceTests {
 
         MemoryEntry expiredMemory = memoryEntryRepository.save(new MemoryEntry(
                 "tenant-retention", "operator", "preference", "过期偏好", null, old));
+        ContextChunk expiredMemoryChunk = contextChunkRepository.save(new ContextChunk(
+                "tenant-retention", "MEMORY", expiredMemory.getId(), 0, "过期偏好", "hash-memory"));
         MemoryEntry deletedMemory = memoryEntryRepository.save(new MemoryEntry(
                 "tenant-retention", "operator", "preference", "已删除偏好", null, null));
         deletedMemory.markDeleted();
@@ -85,6 +92,8 @@ class DataRetentionServiceTests {
 
         KnowledgeDocument deletedDocument = documentRepository.save(new KnowledgeDocument(
                 "tenant-retention", "operator", "旧文档", "旧文档内容", "INTERNAL", ""));
+        ContextChunk deletedDocumentChunk = contextChunkRepository.save(new ContextChunk(
+                "tenant-retention", "DOCUMENT", deletedDocument.getId(), 0, "旧文档内容", "hash-document"));
         deletedDocument.markDeleted();
         documentRepository.save(deletedDocument);
         jdbcTemplate.update("UPDATE harness_context_documents SET deleted_at = ? WHERE id = ?",
@@ -142,6 +151,7 @@ class DataRetentionServiceTests {
         assertEquals(0, result.stepsDeleted());
         assertEquals(2, result.memoriesDeleted());
         assertEquals(1, result.documentsDeleted());
+        assertEquals(2, result.chunksDeleted());
         assertEquals(1, result.evaluationReportsDeleted());
         assertEquals(1, result.outboxEventsDeleted());
         assertEquals(1, result.tenantPolicyAuditsDeleted());
@@ -152,6 +162,8 @@ class DataRetentionServiceTests {
         assertTrue(outboxEventRepository.findById(pendingOutbox.getId()).isPresent());
         assertTrue(outboxEventRepository.findById(publishingOutbox.getId()).isPresent());
         assertFalse(memoryEntryRepository.findById(expiredMemory.getId()).isPresent());
+        assertFalse(contextChunkRepository.findById(expiredMemoryChunk.getId()).isPresent());
+        assertFalse(contextChunkRepository.findById(deletedDocumentChunk.getId()).isPresent());
         assertFalse(apiKeyAuditRepository.findById(apiKeyAudit.getId()).isPresent());
     }
 }
