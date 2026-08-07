@@ -245,7 +245,10 @@ export const api = {
   listDocuments: () => request('/context/documents'),
   createDocument: (payload) => request('/context/documents', { method: 'POST', body: JSON.stringify(payload) }),
   deleteDocument: (documentId) => request(`/context/documents/${documentId}`, { method: 'DELETE' }),
-  previewContext: (query) => request(`/context/preview?query=${encodeURIComponent(query)}`),
+  previewContext: (query, maxChars = 4000) => {
+    const params = new URLSearchParams({ query, maxChars: String(maxChars) })
+    return request(`/context/preview?${params.toString()}`)
+  },
   listMemories: () => request('/context/memories'),
   createMemory: (payload) => request('/context/memories', { method: 'POST', body: JSON.stringify(payload) }),
   listEvaluations: () => request('/evaluations'),

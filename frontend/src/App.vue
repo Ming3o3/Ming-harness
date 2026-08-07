@@ -40,6 +40,11 @@ const selectedRun = ref(null)
 const auditEvents = ref([])
 const documents = ref([])
 const evaluations = ref([])
+const contextPreviewQuery = ref('')
+const contextPreviewMaxChars = ref(4000)
+const contextPreviewResult = ref(null)
+const contextPreviewLoading = ref(false)
+const contextPreviewError = ref('')
 const selectedEvaluationReport = ref(null)
 const evaluationReportLoadingRunId = ref('')
 const selectedEvaluationCases = computed(() => evaluationCases(selectedEvaluationReport.value))
@@ -327,6 +332,12 @@ const documentForm = reactive({
   sensitivity: 'INTERNAL',
   allowedUsers: '',
 })
+
+const contextPreviewPresets = [
+  '如何回滚发布',
+  '订单状态变更需要哪些审核？',
+  '查找与当前任务相关的操作规则',
+]
 
 const evaluationForm = reactive({
   name: '控制台快速回归',
@@ -2612,6 +2623,25 @@ async function deleteDocument(document) {
   }
 }
 
+async function previewContext() {
+  const query = contextPreviewQuery.value.trim()
+  if (!query || contextPreviewLoading.value) return
+  contextPreviewLoading.value = true
+  contextPreviewError.value = ''
+  try {
+    contextPreviewResult.value = await api.previewContext(query, Number(contextPreviewMaxChars.value) || 4000)
+  } catch (error) {
+    contextPreviewError.value = errorText(error)
+  } finally {
+    contextPreviewLoading.value = false
+  }
+}
+
+function useContextPreviewPreset(query) {
+  contextPreviewQuery.value = query
+  nextTick(() => previewContext())
+}
+
 async function runQuickEvaluation() {
   clearMessages()
   loading.value = true
@@ -3871,6 +3901,59 @@ onBeforeUnmount(() => {
           <button class="secondary-button" type="button" @click="showGovernance = !showGovernance">{{ showGovernance ? '收起' : '展开治理面板' }}</button>
         </div>
         <div v-if="showGovernance" class="governance-grid">
+          <section class="governance-card context-workbench-card">
+            <div class="context-workbench-heading">
+              <div>
+                <p class="eyebrow">VECTOR SEARCH</p>
+                <h3>检索工作台</h3>
+              </div>
+              <span class="context-mode-chip">语义 + 关键词</span>
+            </div>
+            <p class="context-workbench-help">用和 Run 相同的查询链路预览授权上下文，检查命中来源、父窗口和 citation。</p>
+            <form class="context-preview-form" @submit.prevent="previewContext">
+              <label class="field context-query-field">
+                <span>查询内容</span>
+                <textarea v-model="contextPreviewQuery" rows="3" required placeholder="例如：如何回滚发布？"></textarea>
+              </label>
+              <div class="context-preview-controls">
+                <label class="field">
+                  <span>上下文上限</span>
+                  <select v-model.number="contextPreviewMaxChars">
+                    <option :value="2000">2,000 字符</option>
+                    <option :value="4000">4,000 字符</option>
+                    <option :value="8000">8,000 字符</option>
+                    <option :value="12000">12,000 字符</option>
+                  </select>
+                </label>
+                <button class="primary-button context-preview-button" type="submit" :disabled="contextPreviewLoading || !contextPreviewQuery.trim()">
+                  {{ contextPreviewLoading ? '检索中…' : '运行检索' }}
+                </button>
+              </div>
+            </form>
+            <div class="context-preview-presets" aria-label="检索示例">
+              <span>试试</span>
+              <button v-for="preset in contextPreviewPresets" :key="preset" type="button" @click="useContextPreviewPreset(preset)">{{ preset }}</button>
+            </div>
+            <p v-if="contextPreviewError" class="policy-error">{{ contextPreviewError }}</p>
+            <div v-if="contextPreviewResult" class="context-preview-result">
+              <div class="subsection-title">
+                <div><h3>召回结果</h3><span>{{ contextPreviewResult.evidences?.length || 0 }} 个授权来源</span></div>
+                <span class="context-result-state">已完成</span>
+              </div>
+              <pre v-if="contextPreviewResult.text" class="context-preview-text">{{ contextPreviewResult.text }}</pre>
+              <div v-else class="context-preview-empty">没有达到相似度阈值的来源，Run 会继续使用关键词检索。</div>
+              <div v-if="contextPreviewResult.evidences?.length" class="context-evidence-list">
+                <article v-for="evidence in contextPreviewResult.evidences" :key="evidence.citation" class="context-evidence-row">
+                  <div class="context-evidence-heading">
+                    <strong>{{ evidence.title || '未命名来源' }}</strong>
+                    <code>{{ evidence.citation }}</code>
+                  </div>
+                  <p>{{ evidence.excerpt }}</p>
+                </article>
+              </div>
+            </div>
+            <div v-else class="context-preview-empty context-preview-empty-initial">尚未运行查询。这里的结果与模型步骤实际收到的上下文格式一致。</div>
+          </section>
           <form class="governance-card" @submit.prevent="createDocument">
             <h3>添加授权知识文档</h3>
             <label class="field"><span>标题</span><input v-model="documentForm.title" required /></label>
