@@ -1733,6 +1733,8 @@ button svg {
     padding-right: 28px;
     padding-left: 28px;
   }
+
+  .governance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 900px) {
@@ -1804,6 +1806,15 @@ button svg {
   .console-layout .main-content {
     padding: 20px 14px 34px;
   }
+
+  .governance-grid { grid-template-columns: minmax(0, 1fr); }
+  .context-preview-form { grid-template-columns: minmax(0, 1fr); }
+  .context-index-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .context-index-form > .field:first-child { grid-column: 1 / -1; }
+  .context-index-button { grid-column: 1 / -1; width: 100%; }
+  .context-config-grid, .context-index-result, .retrieval-report-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .context-evidence-heading { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .context-evidence-heading code { max-width: 100%; }
 }
 
 @media (max-width: 1080px) {
