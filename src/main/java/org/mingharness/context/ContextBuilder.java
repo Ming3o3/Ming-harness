@@ -31,12 +31,19 @@ public class ContextBuilder {
         if (query == null || query.isBlank() || maxChars < 1) {
             return new ContextResult("", List.of());
         }
+        ContextResult vectorResult = new ContextResult("", List.of());
         try {
-            ContextResult vectorResult = vectorContextRetriever.retrieve(tenantId, userId, query, maxChars);
-            if (!vectorResult.isEmpty()) return vectorResult;
+            vectorResult = vectorContextRetriever.retrieve(tenantId, userId, query, maxChars);
         } catch (EmbeddingGatewayException | DataAccessException exception) {
             // embedding 服务或 pgvector 暂时不可用时保持旧的确定性关键词召回能力。
         }
+        ContextResult keywordResult = buildKeyword(tenantId, userId, query, maxChars);
+        if (vectorResult.isEmpty()) return keywordResult;
+        if (keywordResult.isEmpty()) return vectorResult;
+        return merge(vectorResult, keywordResult, maxChars);
+    }
+
+    private ContextResult buildKeyword(String tenantId, String userId, String query, int maxChars) {
         String normalizedQuery = query.toLowerCase(Locale.ROOT);
         String[] terms = normalizedQuery.split("\\s+|[，。！？、,:：;；]+");
         List<ScoredContext> candidates = new ArrayList<>();
@@ -82,6 +89,35 @@ public class ContextBuilder {
                     candidate.citation(), excerpt));
         }
         return new ContextResult(context.toString(), List.copyOf(evidences));
+    }
+
+    /** 向量结果优先，关键词结果补充未命中的父来源，兼顾语义召回和错误码/名称精确匹配。 */
+    private ContextResult merge(ContextResult vectorResult, ContextResult keywordResult, int maxChars) {
+        List<ContextEvidence> evidences = new ArrayList<>();
+        StringBuilder text = new StringBuilder();
+        java.util.Set<String> sources = new java.util.HashSet<>();
+        appendResult(vectorResult, maxChars, text, evidences, sources);
+        appendResult(keywordResult, maxChars, text, evidences, sources);
+        return new ContextResult(text.toString(), List.copyOf(evidences));
+    }
+
+    private void appendResult(ContextResult result, int maxChars, StringBuilder text,
+                              List<ContextEvidence> evidences, java.util.Set<String> sources) {
+        for (ContextEvidence evidence : result.evidences()) {
+            String source = sourceKey(evidence.citation());
+            if (!sources.add(source)) continue;
+            String block = "[" + evidence.citation() + "] " + evidence.title() + "\n"
+                    + evidence.excerpt() + "\n";
+            if (text.length() + block.length() > maxChars) continue;
+            text.append(block);
+            evidences.add(evidence);
+        }
+    }
+
+    private String sourceKey(String citation) {
+        if (citation == null) return "";
+        int chunk = citation.indexOf("#chunk:");
+        return chunk < 0 ? citation : citation.substring(0, chunk);
     }
 
     private int score(String searchable, String[] terms) {
