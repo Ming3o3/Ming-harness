@@ -107,6 +107,11 @@ npm run dev
 | `MAX_CONTEXT_CHARS` | `64000` | 注入模型的上下文最大字符数 |
 | `CONTEXT_CHUNK_MAX_CHARS` | `1600` | 上下文父文档子块的最大字符数 |
 | `CONTEXT_CHUNK_OVERLAP_CHARS` | `160` | 相邻上下文子块的尾部重叠字符数 |
+| `EMBEDDING_ENABLED` | `false` | 是否启用外部 embedding API；关闭时保持关键词召回 |
+| `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` | OpenAI 地址 / 空 | OpenAI 兼容 embedding 服务地址和密钥 |
+| `EMBEDDING_MODEL` | `text-embedding-3-small` | embedding 模型名称 |
+| `EMBEDDING_DIMENSION` | `1536` | embedding 维度，必须与 pgvector 迁移保持一致 |
+| `EMBEDDING_BATCH_SIZE` | `32` | 单批 embedding 文本块数量 |
 | `RECOVERY_TIMEOUT_MS` | `120000` | Worker 中断后将 RUNNING 任务转为超时的阈值 |
 | `MAX_TOOL_ATTEMPTS` | `3` | 单个只读工具的自动重试次数上限，副作用工具固定为 1 |
 | `RUN_EVENT_STREAM_POLL_MS` | `750` | 已订阅 Run 的持久化快照检查间隔；可跨 Worker 实例推送状态变化 |

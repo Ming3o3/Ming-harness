@@ -13,11 +13,13 @@ import org.mingharness.audit.AuditIntegrityProperties;
 import org.mingharness.config.DataRetentionProperties;
 import org.mingharness.config.WorkspaceProperties;
 import org.mingharness.config.ContextChunkingProperties;
+import org.mingharness.config.EmbeddingProperties;
 
 @SpringBootApplication
 @EnableConfigurationProperties({ModelConfig.class, RuntimeLimits.class, RedisProperties.class,
         MessagingProperties.class, HarnessAuthProperties.class, AuditIntegrityProperties.class,
-        DataRetentionProperties.class, WorkspaceProperties.class, ContextChunkingProperties.class})
+        DataRetentionProperties.class, WorkspaceProperties.class, ContextChunkingProperties.class,
+        EmbeddingProperties.class})
 @EnableScheduling
 public class MingHarnessApplication {
 
