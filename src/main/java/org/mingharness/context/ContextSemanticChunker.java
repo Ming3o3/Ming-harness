@@ -2,6 +2,8 @@ package org.mingharness.context;
 
 import org.mingharness.config.ContextChunkingProperties;
 import org.mingharness.config.EmbeddingProperties;
+import org.mingharness.observability.HarnessMetrics;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -9,6 +11,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 基于相邻原子单元 embedding 相似度的语义分块器。
@@ -30,18 +33,38 @@ public class ContextSemanticChunker {
     private final ContextChunkingProperties properties;
     private final EmbeddingProperties embeddingProperties;
     private final EmbeddingGateway embeddingGateway;
+    private final ContextEmbeddingCache embeddingCache;
+    private final HarnessMetrics metrics;
 
     public ContextSemanticChunker(ContextChunker deterministicChunker,
                                   ContextChunkingProperties properties,
                                   EmbeddingProperties embeddingProperties,
                                   EmbeddingGateway embeddingGateway) {
+        this(deterministicChunker, properties, embeddingProperties, embeddingGateway,
+                new NoopContextEmbeddingCache(), null);
+    }
+
+    @Autowired
+    public ContextSemanticChunker(ContextChunker deterministicChunker,
+                                  ContextChunkingProperties properties,
+                                  EmbeddingProperties embeddingProperties,
+                                  EmbeddingGateway embeddingGateway,
+                                  ContextEmbeddingCache embeddingCache,
+                                  HarnessMetrics metrics) {
         this.deterministicChunker = deterministicChunker;
         this.properties = properties;
         this.embeddingProperties = embeddingProperties;
         this.embeddingGateway = embeddingGateway;
+        this.embeddingCache = embeddingCache;
+        this.metrics = metrics;
     }
 
     public ContextChunkingResult chunk(String content) {
+        return chunk(null, content);
+    }
+
+    /** 使用租户隔离的原子单元 embedding 缓存完成语义边界判断。 */
+    public ContextChunkingResult chunk(String tenantId, String content) {
         ContextChunkingResult deterministic = deterministic(content);
         if (!properties.semanticEnabled() || !embeddingGateway.enabled()) {
             return deterministic;
@@ -55,7 +78,7 @@ public class ContextSemanticChunker {
             return deterministic;
         }
         try {
-            List<EmbeddingVector> vectors = embedAll(units);
+            List<EmbeddingVector> vectors = embedAll(tenantId, units);
             if (vectors.size() != units.size()) {
                 return deterministic;
             }
@@ -80,14 +103,70 @@ public class ContextSemanticChunker {
                 DETERMINISTIC_STRATEGY, DETERMINISTIC_VERSION);
     }
 
-    private List<EmbeddingVector> embedAll(List<String> units) {
+    private List<EmbeddingVector> embedAll(String tenantId, List<String> units) {
         List<EmbeddingVector> vectors = new ArrayList<>(units.size());
+        List<AtomicEmbeddingMiss> misses = new ArrayList<>();
+        for (int index = 0; index < units.size(); index++) {
+            String unit = units.get(index);
+            Optional<EmbeddingVector> cached = cached(tenantId, unit);
+            if (cached.isPresent()) {
+                vectors.add(cached.get());
+                if (metrics != null) metrics.contextSemanticEmbeddingCacheHit();
+            } else {
+                vectors.add(null);
+                misses.add(new AtomicEmbeddingMiss(index, unit));
+                if (metrics != null) metrics.contextSemanticEmbeddingCacheMiss();
+            }
+        }
+
         int batchSize = Math.max(1, embeddingProperties.batchSize());
-        for (int start = 0; start < units.size(); start += batchSize) {
-            List<String> batch = units.subList(start, Math.min(units.size(), start + batchSize));
-            vectors.addAll(embeddingGateway.embed(batch));
+        for (int start = 0; start < misses.size(); start += batchSize) {
+            List<AtomicEmbeddingMiss> batch = misses.subList(start, Math.min(misses.size(), start + batchSize));
+            List<EmbeddingVector> batchVectors = embeddingGateway.embed(batch.stream()
+                    .map(AtomicEmbeddingMiss::content).toList());
+            if (batchVectors.size() != batch.size()) {
+                throw new EmbeddingGatewayException(false, "语义分块 embedding 返回数量与原子单元数量不一致");
+            }
+            for (int index = 0; index < batch.size(); index++) {
+                EmbeddingVector vector = batchVectors.get(index);
+                validateDimension(vector);
+                AtomicEmbeddingMiss miss = batch.get(index);
+                vectors.set(miss.index(), vector);
+                saveCache(tenantId, miss.content(), vector);
+            }
         }
         return List.copyOf(vectors);
+    }
+
+    private Optional<EmbeddingVector> cached(String tenantId, String content) {
+        try {
+            Optional<EmbeddingVector> value = embeddingCache.find(tenantId,
+                    EmbeddingContentHasher.sha256(content), embeddingProperties.model(),
+                    embeddingProperties.modelVersion(), embeddingProperties.dimension());
+            if (value != null && value.isPresent()
+                    && value.get().dimension() == embeddingProperties.dimension()) {
+                return value;
+            }
+        } catch (RuntimeException ignored) {
+            // 缓存是加速层，读取失败时继续调用供应商。
+        }
+        return Optional.empty();
+    }
+
+    private void saveCache(String tenantId, String content, EmbeddingVector vector) {
+        try {
+            embeddingCache.save(tenantId, EmbeddingContentHasher.sha256(content),
+                    embeddingProperties.model(), embeddingProperties.modelVersion(), vector);
+        } catch (RuntimeException ignored) {
+            // 缓存写入失败不能阻断语义分块。
+        }
+    }
+
+    private void validateDimension(EmbeddingVector vector) {
+        if (vector == null || vector.dimension() != embeddingProperties.dimension()) {
+            throw new EmbeddingGatewayException(false,
+                    "语义分块 embedding 维度不匹配，期望 " + embeddingProperties.dimension());
+        }
     }
 
     private List<String> merge(List<String> units, List<EmbeddingVector> vectors) {
@@ -291,5 +370,8 @@ public class ContextSemanticChunker {
     }
 
     private record AtomicUnit(String content, boolean protectedUnit) {
+    }
+
+    private record AtomicEmbeddingMiss(int index, String content) {
     }
 }

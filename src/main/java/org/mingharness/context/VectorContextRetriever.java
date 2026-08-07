@@ -11,9 +11,6 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -227,7 +224,7 @@ public class VectorContextRetriever {
     }
 
     private EmbeddingVector queryEmbedding(String tenantId, String boundedQuery) {
-        String contentHash = sha256(boundedQuery);
+        String contentHash = EmbeddingContentHasher.sha256(boundedQuery);
         try {
             Optional<EmbeddingVector> cached = embeddingCache.find(tenantId, contentHash,
                     embeddingProperties.model(), embeddingProperties.modelVersion(), embeddingProperties.dimension());
@@ -252,18 +249,6 @@ public class VectorContextRetriever {
             // 缓存写入失败不能影响本次检索结果。
         }
         return queryVector;
-    }
-
-    private String sha256(String value) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(StandardCharsets.UTF_8));
-            StringBuilder result = new StringBuilder(digest.length * 2);
-            for (byte item : digest) result.append(String.format("%02x", item));
-            return result.toString();
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("JVM 缺少 SHA-256 算法", exception);
-        }
     }
 
     private String vectorLiteral(EmbeddingVector vector) {

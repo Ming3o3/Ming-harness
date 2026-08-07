@@ -10,6 +10,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -118,5 +120,54 @@ class ContextSemanticChunkerTests {
                 .anyMatch(value -> value.contains("| 配置项 | 说明 |") && value.contains("| timeout |"))));
         assertTrue(result.chunks().stream().anyMatch(chunk -> chunk.content().contains("client.connect()")));
         assertTrue(result.chunks().stream().anyMatch(chunk -> chunk.content().contains("| timeout |")));
+    }
+
+    @Test
+    void shouldReuseCachedAtomicEmbeddingsForSemanticChunking() {
+        ContextChunker deterministic = new ContextChunker(new ContextChunkingProperties(120, 10));
+        ContextChunkingProperties properties = new ContextChunkingProperties(120, 10, true, 0.8, 2);
+        EmbeddingGateway gateway = mock(EmbeddingGateway.class);
+        ContextEmbeddingCache cache = mock(ContextEmbeddingCache.class);
+        when(gateway.enabled()).thenReturn(true);
+        when(cache.find(eq("tenant-a"), anyString(), eq("model"), eq("v1"), eq(2)))
+                .thenReturn(java.util.Optional.of(new EmbeddingVector("model", List.of(1.0, 0.0))));
+        EmbeddingProperties embeddingProperties = new EmbeddingProperties(true, "http://embedding", "key",
+                "model", 2, 8, 1_000, 100_000, 1, 0, 10_000);
+
+        ContextChunkingResult result = new ContextSemanticChunker(deterministic, properties,
+                embeddingProperties, gateway, cache, null)
+                .chunk("tenant-a", "主题说明。第一步完成。\n\n第二部分说明。第二步完成。");
+
+        assertEquals("SEMANTIC", result.strategy());
+        verify(cache, atLeastOnce()).find(eq("tenant-a"), anyString(), eq("model"), eq("v1"), eq(2));
+        verify(gateway, never()).embed(anyList());
+    }
+
+    @Test
+    void shouldPersistFreshAtomicEmbeddingsAfterSemanticChunking() {
+        ContextChunker deterministic = new ContextChunker(new ContextChunkingProperties(120, 10));
+        ContextChunkingProperties properties = new ContextChunkingProperties(120, 10, true, 0.8, 2);
+        EmbeddingGateway gateway = mock(EmbeddingGateway.class);
+        ContextEmbeddingCache cache = mock(ContextEmbeddingCache.class);
+        when(gateway.enabled()).thenReturn(true);
+        when(cache.find(eq("tenant-a"), anyString(), eq("model"), eq("v1"), eq(2)))
+                .thenReturn(java.util.Optional.empty());
+        when(gateway.embed(anyList())).thenAnswer(invocation -> {
+            List<String> inputs = invocation.getArgument(0);
+            return inputs.stream()
+                    .map(ignored -> new EmbeddingVector("model", List.of(1.0, 0.0)))
+                    .toList();
+        });
+        EmbeddingProperties embeddingProperties = new EmbeddingProperties(true, "http://embedding", "key",
+                "model", 2, 8, 1_000, 100_000, 1, 0, 10_000);
+
+        ContextChunkingResult result = new ContextSemanticChunker(deterministic, properties,
+                embeddingProperties, gateway, cache, null)
+                .chunk("tenant-a", "主题说明。第一步完成。\n\n第二部分说明。第二步完成。");
+
+        assertEquals("SEMANTIC", result.strategy());
+        verify(gateway, atLeastOnce()).embed(anyList());
+        verify(cache, atLeastOnce()).save(eq("tenant-a"), anyString(), eq("model"), eq("v1"),
+                org.mockito.ArgumentMatchers.any(EmbeddingVector.class));
     }
 }

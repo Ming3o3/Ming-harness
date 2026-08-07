@@ -2,9 +2,6 @@ package org.mingharness.context;
 
 import org.springframework.stereotype.Service;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -30,7 +27,7 @@ public class ContextChunkWriter {
     }
 
     public int replace(String tenantId, String parentType, String parentId, String content) {
-        return replace(tenantId, parentType, parentId, semanticChunker.chunk(content));
+        return replace(tenantId, parentType, parentId, semanticChunker.chunk(tenantId, content));
     }
 
     /** 事务内只落确定性子块，语义重分块由提交后的异步任务执行。 */
@@ -40,7 +37,7 @@ public class ContextChunkWriter {
 
     /** 使用已完成的语义分块结果替换父对象的子块和父窗口。 */
     public int replaceSemantic(String tenantId, String parentType, String parentId, String content) {
-        return replace(tenantId, parentType, parentId, semanticChunker.chunk(content));
+        return replace(tenantId, parentType, parentId, semanticChunker.chunk(tenantId, content));
     }
 
     private int replace(String tenantId, String parentType, String parentId, ContextChunkingResult result) {
@@ -51,11 +48,11 @@ public class ContextChunkWriter {
         List<ContextChunk> chunks = new ArrayList<>();
         for (WindowDraft window : windows) {
             ContextParentWindow parentWindow = new ContextParentWindow(tenantId, parentType, parentId,
-                    window.windowIndex(), window.content(), sha256(window.content()));
+                    window.windowIndex(), window.content(), EmbeddingContentHasher.sha256(window.content()));
             parentWindows.add(parentWindow);
             for (ContextChunkDraft draft : window.chunks()) {
                 chunks.add(new ContextChunk(tenantId, parentType, parentId, draft.chunkIndex(),
-                        draft.content(), sha256(draft.content()), result.strategy(), result.version(),
+                        draft.content(), EmbeddingContentHasher.sha256(draft.content()), result.strategy(), result.version(),
                         parentWindow.getId()));
             }
         }
@@ -66,18 +63,6 @@ public class ContextChunkWriter {
 
     public boolean hasActiveChunks(String parentType, String parentId) {
         return chunkRepository.countByParentTypeAndParentIdAndDeletedAtIsNull(parentType, parentId) > 0;
-    }
-
-    private String sha256(String value) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(StandardCharsets.UTF_8));
-            StringBuilder result = new StringBuilder(digest.length * 2);
-            for (byte item : digest) result.append(String.format("%02x", item));
-            return result.toString();
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("JVM 缺少 SHA-256 算法", exception);
-        }
     }
 
     private List<WindowDraft> windows(List<ContextChunkDraft> drafts) {

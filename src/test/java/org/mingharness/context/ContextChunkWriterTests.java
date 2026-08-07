@@ -44,7 +44,7 @@ class ContextChunkWriterTests {
         String first = "a".repeat(80);
         String second = "b".repeat(30);
         String third = "c".repeat(20);
-        when(semanticChunker.chunk("正文")).thenReturn(new ContextChunkingResult(List.of(
+        when(semanticChunker.chunk("tenant-a", "正文")).thenReturn(new ContextChunkingResult(List.of(
                 new ContextChunkDraft(0, first),
                 new ContextChunkDraft(1, second),
                 new ContextChunkDraft(2, third)), "DETERMINISTIC", "deterministic-v1"));
