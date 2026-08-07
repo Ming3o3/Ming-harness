@@ -111,6 +111,9 @@ npm run dev
 | `CONTEXT_SEMANTIC_ENABLED` | `false` | 是否调用 embedding API 按语义边界分块 |
 | `CONTEXT_SEMANTIC_BREAKPOINT` | `0.35` | 相邻原子单元余弦相似度低于该值时允许切分 |
 | `CONTEXT_SEMANTIC_MIN_UNITS` | `3` | 语义切分前至少累计的原子单元数 |
+| `CONTEXT_INDEX_ASYNC_ENABLED` | `true` | 是否在正文事务提交后异步执行 embedding 索引 |
+| `CONTEXT_INDEX_CONCURRENCY` | `2` | 上下文 embedding 后台线程数 |
+| `CONTEXT_INDEX_QUEUE_CAPACITY` | `100` | 上下文 embedding 有界队列容量；队列满时由重建接口补偿 |
 | `EMBEDDING_ENABLED` | `false` | 是否启用外部 embedding API；关闭时保持关键词召回 |
 | `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` | OpenAI 地址 / 空 | OpenAI 兼容 embedding 服务地址和密钥 |
 | `EMBEDDING_MODEL` | `text-embedding-3-small` | embedding 模型名称 |

@@ -91,6 +91,14 @@ export CONTEXT_SEMANTIC_MIN_UNITS=3
 
 代码块等结构单元仍优先于语义边界；embedding 服务暂时不可用时，写入和重建会回退到确定性分块，并留下待索引数量等待下次重建。生产环境建议把重建放在低峰期，并观察 `harness.context.embedding.*`、`harness.context.vector.*` 和 `harness.context.index.*` 指标。
 
+正文写入默认只在事务中保存父对象和 chunk，事务提交后再由有界后台队列执行 embedding，避免供应商网络延迟占住数据库连接。可通过以下参数调整并发；队列满或进程在任务完成前退出时，数据库中仍保留 `embedded_at` 为空的 chunk，下一次重建会继续处理：
+
+```bash
+export CONTEXT_INDEX_ASYNC_ENABLED=true
+export CONTEXT_INDEX_CONCURRENCY=2
+export CONTEXT_INDEX_QUEUE_CAPACITY=100
+```
+
 重建接口按租户、父对象和 chunk 数量设上限，不会一次性把整个租户发送给外部服务。调用方需要 `context.reindex` 权限：
 
 ```bash
