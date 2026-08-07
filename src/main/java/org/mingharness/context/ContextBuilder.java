@@ -2,6 +2,7 @@ package org.mingharness.context;
 
 import org.mingharness.context.api.ContextEvidence;
 import org.mingharness.context.api.ContextResult;
+import org.mingharness.observability.HarnessMetrics;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
@@ -18,19 +19,26 @@ public class ContextBuilder {
     private final KnowledgeDocumentRepository documentRepository;
     private final MemoryEntryRepository memoryRepository;
     private final VectorContextRetriever vectorContextRetriever;
+    private final HarnessMetrics metrics;
 
     public ContextBuilder(KnowledgeDocumentRepository documentRepository,
                           MemoryEntryRepository memoryRepository,
-                          VectorContextRetriever vectorContextRetriever) {
+                          VectorContextRetriever vectorContextRetriever,
+                          HarnessMetrics metrics) {
         this.documentRepository = documentRepository;
         this.memoryRepository = memoryRepository;
         this.vectorContextRetriever = vectorContextRetriever;
+        this.metrics = metrics;
     }
 
     public ContextResult build(String tenantId, String userId, String query, int maxChars) {
         if (query == null || query.isBlank() || maxChars < 1) {
             return new ContextResult("", List.of());
         }
+        return metrics.recordContextRetrieval(() -> buildInternal(tenantId, userId, query, maxChars));
+    }
+
+    private ContextResult buildInternal(String tenantId, String userId, String query, int maxChars) {
         ContextResult vectorResult = new ContextResult("", List.of());
         try {
             vectorResult = vectorContextRetriever.retrieve(tenantId, userId, query, maxChars);
@@ -38,9 +46,15 @@ public class ContextBuilder {
             // embedding 服务或 pgvector 暂时不可用时保持旧的确定性关键词召回能力。
         }
         ContextResult keywordResult = buildKeyword(tenantId, userId, query, maxChars);
-        if (vectorResult.isEmpty()) return keywordResult;
+        if (vectorResult.isEmpty()) {
+            if (!keywordResult.isEmpty()) metrics.contextFallback();
+            return keywordResult;
+        }
         if (keywordResult.isEmpty()) return vectorResult;
-        return merge(vectorResult, keywordResult, maxChars);
+        ContextResult merged = merge(vectorResult, keywordResult, maxChars);
+        metrics.contextKeywordSupplements(Math.max(0,
+                merged.evidences().size() - vectorResult.evidences().size()));
+        return merged;
     }
 
     private ContextResult buildKeyword(String tenantId, String userId, String query, int maxChars) {

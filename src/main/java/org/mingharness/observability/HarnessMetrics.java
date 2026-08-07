@@ -30,12 +30,23 @@ public class HarnessMetrics {
     private final Counter modelRetries;
     private final Counter modelFallbacks;
     private final Counter modelFailures;
+    private final Counter contextEmbeddingRequests;
+    private final Counter contextEmbeddingRetries;
+    private final Counter contextEmbeddingFailures;
+    private final Counter contextVectorQueries;
+    private final Counter contextVectorHits;
+    private final Counter contextKeywordSupplements;
+    private final Counter contextFallbacks;
+    private final Counter contextChunksIndexed;
+    private final Counter contextIndexFailures;
     private final Timer workerDuration;
+    private final Timer contextRetrievalDuration;
     private final AtomicInteger pendingOutbox = new AtomicInteger();
     private final AtomicInteger rabbitQueueDepth = new AtomicInteger(-1);
     private final AtomicInteger rabbitQueueCapacity = new AtomicInteger(-1);
     private final AtomicInteger activeWorkers = new AtomicInteger();
     private final AtomicInteger workerConcurrency = new AtomicInteger();
+    private final AtomicInteger contextIndexPending = new AtomicInteger();
 
     public HarnessMetrics(MeterRegistry registry) {
         runsCreated = Counter.builder("harness.runs.created").description("创建的 Run 数量").register(registry);
@@ -59,12 +70,33 @@ public class HarnessMetrics {
         modelRetries = Counter.builder("harness.models.retries").description("模型供应商重试次数").register(registry);
         modelFallbacks = Counter.builder("harness.models.fallbacks").description("模型备用供应商切换次数").register(registry);
         modelFailures = Counter.builder("harness.models.failed").description("模型供应商最终失败次数").register(registry);
+        contextEmbeddingRequests = Counter.builder("harness.context.embedding.requests")
+                .description("上下文 embedding API 请求尝试次数").register(registry);
+        contextEmbeddingRetries = Counter.builder("harness.context.embedding.retries")
+                .description("上下文 embedding API 重试次数").register(registry);
+        contextEmbeddingFailures = Counter.builder("harness.context.embedding.failed")
+                .description("上下文 embedding API 最终失败次数").register(registry);
+        contextVectorQueries = Counter.builder("harness.context.vector.queries")
+                .description("上下文向量查询次数").register(registry);
+        contextVectorHits = Counter.builder("harness.context.vector.hits")
+                .description("上下文向量召回的子块数量").register(registry);
+        contextKeywordSupplements = Counter.builder("harness.context.keyword.supplements")
+                .description("向量召回后由关键词检索补充的父来源数量").register(registry);
+        contextFallbacks = Counter.builder("harness.context.retrieval.fallbacks")
+                .description("上下文检索降级到关键词召回的次数").register(registry);
+        contextChunksIndexed = Counter.builder("harness.context.index.chunks")
+                .description("成功写入向量的上下文 chunk 数量").register(registry);
+        contextIndexFailures = Counter.builder("harness.context.index.failures")
+                .description("上下文索引批次失败次数").register(registry);
         workerDuration = Timer.builder("harness.worker.duration").description("Worker 执行耗时").register(registry);
+        contextRetrievalDuration = Timer.builder("harness.context.retrieval.duration")
+                .description("上下文混合检索耗时").register(registry);
         registry.gauge("harness.outbox.pending", pendingOutbox);
         registry.gauge("harness.rabbit.queue.depth", rabbitQueueDepth);
         registry.gauge("harness.rabbit.queue.capacity", rabbitQueueCapacity);
         registry.gauge("harness.worker.active", activeWorkers);
         registry.gauge("harness.worker.concurrency", workerConcurrency);
+        registry.gauge("harness.context.index.pending", contextIndexPending);
     }
 
     public void runCreated() { runsCreated.increment(); }
@@ -99,6 +131,18 @@ public class HarnessMetrics {
     public void modelFallback() { modelFallbacks.increment(); }
     public void modelFailed() { modelFailures.increment(); }
     public void pendingOutbox(int count) { pendingOutbox.set(Math.max(0, count)); }
+    public void contextEmbeddingRequest() { contextEmbeddingRequests.increment(); }
+    public void contextEmbeddingRetry() { contextEmbeddingRetries.increment(); }
+    public void contextEmbeddingFailed() { contextEmbeddingFailures.increment(); }
+    public void contextVectorQuery() { contextVectorQueries.increment(); }
+    public void contextVectorHits(int count) { contextVectorHits.increment(Math.max(0, count)); }
+    public void contextKeywordSupplements(int count) { contextKeywordSupplements.increment(Math.max(0, count)); }
+    public void contextFallback() { contextFallbacks.increment(); }
+    public void contextChunksIndexed(int count) { contextChunksIndexed.increment(Math.max(0, count)); }
+    public void contextIndexFailure() { contextIndexFailures.increment(); }
+    public void contextIndexPending(long count) {
+        contextIndexPending.set(count < 0 ? 0 : (int) Math.min(Integer.MAX_VALUE, count));
+    }
 
     /**
      * 返回低基数的运行态摘要，供受 ops.read 保护的健康接口使用。
@@ -141,5 +185,9 @@ public class HarnessMetrics {
 
     public void recordWorkerDuration(Runnable action) {
         workerDuration.record(action);
+    }
+
+    public <T> T recordContextRetrieval(Supplier<T> action) {
+        return contextRetrievalDuration.record(action);
     }
 }

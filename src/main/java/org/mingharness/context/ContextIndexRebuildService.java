@@ -2,6 +2,7 @@ package org.mingharness.context;
 
 import org.mingharness.context.api.ContextReindexRequest;
 import org.mingharness.context.api.ContextReindexResponse;
+import org.mingharness.observability.HarnessMetrics;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
@@ -29,17 +30,20 @@ public class ContextIndexRebuildService {
     private final ContextChunkRepository chunkRepository;
     private final ContextChunkWriter chunkWriter;
     private final ContextEmbeddingIndexer embeddingIndexer;
+    private final HarnessMetrics metrics;
 
     public ContextIndexRebuildService(KnowledgeDocumentRepository documentRepository,
                                       MemoryEntryRepository memoryRepository,
                                       ContextChunkRepository chunkRepository,
                                       ContextChunkWriter chunkWriter,
-                                      ContextEmbeddingIndexer embeddingIndexer) {
+                                      ContextEmbeddingIndexer embeddingIndexer,
+                                      HarnessMetrics metrics) {
         this.documentRepository = documentRepository;
         this.memoryRepository = memoryRepository;
         this.chunkRepository = chunkRepository;
         this.chunkWriter = chunkWriter;
         this.embeddingIndexer = embeddingIndexer;
+        this.metrics = metrics;
     }
 
     public ContextReindexResponse rebuild(String tenantId, ContextReindexRequest request) {
@@ -76,6 +80,7 @@ public class ContextIndexRebuildService {
                     chunksIndexed += embeddingIndexer.indexChunks(batch);
                 } catch (EmbeddingGatewayException | ContextEmbeddingStoreException exception) {
                     chunksFailed += pending.size() - start;
+                    metrics.contextIndexFailure();
                     log.warn("上下文索引重建批次失败，tenantId={}, batchSize={}, message={}",
                             tenantId, batch.size(), exception.getMessage());
                     break;
@@ -84,6 +89,8 @@ public class ContextIndexRebuildService {
         }
 
         long pendingCount = chunkRepository.countByTenantIdAndDeletedAtIsNullAndEmbeddedAtIsNull(tenantId);
+        metrics.contextChunksIndexed(chunksIndexed);
+        metrics.contextIndexPending(pendingCount);
         return new ContextReindexResponse(scope, embeddingIndexer.ready(), parents.size(), parentsRebuilt,
                 chunksCreated, chunksIndexed, chunksFailed, safeInt(pendingCount));
     }

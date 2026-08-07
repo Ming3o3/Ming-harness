@@ -2,6 +2,7 @@ package org.mingharness.context;
 
 import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.config.EmbeddingProperties;
+import org.mingharness.observability.HarnessMetrics;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -32,15 +33,25 @@ public class OpenAiCompatibleEmbeddingGateway implements EmbeddingGateway {
     private final RestClient client;
     private final SensitiveDataSanitizer sanitizer;
     private final ObjectMapper objectMapper;
+    private final HarnessMetrics metrics;
+
+    public OpenAiCompatibleEmbeddingGateway(EmbeddingProperties properties,
+                                            RestClient.Builder restClientBuilder,
+                                            SensitiveDataSanitizer sanitizer,
+                                            ObjectMapper objectMapper) {
+        this(properties, restClientBuilder, sanitizer, objectMapper, null);
+    }
 
     @Autowired
     public OpenAiCompatibleEmbeddingGateway(EmbeddingProperties properties,
                                             RestClient.Builder restClientBuilder,
                                             SensitiveDataSanitizer sanitizer,
-                                            ObjectMapper objectMapper) {
+                                            ObjectMapper objectMapper,
+                                            HarnessMetrics metrics) {
         this.properties = properties;
         this.sanitizer = sanitizer;
         this.objectMapper = objectMapper;
+        this.metrics = metrics;
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout((int) properties.timeoutMs());
         requestFactory.setReadTimeout((int) properties.timeoutMs());
@@ -75,12 +86,15 @@ public class OpenAiCompatibleEmbeddingGateway implements EmbeddingGateway {
         EmbeddingGatewayException lastFailure = null;
         for (int attempt = 1; attempt <= properties.maxAttempts(); attempt++) {
             try {
+                if (metrics != null) metrics.contextEmbeddingRequest();
                 return invokeOnce(inputs);
             } catch (EmbeddingGatewayException exception) {
                 lastFailure = exception;
                 if (!exception.retryable() || attempt >= properties.maxAttempts()) {
+                    if (metrics != null) metrics.contextEmbeddingFailed();
                     throw exception;
                 }
+                if (metrics != null) metrics.contextEmbeddingRetry();
                 sleepBeforeRetry(attempt);
             }
         }

@@ -6,6 +6,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.config.EmbeddingProperties;
+import org.mingharness.observability.HarnessMetrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.springframework.web.client.RestClient;
 import tools.jackson.databind.ObjectMapper;
 
@@ -67,6 +69,29 @@ class OpenAiCompatibleEmbeddingGatewayTests {
 
         assertEquals(1, gateway.embed(List.of("query")).size());
         assertEquals(2, calls.get());
+    }
+
+    @Test
+    void shouldRecordEmbeddingAttemptsAndRetries() throws IOException {
+        AtomicInteger calls = new AtomicInteger();
+        HttpServer server = server(exchange -> {
+            if (calls.incrementAndGet() == 1) {
+                respond(exchange, 503, "temporary");
+            } else {
+                respond(exchange, 200, "{\"model\":\"m\",\"data\":[{\"index\":0,\"embedding\":[0.1,0.2]}]}");
+            }
+        });
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        HarnessMetrics metrics = new HarnessMetrics(registry);
+        OpenAiCompatibleEmbeddingGateway gateway = new OpenAiCompatibleEmbeddingGateway(
+                properties(url(server), true, 2, 2), RestClient.builder(),
+                new SensitiveDataSanitizer(), new ObjectMapper(), metrics);
+
+        gateway.embed(List.of("query"));
+
+        assertEquals(2.0, registry.get("harness.context.embedding.requests").counter().count());
+        assertEquals(1.0, registry.get("harness.context.embedding.retries").counter().count());
+        assertEquals(0.0, registry.get("harness.context.embedding.failed").counter().count());
     }
 
     @Test

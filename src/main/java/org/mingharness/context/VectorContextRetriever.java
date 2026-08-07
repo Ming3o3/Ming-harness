@@ -5,6 +5,7 @@ import org.mingharness.config.ContextRetrievalProperties;
 import org.mingharness.config.EmbeddingProperties;
 import org.mingharness.context.api.ContextEvidence;
 import org.mingharness.context.api.ContextResult;
+import org.mingharness.observability.HarnessMetrics;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -63,6 +64,7 @@ public class VectorContextRetriever {
     private final EmbeddingProperties embeddingProperties;
     private final ContextRetrievalProperties retrievalProperties;
     private final SensitiveDataSanitizer sanitizer;
+    private final HarnessMetrics metrics;
 
     public VectorContextRetriever(NamedParameterJdbcTemplate jdbcTemplate,
                                   ContextChunkRepository chunkRepository,
@@ -71,6 +73,19 @@ public class VectorContextRetriever {
                                   EmbeddingProperties embeddingProperties,
                                   ContextRetrievalProperties retrievalProperties,
                                   SensitiveDataSanitizer sanitizer) {
+        this(jdbcTemplate, chunkRepository, embeddingGateway, embeddingStore, embeddingProperties,
+                retrievalProperties, sanitizer, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public VectorContextRetriever(NamedParameterJdbcTemplate jdbcTemplate,
+                                  ContextChunkRepository chunkRepository,
+                                  EmbeddingGateway embeddingGateway,
+                                  ContextEmbeddingStore embeddingStore,
+                                  EmbeddingProperties embeddingProperties,
+                                  ContextRetrievalProperties retrievalProperties,
+                                  SensitiveDataSanitizer sanitizer,
+                                  HarnessMetrics metrics) {
         this.jdbcTemplate = jdbcTemplate;
         this.chunkRepository = chunkRepository;
         this.embeddingGateway = embeddingGateway;
@@ -78,6 +93,7 @@ public class VectorContextRetriever {
         this.embeddingProperties = embeddingProperties;
         this.retrievalProperties = retrievalProperties;
         this.sanitizer = sanitizer;
+        this.metrics = metrics;
     }
 
     public ContextResult retrieve(String tenantId, String userId, String query, int maxChars) {
@@ -85,6 +101,7 @@ public class VectorContextRetriever {
                 || !embeddingGateway.enabled() || !embeddingStore.supported()) {
             return new ContextResult("", List.of());
         }
+        if (metrics != null) metrics.contextVectorQuery();
         String boundedQuery = boundQuery(query);
         List<EmbeddingVector> queryVectors = embeddingGateway.embed(List.of(boundedQuery));
         if (queryVectors.size() != 1 || queryVectors.get(0).dimension() != embeddingProperties.dimension()) {
@@ -104,6 +121,7 @@ public class VectorContextRetriever {
                         row.getString("parent_id"), row.getInt("chunk_index"),
                         row.getString("content"), row.getString("title"),
                         row.getDouble("similarity")));
+        if (metrics != null) metrics.contextVectorHits(hits.size());
         return buildResult(hits, tenantId, maxChars);
     }
 

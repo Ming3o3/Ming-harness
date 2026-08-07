@@ -3,6 +3,8 @@ package org.mingharness.context;
 import org.junit.jupiter.api.Test;
 import org.mingharness.context.api.ContextReindexRequest;
 import org.mingharness.context.api.ContextReindexResponse;
+import org.mingharness.observability.HarnessMetrics;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.mockito.ArgumentMatchers;
 import org.springframework.data.domain.PageRequest;
 
@@ -48,7 +50,8 @@ class ContextIndexRebuildServiceTests {
                 .thenReturn(4L);
 
         ContextIndexRebuildService service = new ContextIndexRebuildService(documentRepository,
-                memoryRepository, chunkRepository, chunkWriter, embeddingIndexer);
+                memoryRepository, chunkRepository, chunkWriter, embeddingIndexer,
+                new HarnessMetrics(new SimpleMeterRegistry()));
         ContextReindexResponse result = service.rebuild("tenant-a",
                 new ContextReindexRequest("ALL", 10, 20));
 
