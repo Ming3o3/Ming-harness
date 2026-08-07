@@ -1,16 +1,22 @@
 package org.mingharness.context;
 
+import org.mingharness.config.ContextRetrievalProperties;
 import org.mingharness.context.api.ContextEvidence;
 import org.mingharness.context.api.ContextResult;
 import org.mingharness.observability.HarnessMetrics;
 import org.springframework.dao.DataAccessException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 /** 统一构建可引用上下文，先做权限过滤，再做轻量关键词召回和预算裁剪。 */
 @Service
@@ -20,15 +26,28 @@ public class ContextBuilder {
     private final MemoryEntryRepository memoryRepository;
     private final VectorContextRetriever vectorContextRetriever;
     private final HarnessMetrics metrics;
+    private final ContextRetrievalProperties retrievalProperties;
 
+    /** 兼容单元测试和本地调用；生产环境使用配置注入的构造器。 */
     public ContextBuilder(KnowledgeDocumentRepository documentRepository,
                           MemoryEntryRepository memoryRepository,
                           VectorContextRetriever vectorContextRetriever,
                           HarnessMetrics metrics) {
+        this(documentRepository, memoryRepository, vectorContextRetriever, metrics,
+                new ContextRetrievalProperties(20, 5, 1, 0.2));
+    }
+
+    @Autowired
+    public ContextBuilder(KnowledgeDocumentRepository documentRepository,
+                          MemoryEntryRepository memoryRepository,
+                          VectorContextRetriever vectorContextRetriever,
+                          HarnessMetrics metrics,
+                          ContextRetrievalProperties retrievalProperties) {
         this.documentRepository = documentRepository;
         this.memoryRepository = memoryRepository;
         this.vectorContextRetriever = vectorContextRetriever;
         this.metrics = metrics;
+        this.retrievalProperties = retrievalProperties;
     }
 
     public ContextResult build(String tenantId, String userId, String query, int maxChars) {
@@ -105,17 +124,78 @@ public class ContextBuilder {
         return new ContextResult(context.toString(), List.copyOf(evidences));
     }
 
-    /** 向量结果优先，关键词结果补充未命中的父来源，兼顾语义召回和错误码/名称精确匹配。 */
+    /** 以父来源为单位融合语义召回和关键词召回，兼顾语义匹配与错误码/名称精确匹配。 */
     private ContextResult merge(ContextResult vectorResult, ContextResult keywordResult, int maxChars) {
+        if (!retrievalProperties.rrfEnabled()) {
+            return mergeLegacy(vectorResult, keywordResult, maxChars);
+        }
+
+        Map<String, Integer> vectorRanks = uniqueParentRanks(vectorResult);
+        Map<String, Integer> keywordRanks = uniqueParentRanks(keywordResult);
+        Map<String, Double> parentScores = new HashMap<>();
+        vectorRanks.forEach((parent, rank) -> parentScores.merge(parent,
+                retrievalProperties.vectorWeight() / (retrievalProperties.rrfK() + rank), Double::sum));
+        keywordRanks.forEach((parent, rank) -> parentScores.merge(parent,
+                retrievalProperties.keywordWeight() / (retrievalProperties.rrfK() + rank), Double::sum));
+
+        Set<String> vectorParents = vectorRanks.keySet();
+        List<RankedEvidence> candidates = new ArrayList<>();
+        int order = 0;
+        for (ContextEvidence evidence : vectorResult.evidences()) {
+            String parent = parentKey(evidence.citation());
+            candidates.add(new RankedEvidence(evidence, parentScores.getOrDefault(parent, 0.0),
+                    vectorRanks.getOrDefault(parent, Integer.MAX_VALUE), 0, order++));
+        }
+        for (ContextEvidence evidence : keywordResult.evidences()) {
+            String parent = parentKey(evidence.citation());
+            // 父窗口已经提供了该来源的上下文时，不再追加整篇关键词结果；关键词排名仍会提升该父来源。
+            if (vectorParents.contains(parent)) continue;
+            candidates.add(new RankedEvidence(evidence, parentScores.getOrDefault(parent, 0.0),
+                    Integer.MAX_VALUE, 1, order++));
+        }
+        candidates.sort(Comparator.comparingDouble(RankedEvidence::score).reversed()
+                .thenComparingInt(RankedEvidence::vectorRank)
+                .thenComparingInt(RankedEvidence::sourceRank)
+                .thenComparingInt(RankedEvidence::order));
+
         List<ContextEvidence> evidences = new ArrayList<>();
         StringBuilder text = new StringBuilder();
-        java.util.Set<String> evidenceKeys = new java.util.HashSet<>();
-        java.util.Set<String> vectorParents = vectorResult.evidences().stream()
+        Set<String> evidenceKeys = new HashSet<>();
+        for (RankedEvidence candidate : candidates) {
+            String source = evidenceKey(candidate.evidence().citation());
+            if (!evidenceKeys.add(source)) continue;
+            ContextEvidence evidence = candidate.evidence();
+            String block = "[" + evidence.citation() + "] " + evidence.title() + "\n"
+                    + evidence.excerpt() + "\n";
+            if (text.length() + block.length() > maxChars) continue;
+            text.append(block);
+            evidences.add(evidence);
+        }
+        return new ContextResult(text.toString(), List.copyOf(evidences));
+    }
+
+    private ContextResult mergeLegacy(ContextResult vectorResult, ContextResult keywordResult, int maxChars) {
+        List<ContextEvidence> evidences = new ArrayList<>();
+        StringBuilder text = new StringBuilder();
+        Set<String> evidenceKeys = new HashSet<>();
+        Set<String> vectorParents = vectorResult.evidences().stream()
                 .map(evidence -> parentKey(evidence.citation()))
                 .collect(java.util.stream.Collectors.toSet());
-        appendResult(vectorResult, maxChars, text, evidences, evidenceKeys, java.util.Set.of());
+        appendResult(vectorResult, maxChars, text, evidences, evidenceKeys, Set.of());
         appendResult(keywordResult, maxChars, text, evidences, evidenceKeys, vectorParents);
         return new ContextResult(text.toString(), List.copyOf(evidences));
+    }
+
+    private Map<String, Integer> uniqueParentRanks(ContextResult result) {
+        Map<String, Integer> ranks = new java.util.LinkedHashMap<>();
+        if (result == null || result.evidences() == null) return ranks;
+        int rank = 1;
+        for (ContextEvidence evidence : result.evidences()) {
+            if (evidence == null) continue;
+            String parent = parentKey(evidence.citation());
+            if (ranks.putIfAbsent(parent, rank) == null) rank++;
+        }
+        return ranks;
     }
 
     private void appendResult(ContextResult result, int maxChars, StringBuilder text,
@@ -197,5 +277,9 @@ public class ContextBuilder {
                     "记忆 · " + memory.getMemoryType(), "memory:" + memory.getId(),
                     memory.getContent(), score, memory.getCreatedAt());
         }
+    }
+
+    private record RankedEvidence(ContextEvidence evidence, double score,
+                                  int vectorRank, int sourceRank, int order) {
     }
 }
