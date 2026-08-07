@@ -9,10 +9,29 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ContextChunkWriterTests {
+
+    @Test
+    void shouldPersistDeterministicChunksWithoutCallingSemanticChunking() {
+        ContextChunkRepository chunkRepository = mock(ContextChunkRepository.class);
+        ContextParentWindowRepository windowRepository = mock(ContextParentWindowRepository.class);
+        ContextSemanticChunker semanticChunker = mock(ContextSemanticChunker.class);
+        ContextChunkingProperties properties = new ContextChunkingProperties(128, 16, true, 0.35, 3, 128);
+        ContextChunkWriter writer = new ContextChunkWriter(chunkRepository, windowRepository,
+                semanticChunker, properties);
+        ContextChunkingResult result = new ContextChunkingResult(
+                List.of(new ContextChunkDraft(0, "确定性正文")), "DETERMINISTIC", "deterministic-v1");
+        when(semanticChunker.deterministicOnly("正文")).thenReturn(result);
+
+        assertEquals(1, writer.replaceDeterministic("tenant-a", "DOCUMENT", "doc-1", "正文"));
+
+        verify(semanticChunker).deterministicOnly("正文");
+        verify(semanticChunker, never()).chunk("正文");
+    }
 
     @Test
     void shouldMaterializeContiguousChunksIntoBoundedParentWindows() {

@@ -30,9 +30,22 @@ public class ContextChunkWriter {
     }
 
     public int replace(String tenantId, String parentType, String parentId, String content) {
+        return replace(tenantId, parentType, parentId, semanticChunker.chunk(content));
+    }
+
+    /** 事务内只落确定性子块，语义重分块由提交后的异步任务执行。 */
+    public int replaceDeterministic(String tenantId, String parentType, String parentId, String content) {
+        return replace(tenantId, parentType, parentId, semanticChunker.deterministicOnly(content));
+    }
+
+    /** 使用已完成的语义分块结果替换父对象的子块和父窗口。 */
+    public int replaceSemantic(String tenantId, String parentType, String parentId, String content) {
+        return replace(tenantId, parentType, parentId, semanticChunker.chunk(content));
+    }
+
+    private int replace(String tenantId, String parentType, String parentId, ContextChunkingResult result) {
         chunkRepository.deleteByParentTypeAndParentId(parentType, parentId);
         parentWindowRepository.deleteByParentTypeAndParentId(parentType, parentId);
-        ContextChunkingResult result = semanticChunker.chunk(content);
         List<WindowDraft> windows = windows(result.chunks());
         List<ContextParentWindow> parentWindows = new ArrayList<>(windows.size());
         List<ContextChunk> chunks = new ArrayList<>();

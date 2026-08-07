@@ -69,6 +69,11 @@ public class ContextSemanticChunker {
         }
     }
 
+    /** 只执行本地确定性分块，供正文事务先落库，避免等待外部 embedding 服务。 */
+    public ContextChunkingResult deterministicOnly(String content) {
+        return deterministic(content);
+    }
+
     private ContextChunkingResult deterministic(String content) {
         return new ContextChunkingResult(deterministicChunker.chunk(content),
                 DETERMINISTIC_STRATEGY, DETERMINISTIC_VERSION);

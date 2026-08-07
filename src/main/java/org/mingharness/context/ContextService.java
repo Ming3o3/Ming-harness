@@ -20,6 +20,7 @@ public class ContextService {
     private final ContextParentWindowRepository parentWindowRepository;
     private final ContextChunkWriter chunkWriter;
     private final ContextEmbeddingDispatcher embeddingDispatcher;
+    private final ContextSemanticRechunkDispatcher semanticRechunkDispatcher;
     private final SensitiveDataSanitizer sanitizer;
 
     public ContextService(KnowledgeDocumentRepository documentRepository,
@@ -28,6 +29,7 @@ public class ContextService {
                           ContextParentWindowRepository parentWindowRepository,
                           ContextChunkWriter chunkWriter,
                           ContextEmbeddingDispatcher embeddingDispatcher,
+                          ContextSemanticRechunkDispatcher semanticRechunkDispatcher,
                           SensitiveDataSanitizer sanitizer) {
         this.documentRepository = documentRepository;
         this.memoryRepository = memoryRepository;
@@ -35,6 +37,7 @@ public class ContextService {
         this.parentWindowRepository = parentWindowRepository;
         this.chunkWriter = chunkWriter;
         this.embeddingDispatcher = embeddingDispatcher;
+        this.semanticRechunkDispatcher = semanticRechunkDispatcher;
         this.sanitizer = sanitizer;
     }
 
@@ -43,9 +46,8 @@ public class ContextService {
         KnowledgeDocument document = documentRepository.save(new KnowledgeDocument(tenantId, userId,
                 sanitizer.sanitize(request.title()), sanitizer.sanitize(request.content()),
                 sanitizer.sanitize(request.sensitivity()), sanitizer.sanitize(request.allowedUsers())));
-        chunkWriter.replace(tenantId, "DOCUMENT", document.getId(),
+        writeChunksAndDispatch("DOCUMENT", document.getId(), tenantId,
                 document.getTitle() + "\n" + document.getContent());
-        dispatchIndex("DOCUMENT", document.getId());
         return document;
     }
 
@@ -78,9 +80,8 @@ public class ContextService {
         }
         MemoryEntry memory = memoryRepository.save(new MemoryEntry(tenantId, userId, sanitizer.sanitize(request.memoryType()),
                 sanitizer.sanitize(request.content()), sanitizer.sanitize(request.sourceRunId()), request.expiresAt()));
-        chunkWriter.replace(tenantId, "MEMORY", memory.getId(),
+        writeChunksAndDispatch("MEMORY", memory.getId(), tenantId,
                 memory.getMemoryType() + "\n" + memory.getContent());
-        dispatchIndex("MEMORY", memory.getId());
         return memory;
     }
 
@@ -120,7 +121,16 @@ public class ContextService {
         }
     }
 
-    private void dispatchIndex(String parentType, String parentId) {
+    private void writeChunksAndDispatch(String parentType, String parentId,
+                                        String tenantId, String content) {
+        if (semanticRechunkDispatcher.enabled()) {
+            chunkWriter.replaceDeterministic(tenantId, parentType, parentId, content);
+            if (!semanticRechunkDispatcher.dispatchAfterCommit(parentType, parentId)) {
+                embeddingDispatcher.dispatchAfterCommit(parentType, parentId);
+            }
+            return;
+        }
+        chunkWriter.replace(tenantId, parentType, parentId, content);
         embeddingDispatcher.dispatchAfterCommit(parentType, parentId);
     }
 
