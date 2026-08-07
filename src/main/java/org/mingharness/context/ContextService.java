@@ -14,25 +14,32 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class ContextService {
+
+    private static final Logger log = LoggerFactory.getLogger(ContextService.class);
 
     private final KnowledgeDocumentRepository documentRepository;
     private final MemoryEntryRepository memoryRepository;
     private final ContextChunkRepository chunkRepository;
     private final ContextChunker chunker;
+    private final ContextEmbeddingIndexer embeddingIndexer;
     private final SensitiveDataSanitizer sanitizer;
 
     public ContextService(KnowledgeDocumentRepository documentRepository,
                           MemoryEntryRepository memoryRepository,
                           ContextChunkRepository chunkRepository,
                           ContextChunker chunker,
+                          ContextEmbeddingIndexer embeddingIndexer,
                           SensitiveDataSanitizer sanitizer) {
         this.documentRepository = documentRepository;
         this.memoryRepository = memoryRepository;
         this.chunkRepository = chunkRepository;
         this.chunker = chunker;
+        this.embeddingIndexer = embeddingIndexer;
         this.sanitizer = sanitizer;
     }
 
@@ -43,6 +50,7 @@ public class ContextService {
                 sanitizer.sanitize(request.sensitivity()), sanitizer.sanitize(request.allowedUsers())));
         replaceChunks(tenantId, "DOCUMENT", document.getId(),
                 document.getTitle() + "\n" + document.getContent());
+        indexChunks("DOCUMENT", document.getId());
         return document;
     }
 
@@ -76,6 +84,7 @@ public class ContextService {
                 sanitizer.sanitize(request.content()), sanitizer.sanitize(request.sourceRunId()), request.expiresAt()));
         replaceChunks(tenantId, "MEMORY", memory.getId(),
                 memory.getMemoryType() + "\n" + memory.getContent());
+        indexChunks("MEMORY", memory.getId());
         return memory;
     }
 
@@ -123,6 +132,17 @@ public class ContextService {
         chunks.forEach(ContextChunk::markDeleted);
         if (!chunks.isEmpty()) {
             chunkRepository.saveAll(chunks);
+        }
+    }
+
+    private void indexChunks(String parentType, String parentId) {
+        try {
+            embeddingIndexer.indexParent(parentType, parentId);
+        } catch (EmbeddingGatewayException | ContextEmbeddingStoreException exception) {
+            // 正文和 chunk 已在同一事务内保存；向量供应商暂时不可用时保留关键词召回，
+            // 后续索引任务可以根据 content_hash 补齐向量。
+            log.warn("上下文向量索引暂时失败，parentType={}, parentId={}, message={}",
+                    parentType, parentId, exception.getMessage());
         }
     }
 
