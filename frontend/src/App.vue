@@ -45,6 +45,15 @@ const contextPreviewMaxChars = ref(4000)
 const contextPreviewResult = ref(null)
 const contextPreviewLoading = ref(false)
 const contextPreviewError = ref('')
+const contextReindexForm = reactive({
+  scope: 'ALL',
+  parentLimit: 100,
+  chunkLimit: 1000,
+  rechunk: false,
+})
+const contextReindexResult = ref(null)
+const contextReindexLoading = ref(false)
+const contextReindexError = ref('')
 const selectedEvaluationReport = ref(null)
 const evaluationReportLoadingRunId = ref('')
 const selectedEvaluationCases = computed(() => evaluationCases(selectedEvaluationReport.value))
@@ -2642,6 +2651,27 @@ function useContextPreviewPreset(query) {
   nextTick(() => previewContext())
 }
 
+async function rebuildContextIndex() {
+  if (contextReindexLoading.value) return
+  contextReindexLoading.value = true
+  contextReindexError.value = ''
+  try {
+    contextReindexResult.value = await api.reindexContext({
+      scope: contextReindexForm.scope,
+      parentLimit: Number(contextReindexForm.parentLimit) || 100,
+      chunkLimit: Number(contextReindexForm.chunkLimit) || 1000,
+      rechunk: Boolean(contextReindexForm.rechunk),
+    })
+    noticeMessage.value = contextReindexResult.value.embeddingReady
+      ? `索引任务完成，已写入 ${contextReindexResult.value.chunksIndexed} 个向量`
+      : '索引任务完成，但当前 embedding 或 pgvector 尚未就绪'
+  } catch (error) {
+    contextReindexError.value = errorText(error)
+  } finally {
+    contextReindexLoading.value = false
+  }
+}
+
 async function runQuickEvaluation() {
   clearMessages()
   loading.value = true
@@ -3953,6 +3983,35 @@ onBeforeUnmount(() => {
               </div>
             </div>
             <div v-else class="context-preview-empty context-preview-empty-initial">尚未运行查询。这里的结果与模型步骤实际收到的上下文格式一致。</div>
+          </section>
+          <section class="governance-card context-index-card">
+            <div class="context-workbench-heading">
+              <div>
+                <p class="eyebrow">INDEX OPERATIONS</p>
+                <h3>向量索引</h3>
+              </div>
+              <span class="context-index-status" :class="contextReindexResult?.embeddingReady ? 'is-ready' : contextReindexResult ? 'is-warning' : 'is-unknown'">
+                {{ contextReindexResult?.embeddingReady ? 'READY' : contextReindexResult ? 'CHECK' : '未检查' }}
+              </span>
+            </div>
+            <p class="context-workbench-help">按租户有界重建 chunk 和 embedding，不会把整租户数据一次性发送给供应商。</p>
+            <form class="context-index-form" @submit.prevent="rebuildContextIndex">
+              <label class="field"><span>重建范围</span><select v-model="contextReindexForm.scope"><option value="ALL">全部来源</option><option value="DOCUMENT">仅知识文档</option><option value="MEMORY">仅长期记忆</option></select></label>
+              <label class="field"><span>父对象上限</span><input v-model.number="contextReindexForm.parentLimit" type="number" min="1" max="500" /></label>
+              <label class="field"><span>chunk 上限</span><input v-model.number="contextReindexForm.chunkLimit" type="number" min="1" max="5000" /></label>
+              <label class="check-field context-rechunk-field"><input v-model="contextReindexForm.rechunk" type="checkbox" /><span>按当前配置重新分块</span></label>
+              <button class="secondary-button context-index-button" type="submit" :disabled="contextReindexLoading">
+                {{ contextReindexLoading ? '重建中…' : '重建索引' }}
+              </button>
+            </form>
+            <p v-if="contextReindexError" class="policy-error">{{ contextReindexError }}</p>
+            <div v-if="contextReindexResult" class="context-index-result">
+              <div><span>扫描父对象</span><strong>{{ contextReindexResult.parentsScanned }}</strong></div>
+              <div><span>写入向量</span><strong class="is-positive">{{ contextReindexResult.chunksIndexed }}</strong></div>
+              <div><span>待处理</span><strong :class="contextReindexResult.pendingChunks ? 'is-attention' : 'is-positive'">{{ contextReindexResult.pendingChunks }}</strong></div>
+              <div><span>失败</span><strong :class="contextReindexResult.chunksFailed ? 'is-negative' : 'is-positive'">{{ contextReindexResult.chunksFailed }}</strong></div>
+            </div>
+            <small class="form-hint">需要 <code>context.reindex</code> 权限；开启“重新分块”后建议在低峰期执行。</small>
           </section>
           <form class="governance-card" @submit.prevent="createDocument">
             <h3>添加授权知识文档</h3>

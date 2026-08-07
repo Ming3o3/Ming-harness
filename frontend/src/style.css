@@ -252,6 +252,7 @@ h3 { margin: 0; font-size: 13px; }
 .governance-card { display: grid; gap: 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--governance-bg); padding: 15px; }
 .governance-card h3 { margin-bottom: 2px; }
 .context-workbench-card { grid-column: 1 / -1; gap: 13px; }
+.context-index-card { gap: 13px; }
 .context-workbench-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .context-workbench-heading .eyebrow { margin-bottom: 6px; }
 .context-mode-chip, .context-result-state { border: 1px solid rgba(76,226,213,.22); border-radius: 12px; color: var(--cyan); padding: 4px 7px; font: 9px "DM Mono", monospace; white-space: nowrap; }
@@ -275,6 +276,20 @@ h3 { margin: 0; font-size: 13px; }
 .context-evidence-heading strong { overflow: hidden; color: var(--soft); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .context-evidence-heading code { overflow: hidden; color: var(--accent-light); font: 9px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .context-evidence-row p { margin: 7px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; white-space: pre-wrap; }
+.context-index-status { border: 1px solid var(--line); border-radius: 12px; color: var(--muted); padding: 4px 7px; font: 9px "DM Mono", monospace; }
+.context-index-status.is-ready { border-color: rgba(85,214,138,.25); color: var(--green); }
+.context-index-status.is-warning { border-color: rgba(255,182,95,.28); color: var(--orange); }
+.context-index-form { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(72px, .7fr)); gap: 10px; align-items: end; }
+.context-rechunk-field { min-height: 39px; border: 1px solid var(--line); border-radius: 7px; background: var(--input-bg); padding: 0 9px; }
+.context-index-button { grid-column: 1 / -1; justify-self: start; padding: 9px 12px; }
+.context-index-result { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; border-top: 1px solid var(--line); padding-top: 12px; }
+.context-index-result > div { display: grid; gap: 5px; min-width: 0; border: 1px solid var(--line); border-radius: 7px; background: var(--input-bg); padding: 8px 9px; }
+.context-index-result span { color: var(--muted); font: 9px "DM Mono", monospace; }
+.context-index-result strong { color: var(--soft); font: 16px "DM Mono", monospace; }
+.context-index-result strong.is-positive { color: var(--green); }
+.context-index-result strong.is-attention { color: var(--orange); }
+.context-index-result strong.is-negative { color: var(--red); }
+.context-index-card code { color: var(--accent-light); font: inherit; }
 .policy-card .subsection-title { margin-bottom: 0; }
 .policy-actions { display: flex; flex-wrap: wrap; gap: 7px; }
 .policy-actions button { padding: 8px 10px; font-size: 10px; }

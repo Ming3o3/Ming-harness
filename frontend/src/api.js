@@ -249,6 +249,10 @@ export const api = {
     const params = new URLSearchParams({ query, maxChars: String(maxChars) })
     return request(`/context/preview?${params.toString()}`)
   },
+  reindexContext: (payload = {}) => request('/context/reindex', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
   listMemories: () => request('/context/memories'),
   createMemory: (payload) => request('/context/memories', { method: 'POST', body: JSON.stringify(payload) }),
   listEvaluations: () => request('/evaluations'),
