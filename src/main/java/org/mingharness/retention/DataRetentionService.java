@@ -4,6 +4,7 @@ import org.mingharness.audit.AuditEventRepository;
 import org.mingharness.config.DataRetentionProperties;
 import org.mingharness.context.KnowledgeDocumentRepository;
 import org.mingharness.context.MemoryEntryRepository;
+import org.mingharness.context.ContextChunkRepository;
 import org.mingharness.evaluation.EvaluationReportRepository;
 import org.mingharness.messaging.OutboxEventRepository;
 import org.mingharness.messaging.OutboxStatus;
@@ -40,6 +41,7 @@ public class DataRetentionService {
     private final OutboxEventRepository outboxEventRepository;
     private final MemoryEntryRepository memoryEntryRepository;
     private final KnowledgeDocumentRepository documentRepository;
+    private final ContextChunkRepository contextChunkRepository;
     private final EvaluationReportRepository evaluationReportRepository;
     private final TenantPolicyAuditRepository tenantPolicyAuditRepository;
     private final ApiKeyAuditRepository apiKeyAuditRepository;
@@ -51,6 +53,7 @@ public class DataRetentionService {
                                 OutboxEventRepository outboxEventRepository,
                                 MemoryEntryRepository memoryEntryRepository,
                                 KnowledgeDocumentRepository documentRepository,
+                                ContextChunkRepository contextChunkRepository,
                                 EvaluationReportRepository evaluationReportRepository,
                                 TenantPolicyAuditRepository tenantPolicyAuditRepository,
                                 ApiKeyAuditRepository apiKeyAuditRepository,
@@ -61,6 +64,7 @@ public class DataRetentionService {
         this.outboxEventRepository = outboxEventRepository;
         this.memoryEntryRepository = memoryEntryRepository;
         this.documentRepository = documentRepository;
+        this.contextChunkRepository = contextChunkRepository;
         this.evaluationReportRepository = evaluationReportRepository;
         this.tenantPolicyAuditRepository = tenantPolicyAuditRepository;
         this.apiKeyAuditRepository = apiKeyAuditRepository;
@@ -109,6 +113,7 @@ public class DataRetentionService {
                 now.minus(properties.memoryDays(), ChronoUnit.DAYS)));
         int documentsDeleted = Math.toIntExact(documentRepository.deleteByDeletedAtBefore(
                 now.minus(properties.documentDays(), ChronoUnit.DAYS)));
+        contextChunkRepository.deleteByDeletedAtBefore(now.minus(properties.documentDays(), ChronoUnit.DAYS));
         int evaluationReportsDeleted = Math.toIntExact(evaluationReportRepository.deleteByCreatedAtBefore(
                 now.minus(properties.evaluationDays(), ChronoUnit.DAYS)));
         // 仅清理已经完成投递或已明确失败的历史 Outbox，PENDING 事件永远保留。

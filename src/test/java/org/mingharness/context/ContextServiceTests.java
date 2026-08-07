@@ -26,10 +26,13 @@ class ContextServiceTests {
     private KnowledgeDocumentRepository documentRepository;
     @Autowired
     private MemoryEntryRepository memoryRepository;
+    @Autowired
+    private ContextChunkRepository chunkRepository;
 
     @BeforeEach
     void cleanDatabase() {
         memoryRepository.deleteAll();
+        chunkRepository.deleteAll();
         documentRepository.deleteAll();
     }
 
@@ -92,5 +95,24 @@ class ContextServiceTests {
         assertEquals(1, contextService.listMemories("tenant-a", "operator").size());
         contextService.deleteMemory("tenant-a", "operator", memory.getId());
         assertEquals(0, contextService.listMemories("tenant-a", "operator").size());
+    }
+
+    @Test
+    void shouldPersistOrderedParentDocumentChunksAndSoftDeleteThemWithParent() {
+        String content = "第一部分说明。".repeat(180);
+        KnowledgeDocument document = contextService.createDocument("tenant-a", "owner",
+                new CreateDocumentRequest("分块文档", content, "INTERNAL", "operator"));
+
+        var chunks = chunkRepository.findByParentTypeAndParentIdAndDeletedAtIsNullOrderByChunkIndexAsc(
+                "DOCUMENT", document.getId());
+        assertTrue(chunks.size() > 1);
+        assertEquals(0, chunks.get(0).getChunkIndex());
+        assertEquals(chunks.size() - 1, chunks.get(chunks.size() - 1).getChunkIndex());
+        assertTrue(chunks.stream().allMatch(chunk -> chunk.getTenantId().equals("tenant-a")));
+
+        contextService.deleteDocument("tenant-a", "owner", document.getId());
+
+        assertEquals(0, chunkRepository.findByParentTypeAndParentIdAndDeletedAtIsNullOrderByChunkIndexAsc(
+                "DOCUMENT", document.getId()).size());
     }
 }
