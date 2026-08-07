@@ -2,6 +2,7 @@ package org.mingharness.context;
 
 import org.mingharness.context.api.ContextEvidence;
 import org.mingharness.context.api.ContextResult;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -16,16 +17,25 @@ public class ContextBuilder {
 
     private final KnowledgeDocumentRepository documentRepository;
     private final MemoryEntryRepository memoryRepository;
+    private final VectorContextRetriever vectorContextRetriever;
 
     public ContextBuilder(KnowledgeDocumentRepository documentRepository,
-                          MemoryEntryRepository memoryRepository) {
+                          MemoryEntryRepository memoryRepository,
+                          VectorContextRetriever vectorContextRetriever) {
         this.documentRepository = documentRepository;
         this.memoryRepository = memoryRepository;
+        this.vectorContextRetriever = vectorContextRetriever;
     }
 
     public ContextResult build(String tenantId, String userId, String query, int maxChars) {
         if (query == null || query.isBlank() || maxChars < 1) {
             return new ContextResult("", List.of());
+        }
+        try {
+            ContextResult vectorResult = vectorContextRetriever.retrieve(tenantId, userId, query, maxChars);
+            if (!vectorResult.isEmpty()) return vectorResult;
+        } catch (EmbeddingGatewayException | DataAccessException exception) {
+            // embedding 服务或 pgvector 暂时不可用时保持旧的确定性关键词召回能力。
         }
         String normalizedQuery = query.toLowerCase(Locale.ROOT);
         String[] terms = normalizedQuery.split("\\s+|[，。！？、,:：;；]+");

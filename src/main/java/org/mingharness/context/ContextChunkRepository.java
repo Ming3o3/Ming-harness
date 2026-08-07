@@ -10,6 +10,9 @@ public interface ContextChunkRepository extends JpaRepository<ContextChunk, Stri
     List<ContextChunk> findByParentTypeAndParentIdAndDeletedAtIsNullOrderByChunkIndexAsc(
             String parentType, String parentId);
 
+    List<ContextChunk> findByTenantIdAndParentTypeAndParentIdAndDeletedAtIsNullOrderByChunkIndexAsc(
+            String tenantId, String parentType, String parentId);
+
     List<ContextChunk> findByParentTypeAndParentIdAndDeletedAtIsNull(
             String parentType, String parentId);
 
