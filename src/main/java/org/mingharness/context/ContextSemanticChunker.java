@@ -50,6 +50,7 @@ public class ContextSemanticChunker {
         List<String> units = atomicUnits(normalized);
         if (units.size() < properties.semanticMinUnits()
                 || units.stream().anyMatch(unit -> unit.length() > embeddingProperties.maxInputChars()
+                || EmbeddingTokenEstimator.estimate(unit) > embeddingProperties.maxInputTokens()
                 || unit.length() > properties.chunkMaxChars())) {
             return deterministic;
         }
@@ -100,12 +101,14 @@ public class ContextSemanticChunker {
                     && currentUnits >= properties.semanticMinUnits();
             int required = current.isEmpty() ? unit.length()
                     : current.length() + 2 + unit.length();
-            if (semanticBoundary || required > properties.chunkMaxChars()) {
+            if (semanticBoundary || required > properties.chunkMaxChars()
+                    || !fitsTokens(joined(current, unit))) {
                 flush(current, chunks);
                 currentUnits = 0;
                 String overlap = tail(chunks.isEmpty() ? "" : chunks.get(chunks.size() - 1),
                         properties.chunkOverlapChars());
-                if (!overlap.isBlank() && overlap.length() + 2 + unit.length() <= properties.chunkMaxChars()) {
+                if (!overlap.isBlank() && overlap.length() + 2 + unit.length() <= properties.chunkMaxChars()
+                        && fitsTokens(overlap + "\n\n" + unit)) {
                     current.append(overlap).append("\n\n");
                 }
             }
@@ -273,6 +276,14 @@ public class ContextSemanticChunker {
     private String tail(String value, int maxLength) {
         if (maxLength <= 0 || value.length() <= maxLength) return value;
         return value.substring(value.length() - maxLength).trim();
+    }
+
+    private boolean fitsTokens(String value) {
+        return EmbeddingTokenEstimator.estimate(value) <= embeddingProperties.maxInputTokens();
+    }
+
+    private String joined(StringBuilder current, String unit) {
+        return current.isEmpty() ? unit : current + "\n\n" + unit;
     }
 
     private String normalize(String value) {

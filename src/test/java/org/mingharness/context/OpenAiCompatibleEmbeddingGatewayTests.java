@@ -108,6 +108,21 @@ class OpenAiCompatibleEmbeddingGatewayTests {
         assertTrue(disabled.embed(List.of("query")).isEmpty());
     }
 
+    @Test
+    void shouldRejectInputThatExceedsTokenBudgetEvenWhenCharacterLimitAllowsIt() throws IOException {
+        HttpServer server = server(exchange -> respond(exchange, 200,
+                "{\"model\":\"m\",\"data\":[{\"index\":0,\"embedding\":[0.1,0.2]}]}"));
+        EmbeddingProperties properties = new EmbeddingProperties(true, url(server), "key", "model", "v1",
+                2, 8, 1_000, 2, 100_000, 1, 0, 10_000);
+        OpenAiCompatibleEmbeddingGateway gateway = gateway(properties);
+
+        EmbeddingGatewayException exception = assertThrows(EmbeddingGatewayException.class,
+                () -> gateway.embed(List.of("中文内容")));
+
+        assertFalse(exception.retryable());
+        assertTrue(exception.getMessage().contains("token"));
+    }
+
     private OpenAiCompatibleEmbeddingGateway gateway(EmbeddingProperties properties) {
         return new OpenAiCompatibleEmbeddingGateway(properties, RestClient.builder(),
                 new SensitiveDataSanitizer(), new ObjectMapper());

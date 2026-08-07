@@ -80,6 +80,7 @@ export EMBEDDING_MODEL=text-embedding-3-small
 export EMBEDDING_MODEL_VERSION=v1
 export EMBEDDING_DIMENSION=1536
 export EMBEDDING_BATCH_SIZE=32
+export EMBEDDING_MAX_INPUT_TOKENS=8192
 ```
 
 `EMBEDDING_DIMENSION` 必须与数据库中的 `vector(1536)` 一致；更换模型、维度或语义分块版本后，应执行一次有界重建。语义分块默认关闭，开启后会对段落/句子原子单元批量向量化，按相邻单元余弦相似度寻找边界，同时保留最大长度、最小单元数和 overlap 约束：

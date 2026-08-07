@@ -176,6 +176,9 @@ public class OpenAiCompatibleEmbeddingGateway implements EmbeddingGateway {
         if (normalized.length() > properties.maxInputChars()) {
             throw new EmbeddingGatewayException(false, "embedding 输入超过字符上限");
         }
+        if (EmbeddingTokenEstimator.estimate(normalized) > properties.maxInputTokens()) {
+            throw new EmbeddingGatewayException(false, "embedding 输入超过 token 上限");
+        }
         return normalized;
     }
 

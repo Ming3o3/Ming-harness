@@ -1,6 +1,8 @@
 package org.mingharness.context;
 
 import org.mingharness.config.ContextChunkingProperties;
+import org.mingharness.config.EmbeddingProperties;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -21,9 +23,16 @@ public class ContextChunker {
     private static final String BOUNDARY_CHARS = "。！？!?；;。\n";
 
     private final ContextChunkingProperties properties;
+    private final EmbeddingProperties embeddingProperties;
 
     public ContextChunker(ContextChunkingProperties properties) {
+        this(properties, null);
+    }
+
+    @Autowired
+    public ContextChunker(ContextChunkingProperties properties, EmbeddingProperties embeddingProperties) {
         this.properties = properties;
+        this.embeddingProperties = embeddingProperties;
     }
 
     public List<ContextChunkDraft> chunk(String content) {
@@ -39,13 +48,14 @@ public class ContextChunker {
         List<String> chunks = new ArrayList<>();
         StringBuilder current = new StringBuilder();
         for (String unit : units) {
-            if (unit.length() > properties.chunkMaxChars()) {
+            if (exceedsBudget(unit)) {
                 flush(current, chunks);
                 appendOversized(unit, chunks);
                 continue;
             }
             int required = current.isEmpty() ? unit.length() : current.length() + PARAGRAPH_SEPARATOR.length() + unit.length();
-            if (required <= properties.chunkMaxChars()) {
+            if (required <= properties.chunkMaxChars()
+                    && fitsTokens(join(current, unit))) {
                 if (!current.isEmpty()) current.append(PARAGRAPH_SEPARATOR);
                 current.append(unit);
                 continue;
@@ -54,7 +64,8 @@ public class ContextChunker {
             flush(current, chunks);
             if (!overlap.isBlank()
                     && overlap.length() + PARAGRAPH_SEPARATOR.length() + unit.length()
-                    <= properties.chunkMaxChars()) {
+                    <= properties.chunkMaxChars()
+                    && fitsTokens(overlap + PARAGRAPH_SEPARATOR + unit)) {
                 current.append(overlap).append(PARAGRAPH_SEPARATOR);
             }
             current.append(unit);
@@ -72,10 +83,24 @@ public class ContextChunker {
         int start = 0;
         while (start < unit.length()) {
             int end = Math.min(unit.length(), start + properties.chunkMaxChars());
+            if (embeddingProperties != null && embeddingProperties.maxInputTokens() > 0) {
+                String tokenBounded = EmbeddingTokenEstimator.truncate(unit.substring(start),
+                        embeddingProperties.maxInputTokens());
+                if (!tokenBounded.isEmpty()) {
+                    end = Math.min(end, start + tokenBounded.length());
+                }
+            }
             if (end < unit.length()) {
                 int boundary = lastBoundary(unit, start, end);
                 if (boundary > start + properties.chunkMaxChars() / 2) {
                     end = boundary + 1;
+                }
+                if (embeddingProperties != null && embeddingProperties.maxInputTokens() > 0) {
+                    String tokenBounded = EmbeddingTokenEstimator.truncate(unit.substring(start),
+                            embeddingProperties.maxInputTokens());
+                    if (!tokenBounded.isEmpty()) {
+                        end = Math.min(end, start + tokenBounded.length());
+                    }
                 }
             }
             String piece = unit.substring(start, end).trim();
@@ -102,6 +127,19 @@ public class ContextChunker {
     private String tail(String value, int maxLength) {
         if (maxLength <= 0 || value.length() <= maxLength) return value;
         return value.substring(value.length() - maxLength).trim();
+    }
+
+    private boolean exceedsBudget(String value) {
+        return value.length() > properties.chunkMaxChars() || !fitsTokens(value);
+    }
+
+    private boolean fitsTokens(String value) {
+        return embeddingProperties == null
+                || EmbeddingTokenEstimator.estimate(value) <= embeddingProperties.maxInputTokens();
+    }
+
+    private String join(StringBuilder current, String unit) {
+        return current.isEmpty() ? unit : current + PARAGRAPH_SEPARATOR + unit;
     }
 
     private String normalize(String value) {

@@ -123,6 +123,7 @@ npm run dev
 | `EMBEDDING_MODEL_VERSION` | `v1` | embedding 模型或供应商配置版本；变更后自动隔离旧缓存 |
 | `EMBEDDING_DIMENSION` | `1536` | embedding 维度，必须与 pgvector 迁移保持一致 |
 | `EMBEDDING_BATCH_SIZE` | `32` | 单批 embedding 文本块数量 |
+| `EMBEDDING_MAX_INPUT_TOKENS` | `8192` | 单条 embedding 输入的保守 token 上限；与字符上限同时生效 |
 | `EMBEDDING_CACHE_RETENTION_DAYS` | `30` | 持久化 embedding 缓存的保留天数 |
 | `CONTEXT_RETRIEVAL_CANDIDATE_LIMIT` | `20` | 向量召回候选子块数量 |
 | `CONTEXT_RETRIEVAL_MAX_PARENTS` | `5` | 最终展开的父文档数量 |

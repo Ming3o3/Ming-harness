@@ -14,6 +14,7 @@ public record EmbeddingProperties(
         int dimension,
         int batchSize,
         int maxInputChars,
+        int maxInputTokens,
         int maxResponseChars,
         int maxAttempts,
         long retryBackoffMs,
@@ -25,7 +26,7 @@ public record EmbeddingProperties(
                                int dimension, int batchSize, int maxInputChars, int maxResponseChars,
                                int maxAttempts, long retryBackoffMs, long timeoutMs) {
         this(enabled, baseUrl, apiKey, model, "v1", dimension, batchSize, maxInputChars,
-                maxResponseChars, maxAttempts, retryBackoffMs, timeoutMs);
+                8_192, maxResponseChars, maxAttempts, retryBackoffMs, timeoutMs);
     }
 
     @ConstructorBinding
@@ -37,6 +38,7 @@ public record EmbeddingProperties(
         dimension = Math.min(8_192, Math.max(1, dimension));
         batchSize = Math.min(128, Math.max(1, batchSize));
         maxInputChars = Math.min(1_000_000, Math.max(128, maxInputChars));
+        maxInputTokens = Math.min(1_000_000, Math.max(1, maxInputTokens));
         maxResponseChars = Math.min(10_000_000, Math.max(1_024, maxResponseChars));
         maxAttempts = Math.min(5, Math.max(1, maxAttempts));
         retryBackoffMs = Math.min(10_000, Math.max(0, retryBackoffMs));

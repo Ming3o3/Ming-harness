@@ -2,6 +2,7 @@ package org.mingharness.context;
 
 import org.junit.jupiter.api.Test;
 import org.mingharness.config.ContextChunkingProperties;
+import org.mingharness.config.EmbeddingProperties;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -28,5 +29,19 @@ class ContextChunkerTests {
         assertEquals(1, chunks.get(1).chunkIndex());
         assertTrue(chunks.get(0).content().substring(chunks.get(0).content().length() - 16)
                 .equals(chunks.get(1).content().substring(0, 16)));
+    }
+
+    @Test
+    void shouldRespectEmbeddingTokenBudgetWhileSplittingDeterministically() {
+        EmbeddingProperties embeddingProperties = new EmbeddingProperties(true, "http://embedding", "key",
+                "model", "v1", 2, 8, 1_000, 2, 100_000, 1, 0, 10_000);
+        ContextChunker tokenAwareChunker = new ContextChunker(
+                new ContextChunkingProperties(128, 0), embeddingProperties);
+
+        var chunks = tokenAwareChunker.chunk("甲乙丙丁戊己");
+
+        assertTrue(chunks.size() >= 3);
+        assertTrue(chunks.stream().allMatch(chunk ->
+                EmbeddingTokenEstimator.estimate(chunk.content()) <= 2));
     }
 }

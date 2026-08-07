@@ -204,8 +204,10 @@ public class VectorContextRetriever {
 
     private String boundQuery(String query) {
         String normalized = sanitizer.sanitize(query).trim();
-        return normalized.length() <= embeddingProperties.maxInputChars()
-                ? normalized : normalized.substring(0, embeddingProperties.maxInputChars());
+        if (normalized.length() > embeddingProperties.maxInputChars()) {
+            normalized = normalized.substring(0, embeddingProperties.maxInputChars());
+        }
+        return EmbeddingTokenEstimator.truncate(normalized, embeddingProperties.maxInputTokens()).trim();
     }
 
     private String vectorLiteral(EmbeddingVector vector) {

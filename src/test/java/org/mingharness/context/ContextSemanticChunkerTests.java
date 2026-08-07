@@ -12,6 +12,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -59,6 +60,22 @@ class ContextSemanticChunkerTests {
         assertEquals("DETERMINISTIC", result.strategy());
         assertEquals("deterministic-v1", result.version());
         assertTrue(result.chunks().size() >= 1);
+    }
+
+    @Test
+    void shouldFallbackBeforeEmbeddingWhenAtomicUnitExceedsTokenBudget() {
+        ContextChunker deterministic = new ContextChunker(new ContextChunkingProperties(120, 10));
+        ContextChunkingProperties properties = new ContextChunkingProperties(120, 10, true, 0.8, 2);
+        EmbeddingGateway gateway = mock(EmbeddingGateway.class);
+        when(gateway.enabled()).thenReturn(true);
+        EmbeddingProperties embeddingProperties = new EmbeddingProperties(true, "http://embedding", "key",
+                "model", "v1", 2, 8, 1_000, 2, 100_000, 1, 0, 10_000);
+
+        ContextChunkingResult result = new ContextSemanticChunker(deterministic, properties,
+                embeddingProperties, gateway).chunk("第一段内容。第二段内容。第三段内容。");
+
+        assertEquals("DETERMINISTIC", result.strategy());
+        verify(gateway, never()).embed(anyList());
     }
 
     @Test
