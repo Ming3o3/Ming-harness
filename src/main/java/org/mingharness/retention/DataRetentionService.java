@@ -5,6 +5,7 @@ import org.mingharness.config.DataRetentionProperties;
 import org.mingharness.context.KnowledgeDocumentRepository;
 import org.mingharness.context.MemoryEntryRepository;
 import org.mingharness.context.ContextChunkRepository;
+import org.mingharness.context.ContextEmbeddingCache;
 import org.mingharness.context.ContextParentWindowRepository;
 import org.mingharness.evaluation.EvaluationReportRepository;
 import org.mingharness.evaluation.ContextRetrievalEvaluationReportRepository;
@@ -49,6 +50,7 @@ public class DataRetentionService {
     private final ContextRetrievalEvaluationReportRepository retrievalEvaluationReportRepository;
     private final TenantPolicyAuditRepository tenantPolicyAuditRepository;
     private final ApiKeyAuditRepository apiKeyAuditRepository;
+    private final ContextEmbeddingCache contextEmbeddingCache;
     private final HarnessMetrics metrics;
 
     public DataRetentionService(DataRetentionProperties properties,
@@ -63,6 +65,7 @@ public class DataRetentionService {
                                 ContextRetrievalEvaluationReportRepository retrievalEvaluationReportRepository,
                                 TenantPolicyAuditRepository tenantPolicyAuditRepository,
                                 ApiKeyAuditRepository apiKeyAuditRepository,
+                                ContextEmbeddingCache contextEmbeddingCache,
                                 HarnessMetrics metrics) {
         this.properties = properties;
         this.runRepository = runRepository;
@@ -76,6 +79,7 @@ public class DataRetentionService {
         this.retrievalEvaluationReportRepository = retrievalEvaluationReportRepository;
         this.tenantPolicyAuditRepository = tenantPolicyAuditRepository;
         this.apiKeyAuditRepository = apiKeyAuditRepository;
+        this.contextEmbeddingCache = contextEmbeddingCache;
         this.metrics = metrics;
     }
 
@@ -106,6 +110,7 @@ public class DataRetentionService {
         int outboxEventsDeleted = 0;
         int chunksDeleted = 0;
         int parentWindowsDeleted = 0;
+        int embeddingCacheEntriesDeleted = 0;
 
         // 每轮只处理有限数量的 Run，避免历史数据很多时长事务阻塞线上写入。
         List<Run> candidates = runRepository.findByStatusInAndFinishedAtBeforeOrderByFinishedAtAsc(
@@ -143,11 +148,14 @@ public class DataRetentionService {
                 now.minus(properties.tenantPolicyAuditDays(), ChronoUnit.DAYS)));
         int apiKeyAuditsDeleted = Math.toIntExact(apiKeyAuditRepository.deleteByCreatedAtBefore(
                 now.minus(properties.apiKeyAuditDays(), ChronoUnit.DAYS)));
+        embeddingCacheEntriesDeleted = contextEmbeddingCache.deleteUpdatedBefore(
+                now.minus(properties.embeddingCacheDays(), ChronoUnit.DAYS));
 
         RetentionCleanupResult result = new RetentionCleanupResult(
                 runsDeleted, auditEventsDeleted, stepsDeleted, memoriesDeleted, documentsDeleted,
                 chunksDeleted, parentWindowsDeleted, evaluationReportsDeleted, retrievalEvaluationReportsDeleted,
-                outboxEventsDeleted, tenantPolicyAuditsDeleted, apiKeyAuditsDeleted);
+                outboxEventsDeleted, tenantPolicyAuditsDeleted, apiKeyAuditsDeleted,
+                embeddingCacheEntriesDeleted);
         metrics.retentionDeleted(result.totalDeleted());
         return result;
     }

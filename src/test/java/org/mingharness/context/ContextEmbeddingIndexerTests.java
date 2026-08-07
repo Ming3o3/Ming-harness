@@ -4,10 +4,12 @@ import org.junit.jupiter.api.Test;
 import org.mingharness.config.EmbeddingProperties;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -36,7 +38,60 @@ class ContextEmbeddingIndexerTests {
         ContextEmbeddingIndexer indexer = new ContextEmbeddingIndexer(repository, gateway, store, properties);
 
         assertEquals(3, indexer.indexParent("DOCUMENT", "doc-1"));
-        verify(store, org.mockito.Mockito.times(2)).save(anyList());
+        verify(store).save(anyList());
+    }
+
+    @Test
+    void shouldReuseTenantAndModelScopedCacheWithoutCallingEmbeddingApi() {
+        ContextChunkRepository repository = mock(ContextChunkRepository.class);
+        EmbeddingGateway gateway = mock(EmbeddingGateway.class);
+        ContextEmbeddingStore store = mock(ContextEmbeddingStore.class);
+        ContextEmbeddingCache cache = mock(ContextEmbeddingCache.class);
+        EmbeddingProperties properties = new EmbeddingProperties(true, "http://embedding", "key", "model",
+                2, 8, 1_000, 100_000, 1, 0, 10_000);
+        ContextChunk chunk = new ContextChunk("tenant-a", "DOCUMENT", "doc-1", 0,
+                "可复用内容", "hash-reusable");
+        when(repository.findByParentTypeAndParentIdAndDeletedAtIsNullOrderByChunkIndexAsc("DOCUMENT", "doc-1"))
+                .thenReturn(List.of(chunk));
+        when(gateway.enabled()).thenReturn(true);
+        when(store.supported()).thenReturn(true);
+        when(cache.find("tenant-a", "hash-reusable", "model", "v1", 2))
+                .thenReturn(Optional.of(new EmbeddingVector("model", List.of(0.3, 0.4))));
+
+        ContextEmbeddingIndexer indexer = new ContextEmbeddingIndexer(repository, gateway, store,
+                properties, cache);
+
+        assertEquals(1, indexer.indexParent("DOCUMENT", "doc-1"));
+        verify(gateway, never()).embed(anyList());
+        org.mockito.Mockito.verify(cache).find("tenant-a", "hash-reusable", "model", "v1", 2);
+        org.mockito.Mockito.verify(store).save(anyList());
+    }
+
+    @Test
+    void shouldCacheOnlyMissedChunksAfterSuccessfulEmbedding() {
+        ContextChunkRepository repository = mock(ContextChunkRepository.class);
+        EmbeddingGateway gateway = mock(EmbeddingGateway.class);
+        ContextEmbeddingStore store = mock(ContextEmbeddingStore.class);
+        ContextEmbeddingCache cache = mock(ContextEmbeddingCache.class);
+        EmbeddingProperties properties = new EmbeddingProperties(true, "http://embedding", "key", "model",
+                2, 8, 1_000, 100_000, 1, 0, 10_000);
+        ContextChunk chunk = new ContextChunk("tenant-a", "DOCUMENT", "doc-1", 0,
+                "新内容", "hash-new");
+        when(repository.findByParentTypeAndParentIdAndDeletedAtIsNullOrderByChunkIndexAsc("DOCUMENT", "doc-1"))
+                .thenReturn(List.of(chunk));
+        when(gateway.enabled()).thenReturn(true);
+        when(store.supported()).thenReturn(true);
+        when(cache.find("tenant-a", "hash-new", "model", "v1", 2)).thenReturn(Optional.empty());
+        when(gateway.embed(List.of("新内容")))
+                .thenReturn(List.of(new EmbeddingVector("model", List.of(0.1, 0.2))));
+
+        ContextEmbeddingIndexer indexer = new ContextEmbeddingIndexer(repository, gateway, store,
+                properties, cache);
+
+        assertEquals(1, indexer.indexParent("DOCUMENT", "doc-1"));
+        org.mockito.Mockito.verify(cache).save("tenant-a", "hash-new", "model", "v1",
+                new EmbeddingVector("model", List.of(0.1, 0.2)));
+        org.mockito.Mockito.verify(gateway).embed(List.of("新内容"));
     }
 
     @Test

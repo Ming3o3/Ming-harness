@@ -43,6 +43,7 @@ Ming Harness 是一个面向企业 Agent 的可运行 Harness：后端使用 Spr
 - 上下文与记忆：授权文档检索、引用来源、过期记忆、删除和敏感凭证拦截
 - 上下文父文档子块索引：文档和长期记忆写入时按结构和长度生成有序子块，为后续 embedding/pgvector 检索保留稳定的父子关系
 - embedding 索引写入：启用外部 embedding API 且使用 PostgreSQL 时，文档和长期记忆子块会批量写入 pgvector；供应商暂时不可用时保留关键词召回并等待后续重建
+- embedding 缓存：按租户、内容哈希、模型、模型版本和维度持久化复用结果，减少重建索引的重复 API 调用，并按保留策略清理
 - 上下文检索离线评测：按租户保存 Recall@K、MRR、HitRate@K 和可选的上下文命中率，用于比较分块、父窗口和召回参数
 - 敏感数据治理：Run、Step、审计、模型、工具和上下文边界统一凭证脱敏，长期记忆拒绝写入疑似凭证
 - 数据保留策略：终态 Run 与审计链原子清理，过期记忆/文档/评测和已完成 Outbox 定时删除，待投递消息不自动删除
@@ -119,8 +120,10 @@ npm run dev
 | `EMBEDDING_ENABLED` | `false` | 是否启用外部 embedding API；关闭时保持关键词召回 |
 | `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` | OpenAI 地址 / 空 | OpenAI 兼容 embedding 服务地址和密钥 |
 | `EMBEDDING_MODEL` | `text-embedding-3-small` | embedding 模型名称 |
+| `EMBEDDING_MODEL_VERSION` | `v1` | embedding 模型或供应商配置版本；变更后自动隔离旧缓存 |
 | `EMBEDDING_DIMENSION` | `1536` | embedding 维度，必须与 pgvector 迁移保持一致 |
 | `EMBEDDING_BATCH_SIZE` | `32` | 单批 embedding 文本块数量 |
+| `EMBEDDING_CACHE_RETENTION_DAYS` | `30` | 持久化 embedding 缓存的保留天数 |
 | `CONTEXT_RETRIEVAL_CANDIDATE_LIMIT` | `20` | 向量召回候选子块数量 |
 | `CONTEXT_RETRIEVAL_MAX_PARENTS` | `5` | 最终展开的父文档数量 |
 | `CONTEXT_RETRIEVAL_NEIGHBOR_RADIUS` | `1` | 命中子块两侧补回的相邻子块数量 |

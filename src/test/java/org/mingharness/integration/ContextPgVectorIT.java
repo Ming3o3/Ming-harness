@@ -3,6 +3,7 @@ package org.mingharness.integration;
 import org.junit.jupiter.api.Test;
 import org.mingharness.context.ContextChunk;
 import org.mingharness.context.ContextChunkRepository;
+import org.mingharness.context.ContextEmbeddingCache;
 import org.mingharness.context.ContextEmbeddingStore;
 import org.mingharness.context.ContextEmbeddingUpdate;
 import org.mingharness.context.ContextParentWindow;
@@ -40,6 +41,8 @@ class ContextPgVectorIT {
     private ContextChunkRepository chunkRepository;
     @Autowired
     private ContextEmbeddingStore embeddingStore;
+    @Autowired
+    private ContextEmbeddingCache embeddingCache;
     @Autowired
     private ContextParentWindowRepository parentWindowRepository;
     @Autowired
@@ -102,6 +105,27 @@ class ContextPgVectorIT {
 
         jdbcTemplate.update("DELETE FROM harness_context_chunks WHERE id = ?", chunk.getId());
         jdbcTemplate.update("DELETE FROM harness_context_parent_windows WHERE id = ?", window.getId());
+    }
+
+    @Test
+    void shouldReuseTenantAndModelScopedEmbeddingCache() {
+        assertTrue(embeddingCache instanceof org.mingharness.context.JdbcContextEmbeddingCache);
+        String tenantId = "tenant-cache-" + UUID.randomUUID();
+        String hash = "cache-hash-" + UUID.randomUUID();
+        List<Double> values = new ArrayList<>(java.util.Collections.nCopies(1536, 0.0));
+        values.set(0, 0.75);
+        EmbeddingVector vector = new EmbeddingVector("response-model", values);
+
+        embeddingCache.save(tenantId, hash, "requested-model", "v1", vector);
+
+        var cached = embeddingCache.find(tenantId, hash, "requested-model", "v1", 1536);
+        assertTrue(cached.isPresent());
+        assertEquals("response-model", cached.orElseThrow().model());
+        assertEquals(values, cached.orElseThrow().values());
+        assertTrue(embeddingCache.find(tenantId, hash, "other-model", "v1", 1536).isEmpty());
+        assertTrue(embeddingCache.find(tenantId, hash, "requested-model", "v2", 1536).isEmpty());
+
+        jdbcTemplate.update("DELETE FROM harness_context_embedding_cache WHERE tenant_id = ?", tenantId);
     }
 
     private String vectorLiteral(List<Double> values) {

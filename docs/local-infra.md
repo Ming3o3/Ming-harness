@@ -77,6 +77,7 @@ export EMBEDDING_ENABLED=true
 export EMBEDDING_BASE_URL=https://api.example.com/v1
 export EMBEDDING_API_KEY='由密钥系统注入'
 export EMBEDDING_MODEL=text-embedding-3-small
+export EMBEDDING_MODEL_VERSION=v1
 export EMBEDDING_DIMENSION=1536
 export EMBEDDING_BATCH_SIZE=32
 ```
@@ -90,6 +91,8 @@ export CONTEXT_SEMANTIC_MIN_UNITS=3
 ```
 
 代码块等结构单元仍优先于语义边界；embedding 服务暂时不可用时，写入和重建会回退到确定性分块，并留下待索引数量等待下次重建。生产环境建议把重建放在低峰期，并观察 `harness.context.embedding.*`、`harness.context.vector.*` 和 `harness.context.index.*` 指标。
+
+索引器会把成功的 chunk embedding 写入 PostgreSQL 缓存，缓存键包含租户、内容哈希、请求模型、模型版本和维度。命中缓存时不会再次调用供应商，但仍会把向量写入当前 chunk；缓存只作为加速层，缓存数据库读写失败会自动退化为正常 API 索引。更换模型权重、供应商部署或预处理方式时递增 `EMBEDDING_MODEL_VERSION`，旧缓存不会被误用。缓存命中和未命中可分别通过 `harness.context.embedding.cache.hits`、`harness.context.embedding.cache.misses` 观察，并由 `EMBEDDING_CACHE_RETENTION_DAYS` 控制清理。
 
 检索阶段使用“小块召回，大块推理”。每个子块单独写入 pgvector，向量命中后按连续子块聚合为有界父窗口，再将父窗口作为模型上下文返回。父窗口默认上限为 4800 字符，可通过 `CONTEXT_PARENT_WINDOW_MAX_CHARS` 调整；父窗口不单独参与向量召回，也不会绕过文档权限、租户隔离或记忆用户过滤。
 

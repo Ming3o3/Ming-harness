@@ -16,6 +16,7 @@ public record DataRetentionProperties(
         int outboxDays,
         int tenantPolicyAuditDays,
         int apiKeyAuditDays,
+        int embeddingCacheDays,
         long cleanupIntervalMs,
         long cleanupInitialDelayMs,
         int batchSize
@@ -30,6 +31,7 @@ public record DataRetentionProperties(
         outboxDays = positiveOrDefault(outboxDays, 14);
         tenantPolicyAuditDays = positiveOrDefault(tenantPolicyAuditDays, 365);
         apiKeyAuditDays = positiveOrDefault(apiKeyAuditDays, 365);
+        embeddingCacheDays = positiveOrDefault(embeddingCacheDays, 30);
         cleanupIntervalMs = cleanupIntervalMs < 60_000 ? 3_600_000 : cleanupIntervalMs;
         cleanupInitialDelayMs = cleanupInitialDelayMs < 1_000 ? 60_000 : cleanupInitialDelayMs;
         batchSize = Math.min(1_000, Math.max(1, batchSize));
