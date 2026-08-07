@@ -7,6 +7,8 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
@@ -46,13 +48,15 @@ public class JdbcContextEmbeddingStore implements ContextEmbeddingStore {
     public void save(List<ContextEmbeddingUpdate> updates) {
         if (!supported || updates == null || updates.isEmpty()) return;
         Instant now = Instant.now();
+        OffsetDateTime databaseNow = OffsetDateTime.ofInstant(now, ZoneOffset.UTC);
         int[][] counts;
         try {
             counts = jdbcTemplate.batchUpdate(UPDATE_SQL, updates, updates.size(), (statement, update) -> {
                 statement.setString(1, vectorLiteral(update.vector()));
                 statement.setString(2, update.vector().model());
-                statement.setObject(3, now);
-                statement.setObject(4, now);
+                // PostgreSQL 无法从 Instant 直接推断 timestamptz 参数类型；显式传 UTC 偏移。
+                statement.setObject(3, databaseNow);
+                statement.setObject(4, databaseNow);
                 statement.setString(5, update.chunk().getId());
                 statement.setString(6, update.chunk().getTenantId());
             });
