@@ -44,6 +44,12 @@ public class ContextChunk {
     @Column(name = "content_hash", nullable = false, length = 64)
     private String contentHash;
 
+    @Column(name = "chunk_strategy", nullable = false, length = 32)
+    private String chunkStrategy;
+
+    @Column(name = "chunker_version", nullable = false, length = 64)
+    private String chunkerVersion;
+
     @Column(name = "character_count", nullable = false)
     private int characterCount;
 
@@ -66,6 +72,12 @@ public class ContextChunk {
 
     public ContextChunk(String tenantId, String parentType, String parentId, int chunkIndex,
                         String content, String contentHash) {
+        this(tenantId, parentType, parentId, chunkIndex, content, contentHash,
+                "DETERMINISTIC", "deterministic-v1");
+    }
+
+    public ContextChunk(String tenantId, String parentType, String parentId, int chunkIndex,
+                        String content, String contentHash, String chunkStrategy, String chunkerVersion) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = tenantId;
         this.parentType = parentType;
@@ -73,6 +85,9 @@ public class ContextChunk {
         this.chunkIndex = chunkIndex;
         this.content = content == null ? "" : content;
         this.contentHash = contentHash;
+        this.chunkStrategy = chunkStrategy == null || chunkStrategy.isBlank() ? "DETERMINISTIC" : chunkStrategy;
+        this.chunkerVersion = chunkerVersion == null || chunkerVersion.isBlank()
+                ? "deterministic-v1" : chunkerVersion;
         this.characterCount = this.content.length();
         this.createdAt = Instant.now();
         this.updatedAt = this.createdAt;
@@ -98,6 +113,8 @@ public class ContextChunk {
     public int getChunkIndex() { return chunkIndex; }
     public String getContent() { return content; }
     public String getContentHash() { return contentHash; }
+    public String getChunkStrategy() { return chunkStrategy; }
+    public String getChunkerVersion() { return chunkerVersion; }
     public int getCharacterCount() { return characterCount; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

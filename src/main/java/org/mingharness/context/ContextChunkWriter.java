@@ -13,21 +13,23 @@ import java.util.List;
 public class ContextChunkWriter {
 
     private final ContextChunkRepository chunkRepository;
-    private final ContextChunker chunker;
+    private final ContextSemanticChunker semanticChunker;
 
-    public ContextChunkWriter(ContextChunkRepository chunkRepository, ContextChunker chunker) {
+    public ContextChunkWriter(ContextChunkRepository chunkRepository, ContextSemanticChunker semanticChunker) {
         this.chunkRepository = chunkRepository;
-        this.chunker = chunker;
+        this.semanticChunker = semanticChunker;
     }
 
-    public void replace(String tenantId, String parentType, String parentId, String content) {
+    public int replace(String tenantId, String parentType, String parentId, String content) {
         chunkRepository.deleteByParentTypeAndParentId(parentType, parentId);
+        ContextChunkingResult result = semanticChunker.chunk(content);
         List<ContextChunk> chunks = new ArrayList<>();
-        for (ContextChunkDraft draft : chunker.chunk(content)) {
+        for (ContextChunkDraft draft : result.chunks()) {
             chunks.add(new ContextChunk(tenantId, parentType, parentId, draft.chunkIndex(),
-                    draft.content(), sha256(draft.content())));
+                    draft.content(), sha256(draft.content()), result.strategy(), result.version()));
         }
         if (!chunks.isEmpty()) chunkRepository.saveAll(chunks);
+        return chunks.size();
     }
 
     public boolean hasActiveChunks(String parentType, String parentId) {

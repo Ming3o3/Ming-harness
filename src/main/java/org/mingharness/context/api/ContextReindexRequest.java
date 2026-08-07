@@ -18,8 +18,13 @@ public record ContextReindexRequest(
         Integer parentLimit,
         @Min(value = 1, message = "chunk 数量上限必须至少为 1")
         @Max(value = 5000, message = "chunk 数量上限不能超过 5000")
-        Integer chunkLimit
+        Integer chunkLimit,
+        Boolean rechunk
 ) {
+
+    public ContextReindexRequest(String scope, Integer parentLimit, Integer chunkLimit) {
+        this(scope, parentLimit, chunkLimit, false);
+    }
 
     public String effectiveScope() {
         return scope == null || scope.isBlank() ? "ALL" : scope.trim().toUpperCase(java.util.Locale.ROOT);
@@ -31,5 +36,9 @@ public record ContextReindexRequest(
 
     public int effectiveChunkLimit() {
         return chunkLimit == null ? 1000 : Math.min(5000, Math.max(1, chunkLimit));
+    }
+
+    public boolean shouldRechunk() {
+        return Boolean.TRUE.equals(rechunk);
     }
 }

@@ -41,6 +41,10 @@ class ContextIndexRebuildServiceTests {
                 .thenReturn(List.of(activeMemory, expiredMemory));
         when(chunkWriter.hasActiveChunks("DOCUMENT", document.getId())).thenReturn(false);
         when(chunkWriter.hasActiveChunks("MEMORY", activeMemory.getId())).thenReturn(false);
+        when(chunkWriter.replace("tenant-a", "DOCUMENT", document.getId(), "规则\n订单需要审核"))
+                .thenReturn(2);
+        when(chunkWriter.replace("tenant-a", "MEMORY", activeMemory.getId(), "preference\n偏好中文"))
+                .thenReturn(2);
         when(chunkRepository.countByParentTypeAndParentIdAndDeletedAtIsNull(
                 ArgumentMatchers.anyString(), ArgumentMatchers.anyString())).thenReturn(2L);
         when(embeddingIndexer.ready()).thenReturn(false);
@@ -64,5 +68,35 @@ class ContextIndexRebuildServiceTests {
         verify(chunkWriter).replace("tenant-a", "DOCUMENT", document.getId(), "规则\n订单需要审核");
         verify(chunkWriter).replace("tenant-a", "MEMORY", activeMemory.getId(), "preference\n偏好中文");
         verify(chunkWriter, never()).hasActiveChunks("MEMORY", expiredMemory.getId());
+    }
+
+    @Test
+    void shouldRechunkExistingParentsWhenExplicitlyRequested() {
+        KnowledgeDocumentRepository documentRepository = mock(KnowledgeDocumentRepository.class);
+        MemoryEntryRepository memoryRepository = mock(MemoryEntryRepository.class);
+        ContextChunkRepository chunkRepository = mock(ContextChunkRepository.class);
+        ContextChunkWriter chunkWriter = mock(ContextChunkWriter.class);
+        ContextEmbeddingIndexer embeddingIndexer = mock(ContextEmbeddingIndexer.class);
+        KnowledgeDocument document = new KnowledgeDocument("tenant-a", "owner", "规则",
+                "新分块内容", "INTERNAL", "");
+        when(documentRepository.findByTenantIdAndDeletedAtIsNullOrderByCreatedAtAsc("tenant-a", PageRequest.of(0, 1)))
+                .thenReturn(List.of(document));
+        when(chunkWriter.replace("tenant-a", "DOCUMENT", document.getId(), "规则\n新分块内容"))
+                .thenReturn(3);
+        when(embeddingIndexer.ready()).thenReturn(false);
+        when(chunkRepository.findByTenantIdAndDeletedAtIsNullAndEmbeddedAtIsNullOrderByCreatedAtAsc(
+                "tenant-a", PageRequest.of(0, 5))).thenReturn(List.of());
+        when(chunkRepository.countByTenantIdAndDeletedAtIsNullAndEmbeddedAtIsNull("tenant-a"))
+                .thenReturn(3L);
+
+        ContextIndexRebuildService service = new ContextIndexRebuildService(documentRepository,
+                memoryRepository, chunkRepository, chunkWriter, embeddingIndexer,
+                new HarnessMetrics(new SimpleMeterRegistry()));
+        ContextReindexResponse result = service.rebuild("tenant-a",
+                new ContextReindexRequest("DOCUMENT", 1, 5, true));
+
+        assertEquals(1, result.parentsRebuilt());
+        assertEquals(3, result.chunksCreated());
+        verify(chunkWriter).replace("tenant-a", "DOCUMENT", document.getId(), "规则\n新分块内容");
     }
 }

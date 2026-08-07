@@ -50,7 +50,7 @@ public class ContextIndexRebuildService {
         if (tenantId == null || tenantId.isBlank()) {
             throw new IllegalArgumentException("租户不能为空");
         }
-        ContextReindexRequest effective = request == null ? new ContextReindexRequest(null, null, null) : request;
+        ContextReindexRequest effective = request == null ? new ContextReindexRequest(null, null, null, false) : request;
         String scope = effective.effectiveScope();
         int parentLimit = effective.effectiveParentLimit();
         int chunkLimit = effective.effectiveChunkLimit();
@@ -59,12 +59,11 @@ public class ContextIndexRebuildService {
         int parentsRebuilt = 0;
         int chunksCreated = 0;
         for (ParentRef parent : parents) {
-            if (chunkWriter.hasActiveChunks(parent.type(), parent.id())) {
+            if (!effective.shouldRechunk() && chunkWriter.hasActiveChunks(parent.type(), parent.id())) {
                 continue;
             }
-            chunkWriter.replace(tenantId, parent.type(), parent.id(), parent.content());
+            chunksCreated += chunkWriter.replace(tenantId, parent.type(), parent.id(), parent.content());
             parentsRebuilt++;
-            chunksCreated += countChunks(parent.type(), parent.id());
         }
 
         List<ContextChunk> pending = chunkRepository
@@ -119,11 +118,6 @@ public class ContextIndexRebuildService {
                         Comparator.nullsLast(Comparator.naturalOrder())))
                 .limit(limit)
                 .toList();
-    }
-
-    private int countChunks(String parentType, String parentId) {
-        long count = chunkRepository.countByParentTypeAndParentIdAndDeletedAtIsNull(parentType, parentId);
-        return safeInt(count);
     }
 
     private int safeInt(long value) {
