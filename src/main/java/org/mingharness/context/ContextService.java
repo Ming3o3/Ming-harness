@@ -9,10 +9,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,20 +21,20 @@ public class ContextService {
     private final KnowledgeDocumentRepository documentRepository;
     private final MemoryEntryRepository memoryRepository;
     private final ContextChunkRepository chunkRepository;
-    private final ContextChunker chunker;
+    private final ContextChunkWriter chunkWriter;
     private final ContextEmbeddingIndexer embeddingIndexer;
     private final SensitiveDataSanitizer sanitizer;
 
     public ContextService(KnowledgeDocumentRepository documentRepository,
                           MemoryEntryRepository memoryRepository,
                           ContextChunkRepository chunkRepository,
-                          ContextChunker chunker,
+                          ContextChunkWriter chunkWriter,
                           ContextEmbeddingIndexer embeddingIndexer,
                           SensitiveDataSanitizer sanitizer) {
         this.documentRepository = documentRepository;
         this.memoryRepository = memoryRepository;
         this.chunkRepository = chunkRepository;
-        this.chunker = chunker;
+        this.chunkWriter = chunkWriter;
         this.embeddingIndexer = embeddingIndexer;
         this.sanitizer = sanitizer;
     }
@@ -48,7 +44,7 @@ public class ContextService {
         KnowledgeDocument document = documentRepository.save(new KnowledgeDocument(tenantId, userId,
                 sanitizer.sanitize(request.title()), sanitizer.sanitize(request.content()),
                 sanitizer.sanitize(request.sensitivity()), sanitizer.sanitize(request.allowedUsers())));
-        replaceChunks(tenantId, "DOCUMENT", document.getId(),
+        chunkWriter.replace(tenantId, "DOCUMENT", document.getId(),
                 document.getTitle() + "\n" + document.getContent());
         indexChunks("DOCUMENT", document.getId());
         return document;
@@ -82,7 +78,7 @@ public class ContextService {
         }
         MemoryEntry memory = memoryRepository.save(new MemoryEntry(tenantId, userId, sanitizer.sanitize(request.memoryType()),
                 sanitizer.sanitize(request.content()), sanitizer.sanitize(request.sourceRunId()), request.expiresAt()));
-        replaceChunks(tenantId, "MEMORY", memory.getId(),
+        chunkWriter.replace(tenantId, "MEMORY", memory.getId(),
                 memory.getMemoryType() + "\n" + memory.getContent());
         indexChunks("MEMORY", memory.getId());
         return memory;
@@ -114,18 +110,6 @@ public class ContextService {
         }
     }
 
-    private void replaceChunks(String tenantId, String parentType, String parentId, String content) {
-        chunkRepository.deleteByParentTypeAndParentId(parentType, parentId);
-        List<ContextChunk> chunks = new ArrayList<>();
-        for (var draft : chunker.chunk(content)) {
-            chunks.add(new ContextChunk(tenantId, parentType, parentId, draft.chunkIndex(),
-                    draft.content(), sha256(draft.content())));
-        }
-        if (!chunks.isEmpty()) {
-            chunkRepository.saveAll(chunks);
-        }
-    }
-
     private void markChunksDeleted(String parentType, String parentId) {
         List<ContextChunk> chunks = chunkRepository
                 .findByParentTypeAndParentIdAndDeletedAtIsNull(parentType, parentId);
@@ -146,17 +130,4 @@ public class ContextService {
         }
     }
 
-    private String sha256(String value) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(StandardCharsets.UTF_8));
-            StringBuilder result = new StringBuilder(digest.length * 2);
-            for (byte item : digest) {
-                result.append(String.format("%02x", item));
-            }
-            return result.toString();
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("JVM 缺少 SHA-256 算法", exception);
-        }
-    }
 }

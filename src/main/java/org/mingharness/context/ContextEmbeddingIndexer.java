@@ -33,6 +33,11 @@ public class ContextEmbeddingIndexer {
         if (!embeddingGateway.enabled() || !embeddingStore.supported()) return 0;
         List<ContextChunk> chunks = chunkRepository
                 .findByParentTypeAndParentIdAndDeletedAtIsNullOrderByChunkIndexAsc(parentType, parentId);
+        return indexChunks(chunks);
+    }
+
+    public int indexChunks(List<ContextChunk> chunks) {
+        if (!embeddingGateway.enabled() || !embeddingStore.supported() || chunks == null || chunks.isEmpty()) return 0;
         int indexed = 0;
         for (int start = 0; start < chunks.size(); start += properties.batchSize()) {
             List<ContextChunk> batch = chunks.subList(start,
@@ -52,6 +57,9 @@ public class ContextEmbeddingIndexer {
                 updates.add(new ContextEmbeddingUpdate(batch.get(index), vector));
             }
             embeddingStore.save(updates);
+            for (ContextEmbeddingUpdate update : updates) {
+                update.chunk().markEmbedded(update.vector().model());
+            }
             indexed += updates.size();
         }
         return indexed;

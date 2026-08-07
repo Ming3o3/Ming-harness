@@ -53,6 +53,12 @@ public class ContextChunk {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Column(name = "embedding_model", length = 128)
+    private String embeddingModel;
+
+    @Column(name = "embedded_at")
+    private Instant embeddedAt;
+
     private Instant deletedAt;
 
     protected ContextChunk() {
@@ -79,6 +85,12 @@ public class ContextChunk {
         }
     }
 
+    public void markEmbedded(String model) {
+        this.embeddingModel = model;
+        this.embeddedAt = Instant.now();
+        this.updatedAt = this.embeddedAt;
+    }
+
     public String getId() { return id; }
     public String getTenantId() { return tenantId; }
     public String getParentType() { return parentType; }
@@ -89,5 +101,7 @@ public class ContextChunk {
     public int getCharacterCount() { return characterCount; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public String getEmbeddingModel() { return embeddingModel; }
+    public Instant getEmbeddedAt() { return embeddedAt; }
     public Instant getDeletedAt() { return deletedAt; }
 }
