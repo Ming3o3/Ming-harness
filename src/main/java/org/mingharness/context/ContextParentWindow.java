@@ -85,4 +85,11 @@ public class ContextParentWindow {
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getDeletedAt() { return deletedAt; }
 
+    public void markDeleted() {
+        if (deletedAt == null) {
+            deletedAt = Instant.now();
+            updatedAt = deletedAt;
+        }
+    }
+
 }

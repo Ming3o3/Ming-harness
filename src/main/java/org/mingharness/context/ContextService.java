@@ -17,6 +17,7 @@ public class ContextService {
     private final KnowledgeDocumentRepository documentRepository;
     private final MemoryEntryRepository memoryRepository;
     private final ContextChunkRepository chunkRepository;
+    private final ContextParentWindowRepository parentWindowRepository;
     private final ContextChunkWriter chunkWriter;
     private final ContextEmbeddingDispatcher embeddingDispatcher;
     private final SensitiveDataSanitizer sanitizer;
@@ -24,12 +25,14 @@ public class ContextService {
     public ContextService(KnowledgeDocumentRepository documentRepository,
                           MemoryEntryRepository memoryRepository,
                           ContextChunkRepository chunkRepository,
+                          ContextParentWindowRepository parentWindowRepository,
                           ContextChunkWriter chunkWriter,
                           ContextEmbeddingDispatcher embeddingDispatcher,
                           SensitiveDataSanitizer sanitizer) {
         this.documentRepository = documentRepository;
         this.memoryRepository = memoryRepository;
         this.chunkRepository = chunkRepository;
+        this.parentWindowRepository = parentWindowRepository;
         this.chunkWriter = chunkWriter;
         this.embeddingDispatcher = embeddingDispatcher;
         this.sanitizer = sanitizer;
@@ -64,6 +67,7 @@ public class ContextService {
         document.markDeleted();
         documentRepository.save(document);
         markChunksDeleted("DOCUMENT", document.getId());
+        markParentWindowsDeleted(tenantId, "DOCUMENT", document.getId());
     }
 
     @Transactional
@@ -98,6 +102,7 @@ public class ContextService {
         memory.markDeleted();
         memoryRepository.save(memory);
         markChunksDeleted("MEMORY", memory.getId());
+        markParentWindowsDeleted(tenantId, "MEMORY", memory.getId());
     }
 
     private void assertTenant(String actualTenantId, String expectedTenantId) {
@@ -117,6 +122,16 @@ public class ContextService {
 
     private void dispatchIndex(String parentType, String parentId) {
         embeddingDispatcher.dispatchAfterCommit(parentType, parentId);
+    }
+
+    private void markParentWindowsDeleted(String tenantId, String parentType, String parentId) {
+        List<ContextParentWindow> windows = parentWindowRepository
+                .findByTenantIdAndParentTypeAndParentIdAndDeletedAtIsNullOrderByWindowIndexAsc(
+                        tenantId, parentType, parentId);
+        windows.forEach(ContextParentWindow::markDeleted);
+        if (!windows.isEmpty()) {
+            parentWindowRepository.saveAll(windows);
+        }
     }
 
 }

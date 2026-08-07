@@ -28,11 +28,14 @@ class ContextServiceTests {
     private MemoryEntryRepository memoryRepository;
     @Autowired
     private ContextChunkRepository chunkRepository;
+    @Autowired
+    private ContextParentWindowRepository parentWindowRepository;
 
     @BeforeEach
     void cleanDatabase() {
         memoryRepository.deleteAll();
         chunkRepository.deleteAll();
+        parentWindowRepository.deleteAll();
         documentRepository.deleteAll();
     }
 
@@ -109,10 +112,19 @@ class ContextServiceTests {
         assertEquals(0, chunks.get(0).getChunkIndex());
         assertEquals(chunks.size() - 1, chunks.get(chunks.size() - 1).getChunkIndex());
         assertTrue(chunks.stream().allMatch(chunk -> chunk.getTenantId().equals("tenant-a")));
+        var windows = parentWindowRepository
+                .findByTenantIdAndParentTypeAndParentIdAndDeletedAtIsNullOrderByWindowIndexAsc(
+                        "tenant-a", "DOCUMENT", document.getId());
+        assertTrue(windows.size() > 1);
 
         contextService.deleteDocument("tenant-a", "owner", document.getId());
 
         assertEquals(0, chunkRepository.findByParentTypeAndParentIdAndDeletedAtIsNullOrderByChunkIndexAsc(
                 "DOCUMENT", document.getId()).size());
+        assertEquals(0, parentWindowRepository
+                .findByTenantIdAndParentTypeAndParentIdAndDeletedAtIsNullOrderByWindowIndexAsc(
+                        "tenant-a", "DOCUMENT", document.getId()).size());
+        assertTrue(windows.stream().allMatch(window -> parentWindowRepository.findById(window.getId())
+                .map(ContextParentWindow::getDeletedAt).orElse(null) != null));
     }
 }
