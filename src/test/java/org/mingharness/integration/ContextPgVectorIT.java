@@ -9,9 +9,17 @@ import org.mingharness.context.ContextEmbeddingUpdate;
 import org.mingharness.context.ContextParentWindow;
 import org.mingharness.context.ContextParentWindowRepository;
 import org.mingharness.context.EmbeddingVector;
+import org.mingharness.context.EmbeddingGateway;
+import org.mingharness.context.VectorContextRetriever;
+import org.mingharness.common.SensitiveDataSanitizer;
+import org.mingharness.config.ContextRetrievalProperties;
+import org.mingharness.config.EmbeddingProperties;
+import org.mingharness.context.KnowledgeDocument;
+import org.mingharness.context.KnowledgeDocumentRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.TestPropertySource;
 
@@ -21,6 +29,9 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /** 在真实 PostgreSQL + pgvector 上验证迁移、向量写入和余弦运算。 */
 @SpringBootTest
@@ -45,6 +56,10 @@ class ContextPgVectorIT {
     private ContextEmbeddingCache embeddingCache;
     @Autowired
     private ContextParentWindowRepository parentWindowRepository;
+    @Autowired
+    private KnowledgeDocumentRepository documentRepository;
+    @Autowired
+    private NamedParameterJdbcTemplate namedParameterJdbcTemplate;
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
@@ -126,6 +141,60 @@ class ContextPgVectorIT {
         assertTrue(embeddingCache.find(tenantId, hash, "requested-model", "v2", 1536).isEmpty());
 
         jdbcTemplate.update("DELETE FROM harness_context_embedding_cache WHERE tenant_id = ?", tenantId);
+    }
+
+    @Test
+    void shouldKeepMultipleParentSourcesWhenOneDocumentHasManyMatchingChunks() {
+        String tenantId = "tenant-diversity-" + UUID.randomUUID();
+        String userId = "operator";
+        KnowledgeDocument dominant = documentRepository.saveAndFlush(new KnowledgeDocument(
+                tenantId, userId, "主文档", "主文档内容", "INTERNAL", ""));
+        KnowledgeDocument secondary = documentRepository.saveAndFlush(new KnowledgeDocument(
+                tenantId, userId, "次文档", "次文档内容", "INTERNAL", ""));
+
+        List<ContextChunk> chunks = new ArrayList<>();
+        for (int index = 0; index < 6; index++) {
+            chunks.add(new ContextChunk(tenantId, "DOCUMENT", dominant.getId(), index,
+                    "主文档命中片段 " + index, "dominant-hash-" + index));
+        }
+        chunks.add(new ContextChunk(tenantId, "DOCUMENT", secondary.getId(), 0,
+                "次文档命中片段", "secondary-hash"));
+        chunkRepository.saveAllAndFlush(chunks);
+
+        List<ContextEmbeddingUpdate> updates = new ArrayList<>();
+        for (int index = 0; index < 6; index++) {
+            updates.add(new ContextEmbeddingUpdate(chunks.get(index), vectorUpdate(1.0, 0.0)));
+        }
+        updates.add(new ContextEmbeddingUpdate(chunks.get(6), vectorUpdate(0.8, 0.6)));
+        embeddingStore.save(updates);
+
+        EmbeddingGateway gateway = mock(EmbeddingGateway.class);
+        when(gateway.enabled()).thenReturn(true);
+        when(gateway.embed(anyList())).thenReturn(List.of(vectorUpdate(1.0, 0.0)));
+        ContextRetrievalProperties retrievalProperties = new ContextRetrievalProperties(
+                2, 2, 0, 0.0, true, 60, 1.0, 0.7, 3, 1);
+        EmbeddingProperties embeddingProperties = new EmbeddingProperties(true, "http://embedding", "key",
+                "model", 1536, 8, 1_000, 100_000, 1, 0, 10_000);
+        VectorContextRetriever retriever = new VectorContextRetriever(namedParameterJdbcTemplate,
+                chunkRepository, parentWindowRepository, gateway, embeddingStore, embeddingProperties,
+                retrievalProperties, new SensitiveDataSanitizer(), embeddingCache, null);
+
+        var result = retriever.retrieve(tenantId, userId, "命中", 8_000);
+
+        assertEquals(2, result.evidences().size());
+        assertTrue(result.evidences().stream().anyMatch(item -> item.documentId().equals(dominant.getId())));
+        assertTrue(result.evidences().stream().anyMatch(item -> item.documentId().equals(secondary.getId())));
+
+        jdbcTemplate.update("DELETE FROM harness_context_chunks WHERE tenant_id = ?", tenantId);
+        jdbcTemplate.update("DELETE FROM harness_context_documents WHERE tenant_id = ?", tenantId);
+        jdbcTemplate.update("DELETE FROM harness_context_embedding_cache WHERE tenant_id = ?", tenantId);
+    }
+
+    private EmbeddingVector vectorUpdate(double first, double second) {
+        List<Double> values = new ArrayList<>(java.util.Collections.nCopies(1536, 0.0));
+        values.set(0, first);
+        values.set(1, second);
+        return new EmbeddingVector("integration-model", values);
     }
 
     private String vectorLiteral(List<Double> values) {

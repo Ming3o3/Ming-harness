@@ -26,43 +26,65 @@ import java.util.Optional;
 public class VectorContextRetriever {
 
     private static final String SEARCH_SQL = """
-            SELECT c.id AS chunk_id,
-                   c.parent_type,
-                   c.parent_id,
-                   c.chunk_index,
-                   c.content,
-                   c.parent_window_id,
-                   w.window_index AS parent_window_index,
-                   CASE WHEN c.parent_type = 'DOCUMENT' THEN d.title
-                        ELSE '记忆 · ' || m.memory_type END AS title,
-                   1 - (c.embedding <=> CAST(:queryVector AS vector)) AS similarity
-              FROM harness_context_chunks c
-              LEFT JOIN harness_context_documents d
-                ON c.parent_type = 'DOCUMENT' AND d.id = c.parent_id
-              LEFT JOIN harness_context_memories m
-                ON c.parent_type = 'MEMORY' AND m.id = c.parent_id
-              LEFT JOIN harness_context_parent_windows w
-                ON c.parent_window_id = w.id
-               AND w.deleted_at IS NULL
-               AND w.tenant_id = c.tenant_id
-               AND w.parent_type = c.parent_type
-               AND w.parent_id = c.parent_id
-             WHERE c.tenant_id = :tenantId
-               AND c.deleted_at IS NULL
-               AND c.embedding IS NOT NULL
-               AND (
-                    (c.parent_type = 'DOCUMENT'
-                     AND d.deleted_at IS NULL
-                     AND (d.allowed_users IS NULL OR d.allowed_users = ''
-                          OR :userId = ANY(string_to_array(d.allowed_users, ','))))
-                    OR
-                    (c.parent_type = 'MEMORY'
-                     AND m.deleted_at IS NULL
-                     AND m.user_id = :userId
-                     AND (m.expires_at IS NULL OR m.expires_at > CURRENT_TIMESTAMP))
-               )
-               AND 1 - (c.embedding <=> CAST(:queryVector AS vector)) >= :minSimilarity
-             ORDER BY c.embedding <=> CAST(:queryVector AS vector)
+            WITH vector_candidates AS (
+                SELECT c.id AS chunk_id,
+                       c.parent_type,
+                       c.parent_id,
+                       c.chunk_index,
+                       c.content,
+                       c.parent_window_id,
+                       w.window_index AS parent_window_index,
+                       CASE WHEN c.parent_type = 'DOCUMENT' THEN d.title
+                            ELSE '记忆 · ' || m.memory_type END AS title,
+                       1 - (c.embedding <=> CAST(:queryVector AS vector)) AS similarity
+                  FROM harness_context_chunks c
+                  LEFT JOIN harness_context_documents d
+                    ON c.parent_type = 'DOCUMENT' AND d.id = c.parent_id
+                  LEFT JOIN harness_context_memories m
+                    ON c.parent_type = 'MEMORY' AND m.id = c.parent_id
+                  LEFT JOIN harness_context_parent_windows w
+                    ON c.parent_window_id = w.id
+                   AND w.deleted_at IS NULL
+                   AND w.tenant_id = c.tenant_id
+                   AND w.parent_type = c.parent_type
+                   AND w.parent_id = c.parent_id
+                 WHERE c.tenant_id = :tenantId
+                   AND c.deleted_at IS NULL
+                   AND c.embedding IS NOT NULL
+                   AND (
+                        (c.parent_type = 'DOCUMENT'
+                         AND d.deleted_at IS NULL
+                         AND (d.allowed_users IS NULL OR d.allowed_users = ''
+                              OR :userId = ANY(string_to_array(d.allowed_users, ','))))
+                        OR
+                        (c.parent_type = 'MEMORY'
+                         AND m.deleted_at IS NULL
+                         AND m.user_id = :userId
+                         AND (m.expires_at IS NULL OR m.expires_at > CURRENT_TIMESTAMP))
+                   )
+                   AND 1 - (c.embedding <=> CAST(:queryVector AS vector)) >= :minSimilarity
+                 ORDER BY c.embedding <=> CAST(:queryVector AS vector), c.id
+                 LIMIT :candidatePoolLimit
+            ), ranked_candidates AS (
+                SELECT vector_candidates.*,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY parent_type, parent_id
+                           ORDER BY similarity DESC, chunk_id
+                       ) AS parent_rank
+                  FROM vector_candidates
+            )
+            SELECT chunk_id,
+                   parent_type,
+                   parent_id,
+                   chunk_index,
+                   content,
+                   parent_window_id,
+                   parent_window_index,
+                   title,
+                   similarity
+              FROM ranked_candidates
+             WHERE parent_rank <= :maxCandidatesPerParent
+             ORDER BY similarity DESC, chunk_id
              LIMIT :candidateLimit
             """;
 
@@ -137,6 +159,8 @@ public class VectorContextRetriever {
                 .addValue("userId", userId)
                 .addValue("queryVector", vectorLiteral(queryVector))
                 .addValue("minSimilarity", retrievalProperties.minSimilarity())
+                .addValue("candidatePoolLimit", retrievalProperties.candidatePoolLimit())
+                .addValue("maxCandidatesPerParent", retrievalProperties.maxCandidatesPerParent())
                 .addValue("candidateLimit", retrievalProperties.expandedCandidateLimit())
                 .getValues();
         List<VectorHit> hits = jdbcTemplate.query(SEARCH_SQL, new MapSqlParameterSource(parameters),

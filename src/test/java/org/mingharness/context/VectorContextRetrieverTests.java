@@ -57,8 +57,13 @@ class VectorContextRetrieverTests {
         assertTrue(result.text().contains("验证结果"));
 
         ArgumentCaptor<SqlParameterSource> parameters = ArgumentCaptor.forClass(SqlParameterSource.class);
-        verify(jdbcTemplate).query(anyString(), parameters.capture(), any(RowMapper.class));
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        verify(jdbcTemplate).query(sql.capture(), parameters.capture(), any(RowMapper.class));
+        assertTrue(sql.getValue().contains("ROW_NUMBER() OVER"));
+        assertTrue(sql.getValue().contains("PARTITION BY parent_type, parent_id"));
         assertEquals(60, parameters.getValue().getValue("candidateLimit"));
+        assertEquals(1_200, parameters.getValue().getValue("candidatePoolLimit"));
+        assertEquals(4, parameters.getValue().getValue("maxCandidatesPerParent"));
     }
 
     @Test
