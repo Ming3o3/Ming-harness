@@ -109,17 +109,23 @@ public class ContextBuilder {
     private ContextResult merge(ContextResult vectorResult, ContextResult keywordResult, int maxChars) {
         List<ContextEvidence> evidences = new ArrayList<>();
         StringBuilder text = new StringBuilder();
-        java.util.Set<String> sources = new java.util.HashSet<>();
-        appendResult(vectorResult, maxChars, text, evidences, sources);
-        appendResult(keywordResult, maxChars, text, evidences, sources);
+        java.util.Set<String> evidenceKeys = new java.util.HashSet<>();
+        java.util.Set<String> vectorParents = vectorResult.evidences().stream()
+                .map(evidence -> parentKey(evidence.citation()))
+                .collect(java.util.stream.Collectors.toSet());
+        appendResult(vectorResult, maxChars, text, evidences, evidenceKeys, java.util.Set.of());
+        appendResult(keywordResult, maxChars, text, evidences, evidenceKeys, vectorParents);
         return new ContextResult(text.toString(), List.copyOf(evidences));
     }
 
     private void appendResult(ContextResult result, int maxChars, StringBuilder text,
-                              List<ContextEvidence> evidences, java.util.Set<String> sources) {
+                              List<ContextEvidence> evidences,
+                              java.util.Set<String> evidenceKeys,
+                              java.util.Set<String> protectedParents) {
         for (ContextEvidence evidence : result.evidences()) {
-            String source = sourceKey(evidence.citation());
-            if (!sources.add(source)) continue;
+            if (protectedParents.contains(parentKey(evidence.citation()))) continue;
+            String source = evidenceKey(evidence.citation());
+            if (!evidenceKeys.add(source)) continue;
             String block = "[" + evidence.citation() + "] " + evidence.title() + "\n"
                     + evidence.excerpt() + "\n";
             if (text.length() + block.length() > maxChars) continue;
@@ -128,10 +134,22 @@ public class ContextBuilder {
         }
     }
 
-    private String sourceKey(String citation) {
+    /** 同一父窗口内的多个子块只保留一份证据，但同一父文档的不同窗口可以并列返回。 */
+    private String evidenceKey(String citation) {
         if (citation == null) return "";
         int chunk = citation.indexOf("#chunk:");
         return chunk < 0 ? citation : citation.substring(0, chunk);
+    }
+
+    /** 关键词结果是整篇父文档，需按父文档 ID 与向量窗口结果比较，避免重复补充。 */
+    private String parentKey(String citation) {
+        if (citation == null) return "";
+        int window = citation.indexOf("#window:");
+        int chunk = citation.indexOf("#chunk:");
+        int end = citation.length();
+        if (window >= 0) end = Math.min(end, window);
+        if (chunk >= 0) end = Math.min(end, chunk);
+        return citation.substring(0, end);
     }
 
     private int score(String searchable, String[] terms) {
