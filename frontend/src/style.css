@@ -389,6 +389,21 @@ h3 { margin: 0; font-size: 13px; }
 .memory-row p { display: -webkit-box; overflow: hidden; margin: 6px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .retrieval-evaluation-card { min-width: 0; }
 .retrieval-evaluation-card code { color: var(--accent-light); font: inherit; }
+.retrieval-source-picker { display: grid; gap: 9px; max-height: 260px; overflow: auto; border: 1px solid rgba(153,174,218,.16); border-radius: 7px; background: var(--input-bg); padding: 9px; }
+.retrieval-source-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--line); padding-bottom: 8px; color: var(--muted); font: 9px "DM Mono", monospace; }
+.retrieval-source-actions { display: flex; gap: 8px; }
+.retrieval-source-action { border: 0; background: transparent; color: var(--accent-light); padding: 0; font: 9px "DM Mono", monospace; cursor: pointer; }
+.retrieval-source-action:hover:not(:disabled) { color: var(--soft); }
+.retrieval-source-action:disabled { cursor: not-allowed; opacity: .45; }
+.retrieval-source-group { display: grid; gap: 5px; }
+.retrieval-source-group-title { color: var(--muted); font: 9px "DM Mono", monospace; }
+.retrieval-source-option { display: flex; align-items: flex-start; gap: 8px; min-width: 0; border: 1px solid transparent; border-radius: 6px; padding: 7px 6px; cursor: pointer; transition: .16s ease; }
+.retrieval-source-option:hover { border-color: rgba(141,124,255,.24); background: var(--hover-bg); }
+.retrieval-source-option input { width: 15px; height: 15px; flex: 0 0 auto; margin: 1px 0 0; accent-color: var(--accent); }
+.retrieval-source-option > span { display: grid; min-width: 0; gap: 3px; }
+.retrieval-source-option strong { overflow: hidden; color: var(--soft); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.retrieval-source-option small { overflow: hidden; color: var(--muted); font: 8px/1.45 "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.retrieval-source-empty { padding: 10px 0 5px; }
 .retrieval-evaluation-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .retrieval-report-list { display: grid; gap: 5px; margin-top: 3px; border-top: 1px solid var(--line); padding-top: 12px; }
 .retrieval-report-row { display: grid; gap: 8px; border-bottom: 1px solid rgba(153,174,218,.08); padding: 9px 0; }

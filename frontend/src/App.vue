@@ -368,7 +368,6 @@ const form = reactive({
 
 const documentForm = reactive({
   title: '订单处理规则',
-  content: '订单状态变更必须经过审核，并保留操作来源。',
   sensitivity: 'INTERNAL',
   allowedUsers: '',
 })
@@ -383,13 +382,33 @@ const memoryDeletingId = ref('')
 const retrievalEvaluationForm = reactive({
   name: '检索基线',
   query: '',
-  relevantSources: '',
   expectedContains: '',
   topK: 5,
   maxChars: 4000,
 })
+// 评测用例提交时仍使用 document:<id>/memory:<id>，界面通过可见名称让用户选择来源。
+const selectedRetrievalSources = ref([])
 const retrievalEvaluationLoading = ref(false)
 const retrievalEvaluationError = ref('')
+
+const retrievalSourceValues = computed(() => new Set([
+  ...documents.value.map((document) => `document:${document.id}`),
+  ...memories.value.map((memory) => `memory:${memory.id}`),
+]))
+
+function retrievalSourceValue(type, id) {
+  return `${type}:${id}`
+}
+
+function selectAllRetrievalDocuments() {
+  const documentSources = documents.value.map((document) => retrievalSourceValue('document', document.id))
+  const existingMemorySources = selectedRetrievalSources.value.filter((source) => source.startsWith('memory:'))
+  selectedRetrievalSources.value = [...new Set([...existingMemorySources, ...documentSources])].slice(0, 50)
+}
+
+function clearRetrievalSources() {
+  selectedRetrievalSources.value = []
+}
 
 const contextPreviewPresets = [
   '如何回滚发布',
@@ -2271,6 +2290,8 @@ async function loadDashboard() {
     summary.value = summaryData
     documents.value = documentData
     memories.value = memoryData
+    // 刷新文档/记忆列表后移除已经不存在的勾选项，避免提交失效来源。
+    selectedRetrievalSources.value = selectedRetrievalSources.value.filter((source) => retrievalSourceValues.value.has(source))
     evaluations.value = evaluationData
     retrievalEvaluations.value = retrievalEvaluationData
     contextConfiguration.value = contextConfigurationData
@@ -2867,23 +2888,22 @@ function clearDocumentUploadFile() {
 
 async function createDocument() {
   clearMessages()
+  if (!documentUploadFile.value) {
+    documentUploadError.value = '请先选择一个 PDF 或 DOCX 文件。'
+    return
+  }
   loading.value = true
   try {
-    if (documentUploadFile.value) {
-      documentUploading.value = true
-      const document = await api.uploadDocument({
-        file: documentUploadFile.value,
-        title: documentForm.title,
-        sensitivity: documentForm.sensitivity,
-        allowedUsers: documentForm.allowedUsers,
-      })
-      documents.value = [document, ...documents.value.filter((item) => item.id !== document.id)]
-      clearDocumentUploadFile()
-      noticeMessage.value = '文件已解析并建立知识索引；后续模型步骤会按组织和用户权限检索'
-    } else {
-      await api.createDocument({ ...documentForm })
-      noticeMessage.value = '知识文档已保存，后续模型步骤会按组织和用户权限检索'
-    }
+    documentUploading.value = true
+    const document = await api.uploadDocument({
+      file: documentUploadFile.value,
+      title: documentForm.title,
+      sensitivity: documentForm.sensitivity,
+      allowedUsers: documentForm.allowedUsers,
+    })
+    documents.value = [document, ...documents.value.filter((item) => item.id !== document.id)]
+    clearDocumentUploadFile()
+    noticeMessage.value = '文件已解析并建立知识索引；后续模型步骤会按组织和用户权限检索'
     await loadDashboard()
   } catch (error) {
     errorMessage.value = errorText(error)
@@ -2902,6 +2922,7 @@ async function deleteDocument(document) {
   try {
     await api.deleteDocument(document.id)
     documents.value = documents.value.filter((item) => item.id !== document.id)
+    selectedRetrievalSources.value = selectedRetrievalSources.value.filter((source) => source !== retrievalSourceValue('document', document.id))
     noticeMessage.value = `知识文档“${document.title}”已删除`
   } catch (error) {
     errorMessage.value = errorText(error)
@@ -2942,6 +2963,7 @@ async function deleteMemory(memory) {
   try {
     await api.deleteMemory(memory.id)
     memories.value = memories.value.filter((item) => item.id !== memory.id)
+    selectedRetrievalSources.value = selectedRetrievalSources.value.filter((source) => source !== retrievalSourceValue('memory', memory.id))
     noticeMessage.value = '长期记忆已删除'
   } catch (error) {
     errorMessage.value = errorText(error)
@@ -3018,10 +3040,7 @@ async function runQuickEvaluation() {
 
 async function runRetrievalEvaluation() {
   const query = retrievalEvaluationForm.query.trim()
-  const relevantSources = retrievalEvaluationForm.relevantSources
-    .split(/[\n,，]+/)
-    .map((value) => value.trim())
-    .filter(Boolean)
+  const relevantSources = selectedRetrievalSources.value.filter(Boolean)
   if (!query || !relevantSources.length || retrievalEvaluationLoading.value) return
   retrievalEvaluationLoading.value = true
   retrievalEvaluationError.value = ''
@@ -4391,7 +4410,7 @@ onBeforeUnmount(() => {
           </section>
           <form class="governance-card" @submit.prevent="createDocument">
             <div class="context-workbench-heading">
-              <div><h3>添加授权知识文档</h3><small class="form-hint">支持 PDF/DOCX 上传解析，也可以直接粘贴文本。</small></div>
+              <div><h3>添加授权知识文档</h3><small class="form-hint">仅支持 PDF/DOCX 上传解析，上传后自动建立索引。</small></div>
               <span class="context-mode-chip">文件 → 文本 → 向量</span>
             </div>
             <div
@@ -4421,9 +4440,8 @@ onBeforeUnmount(() => {
             </div>
             <p v-if="documentUploadError" class="policy-error">{{ documentUploadError }}</p>
             <label class="field"><span>标题</span><input v-model="documentForm.title" required /></label>
-            <label class="field"><span>内容{{ documentUploadFile ? '（上传文件后忽略）' : '' }}</span><textarea v-model="documentForm.content" :required="!documentUploadFile" rows="3"></textarea></label>
             <label class="field"><span>可见用户（逗号分隔，可留空）</span><input v-model="documentForm.allowedUsers" /></label>
-            <button class="secondary-button" type="submit" :disabled="loading || documentUploading">{{ documentUploadFile ? '上传并建立索引' : '保存文档' }}</button>
+            <button class="secondary-button" type="submit" :disabled="loading || documentUploading || !documentUploadFile">上传并建立索引</button>
             <small class="form-hint">当前 {{ documents.length }} 篇文档；模型检索前会先执行组织和用户过滤。</small>
             <div v-if="documents.length" class="document-list" aria-label="已保存知识文档">
               <div v-for="document in documents" :key="document.id" class="document-row">
@@ -4482,16 +4500,59 @@ onBeforeUnmount(() => {
               </div>
               <span class="context-mode-chip">Recall / MRR</span>
             </div>
-            <p class="context-workbench-help">用固定的相关来源验证当前向量、关键词混排和上下文预算，来源填写 <code>document:id</code> 或 <code>memory:id</code>。</p>
+            <p class="context-workbench-help">选择与测试查询相关的知识文档或长期记忆，系统会自动转换为评测所需的来源标识。</p>
             <label class="field"><span>报告名称</span><input v-model="retrievalEvaluationForm.name" required maxlength="200" /></label>
             <label class="field"><span>测试查询</span><textarea v-model="retrievalEvaluationForm.query" rows="2" required placeholder="例如：如何回滚发布？"></textarea></label>
-            <label class="field"><span>相关来源（逗号或换行分隔）</span><textarea v-model="retrievalEvaluationForm.relevantSources" rows="2" required placeholder="document:doc-id"></textarea></label>
+            <div class="field">
+              <span>相关来源（选择文档或记忆）</span>
+              <div class="retrieval-source-picker" role="group" aria-label="选择检索评测相关来源">
+                <div class="retrieval-source-toolbar">
+                  <small>已选择 {{ selectedRetrievalSources.length }} / 50 个来源</small>
+                  <div class="retrieval-source-actions">
+                    <button class="retrieval-source-action" type="button" :disabled="!documents.length" @click="selectAllRetrievalDocuments">全选文档</button>
+                    <button class="retrieval-source-action" type="button" :disabled="!selectedRetrievalSources.length" @click="clearRetrievalSources">清空</button>
+                  </div>
+                </div>
+                <div v-if="documents.length" class="retrieval-source-group">
+                  <small class="retrieval-source-group-title">知识文档</small>
+                  <label v-for="document in documents" :key="`document:${document.id}`" class="retrieval-source-option">
+                    <input
+                      v-model="selectedRetrievalSources"
+                      type="checkbox"
+                      :value="retrievalSourceValue('document', document.id)"
+                      :disabled="selectedRetrievalSources.length >= 50 && !selectedRetrievalSources.includes(retrievalSourceValue('document', document.id))"
+                    />
+                    <span>
+                      <strong>{{ document.title }}</strong>
+                      <small>{{ formatDate(document.createdAt) }}</small>
+                    </span>
+                  </label>
+                </div>
+                <div v-if="memories.length" class="retrieval-source-group">
+                  <small class="retrieval-source-group-title">长期记忆</small>
+                  <label v-for="memory in memories" :key="`memory:${memory.id}`" class="retrieval-source-option">
+                    <input
+                      v-model="selectedRetrievalSources"
+                      type="checkbox"
+                      :value="retrievalSourceValue('memory', memory.id)"
+                      :disabled="selectedRetrievalSources.length >= 50 && !selectedRetrievalSources.includes(retrievalSourceValue('memory', memory.id))"
+                    />
+                    <span>
+                      <strong>{{ memory.memoryType }}</strong>
+                      <small>{{ memory.content }}</small>
+                    </span>
+                  </label>
+                </div>
+                <div v-if="!documents.length && !memories.length" class="context-preview-empty retrieval-source-empty">还没有可选择的文档或长期记忆，请先添加来源。</div>
+              </div>
+              <small class="form-hint">至少选择一个来源；最多选择 50 个。评测时会自动使用所选来源计算 Recall/MRR。</small>
+            </div>
             <label class="field"><span>期望包含（可选）</span><input v-model="retrievalEvaluationForm.expectedContains" placeholder="例如：审批、回滚" /></label>
             <div class="retrieval-evaluation-options">
               <label class="field"><span>Top-K</span><input v-model.number="retrievalEvaluationForm.topK" type="number" min="1" max="50" /></label>
               <label class="field"><span>上下文上限</span><select v-model.number="retrievalEvaluationForm.maxChars"><option :value="2000">2,000 字符</option><option :value="4000">4,000 字符</option><option :value="8000">8,000 字符</option></select></label>
             </div>
-            <button class="secondary-button" type="submit" :disabled="retrievalEvaluationLoading || !retrievalEvaluationForm.query.trim() || !retrievalEvaluationForm.relevantSources.trim()">{{ retrievalEvaluationLoading ? '评测中…' : '运行检索评测' }}</button>
+            <button class="secondary-button" type="submit" :disabled="retrievalEvaluationLoading || !retrievalEvaluationForm.query.trim() || !selectedRetrievalSources.length">{{ retrievalEvaluationLoading ? '评测中…' : '运行检索评测' }}</button>
             <p v-if="retrievalEvaluationError" class="policy-error">{{ retrievalEvaluationError }}</p>
             <div v-if="retrievalEvaluations.length" class="retrieval-report-list" aria-label="检索评测报告">
               <article v-for="report in retrievalEvaluations.slice(0, 5)" :key="report.id" class="retrieval-report-row">
