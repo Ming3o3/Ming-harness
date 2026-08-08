@@ -1,12 +1,14 @@
 package org.mingharness.security;
 
 import org.junit.jupiter.api.Test;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.URI;
@@ -26,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(properties = {
         "harness.auth.mode=api-key",
-        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,run.create,ops.read,model.configure,context.configure,workspace.read,workspace.write,workspace.manage,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage,context.reindex;web-other-key|tenant-other|other-user|run.read,workspace.read",
+        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,run.create,ops.read,model.configure,context.read,context.write,context.configure,workspace.read,workspace.write,workspace.manage,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage,context.reindex;web-other-key|tenant-other|other-user|run.read,workspace.read",
         "harness.workspace.enabled=true",
         "harness.workspace.local-registration-enabled=true",
         "management.endpoint.health.show-details=when_authorized",
@@ -41,6 +43,29 @@ class HarnessAuthWebTests {
     Path tempDir;
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
+
+    @Test
+    void shouldUploadDocxThroughAuthenticatedKnowledgeDocumentEndpoint() throws Exception {
+        byte[] docx;
+        try (XWPFDocument document = new XWPFDocument()) {
+            document.createParagraph().createRun().setText("真实 HTTP 导入的发布规则");
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            document.write(output);
+            docx = output.toByteArray();
+        }
+        String boundary = "----MingHarness" + UUID.randomUUID();
+        HttpResponse<String> response = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/context/documents/upload"))
+                        .header("Authorization", "Bearer web-test-key")
+                        .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                        .POST(HttpRequest.BodyPublishers.ofByteArray(multipartDocumentBody(boundary, docx)))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(201, response.statusCode(), response.body());
+        assertTrue(response.body().contains("真实 HTTP 导入的发布规则"), response.body());
+        assertTrue(response.body().contains("\"title\":\"http-release-rules\""), response.body());
+    }
 
     @Test
     void shouldProtectContextReindexWithDedicatedPermission() throws Exception {
@@ -577,6 +602,27 @@ class HarnessAuthWebTests {
 
     private String baseUrl() {
         return "http://localhost:" + port;
+    }
+
+    private byte[] multipartDocumentBody(String boundary, byte[] docx) throws Exception {
+        ByteArrayOutputStream body = new ByteArrayOutputStream();
+        writePart(body, boundary, "title", null, "http-release-rules");
+        writePart(body, boundary, "sensitivity", null, "INTERNAL");
+        body.write(("--" + boundary + "\r\n"
+                + "Content-Disposition: form-data; name=\"file\"; filename=\"http-release-rules.docx\"\r\n"
+                + "Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document\r\n\r\n")
+                .getBytes(StandardCharsets.UTF_8));
+        body.write(docx);
+        body.write("\r\n".getBytes(StandardCharsets.UTF_8));
+        body.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+        return body.toByteArray();
+    }
+
+    private void writePart(ByteArrayOutputStream body, String boundary, String name,
+                           String fileName, String value) throws Exception {
+        String disposition = "--" + boundary + "\r\nContent-Disposition: form-data; name=\"" + name + "\"";
+        if (fileName != null) disposition += "; filename=\"" + fileName + "\"";
+        body.write((disposition + "\r\n\r\n" + value + "\r\n").getBytes(StandardCharsets.UTF_8));
     }
 
     /** 真实 HTTP 创建 Run，确保 SSE 测试同时覆盖认证、路由与持久化读取链路。 */
