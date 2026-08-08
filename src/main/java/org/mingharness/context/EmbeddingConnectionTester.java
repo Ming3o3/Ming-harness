@@ -51,6 +51,8 @@ public class EmbeddingConnectionTester {
             Map<String, Object> request = new LinkedHashMap<>();
             request.put("model", config.model());
             request.put("input", List.of("Ming Harness embedding connection test"));
+            // 连接测试必须复用正式调用的维度参数，否则测试通过后索引仍可能失败。
+            request.put("dimensions", config.dimension());
             String body = clientBuilder.build().post().uri("/embeddings")
                     .contentType(MediaType.APPLICATION_JSON).body(request).retrieve().body(String.class);
             JsonNode root = objectMapper.readTree(body);

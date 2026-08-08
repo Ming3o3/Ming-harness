@@ -53,6 +53,7 @@ class OpenAiCompatibleEmbeddingGatewayTests {
         assertEquals("embedding-model", result.get(1).model());
         assertFalse(requestBody.get().contains("secret"));
         assertTrue(requestBody.get().contains("[REDACTED]"));
+        assertTrue(requestBody.get().contains("\"dimensions\":2"));
     }
 
     @Test

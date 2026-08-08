@@ -122,6 +122,8 @@ public class OpenAiCompatibleEmbeddingGateway implements EmbeddingGateway {
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("model", properties.model());
         request.put("input", inputs);
+        // OpenAI 兼容服务使用 dimensions 选择输出维度；必须与 pgvector 列及本地校验一致。
+        request.put("dimensions", properties.dimension());
         try {
             String body = buildClient(properties).post()
                     .uri("/embeddings")
