@@ -112,7 +112,7 @@ public class ContextBuilder {
         StringBuilder context = new StringBuilder();
         for (ScoredContext candidate : candidates) {
             String excerpt = excerpt(candidate.content(), normalizedQuery, terms, 800);
-            String block = "[" + candidate.displayId() + "] " + candidate.title() + "\n" + excerpt + "\n";
+            String block = contextBlock(candidate.title(), excerpt);
             if (context.length() + block.length() > maxChars) {
                 // 单个来源过大时跳过它，继续尝试更小的来源，避免一篇长文阻断相关记忆。
                 continue;
@@ -165,8 +165,7 @@ public class ContextBuilder {
             String source = evidenceKey(candidate.evidence().citation());
             if (!evidenceKeys.add(source)) continue;
             ContextEvidence evidence = candidate.evidence();
-            String block = "[" + evidence.citation() + "] " + evidence.title() + "\n"
-                    + evidence.excerpt() + "\n";
+            String block = contextBlock(evidence.title(), evidence.excerpt());
             if (text.length() + block.length() > maxChars) continue;
             text.append(block);
             evidences.add(evidence);
@@ -206,12 +205,21 @@ public class ContextBuilder {
             if (protectedParents.contains(parentKey(evidence.citation()))) continue;
             String source = evidenceKey(evidence.citation());
             if (!evidenceKeys.add(source)) continue;
-            String block = "[" + evidence.citation() + "] " + evidence.title() + "\n"
-                    + evidence.excerpt() + "\n";
+            String block = contextBlock(evidence.title(), evidence.excerpt());
             if (text.length() + block.length() > maxChars) continue;
             text.append(block);
             evidences.add(evidence);
         }
+    }
+
+    /**
+     * 给模型的上下文只展示用户可读的来源名称；内部 citation 仍保留在 ContextEvidence 中，
+     * 供评测、审计和诊断使用，避免把 document:<id>#window:<n>#chunk:<m> 泄漏到最终回答。
+     */
+    private String contextBlock(String title, String excerpt) {
+        String readableTitle = title == null || title.isBlank() ? "未命名来源" : title.trim();
+        return "[来源：" + readableTitle + "]\n"
+                + (excerpt == null ? "" : excerpt) + "\n";
     }
 
     /** 同一父窗口内的多个子块只保留一份证据，但同一父文档的不同窗口可以并列返回。 */
@@ -264,16 +272,16 @@ public class ContextBuilder {
         return normalized.substring(start, end);
     }
 
-    private record ScoredContext(String id, String displayId, String title, String citation,
+    private record ScoredContext(String id, String title, String citation,
                                  String content, int score, Instant createdAt) {
 
         private static ScoredContext document(KnowledgeDocument document, int score) {
-            return new ScoredContext(document.getId(), document.getId(), document.getTitle(),
+            return new ScoredContext(document.getId(), document.getTitle(),
                     "document:" + document.getId(), document.getContent(), score, document.getCreatedAt());
         }
 
         private static ScoredContext memory(MemoryEntry memory, int score) {
-            return new ScoredContext(memory.getId(), "memory:" + memory.getId(),
+            return new ScoredContext(memory.getId(),
                     "记忆 · " + memory.getMemoryType(), "memory:" + memory.getId(),
                     memory.getContent(), score, memory.getCreatedAt());
         }

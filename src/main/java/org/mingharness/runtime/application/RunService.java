@@ -627,7 +627,7 @@ public class RunService {
             }
             String modelInput = context.isEmpty()
                     ? started.get().input()
-                    : started.get().input() + "\n\n参考资料（请保留来源标记）:\n" + context.text();
+                    : started.get().input() + "\n\n参考资料（请使用来源标题引用；不要输出 document:/memory: ID、window 或 chunk 等内部标识）:\n" + context.text();
             ModelResponse response = executeStreamingModelCall(run, started.get(), modelInput, workerId);
             if (run.agentMode()) {
                 validateAgentToolCalls(run, response.toolCalls());
@@ -792,7 +792,7 @@ public class RunService {
                 }
                 String modelInput = context.isEmpty()
                         ? step.getInput()
-                        : step.getInput() + "\n\n参考资料（请保留来源标记）:\n" + context.text();
+                        : step.getInput() + "\n\n参考资料（请使用来源标题引用；不要输出 document:/memory: ID、window 或 chunk 等内部标识）:\n" + context.text();
                 ModelResponse response = executeModelCall(run, step, modelInput, workerId, false);
                 if (run.isAgentMode()) {
                     validateAgentToolCalls(new RunExecutionStateService.RunExecutionSnapshot(

@@ -88,7 +88,7 @@ class ContextServiceTests {
 
         assertEquals(1, result.evidences().size());
         assertEquals(visible.getId(), result.evidences().get(0).documentId());
-        assertTrue(result.text().contains("memory:" + visible.getId()));
+        assertTrue(result.text().contains("[来源：记忆 · preference]"));
         assertTrue(result.text().contains("项目默认使用 Java 17"));
     }
 

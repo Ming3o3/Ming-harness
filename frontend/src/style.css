@@ -593,6 +593,15 @@ h3 { margin: 0; font-size: 13px; }
 .chat-markdown th, .chat-markdown td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
 .chat-markdown th { background: var(--hover-bg); color: var(--heading); font-weight: 700; }
 .chat-markdown img { max-width: 100%; border-radius: 6px; }
+.chat-source-section { display: grid; gap: 7px; margin-top: 12px; border-top: 1px solid var(--line); padding-top: 11px; }
+.chat-source-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--soft); font-size: 10px; font-weight: 700; }
+.chat-source-heading small { color: var(--muted); font: 9px "DM Mono", monospace; font-weight: 400; }
+.chat-source-list { display: grid; gap: 5px; }
+.chat-source-card { display: grid; gap: 4px; border: 1px solid rgba(153,174,218,.16); border-radius: 7px; background: var(--input-bg); padding: 8px 9px; }
+.chat-source-card-heading { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.chat-source-kind { flex: 0 0 auto; border-radius: 4px; background: rgba(76,226,213,.1); color: var(--cyan); padding: 3px 5px; font: 8px "DM Mono", monospace; }
+.chat-source-card strong { overflow: hidden; color: var(--soft); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.chat-source-card > small { color: var(--muted); font: 8px "DM Mono", monospace; }
 .hljs-comment, .hljs-quote { color: #7886a2; font-style: italic; }
 .hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-name, .hljs-built_in, .hljs-type { color: #c5a8ff; }
 .hljs-string, .hljs-attr, .hljs-symbol, .hljs-bullet, .hljs-addition { color: #7fe1b0; }

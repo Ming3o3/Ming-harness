@@ -535,6 +535,12 @@ const runPageLabel = computed(() => {
 const canPreviousRunPage = computed(() => runPage.page > 0)
 const canNextRunPage = computed(() => runPage.hasNext)
 const chatMessages = computed(() => activeConversation.value?.messages || [])
+const chatMessagePresentations = computed(() => new Map(chatMessages.value.map((message) => [
+  message.id,
+  message.role === 'ASSISTANT'
+    ? presentChatCitations(message.content)
+    : { content: message.content || '', sources: [] },
+])))
 const activeConversationId = computed(() => activeConversation.value?.conversation?.id || '')
 const filteredConversations = computed(() => {
   const query = conversationQuery.value.trim().toLowerCase()
@@ -1259,6 +1265,73 @@ function messageStatusClass(status) {
   return `message-status-${String(status || 'unknown').toLowerCase()}`
 }
 
+const chatSourceLinePattern = /(^|\n)[ \t]*(?:来源|参考来源)\s*[:：]\s*\[((?:document|memory):[^\]\s]+)\]\s*([^\n]*)/g
+const chatReadableSourceLinePattern = /(^|\n)[ \t]*(?:来源|参考来源)\s*[:：]\s*(?!\[?来源\s+\d+\]?\s*$)(?!\[来源：)([^\n]+)/g
+const chatReadableCitationPattern = /\[来源：([^\]\n]+)\]/g
+const chatCitationPattern = /\[((?:document|memory):[^\]\s]+)\]/g
+
+function chatSourceBase(citation) {
+  return String(citation || '').split('#', 1)[0]
+}
+
+function chatSourceMetadata(citation, fallbackTitle = '') {
+  const normalized = chatSourceBase(citation)
+  const separator = normalized.indexOf(':')
+  const type = separator > 0 ? normalized.slice(0, separator) : ''
+  const id = separator > 0 ? normalized.slice(separator + 1) : ''
+  const cleanFallbackTitle = String(fallbackTitle || '').trim()
+  const document = type === 'document'
+    ? documents.value.find((item) => item.id === id)
+    : documents.value.find((item) => cleanFallbackTitle === item.title || cleanFallbackTitle.startsWith(`${item.title}（`))
+  const memory = type === 'memory'
+    ? memories.value.find((item) => item.id === id)
+    : memories.value.find((item) => cleanFallbackTitle.includes(item.memoryType))
+  const title = document?.title
+    || (memory ? `长期记忆 · ${memory.memoryType}` : '')
+    || cleanFallbackTitle
+    || (type === 'memory' ? '长期记忆' : '知识文档')
+  return {
+    key: normalized || `title:${title}`,
+    citation,
+    title,
+    kindLabel: type === 'memory' || memory ? '长期记忆' : '知识文档',
+    updatedAt: document?.updatedAt || document?.createdAt || memory?.createdAt || '',
+  }
+}
+
+function presentChatCitations(content) {
+  const sources = []
+  const sourceByKey = new Map()
+  const addSource = (citation, fallbackTitle = '') => {
+    const metadata = chatSourceMetadata(citation, fallbackTitle)
+    const existing = sourceByKey.get(metadata.key)
+    if (existing) return existing
+    const source = { ...metadata, index: sources.length + 1 }
+    sourceByKey.set(metadata.key, source)
+    sources.push(source)
+    return source
+  }
+
+  let displayContent = String(content || '')
+  displayContent = displayContent.replace(chatReadableCitationPattern, (match, title) => {
+    const source = addSource('', title)
+    return `[来源 ${source.index}]`
+  })
+  displayContent = displayContent.replace(chatSourceLinePattern, (match, prefix, citation, fallbackTitle) => {
+    addSource(citation, fallbackTitle)
+    return prefix
+  })
+  displayContent = displayContent.replace(chatReadableSourceLinePattern, (match, prefix, title) => {
+    addSource('', title)
+    return prefix
+  })
+  displayContent = displayContent.replace(chatCitationPattern, (match, citation) => {
+    const source = addSource(citation)
+    return `[来源 ${source.index}]`
+  })
+  return { content: displayContent, sources }
+}
+
 function auditEventLabel(eventType) {
   return {
     AGENT_TOOL_RECOVERABLE: 'Agent 工具可恢复降级',
@@ -1280,7 +1353,10 @@ function attachmentLabel(attachment) {
 }
 
 function messageNavigationLabel(message) {
-  const content = String(message?.content || '').trim()
+  const rawContent = String(message?.content || '').trim()
+  const content = message?.role === 'ASSISTANT'
+    ? presentChatCitations(rawContent).content.trim()
+    : rawContent
   if (content) return content.length > 30 ? `${content.slice(0, 30)}…` : content
   return attachmentLabel(message?.attachments?.[0])
 }
@@ -1289,7 +1365,8 @@ async function copyChatMessage(message) {
   if (!message?.content || copyingMessageId.value) return
   copyingMessageId.value = message.id
   try {
-    await navigator.clipboard.writeText(message.content)
+    const presentation = chatMessagePresentations.value.get(message.id)
+    await navigator.clipboard.writeText(presentation?.content || message.content)
     noticeMessage.value = '助手回复已复制到剪贴板。'
   } catch {
     errorMessage.value = '复制失败，请检查浏览器剪贴板权限。'
@@ -3604,8 +3681,20 @@ onBeforeUnmount(() => {
                     <span class="chat-thinking"><i></i><i></i><i></i>{{ chatRunActivity || messageStatusLabel(message.status) }}</span>
                   </template>
                   <template v-else>
-                    <div v-if="message.content" class="chat-markdown" v-html="renderMarkdown(message.content)" @click="handleChatMarkdownClick"></div>
-                    <p v-else>{{ messageStatusLabel(message.status) }}</p>
+                    <div v-if="message.content" class="chat-markdown" v-html="renderMarkdown(chatMessagePresentations.get(message.id)?.content || message.content)" @click="handleChatMarkdownClick"></div>
+                    <section v-if="message.role === 'ASSISTANT' && chatMessagePresentations.get(message.id)?.sources?.length" class="chat-source-section" aria-label="参考来源">
+                      <div class="chat-source-heading"><span>参考来源</span><small>{{ chatMessagePresentations.get(message.id).sources.length }} 个</small></div>
+                      <div class="chat-source-list">
+                        <article v-for="source in chatMessagePresentations.get(message.id).sources" :key="`${message.id}-${source.key}`" class="chat-source-card">
+                          <div class="chat-source-card-heading">
+                            <span class="chat-source-kind">{{ source.kindLabel }}</span>
+                            <strong>{{ source.title }}</strong>
+                          </div>
+                          <small v-if="source.updatedAt">更新于 {{ formatDate(source.updatedAt) }}</small>
+                        </article>
+                      </div>
+                    </section>
+                    <p v-if="!message.content">{{ messageStatusLabel(message.status) }}</p>
                     <small v-if="message.role === 'ASSISTANT' && message.status !== 'COMPLETED'">{{ messageStatusLabel(message.status) }}</small>
                   </template>
                   <div v-if="message.attachments?.length" class="chat-attachment-list" aria-label="已导入的工作区文件">
