@@ -4445,7 +4445,7 @@ onBeforeUnmount(() => {
             </div>
             <div v-else class="context-preview-empty context-preview-empty-initial">尚未运行查询。这里的结果与模型步骤实际收到的上下文格式一致。</div>
           </section>
-          <section class="governance-card context-index-card">
+          <section class="governance-card governance-fixed-card context-index-card">
             <div class="context-workbench-heading">
               <div>
                 <p class="eyebrow">INDEX OPERATIONS</p>
@@ -4474,7 +4474,7 @@ onBeforeUnmount(() => {
             </div>
             <small class="form-hint">需要 <code>context.reindex</code> 权限；开启“重新分块”后建议在低峰期执行。</small>
           </section>
-          <section class="governance-card context-config-card">
+          <section class="governance-card governance-fixed-card context-config-card">
             <div class="context-workbench-heading">
               <div>
                 <p class="eyebrow">RUNTIME CONFIG</p>
@@ -4497,7 +4497,7 @@ onBeforeUnmount(() => {
             <div v-else class="context-preview-empty">正在读取 Runtime 配置…</div>
             <small class="form-hint">配置按组织保存；修改后旧向量会失效，请使用上方索引操作重新建立向量。</small>
           </section>
-          <form class="governance-card" @submit.prevent="createDocument">
+          <form class="governance-card governance-fixed-card" @submit.prevent="createDocument">
             <div class="context-workbench-heading">
               <div><h3>添加授权知识文档</h3><small class="form-hint">仅支持 PDF/DOCX 上传解析，上传后自动建立索引。</small></div>
               <span class="context-mode-chip">文件 → 文本 → 向量</span>
@@ -4549,7 +4549,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </form>
-          <form class="governance-card memory-card" @submit.prevent="createMemory">
+          <form class="governance-card governance-fixed-card memory-card" @submit.prevent="createMemory">
             <div class="context-workbench-heading">
               <div>
                 <p class="eyebrow">PERSONAL CONTEXT</p>
@@ -4573,7 +4573,7 @@ onBeforeUnmount(() => {
             </div>
             <div v-else class="context-preview-empty">还没有当前用户的长期记忆。</div>
           </form>
-          <form class="governance-card" @submit.prevent="runQuickEvaluation">
+          <form class="governance-card governance-fixed-card" @submit.prevent="runQuickEvaluation">
             <h3>运行快速回归评测</h3>
             <label class="field"><span>报告名称</span><input v-model="evaluationForm.name" required /></label>
             <label class="field"><span>测试输入</span><textarea v-model="evaluationForm.input" required rows="2"></textarea></label>
@@ -4581,7 +4581,7 @@ onBeforeUnmount(() => {
             <button class="secondary-button" type="submit" :disabled="loading">执行评测</button>
             <small class="form-hint">历史报告 {{ evaluations.length }} 份；执行完成后点击下方记录查看用例结果、Run 状态和版本绑定。</small>
           </form>
-          <form class="governance-card retrieval-evaluation-card" @submit.prevent="runRetrievalEvaluation">
+          <form class="governance-card governance-fixed-card retrieval-evaluation-card" @submit.prevent="runRetrievalEvaluation">
             <div class="context-workbench-heading">
               <div>
                 <p class="eyebrow">RETRIEVAL QUALITY</p>
@@ -4643,11 +4643,14 @@ onBeforeUnmount(() => {
             </div>
             <button class="secondary-button" type="submit" :disabled="retrievalEvaluationLoading || !retrievalEvaluationForm.query.trim() || !selectedRetrievalSources.length">{{ retrievalEvaluationLoading ? '评测中…' : '运行检索评测' }}</button>
             <p v-if="retrievalEvaluationError" class="policy-error">{{ retrievalEvaluationError }}</p>
-            <div v-if="retrievalEvaluations.length" class="retrieval-report-list" aria-label="检索评测报告">
-              <article v-for="report in retrievalEvaluations.slice(0, 5)" :key="report.id" class="retrieval-report-row">
-                <div class="retrieval-report-heading"><strong>{{ report.name }}</strong><span>{{ formatDate(report.createdAt) }}</span></div>
-                <div class="retrieval-report-metrics"><span>Hit@K <strong>{{ report.hitRateAtK }}</strong></span><span>Recall@K <strong>{{ report.recallAtK }}</strong></span><span>MRR <strong>{{ report.mrr }}</strong></span><span>Context <strong>{{ report.contextHitRate }}</strong></span></div>
-              </article>
+            <div v-if="retrievalEvaluations.length" class="retrieval-report-section">
+              <div class="retrieval-report-list-heading"><span>历史评测</span><small>共 {{ retrievalEvaluations.length }} 份</small></div>
+              <div class="retrieval-report-list" aria-label="检索评测报告">
+                <article v-for="report in retrievalEvaluations" :key="report.id" class="retrieval-report-row">
+                  <div class="retrieval-report-heading"><strong>{{ report.name }}</strong><span>{{ formatDate(report.createdAt) }}</span></div>
+                  <div class="retrieval-report-metrics"><span>Hit@K <strong>{{ report.hitRateAtK }}</strong></span><span>Recall@K <strong>{{ report.recallAtK }}</strong></span><span>MRR <strong>{{ report.mrr }}</strong></span><span>Context <strong>{{ report.contextHitRate }}</strong></span></div>
+                </article>
+              </div>
             </div>
             <div v-else class="context-preview-empty">还没有检索评测报告。</div>
           </form>

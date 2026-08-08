@@ -248,9 +248,13 @@ h3 { margin: 0; font-size: 13px; }
 .tool-card p { min-height: 32px; margin: 8px 0 11px; color: var(--muted); font-size: 10px; line-height: 1.55; }
 .tool-card small { color: #596780; font-size: 9px; }
 .governance-section { margin-top: 18px; }
-.governance-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-.governance-card { display: grid; gap: 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--governance-bg); padding: 15px; }
+.governance-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 14px; }
+.governance-card { display: grid; align-content: start; gap: 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--governance-bg); padding: 15px; }
 .governance-card h3 { margin-bottom: 2px; }
+.governance-card .primary-button,
+.governance-card .secondary-button,
+.governance-card .danger-button { align-self: start; min-height: 40px; box-sizing: border-box; }
+.governance-fixed-card { height: 480px; min-height: 480px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .context-workbench-card { grid-column: 1 / -1; gap: 13px; }
 .context-index-card { gap: 13px; }
 .context-config-card { gap: 13px; }
@@ -373,14 +377,14 @@ h3 { margin: 0; font-size: 13px; }
 .document-upload-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 .document-upload-actions .text-button { border: 0; background: transparent; color: var(--muted); padding: 5px; font-size: 10px; }
 .document-upload-actions .text-button:hover { color: var(--red); }
-.document-list { display: grid; gap: 5px; margin-top: 4px; border-top: 1px solid var(--line); padding-top: 13px; }
+.document-list { display: grid; gap: 5px; max-height: 230px; overflow-y: auto; margin-top: 4px; border-top: 1px solid var(--line); padding-top: 13px; padding-right: 4px; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .document-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; border-bottom: 1px solid rgba(153,174,218,.08); padding: 9px 0; }
 .document-row-content { min-width: 0; }
 .document-row-content strong { display: block; overflow: hidden; color: var(--soft); font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .document-row-content small, .document-owner-hint { display: block; margin-top: 4px; color: var(--muted); font: 9px "DM Mono", monospace; overflow-wrap: anywhere; }
 .document-delete-button { padding: 7px 10px; font-size: 10px; white-space: nowrap; }
 .memory-card { min-width: 0; }
-.memory-list { display: grid; gap: 5px; margin-top: 4px; border-top: 1px solid var(--line); padding-top: 13px; }
+.memory-list { display: grid; gap: 5px; max-height: 230px; overflow-y: auto; margin-top: 4px; border-top: 1px solid var(--line); padding-top: 13px; padding-right: 4px; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .memory-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 9px; border-bottom: 1px solid rgba(153,174,218,.08); padding: 9px 0; }
 .memory-row-content { min-width: 0; }
 .memory-row-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
@@ -405,7 +409,10 @@ h3 { margin: 0; font-size: 13px; }
 .retrieval-source-option small { overflow: hidden; color: var(--muted); font: 8px/1.45 "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .retrieval-source-empty { padding: 10px 0 5px; }
 .retrieval-evaluation-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.retrieval-report-list { display: grid; gap: 5px; margin-top: 3px; border-top: 1px solid var(--line); padding-top: 12px; }
+.retrieval-report-section { display: grid; gap: 7px; margin-top: 3px; border-top: 1px solid var(--line); padding-top: 12px; }
+.retrieval-report-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--soft); font-size: 10px; font-weight: 700; }
+.retrieval-report-list-heading small { color: var(--muted); font: 8px "DM Mono", monospace; font-weight: 400; }
+.retrieval-report-list { display: grid; gap: 5px; max-height: 260px; overflow-y: auto; margin-top: 0; padding-right: 4px; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .retrieval-report-row { display: grid; gap: 8px; border-bottom: 1px solid rgba(153,174,218,.08); padding: 9px 0; }
 .retrieval-report-heading { display: flex; justify-content: space-between; gap: 10px; }
 .retrieval-report-heading strong { overflow: hidden; color: var(--soft); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
@@ -1848,6 +1855,7 @@ button svg {
   }
 
   .governance-grid { grid-template-columns: minmax(0, 1fr); }
+  .governance-fixed-card { height: auto; min-height: 0; overflow: visible; }
   .context-preview-form { grid-template-columns: minmax(0, 1fr); }
   .context-index-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .context-index-form > .field:first-child { grid-column: 1 / -1; }
