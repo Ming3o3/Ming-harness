@@ -7,6 +7,8 @@ import org.mingharness.context.api.CreateMemoryRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
@@ -24,6 +26,7 @@ public class ContextService {
     private final ContextSemanticRechunkDispatcher semanticRechunkDispatcher;
     private final SensitiveDataSanitizer sanitizer;
     private final KnowledgeDocumentFileParser fileParser;
+    private final TransactionTemplate transactionTemplate;
 
     public ContextService(KnowledgeDocumentRepository documentRepository,
                           MemoryEntryRepository memoryRepository,
@@ -33,7 +36,8 @@ public class ContextService {
                           ContextEmbeddingDispatcher embeddingDispatcher,
                           ContextSemanticRechunkDispatcher semanticRechunkDispatcher,
                           SensitiveDataSanitizer sanitizer,
-                          KnowledgeDocumentFileParser fileParser) {
+                          KnowledgeDocumentFileParser fileParser,
+                          PlatformTransactionManager transactionManager) {
         this.documentRepository = documentRepository;
         this.memoryRepository = memoryRepository;
         this.chunkRepository = chunkRepository;
@@ -43,6 +47,7 @@ public class ContextService {
         this.semanticRechunkDispatcher = semanticRechunkDispatcher;
         this.sanitizer = sanitizer;
         this.fileParser = fileParser;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     @Transactional
@@ -52,13 +57,13 @@ public class ContextService {
     }
 
     /** 解析上传的 PDF/DOCX 后复用同一套权限、切块和 embedding 索引流程。 */
-    @Transactional
     public KnowledgeDocument createDocumentFromUpload(String tenantId, String userId,
                                                        MultipartFile file, String title,
                                                        String sensitivity, String allowedUsers) {
         ParsedKnowledgeDocument parsed = fileParser.parse(file);
         String requestedTitle = title == null || title.isBlank() ? titleFromFile(parsed.originalName()) : title;
-        return persistDocument(tenantId, userId, requestedTitle, parsed.text(), sensitivity, allowedUsers);
+        return transactionTemplate.execute(status -> persistDocument(tenantId, userId, requestedTitle,
+                parsed.text(), sensitivity, allowedUsers));
     }
 
     @Transactional(readOnly = true)
