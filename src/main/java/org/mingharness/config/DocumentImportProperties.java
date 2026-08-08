@@ -13,6 +13,8 @@ public record DocumentImportProperties(
         int maxContentChars
 ) {
 
+    private static final Set<String> SUPPORTED_EXTENSIONS = Set.of("pdf", "docx");
+
     @ConstructorBinding
     public DocumentImportProperties {
         maxUploadBytes = bounded(maxUploadBytes, 25 * 1024 * 1024, 128 * 1024, 100 * 1024 * 1024);
@@ -22,7 +24,7 @@ public record DocumentImportProperties(
     public boolean supportsExtension(String extension) {
         if (extension == null) return false;
         String normalized = extension.trim().toLowerCase(Locale.ROOT);
-        return Set.of("pdf", "docx").contains(normalized);
+        return SUPPORTED_EXTENSIONS.contains(normalized);
     }
 
     private static int bounded(int value, int fallback, int min, int max) {

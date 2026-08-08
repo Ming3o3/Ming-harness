@@ -54,8 +54,8 @@ public class KnowledgeDocumentFileParser {
 
         try {
             ParsedKnowledgeDocument parsed = switch (extension) {
-                case "pdf" -> parsePdf(originalName, file.getContentType(), bytes);
-                case "docx" -> parseDocx(originalName, file.getContentType(), bytes);
+                case "pdf" -> parsePdf(originalName, bytes);
+                case "docx" -> parseDocx(originalName, bytes);
                 default -> throw unsupportedFormat();
             };
             String text = normalizeText(parsed.text());
@@ -77,7 +77,7 @@ public class KnowledgeDocumentFileParser {
         }
     }
 
-    private ParsedKnowledgeDocument parsePdf(String originalName, String contentType, byte[] bytes) throws IOException {
+    private ParsedKnowledgeDocument parsePdf(String originalName, byte[] bytes) throws IOException {
         if (!startsWith(bytes, "%PDF-".getBytes(StandardCharsets.US_ASCII))) {
             throw new BusinessException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "DOCUMENT_FORMAT_MISMATCH",
                     "文件扩展名与实际 PDF 格式不匹配");
@@ -90,7 +90,7 @@ public class KnowledgeDocumentFileParser {
         }
     }
 
-    private ParsedKnowledgeDocument parseDocx(String originalName, String contentType, byte[] bytes) throws IOException {
+    private ParsedKnowledgeDocument parseDocx(String originalName, byte[] bytes) throws IOException {
         if (!startsWith(bytes, new byte[]{'P', 'K', 3, 4})) {
             throw new BusinessException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "DOCUMENT_FORMAT_MISMATCH",
                     "文件扩展名与实际 DOCX 格式不匹配");
@@ -117,14 +117,15 @@ public class KnowledgeDocumentFileParser {
 
     private static String normalizeText(String value) {
         if (value == null) return "";
-        return value.replace("\u0000", "")
+        String normalized = value.replace("\u0000", "")
                 .replace("\r\n", "\n")
-                .replace('\r', '\n')
-                .lines()
-                .map(String::stripTrailing)
-                .reduce((left, right) -> left + "\n" + right)
-                .orElse("")
-                .trim();
+                .replace('\r', '\n');
+        StringBuilder result = new StringBuilder(normalized.length());
+        normalized.lines().forEach(line -> {
+            if (result.length() > 0) result.append('\n');
+            result.append(line.stripTrailing());
+        });
+        return result.toString().trim();
     }
 
     private static String displayName(String value) {
