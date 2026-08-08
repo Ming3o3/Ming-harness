@@ -43,9 +43,11 @@ class KnowledgeDocumentFileParserTests {
             document.save(output);
             bytes = output.toByteArray();
         }
+        byte[] prefixed = new byte[32 + bytes.length];
+        System.arraycopy(bytes, 0, prefixed, 32, bytes.length);
 
         ParsedKnowledgeDocument result = parser.parse(new MockMultipartFile(
-                "file", "guide.pdf", "application/pdf", bytes));
+                "file", "guide.pdf", "application/pdf", prefixed));
 
         assertEquals("PDF", result.format());
         assertEquals(1, result.pageCount());

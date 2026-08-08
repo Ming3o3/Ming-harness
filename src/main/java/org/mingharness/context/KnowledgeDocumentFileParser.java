@@ -78,7 +78,7 @@ public class KnowledgeDocumentFileParser {
     }
 
     private ParsedKnowledgeDocument parsePdf(String originalName, byte[] bytes) throws IOException {
-        if (!startsWith(bytes, "%PDF-".getBytes(StandardCharsets.US_ASCII))) {
+        if (!containsPdfHeader(bytes)) {
             throw new BusinessException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "DOCUMENT_FORMAT_MISMATCH",
                     "文件扩展名与实际 PDF 格式不匹配");
         }
@@ -91,7 +91,7 @@ public class KnowledgeDocumentFileParser {
     }
 
     private ParsedKnowledgeDocument parseDocx(String originalName, byte[] bytes) throws IOException {
-        if (!startsWith(bytes, new byte[]{'P', 'K', 3, 4})) {
+        if (!startsWith(bytes, new byte[]{'P', 'K', 3, 4}, 0)) {
             throw new BusinessException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "DOCUMENT_FORMAT_MISMATCH",
                     "文件扩展名与实际 DOCX 格式不匹配");
         }
@@ -107,10 +107,19 @@ public class KnowledgeDocumentFileParser {
                 "当前仅支持 PDF 和 DOCX 文件");
     }
 
-    private static boolean startsWith(byte[] value, byte[] prefix) {
-        if (value == null || value.length < prefix.length) return false;
+    private static boolean containsPdfHeader(byte[] value) {
+        byte[] prefix = "%PDF-".getBytes(StandardCharsets.US_ASCII);
+        int lastStart = Math.min(value == null ? -1 : value.length - prefix.length, 1024);
+        for (int offset = 0; offset <= lastStart; offset++) {
+            if (startsWith(value, prefix, offset)) return true;
+        }
+        return false;
+    }
+
+    private static boolean startsWith(byte[] value, byte[] prefix, int offset) {
+        if (value == null || offset < 0 || value.length - offset < prefix.length) return false;
         for (int index = 0; index < prefix.length; index++) {
-            if (value[index] != prefix[index]) return false;
+            if (value[offset + index] != prefix[index]) return false;
         }
         return true;
     }
