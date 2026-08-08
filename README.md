@@ -111,6 +111,8 @@ npm run dev
 | `CONTEXT_CHUNK_MAX_CHARS` | `1600` | 上下文父文档子块的最大字符数 |
 | `CONTEXT_CHUNK_OVERLAP_CHARS` | `160` | 相邻上下文子块的尾部重叠字符数 |
 | `CONTEXT_PARENT_WINDOW_MAX_CHARS` | `4800` | 连续子块组成的父窗口最大字符数；只用于推理上下文，不参与向量召回 |
+| `CONTEXT_DOCUMENT_MAX_UPLOAD_BYTES` | `26214400` | PDF/DOCX 知识文档原始文件最大大小（25 MB） |
+| `CONTEXT_DOCUMENT_MAX_CONTENT_CHARS` | `100000` | PDF/DOCX 解析后写入知识库的正文最大字符数 |
 | `CONTEXT_SEMANTIC_ENABLED` | `false` | 是否调用 embedding API 按语义边界分块 |
 | `CONTEXT_SEMANTIC_BREAKPOINT` | `0.35` | 相邻原子单元余弦相似度低于该值时允许切分 |
 | `CONTEXT_SEMANTIC_MIN_UNITS` | `3` | 语义切分前至少累计的原子单元数 |
@@ -204,6 +206,8 @@ npm run dist:win:green
 聊天工作台和运行控制台都提供“模型设置”入口。用户可以输入 OpenAI 兼容 API 地址、模型名称和 API Key；保存后只影响当前组织/用户创建的新 Run，用户覆盖配置会在 Run 创建时固化供应商快照，因此正在排队、审批或执行的 Run 不会被中途切换。后端通过 `GET/PUT/DELETE /api/model-config` 管理设置，API Key 使用 AES-GCM 加密保存，读取接口只返回掩码，不写入浏览器 localStorage。使用 api-key/OIDC 认证时，当前身份需要 `model.configure` 权限。
 
 运行控制台和治理面板还提供“向量设置”入口。Embedding 配置按组织保存（知识库向量是组织共享索引），支持 OpenAI 兼容的 `/embeddings` 地址、模型、模型版本、API Key 和当前固定的 1536 维向量。保存后会清空该组织旧 chunk 向量，必须在“向量索引”中重新建立索引；API Key 使用独立 AES-GCM 密钥标签加密，读取接口只返回掩码。后端通过 `GET/PUT/DELETE /api/context/embedding-config` 和 `POST /api/context/embedding-config/test` 管理配置；使用 api-key/OIDC 认证时需要 `context.configure` 权限。
+
+治理面板的“添加授权知识文档”支持直接拖入或选择 PDF/DOCX。Runtime 只保留解析后的纯文本，不保存原始二进制；解析完成后会复用知识文档的权限过滤、确定性/语义分块、父窗口物化和异步 embedding 索引流程。当前只提取有文本层的 PDF，扫描图片 PDF 需要先做 OCR；加密、损坏、格式签名不匹配或正文为空的文件会被拒绝。上传接口需要 `context.write` 权限，默认单文件上限为 25 MB、解析正文上限为 100000 字符。
 
 聊天和运行控制台都支持 `⌘/Ctrl + K` 命令面板，可搜索并执行新建对话、聚焦输入框、打开项目文件、查看当前 Run、模型设置、工作台切换和主题切换等操作；面板会根据当前会话和权限自动隐藏不可用命令。
 
@@ -450,6 +454,7 @@ curl -X POST http://localhost:8080/api/runs \
 
 - `GET /api/runs/page?page=0&size=20&status=RUNNING`：按组织分页查询 Run，`status` 可选，单页最多 100 条；原 `GET /api/runs` 继续返回最近 50 条数组
 - `POST/GET/DELETE /api/context/documents`：管理组织隔离的知识文档
+- `POST /api/context/documents/upload`：以 multipart 上传一个 PDF/DOCX，字段为 `file`（必填）、`title`、`sensitivity`、`allowedUsers`（可选）；需要 `context.write` 权限，成功后立即创建 chunk 并异步补齐 embedding
 - `POST/GET/DELETE /api/context/memories`：管理用户范围的长期记忆
 - `GET /api/context/preview?query=...`：预览授权来源和引用
 - `GET/PUT/DELETE /api/context/embedding-config`：读取、保存或恢复当前组织的 Embedding 连接配置；密钥只返回掩码

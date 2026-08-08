@@ -85,6 +85,23 @@ export EMBEDDING_MAX_INPUT_TOKENS=8192
 
 也可以在桌面端的“向量设置”弹窗中保存组织级配置。页面保存的配置优先于同名环境变量；切换供应商、模型或版本后，旧 chunk 向量会自动清空，必须执行一次“重建索引”。当前迁移的 pgvector 列固定为 1536 维，其他维度需要先扩展数据库迁移，不支持直接在页面中混用。
 
+#### 导入 PDF/DOCX 知识文档
+
+运行控制台的“上下文与评测治理”面板可以选择或拖入一个 PDF/DOCX。服务端按文件扩展名和文件头双重校验后提取纯文本，原始二进制不会写入知识库；解析结果随后沿用现有文档权限、chunk、父窗口和 embedding 索引流程。默认原始文件上限为 25 MB，解析正文上限为 100000 字符，可通过 `CONTEXT_DOCUMENT_MAX_UPLOAD_BYTES` 和 `CONTEXT_DOCUMENT_MAX_CONTENT_CHARS` 调整。只有包含文本层的 PDF 可以直接提取，扫描型 PDF 需要先 OCR；加密或损坏文件会返回结构化解析错误。
+
+也可以直接调用上传接口（调用方需要 `context.write` 权限）：
+
+```bash
+curl -X POST http://localhost:8080/api/context/documents/upload \
+  -H 'Authorization: Bearer demo-key' \
+  -F 'file=@./docs/release-rules.pdf' \
+  -F 'title=发布规则' \
+  -F 'sensitivity=INTERNAL' \
+  -F 'allowedUsers=operator'
+```
+
+接口返回的文档正文是脱敏后的文本；embedding 网关不可用时，正文和确定性 chunk 仍会保存，待处理 chunk 可通过“向量索引”或 `POST /api/context/reindex` 补齐。
+
 `EMBEDDING_DIMENSION` 必须与数据库中的 `vector(1536)` 一致；更换模型、维度或语义分块版本后，应执行一次有界重建。语义分块默认关闭，开启后会对段落/句子原子单元批量向量化，按相邻单元余弦相似度寻找边界，同时保留最大长度、最小单元数和 overlap 约束：
 
 ```bash
