@@ -7,6 +7,7 @@ import org.mingharness.context.api.CreateMemoryRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
 import java.util.List;
@@ -22,6 +23,7 @@ public class ContextService {
     private final ContextEmbeddingDispatcher embeddingDispatcher;
     private final ContextSemanticRechunkDispatcher semanticRechunkDispatcher;
     private final SensitiveDataSanitizer sanitizer;
+    private final KnowledgeDocumentFileParser fileParser;
 
     public ContextService(KnowledgeDocumentRepository documentRepository,
                           MemoryEntryRepository memoryRepository,
@@ -30,7 +32,8 @@ public class ContextService {
                           ContextChunkWriter chunkWriter,
                           ContextEmbeddingDispatcher embeddingDispatcher,
                           ContextSemanticRechunkDispatcher semanticRechunkDispatcher,
-                          SensitiveDataSanitizer sanitizer) {
+                          SensitiveDataSanitizer sanitizer,
+                          KnowledgeDocumentFileParser fileParser) {
         this.documentRepository = documentRepository;
         this.memoryRepository = memoryRepository;
         this.chunkRepository = chunkRepository;
@@ -39,16 +42,23 @@ public class ContextService {
         this.embeddingDispatcher = embeddingDispatcher;
         this.semanticRechunkDispatcher = semanticRechunkDispatcher;
         this.sanitizer = sanitizer;
+        this.fileParser = fileParser;
     }
 
     @Transactional
     public KnowledgeDocument createDocument(String tenantId, String userId, CreateDocumentRequest request) {
-        KnowledgeDocument document = documentRepository.save(new KnowledgeDocument(tenantId, userId,
-                sanitizer.sanitize(request.title()), sanitizer.sanitize(request.content()),
-                sanitizer.sanitize(request.sensitivity()), sanitizer.sanitize(request.allowedUsers())));
-        writeChunksAndDispatch("DOCUMENT", document.getId(), tenantId,
-                document.getTitle() + "\n" + document.getContent());
-        return document;
+        return persistDocument(tenantId, userId, request.title(), request.content(),
+                request.sensitivity(), request.allowedUsers());
+    }
+
+    /** 解析上传的 PDF/DOCX 后复用同一套权限、切块和 embedding 索引流程。 */
+    @Transactional
+    public KnowledgeDocument createDocumentFromUpload(String tenantId, String userId,
+                                                       MultipartFile file, String title,
+                                                       String sensitivity, String allowedUsers) {
+        ParsedKnowledgeDocument parsed = fileParser.parse(file);
+        String requestedTitle = title == null || title.isBlank() ? titleFromFile(parsed.originalName()) : title;
+        return persistDocument(tenantId, userId, requestedTitle, parsed.text(), sensitivity, allowedUsers);
     }
 
     @Transactional(readOnly = true)
@@ -110,6 +120,32 @@ public class ContextService {
         if (expectedTenantId == null || !expectedTenantId.equals(actualTenantId)) {
             throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_ACCESS_DENIED", "无权访问其他组织的上下文数据");
         }
+    }
+
+    private KnowledgeDocument persistDocument(String tenantId, String userId, String title, String content,
+                                              String sensitivity, String allowedUsers) {
+        String normalizedTitle = sanitizer.sanitize(title == null ? "" : title.trim());
+        String normalizedContent = sanitizer.sanitize(content == null ? "" : content);
+        if (normalizedTitle.isBlank()) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "DOCUMENT_TITLE_REQUIRED", "文档标题不能为空");
+        }
+        if (normalizedTitle.length() > 200) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "DOCUMENT_TITLE_TOO_LONG", "文档标题不能超过 200 个字符");
+        }
+        if (normalizedContent.isBlank()) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "DOCUMENT_CONTENT_REQUIRED", "文档内容不能为空");
+        }
+        KnowledgeDocument document = documentRepository.save(new KnowledgeDocument(tenantId, userId,
+                normalizedTitle, normalizedContent, sanitizer.sanitize(sensitivity), sanitizer.sanitize(allowedUsers)));
+        writeChunksAndDispatch("DOCUMENT", document.getId(), tenantId,
+                document.getTitle() + "\n" + document.getContent());
+        return document;
+    }
+
+    private static String titleFromFile(String fileName) {
+        String name = fileName == null || fileName.isBlank() ? "导入文档" : fileName;
+        int dot = name.lastIndexOf('.');
+        return dot > 0 ? name.substring(0, dot) : name;
     }
 
     private void markChunksDeleted(String parentType, String parentId) {

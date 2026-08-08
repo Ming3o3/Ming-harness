@@ -16,12 +16,14 @@ import org.mingharness.config.ContextChunkingProperties;
 import org.mingharness.config.ContextIndexProperties;
 import org.mingharness.config.EmbeddingProperties;
 import org.mingharness.config.ContextRetrievalProperties;
+import org.mingharness.config.DocumentImportProperties;
 
 @SpringBootApplication
 @EnableConfigurationProperties({ModelConfig.class, RuntimeLimits.class, RedisProperties.class,
         MessagingProperties.class, HarnessAuthProperties.class, AuditIntegrityProperties.class,
         DataRetentionProperties.class, WorkspaceProperties.class, ContextChunkingProperties.class,
-        ContextIndexProperties.class, EmbeddingProperties.class, ContextRetrievalProperties.class})
+        ContextIndexProperties.class, EmbeddingProperties.class, ContextRetrievalProperties.class,
+        DocumentImportProperties.class})
 @EnableScheduling
 public class MingHarnessApplication {
 

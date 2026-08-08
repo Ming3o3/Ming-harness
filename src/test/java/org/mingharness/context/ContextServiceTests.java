@@ -8,7 +8,9 @@ import org.mingharness.context.api.CreateMemoryRequest;
 import org.mingharness.context.api.ContextResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.mock.web.MockMultipartFile;
 
+import java.io.ByteArrayOutputStream;
 import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -126,5 +128,27 @@ class ContextServiceTests {
                         "tenant-a", "DOCUMENT", document.getId()).size());
         assertTrue(windows.stream().allMatch(window -> parentWindowRepository.findById(window.getId())
                 .map(ContextParentWindow::getDeletedAt).orElse(null) != null));
+    }
+
+    @Test
+    void shouldImportDocxIntoTheSameChunkAndRetrievalPipeline() throws Exception {
+        byte[] bytes;
+        try (org.apache.poi.xwpf.usermodel.XWPFDocument docx = new org.apache.poi.xwpf.usermodel.XWPFDocument()) {
+            docx.createParagraph().createRun().setText("上传文档中的发布回滚规则");
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            docx.write(output);
+            bytes = output.toByteArray();
+        }
+
+        KnowledgeDocument document = contextService.createDocumentFromUpload("tenant-a", "owner",
+                new MockMultipartFile("file", "release-rules.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", bytes),
+                null, "INTERNAL", "operator");
+
+        assertEquals("release-rules", document.getTitle());
+        assertTrue(document.getContent().contains("上传文档中的发布回滚规则"));
+        assertTrue(chunkRepository.findByParentTypeAndParentIdAndDeletedAtIsNullOrderByChunkIndexAsc(
+                "DOCUMENT", document.getId()).size() > 0);
+        assertEquals(1, contextBuilder.build("tenant-a", "operator", "发布回滚规则", 4_000)
+                .evidences().size());
     }
 }
