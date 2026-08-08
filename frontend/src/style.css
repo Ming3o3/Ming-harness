@@ -363,6 +363,16 @@ h3 { margin: 0; font-size: 13px; }
 .evaluation-report-raw summary { color: var(--muted); cursor: pointer; font: 9px "DM Mono", monospace; }
 .evaluation-report-raw summary:hover { color: var(--soft); }
 .evaluation-report-raw pre { max-height: 150px; margin: 0; overflow: auto; border: 1px solid var(--line); border-radius: 7px; background: var(--input-bg); color: var(--muted); padding: 9px 10px; white-space: pre-wrap; word-break: break-word; font: 9px/1.55 "DM Mono", monospace; }
+.document-upload-dropzone { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 74px; border: 1px dashed rgba(141,124,255,.42); border-radius: 8px; background: rgba(141,124,255,.045); padding: 12px; transition: .16s ease; }
+.document-upload-dropzone:hover, .document-upload-dropzone.is-dragging { border-color: var(--accent); background: rgba(141,124,255,.1); }
+.document-upload-dropzone.has-file { border-color: rgba(76,226,213,.36); background: rgba(76,226,213,.045); }
+.document-upload-input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; clip-path: inset(50%); }
+.document-upload-copy { display: grid; min-width: 0; gap: 5px; }
+.document-upload-copy strong { overflow: hidden; color: var(--soft); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.document-upload-copy small { color: var(--muted); font: 9px/1.5 "DM Mono", monospace; }
+.document-upload-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+.document-upload-actions .text-button { border: 0; background: transparent; color: var(--muted); padding: 5px; font-size: 10px; }
+.document-upload-actions .text-button:hover { color: var(--red); }
 .document-list { display: grid; gap: 5px; margin-top: 4px; border-top: 1px solid var(--line); padding-top: 13px; }
 .document-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; border-bottom: 1px solid rgba(153,174,218,.08); padding: 9px 0; }
 .document-row-content { min-width: 0; }

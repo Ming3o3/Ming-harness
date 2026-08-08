@@ -255,6 +255,14 @@ export const api = {
   listAuditEvents: (runId) => request(`/runs/${runId}/audit-events`),
   listDocuments: () => request('/context/documents'),
   createDocument: (payload) => request('/context/documents', { method: 'POST', body: JSON.stringify(payload) }),
+  uploadDocument: ({ file, title = '', sensitivity = '', allowedUsers = '' } = {}) => {
+    const body = new FormData()
+    body.append('file', file)
+    if (title) body.append('title', title)
+    if (sensitivity) body.append('sensitivity', sensitivity)
+    if (allowedUsers) body.append('allowedUsers', allowedUsers)
+    return request('/context/documents/upload', { method: 'POST', body })
+  },
   deleteDocument: (documentId) => request(`/context/documents/${documentId}`, { method: 'DELETE' }),
   previewContext: (query, maxChars = 4000) => {
     const params = new URLSearchParams({ query, maxChars: String(maxChars) })

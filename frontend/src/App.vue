@@ -69,6 +69,11 @@ const apiKeyError = ref('')
 const createdApiKeySecret = ref('')
 const loading = ref(false)
 const documentDeletingId = ref('')
+const documentUploadInput = ref(null)
+const documentUploadFile = ref(null)
+const documentUploadDragging = ref(false)
+const documentUploadError = ref('')
+const documentUploading = ref(false)
 const detailLoading = ref(false)
 const errorMessage = ref('')
 const noticeMessage = ref('')
@@ -2805,16 +2810,85 @@ function closeApiKeySecret() {
   createdApiKeySecret.value = ''
 }
 
+const DOCUMENT_UPLOAD_MAX_BYTES = 25 * 1024 * 1024
+
+function openDocumentUploadPicker() {
+  if (loading.value || documentUploading.value) return
+  documentUploadInput.value?.click()
+}
+
+function documentFileTitle(fileName) {
+  const name = String(fileName || '').split(/[\\/]/).pop() || ''
+  const dot = name.lastIndexOf('.')
+  return dot > 0 ? name.slice(0, dot) : name
+}
+
+function setDocumentUploadFile(file) {
+  documentUploadError.value = ''
+  documentUploadFile.value = null
+  if (!file || file.size <= 0) {
+    documentUploadError.value = '请选择一个非空的 PDF 或 DOCX 文件。'
+    return
+  }
+  const extension = String(file.name || '').split('.').pop()?.toLowerCase()
+  if (!['pdf', 'docx'].includes(extension)) {
+    documentUploadError.value = '知识库导入目前只支持 PDF 和 DOCX 文件。'
+    return
+  }
+  if (file.size > DOCUMENT_UPLOAD_MAX_BYTES) {
+    documentUploadError.value = `文件不能超过 ${formatFileSize(DOCUMENT_UPLOAD_MAX_BYTES)}。`
+    return
+  }
+  documentUploadFile.value = file
+  // 文件名是默认标题时自动换成来源文件名，用户改过标题则保留用户输入。
+  if (!documentForm.title.trim() || documentForm.title === '订单处理规则') {
+    documentForm.title = documentFileTitle(file.name)
+  }
+}
+
+function handleDocumentUploadInput(event) {
+  setDocumentUploadFile(event.target?.files?.[0])
+  event.target.value = ''
+}
+
+function handleDocumentUploadDrop(event) {
+  documentUploadDragging.value = false
+  if (loading.value || documentUploading.value) return
+  const files = Array.from(event.dataTransfer?.files || [])
+  if (files.length > 1) noticeMessage.value = '一次只导入一个知识文档，已使用第一个文件。'
+  setDocumentUploadFile(files[0])
+}
+
+function clearDocumentUploadFile() {
+  documentUploadFile.value = null
+  documentUploadError.value = ''
+  if (documentUploadInput.value) documentUploadInput.value.value = ''
+}
+
 async function createDocument() {
   clearMessages()
   loading.value = true
   try {
-    await api.createDocument({ ...documentForm })
-    noticeMessage.value = '知识文档已保存，后续模型步骤会按组织和用户权限检索'
+    if (documentUploadFile.value) {
+      documentUploading.value = true
+      const document = await api.uploadDocument({
+        file: documentUploadFile.value,
+        title: documentForm.title,
+        sensitivity: documentForm.sensitivity,
+        allowedUsers: documentForm.allowedUsers,
+      })
+      documents.value = [document, ...documents.value.filter((item) => item.id !== document.id)]
+      clearDocumentUploadFile()
+      noticeMessage.value = '文件已解析并建立知识索引；后续模型步骤会按组织和用户权限检索'
+    } else {
+      await api.createDocument({ ...documentForm })
+      noticeMessage.value = '知识文档已保存，后续模型步骤会按组织和用户权限检索'
+    }
     await loadDashboard()
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
+    documentUploading.value = false
     loading.value = false
   }
 }
@@ -4316,11 +4390,40 @@ onBeforeUnmount(() => {
             <small class="form-hint">配置按组织保存；修改后旧向量会失效，请使用上方索引操作重新建立向量。</small>
           </section>
           <form class="governance-card" @submit.prevent="createDocument">
-            <h3>添加授权知识文档</h3>
+            <div class="context-workbench-heading">
+              <div><h3>添加授权知识文档</h3><small class="form-hint">支持 PDF/DOCX 上传解析，也可以直接粘贴文本。</small></div>
+              <span class="context-mode-chip">文件 → 文本 → 向量</span>
+            </div>
+            <div
+              class="document-upload-dropzone"
+              :class="{ 'is-dragging': documentUploadDragging, 'has-file': documentUploadFile }"
+              @dragenter.prevent="documentUploadDragging = true"
+              @dragover.prevent="documentUploadDragging = true"
+              @dragleave.prevent="documentUploadDragging = false"
+              @drop.prevent="handleDocumentUploadDrop"
+            >
+              <input
+                ref="documentUploadInput"
+                class="document-upload-input"
+                type="file"
+                accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                @change="handleDocumentUploadInput"
+              />
+              <div class="document-upload-copy">
+                <strong>{{ documentUploadFile ? documentUploadFile.name : '拖入 PDF 或 DOCX 文件' }}</strong>
+                <small v-if="documentUploadFile">{{ formatFileSize(documentUploadFile.size) }} · 上传后自动解析、切块并建立索引</small>
+                <small v-else>单个文件最大 25 MB；扫描型 PDF 需要先经过 OCR 才能提取文字</small>
+              </div>
+              <div class="document-upload-actions">
+                <button class="secondary-button" type="button" :disabled="loading || documentUploading" @click="openDocumentUploadPicker">{{ documentUploadFile ? '更换文件' : '选择文件' }}</button>
+                <button v-if="documentUploadFile" class="text-button" type="button" :disabled="loading || documentUploading" @click="clearDocumentUploadFile">移除</button>
+              </div>
+            </div>
+            <p v-if="documentUploadError" class="policy-error">{{ documentUploadError }}</p>
             <label class="field"><span>标题</span><input v-model="documentForm.title" required /></label>
-            <label class="field"><span>内容</span><textarea v-model="documentForm.content" required rows="3"></textarea></label>
+            <label class="field"><span>内容{{ documentUploadFile ? '（上传文件后忽略）' : '' }}</span><textarea v-model="documentForm.content" :required="!documentUploadFile" rows="3"></textarea></label>
             <label class="field"><span>可见用户（逗号分隔，可留空）</span><input v-model="documentForm.allowedUsers" /></label>
-            <button class="secondary-button" type="submit" :disabled="loading">保存文档</button>
+            <button class="secondary-button" type="submit" :disabled="loading || documentUploading">{{ documentUploadFile ? '上传并建立索引' : '保存文档' }}</button>
             <small class="form-hint">当前 {{ documents.length }} 篇文档；模型检索前会先执行组织和用户过滤。</small>
             <div v-if="documents.length" class="document-list" aria-label="已保存知识文档">
               <div v-for="document in documents" :key="document.id" class="document-row">
