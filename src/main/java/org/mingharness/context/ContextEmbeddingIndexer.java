@@ -17,6 +17,7 @@ public class ContextEmbeddingIndexer {
     private final EmbeddingGateway embeddingGateway;
     private final ContextEmbeddingStore embeddingStore;
     private final EmbeddingProperties properties;
+    private final EmbeddingProviderConfigService configService;
     private final ContextEmbeddingCache embeddingCache;
     private final HarnessMetrics metrics;
 
@@ -25,7 +26,7 @@ public class ContextEmbeddingIndexer {
                                    ContextEmbeddingStore embeddingStore,
                                    EmbeddingProperties properties) {
         this(chunkRepository, embeddingGateway, embeddingStore, properties,
-                new NoopContextEmbeddingCache(), null);
+                new NoopContextEmbeddingCache(), null, null);
     }
 
     public ContextEmbeddingIndexer(ContextChunkRepository chunkRepository,
@@ -36,19 +37,30 @@ public class ContextEmbeddingIndexer {
         this(chunkRepository, embeddingGateway, embeddingStore, properties, embeddingCache, null);
     }
 
-    @Autowired
     public ContextEmbeddingIndexer(ContextChunkRepository chunkRepository,
                                    EmbeddingGateway embeddingGateway,
                                    ContextEmbeddingStore embeddingStore,
                                    EmbeddingProperties properties,
                                    ContextEmbeddingCache embeddingCache,
                                    HarnessMetrics metrics) {
+        this(chunkRepository, embeddingGateway, embeddingStore, properties, embeddingCache, metrics, null);
+    }
+
+    @Autowired
+    public ContextEmbeddingIndexer(ContextChunkRepository chunkRepository,
+                                   EmbeddingGateway embeddingGateway,
+                                   ContextEmbeddingStore embeddingStore,
+                                   EmbeddingProperties properties,
+                                   ContextEmbeddingCache embeddingCache,
+                                   HarnessMetrics metrics,
+                                   EmbeddingProviderConfigService configService) {
         this.chunkRepository = chunkRepository;
         this.embeddingGateway = embeddingGateway;
         this.embeddingStore = embeddingStore;
         this.properties = properties;
         this.embeddingCache = embeddingCache;
         this.metrics = metrics;
+        this.configService = configService;
     }
 
     /**
@@ -56,18 +68,23 @@ public class ContextEmbeddingIndexer {
      * 让 local/H2 保持现有关键词召回行为。
      */
     public int indexParent(String parentType, String parentId) {
-        if (!embeddingGateway.enabled() || !embeddingStore.supported()) return 0;
+        if (configService == null && (!embeddingGateway.enabled() || !embeddingStore.supported())) return 0;
         List<ContextChunk> chunks = chunkRepository
                 .findByParentTypeAndParentIdAndDeletedAtIsNullOrderByChunkIndexAsc(parentType, parentId);
         return indexChunks(chunks);
     }
 
     public int indexChunks(List<ContextChunk> chunks) {
-        if (!embeddingGateway.enabled() || !embeddingStore.supported() || chunks == null || chunks.isEmpty()) return 0;
+        if (!embeddingStore.supported() || chunks == null || chunks.isEmpty()) return 0;
+        String tenantId = chunks.get(0).getTenantId();
+        EmbeddingProviderConfigService.ResolvedEmbeddingConfig config = config(tenantId);
+        boolean gatewayEnabled = configService == null
+                ? embeddingGateway.enabled() : embeddingGateway.enabled(tenantId);
+        if (!config.enabled() || !gatewayEnabled) return 0;
         List<ContextChunk> misses = new ArrayList<>();
         List<ContextEmbeddingUpdate> updates = new ArrayList<>(chunks.size());
         for (ContextChunk chunk : chunks) {
-            Optional<EmbeddingVector> cached = cached(chunk);
+            Optional<EmbeddingVector> cached = cached(chunk, config);
             if (cached.isPresent()) {
                 updates.add(new ContextEmbeddingUpdate(chunk, cached.get()));
                 if (metrics != null) metrics.contextEmbeddingCacheHit();
@@ -77,27 +94,28 @@ public class ContextEmbeddingIndexer {
             }
         }
 
-        for (int start = 0; start < misses.size(); start += properties.batchSize()) {
+        for (int start = 0; start < misses.size(); start += config.batchSize()) {
             List<ContextChunk> batch = misses.subList(start,
-                    Math.min(misses.size(), start + properties.batchSize()));
-            List<EmbeddingVector> vectors = embeddingGateway.embed(batch.stream()
-                    .map(ContextChunk::getContent).toList());
+                    Math.min(misses.size(), start + config.batchSize()));
+            List<EmbeddingVector> vectors = configService == null
+                    ? embeddingGateway.embed(batch.stream().map(ContextChunk::getContent).toList())
+                    : embeddingGateway.embed(tenantId, batch.stream().map(ContextChunk::getContent).toList());
             if (vectors.size() != batch.size()) {
                 throw new EmbeddingGatewayException(false, "embedding 返回数量与 chunk 数量不一致");
             }
             for (int index = 0; index < batch.size(); index++) {
                 EmbeddingVector vector = vectors.get(index);
-                validateDimension(vector);
+                validateDimension(vector, config);
                 ContextChunk chunk = batch.get(index);
                 updates.add(new ContextEmbeddingUpdate(chunk, vector));
-                saveCache(chunk, vector);
+                saveCache(chunk, vector, config);
             }
         }
 
         if (updates.isEmpty()) return 0;
         embeddingStore.save(updates);
         for (ContextEmbeddingUpdate update : updates) {
-            update.chunk().markEmbedded(update.vector().model());
+            update.chunk().markEmbedded(config.signature());
         }
         // indexChunks 也会被后台重建服务调用，不能依赖调用方恰好处于 JPA 事务中。
         chunkRepository.saveAll(updates.stream().map(ContextEmbeddingUpdate::chunk).toList());
@@ -108,16 +126,24 @@ public class ContextEmbeddingIndexer {
         return embeddingGateway.enabled() && embeddingStore.supported();
     }
 
+    public boolean ready(String tenantId) {
+        return embeddingStore.supported() && embeddingGateway.enabled(tenantId);
+    }
+
     public int batchSize() {
         return properties.batchSize();
     }
 
-    private Optional<EmbeddingVector> cached(ContextChunk chunk) {
+    public int batchSize(String tenantId) {
+        return config(tenantId).batchSize();
+    }
+
+    private Optional<EmbeddingVector> cached(ContextChunk chunk,
+                                             EmbeddingProviderConfigService.ResolvedEmbeddingConfig config) {
         try {
             Optional<EmbeddingVector> value = embeddingCache.find(chunk.getTenantId(),
-                    chunk.getContentHash(), properties.model(), properties.modelVersion(),
-                    properties.dimension());
-            if (value.isPresent() && value.get().dimension() == properties.dimension()) {
+                    chunk.getContentHash(), config.model(), config.modelVersion(), config.dimension());
+            if (value.isPresent() && value.get().dimension() == config.dimension()) {
                 return value;
             }
         } catch (RuntimeException ignored) {
@@ -126,19 +152,31 @@ public class ContextEmbeddingIndexer {
         return Optional.empty();
     }
 
-    private void validateDimension(EmbeddingVector vector) {
-        if (vector == null || vector.dimension() != properties.dimension()) {
+    private void validateDimension(EmbeddingVector vector,
+                                   EmbeddingProviderConfigService.ResolvedEmbeddingConfig config) {
+        if (vector == null || vector.dimension() != config.dimension()) {
             throw new EmbeddingGatewayException(false,
-                    "embedding 维度不匹配，期望 " + properties.dimension());
+                    "embedding 维度不匹配，期望 " + config.dimension());
         }
     }
 
-    private void saveCache(ContextChunk chunk, EmbeddingVector vector) {
+    private void saveCache(ContextChunk chunk, EmbeddingVector vector,
+                           EmbeddingProviderConfigService.ResolvedEmbeddingConfig config) {
         try {
-            embeddingCache.save(chunk.getTenantId(), chunk.getContentHash(), properties.model(),
-                    properties.modelVersion(), vector);
+            embeddingCache.save(chunk.getTenantId(), chunk.getContentHash(), config.model(),
+                    config.modelVersion(), vector);
         } catch (RuntimeException ignored) {
             // 缓存写入失败不能回滚已经成功的供应商调用和主向量索引。
         }
+    }
+
+    private EmbeddingProviderConfigService.ResolvedEmbeddingConfig config(String tenantId) {
+        return configService == null
+                ? new EmbeddingProviderConfigService.ResolvedEmbeddingConfig(properties.enabled(), properties.baseUrl(),
+                properties.apiKey(), properties.model(), properties.modelVersion(), properties.dimension(),
+                properties.batchSize(), properties.maxInputChars(), properties.maxInputTokens(),
+                properties.maxResponseChars(), properties.maxAttempts(), properties.retryBackoffMs(), properties.timeoutMs(),
+                "environment", null)
+                : configService.resolve(tenantId);
     }
 }

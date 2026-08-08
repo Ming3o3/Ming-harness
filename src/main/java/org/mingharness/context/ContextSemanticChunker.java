@@ -32,6 +32,7 @@ public class ContextSemanticChunker {
     private final ContextChunker deterministicChunker;
     private final ContextChunkingProperties properties;
     private final EmbeddingProperties embeddingProperties;
+    private final EmbeddingProviderConfigService configService;
     private final EmbeddingGateway embeddingGateway;
     private final ContextEmbeddingCache embeddingCache;
     private final HarnessMetrics metrics;
@@ -41,7 +42,16 @@ public class ContextSemanticChunker {
                                   EmbeddingProperties embeddingProperties,
                                   EmbeddingGateway embeddingGateway) {
         this(deterministicChunker, properties, embeddingProperties, embeddingGateway,
-                new NoopContextEmbeddingCache(), null);
+                new NoopContextEmbeddingCache(), null, null);
+    }
+
+    public ContextSemanticChunker(ContextChunker deterministicChunker,
+                                  ContextChunkingProperties properties,
+                                  EmbeddingProperties embeddingProperties,
+                                  EmbeddingGateway embeddingGateway,
+                                  ContextEmbeddingCache embeddingCache,
+                                  HarnessMetrics metrics) {
+        this(deterministicChunker, properties, embeddingProperties, embeddingGateway, embeddingCache, metrics, null);
     }
 
     @Autowired
@@ -50,10 +60,12 @@ public class ContextSemanticChunker {
                                   EmbeddingProperties embeddingProperties,
                                   EmbeddingGateway embeddingGateway,
                                   ContextEmbeddingCache embeddingCache,
-                                  HarnessMetrics metrics) {
+                                  HarnessMetrics metrics,
+                                  EmbeddingProviderConfigService configService) {
         this.deterministicChunker = deterministicChunker;
         this.properties = properties;
         this.embeddingProperties = embeddingProperties;
+        this.configService = configService;
         this.embeddingGateway = embeddingGateway;
         this.embeddingCache = embeddingCache;
         this.metrics = metrics;
@@ -66,19 +78,20 @@ public class ContextSemanticChunker {
     /** 使用租户隔离的原子单元 embedding 缓存完成语义边界判断。 */
     public ContextChunkingResult chunk(String tenantId, String content) {
         ContextChunkingResult deterministic = deterministic(content);
-        if (!properties.semanticEnabled() || !embeddingGateway.enabled()) {
+        EmbeddingProviderConfigService.ResolvedEmbeddingConfig config = config(tenantId);
+        if (!properties.semanticEnabled() || !enabled(tenantId, config)) {
             return deterministic;
         }
         String normalized = normalize(content);
         List<String> units = atomicUnits(normalized);
         if (units.size() < properties.semanticMinUnits()
-                || units.stream().anyMatch(unit -> unit.length() > embeddingProperties.maxInputChars()
-                || EmbeddingTokenEstimator.estimate(unit) > embeddingProperties.maxInputTokens()
+                || units.stream().anyMatch(unit -> unit.length() > config.maxInputChars()
+                || EmbeddingTokenEstimator.estimate(unit) > config.maxInputTokens()
                 || unit.length() > properties.chunkMaxChars())) {
             return deterministic;
         }
         try {
-            List<EmbeddingVector> vectors = embedAll(tenantId, units);
+            List<EmbeddingVector> vectors = embedAll(tenantId, units, config);
             if (vectors.size() != units.size()) {
                 return deterministic;
             }
@@ -103,12 +116,13 @@ public class ContextSemanticChunker {
                 DETERMINISTIC_STRATEGY, DETERMINISTIC_VERSION);
     }
 
-    private List<EmbeddingVector> embedAll(String tenantId, List<String> units) {
+    private List<EmbeddingVector> embedAll(String tenantId, List<String> units,
+                                           EmbeddingProviderConfigService.ResolvedEmbeddingConfig config) {
         List<EmbeddingVector> vectors = new ArrayList<>(units.size());
         List<AtomicEmbeddingMiss> misses = new ArrayList<>();
         for (int index = 0; index < units.size(); index++) {
             String unit = units.get(index);
-            Optional<EmbeddingVector> cached = cached(tenantId, unit);
+            Optional<EmbeddingVector> cached = cached(tenantId, unit, config);
             if (cached.isPresent()) {
                 vectors.add(cached.get());
                 if (metrics != null) metrics.contextSemanticEmbeddingCacheHit();
@@ -119,32 +133,35 @@ public class ContextSemanticChunker {
             }
         }
 
-        int batchSize = Math.max(1, embeddingProperties.batchSize());
+        int batchSize = Math.max(1, config.batchSize());
         for (int start = 0; start < misses.size(); start += batchSize) {
             List<AtomicEmbeddingMiss> batch = misses.subList(start, Math.min(misses.size(), start + batchSize));
-            List<EmbeddingVector> batchVectors = embeddingGateway.embed(batch.stream()
+            List<EmbeddingVector> batchVectors = configService == null
+                    ? embeddingGateway.embed(batch.stream().map(AtomicEmbeddingMiss::content).toList())
+                    : embeddingGateway.embed(tenantId, batch.stream()
                     .map(AtomicEmbeddingMiss::content).toList());
             if (batchVectors.size() != batch.size()) {
                 throw new EmbeddingGatewayException(false, "语义分块 embedding 返回数量与原子单元数量不一致");
             }
             for (int index = 0; index < batch.size(); index++) {
                 EmbeddingVector vector = batchVectors.get(index);
-                validateDimension(vector);
+                validateDimension(vector, config);
                 AtomicEmbeddingMiss miss = batch.get(index);
                 vectors.set(miss.index(), vector);
-                saveCache(tenantId, miss.content(), vector);
+                saveCache(tenantId, miss.content(), vector, config);
             }
         }
         return List.copyOf(vectors);
     }
 
-    private Optional<EmbeddingVector> cached(String tenantId, String content) {
+    private Optional<EmbeddingVector> cached(String tenantId, String content,
+                                             EmbeddingProviderConfigService.ResolvedEmbeddingConfig config) {
         try {
             Optional<EmbeddingVector> value = embeddingCache.find(tenantId,
-                    EmbeddingContentHasher.sha256(content), embeddingProperties.model(),
-                    embeddingProperties.modelVersion(), embeddingProperties.dimension());
+                    EmbeddingContentHasher.sha256(content), config.model(),
+                    config.modelVersion(), config.dimension());
             if (value != null && value.isPresent()
-                    && value.get().dimension() == embeddingProperties.dimension()) {
+                    && value.get().dimension() == config.dimension()) {
                 return value;
             }
         } catch (RuntimeException ignored) {
@@ -153,20 +170,37 @@ public class ContextSemanticChunker {
         return Optional.empty();
     }
 
-    private void saveCache(String tenantId, String content, EmbeddingVector vector) {
+    private void saveCache(String tenantId, String content, EmbeddingVector vector,
+                           EmbeddingProviderConfigService.ResolvedEmbeddingConfig config) {
         try {
             embeddingCache.save(tenantId, EmbeddingContentHasher.sha256(content),
-                    embeddingProperties.model(), embeddingProperties.modelVersion(), vector);
+                    config.model(), config.modelVersion(), vector);
         } catch (RuntimeException ignored) {
             // 缓存写入失败不能阻断语义分块。
         }
     }
 
-    private void validateDimension(EmbeddingVector vector) {
-        if (vector == null || vector.dimension() != embeddingProperties.dimension()) {
+    private void validateDimension(EmbeddingVector vector,
+                                   EmbeddingProviderConfigService.ResolvedEmbeddingConfig config) {
+        if (vector == null || vector.dimension() != config.dimension()) {
             throw new EmbeddingGatewayException(false,
-                    "语义分块 embedding 维度不匹配，期望 " + embeddingProperties.dimension());
+                    "语义分块 embedding 维度不匹配，期望 " + config.dimension());
         }
+    }
+
+    private boolean enabled(String tenantId, EmbeddingProviderConfigService.ResolvedEmbeddingConfig config) {
+        return configService == null ? embeddingGateway.enabled() : embeddingGateway.enabled(tenantId);
+    }
+
+    private EmbeddingProviderConfigService.ResolvedEmbeddingConfig config(String tenantId) {
+        return configService == null
+                ? new EmbeddingProviderConfigService.ResolvedEmbeddingConfig(embeddingProperties.enabled(),
+                embeddingProperties.baseUrl(), embeddingProperties.apiKey(), embeddingProperties.model(),
+                embeddingProperties.modelVersion(), embeddingProperties.dimension(), embeddingProperties.batchSize(),
+                embeddingProperties.maxInputChars(), embeddingProperties.maxInputTokens(), embeddingProperties.maxResponseChars(),
+                embeddingProperties.maxAttempts(), embeddingProperties.retryBackoffMs(), embeddingProperties.timeoutMs(),
+                "environment", null)
+                : configService.resolve(tenantId);
     }
 
     private List<String> merge(List<String> units, List<EmbeddingVector> vectors) {

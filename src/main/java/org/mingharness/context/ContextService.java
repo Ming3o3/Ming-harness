@@ -123,15 +123,15 @@ public class ContextService {
 
     private void writeChunksAndDispatch(String parentType, String parentId,
                                         String tenantId, String content) {
-        if (semanticRechunkDispatcher.enabled()) {
+        if (semanticRechunkDispatcher.enabled(tenantId)) {
             chunkWriter.replaceDeterministic(tenantId, parentType, parentId, content);
-            if (!semanticRechunkDispatcher.dispatchAfterCommit(parentType, parentId)) {
-                embeddingDispatcher.dispatchAfterCommit(parentType, parentId);
+            if (!semanticRechunkDispatcher.dispatchAfterCommit(tenantId, parentType, parentId)) {
+                embeddingDispatcher.dispatchAfterCommit(tenantId, parentType, parentId);
             }
             return;
         }
         chunkWriter.replace(tenantId, parentType, parentId, content);
-        embeddingDispatcher.dispatchAfterCommit(parentType, parentId);
+        embeddingDispatcher.dispatchAfterCommit(tenantId, parentType, parentId);
     }
 
     private void markParentWindowsDeleted(String tenantId, String parentType, String parentId) {

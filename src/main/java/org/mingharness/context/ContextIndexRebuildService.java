@@ -71,8 +71,8 @@ public class ContextIndexRebuildService {
                         tenantId, PageRequest.of(0, chunkLimit));
         int chunksIndexed = 0;
         int chunksFailed = 0;
-        if (embeddingIndexer.ready() && !pending.isEmpty()) {
-            int batchSize = Math.max(1, embeddingIndexer.batchSize());
+        if (embeddingIndexer.ready(tenantId) && !pending.isEmpty()) {
+            int batchSize = Math.max(1, embeddingIndexer.batchSize(tenantId));
             for (int start = 0; start < pending.size(); start += batchSize) {
                 List<ContextChunk> batch = pending.subList(start, Math.min(pending.size(), start + batchSize));
                 try {

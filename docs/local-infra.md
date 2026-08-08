@@ -83,6 +83,8 @@ export EMBEDDING_BATCH_SIZE=32
 export EMBEDDING_MAX_INPUT_TOKENS=8192
 ```
 
+也可以在桌面端的“向量设置”弹窗中保存组织级配置。页面保存的配置优先于同名环境变量；切换供应商、模型或版本后，旧 chunk 向量会自动清空，必须执行一次“重建索引”。当前迁移的 pgvector 列固定为 1536 维，其他维度需要先扩展数据库迁移，不支持直接在页面中混用。
+
 `EMBEDDING_DIMENSION` 必须与数据库中的 `vector(1536)` 一致；更换模型、维度或语义分块版本后，应执行一次有界重建。语义分块默认关闭，开启后会对段落/句子原子单元批量向量化，按相邻单元余弦相似度寻找边界，同时保留最大长度、最小单元数和 overlap 约束：
 
 ```bash
@@ -189,7 +191,7 @@ export MODEL_FALLBACK_NAME=backup-model
 
 ```bash
 export HARNESS_AUTH_MODE=api-key
-export HARNESS_API_KEYS='demo-key|tenant-demo|operator|run.read,run.create,run.execute,run.approve,run.cancel,audit.read,context.read,context.write,evaluation.read,evaluation.run,tool.read,ops.read,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage'
+export HARNESS_API_KEYS='demo-key|tenant-demo|operator|run.read,run.create,run.execute,run.approve,run.cancel,audit.read,context.read,context.write,context.configure,evaluation.read,evaluation.run,tool.read,ops.read,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage'
 ```
 
 调用时使用 `Authorization: Bearer demo-key`。API Key 绑定的组织和用户会覆盖请求头，Run 创建请求中的 `tenantId/userId` 必须与认证身份一致。默认 `local` 模式仍兼容 `X-Tenant-Id`、`X-User-Id` 和 `X-Permissions`，仅适合本地演示。

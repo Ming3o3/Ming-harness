@@ -117,6 +117,17 @@ export const api = {
     body: JSON.stringify(payload),
   }),
   resetModelConfig: () => request('/model-config', { method: 'DELETE' }),
+  // Embedding 密钥只在保存时提交，读取接口仅返回组织级配置和掩码。
+  getEmbeddingConfig: () => request('/context/embedding-config'),
+  updateEmbeddingConfig: (payload) => request('/context/embedding-config', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  }),
+  testEmbeddingConfig: (payload) => request('/context/embedding-config/test', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+  resetEmbeddingConfig: () => request('/context/embedding-config', { method: 'DELETE' }),
   // 仅返回工作区名称和能力摘要，绝对路径始终只保留在本地后端进程。
   workspace: () => request('/workspace'),
   // 工作区浏览接口只接受相对路径；后端会按当前组织、用户和 workspaceId 再次解析根目录。

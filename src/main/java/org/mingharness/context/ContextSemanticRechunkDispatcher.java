@@ -65,25 +65,35 @@ public class ContextSemanticRechunkDispatcher {
                 && embeddingStore.supported();
     }
 
+    public boolean enabled(String tenantId) {
+        return chunkingProperties.semanticEnabled()
+                && (tenantId == null ? embeddingGateway.enabled() : embeddingGateway.enabled(tenantId))
+                && embeddingStore.supported();
+    }
+
     /** 返回是否已接管该父对象的索引；未启用时由调用方直接走普通向量索引。 */
     public boolean dispatchAfterCommit(String parentType, String parentId) {
-        if (!enabled()) return false;
-        Runnable task = () -> run(parentType, parentId);
+        return dispatchAfterCommit(null, parentType, parentId);
+    }
+
+    public boolean dispatchAfterCommit(String tenantId, String parentType, String parentId) {
+        if (!enabled(tenantId)) return false;
+        Runnable task = () -> run(tenantId, parentType, parentId);
         if (TransactionSynchronizationManager.isSynchronizationActive()
                 && TransactionSynchronizationManager.isActualTransactionActive()) {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    dispatch(task, parentType, parentId);
+                    dispatch(task, tenantId, parentType, parentId);
                 }
             });
             return true;
         }
-        dispatch(task, parentType, parentId);
+        dispatch(task, tenantId, parentType, parentId);
         return true;
     }
 
-    private void dispatch(Runnable task, String parentType, String parentId) {
+    private void dispatch(Runnable task, String tenantId, String parentType, String parentId) {
         if (!indexProperties.asyncEnabled()) {
             task.run();
             return;
@@ -94,18 +104,26 @@ public class ContextSemanticRechunkDispatcher {
             metrics.contextIndexFailure();
             log.warn("语义重分块队列已满，保留确定性子块并转入普通向量索引，parentType={}, parentId={}",
                     parentType, parentId);
-            embeddingDispatcher.dispatchAfterCommit(parentType, parentId);
+            if (tenantId == null) {
+                embeddingDispatcher.dispatchAfterCommit(parentType, parentId);
+            } else {
+                embeddingDispatcher.dispatchAfterCommit(tenantId, parentType, parentId);
+            }
         }
     }
 
-    private void run(String parentType, String parentId) {
+    private void run(String tenantId, String parentType, String parentId) {
         try {
             rechunker.rechunk(parentType, parentId);
         } catch (RuntimeException exception) {
             metrics.contextIndexFailure();
             log.warn("语义重分块失败，保留确定性子块并转入普通向量索引，parentType={}, parentId={}, message={}",
                     parentType, parentId, exception.getMessage());
-            embeddingDispatcher.dispatchAfterCommit(parentType, parentId);
+            if (tenantId == null) {
+                embeddingDispatcher.dispatchAfterCommit(parentType, parentId);
+            } else {
+                embeddingDispatcher.dispatchAfterCommit(tenantId, parentType, parentId);
+            }
         }
     }
 

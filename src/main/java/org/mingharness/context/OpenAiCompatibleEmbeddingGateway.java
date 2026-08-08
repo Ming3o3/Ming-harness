@@ -29,8 +29,9 @@ import java.util.TreeMap;
 @Component
 public class OpenAiCompatibleEmbeddingGateway implements EmbeddingGateway {
 
-    private final EmbeddingProperties properties;
-    private final RestClient client;
+    private final EmbeddingProperties defaultProperties;
+    private final EmbeddingProviderConfigService configService;
+    private final RestClient.Builder restClientBuilder;
     private final SensitiveDataSanitizer sanitizer;
     private final ObjectMapper objectMapper;
     private final HarnessMetrics metrics;
@@ -39,55 +40,68 @@ public class OpenAiCompatibleEmbeddingGateway implements EmbeddingGateway {
                                             RestClient.Builder restClientBuilder,
                                             SensitiveDataSanitizer sanitizer,
                                             ObjectMapper objectMapper) {
-        this(properties, restClientBuilder, sanitizer, objectMapper, null);
+        this(properties, null, restClientBuilder, sanitizer, objectMapper, null);
     }
 
-    @Autowired
     public OpenAiCompatibleEmbeddingGateway(EmbeddingProperties properties,
                                             RestClient.Builder restClientBuilder,
                                             SensitiveDataSanitizer sanitizer,
                                             ObjectMapper objectMapper,
                                             HarnessMetrics metrics) {
-        this.properties = properties;
+        this(properties, null, restClientBuilder, sanitizer, objectMapper, metrics);
+    }
+
+    @Autowired
+    public OpenAiCompatibleEmbeddingGateway(EmbeddingProperties properties,
+                                            EmbeddingProviderConfigService configService,
+                                            RestClient.Builder restClientBuilder,
+                                            SensitiveDataSanitizer sanitizer,
+                                            ObjectMapper objectMapper,
+                                            HarnessMetrics metrics) {
+        this.defaultProperties = properties;
+        this.configService = configService;
+        this.restClientBuilder = restClientBuilder;
         this.sanitizer = sanitizer;
         this.objectMapper = objectMapper;
         this.metrics = metrics;
-        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
-        requestFactory.setConnectTimeout((int) properties.timeoutMs());
-        requestFactory.setReadTimeout((int) properties.timeoutMs());
-        RestClient.Builder builder = restClientBuilder.clone()
-                .baseUrl(properties.baseUrl())
-                .requestFactory(requestFactory);
-        if (properties.apiKey() != null && !properties.apiKey().isBlank()) {
-            builder.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + properties.apiKey());
-        }
-        this.client = builder.build();
     }
 
     @Override
     public boolean enabled() {
-        return properties.enabled();
+        return defaultProperties.enabled();
+    }
+
+    @Override
+    public boolean enabled(String tenantId) {
+        return resolve(tenantId).enabled();
     }
 
     @Override
     public List<EmbeddingVector> embed(List<String> inputs) {
-        if (!enabled() || inputs == null || inputs.isEmpty()) {
+        return embed(null, inputs);
+    }
+
+    @Override
+    public List<EmbeddingVector> embed(String tenantId, List<String> inputs) {
+        EmbeddingProviderConfigService.ResolvedEmbeddingConfig properties = resolve(tenantId);
+        if (!properties.enabled() || inputs == null || inputs.isEmpty()) {
             return List.of();
         }
         if (inputs.size() > properties.batchSize()) {
             throw new EmbeddingGatewayException(false,
                     "embedding 批量大小超过限制: " + properties.batchSize());
         }
-        List<String> normalized = inputs.stream().map(this::normalizeInput).toList();
-        return invokeWithRetry(normalized);
+        List<String> normalized = inputs.stream().map(input -> normalizeInput(input, properties)).toList();
+        return invokeWithRetry(normalized, properties);
     }
 
-    private List<EmbeddingVector> invokeWithRetry(List<String> inputs) {
+    private List<EmbeddingVector> invokeWithRetry(List<String> inputs,
+                                                  EmbeddingProviderConfigService.ResolvedEmbeddingConfig properties) {
         EmbeddingGatewayException lastFailure = null;
         for (int attempt = 1; attempt <= properties.maxAttempts(); attempt++) {
             try {
                 if (metrics != null) metrics.contextEmbeddingRequest();
-                return invokeOnce(inputs);
+                return invokeOnce(inputs, properties);
             } catch (EmbeddingGatewayException exception) {
                 lastFailure = exception;
                 if (!exception.retryable() || attempt >= properties.maxAttempts()) {
@@ -95,7 +109,7 @@ public class OpenAiCompatibleEmbeddingGateway implements EmbeddingGateway {
                     throw exception;
                 }
                 if (metrics != null) metrics.contextEmbeddingRetry();
-                sleepBeforeRetry(attempt);
+                sleepBeforeRetry(attempt, properties);
             }
         }
         throw lastFailure == null
@@ -103,12 +117,13 @@ public class OpenAiCompatibleEmbeddingGateway implements EmbeddingGateway {
                 : lastFailure;
     }
 
-    private List<EmbeddingVector> invokeOnce(List<String> inputs) {
+    private List<EmbeddingVector> invokeOnce(List<String> inputs,
+                                             EmbeddingProviderConfigService.ResolvedEmbeddingConfig properties) {
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("model", properties.model());
         request.put("input", inputs);
         try {
-            String body = client.post()
+            String body = buildClient(properties).post()
                     .uri("/embeddings")
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(request)
@@ -117,7 +132,7 @@ public class OpenAiCompatibleEmbeddingGateway implements EmbeddingGateway {
             if (body == null || body.length() > properties.maxResponseChars()) {
                 throw new EmbeddingGatewayException(false, "embedding 响应超过字符上限");
             }
-            return parse(body, inputs.size());
+            return parse(body, inputs.size(), properties);
         } catch (RestClientResponseException exception) {
             int status = exception.getStatusCode().value();
             throw new EmbeddingGatewayException(isRetryableStatus(status),
@@ -129,7 +144,8 @@ public class OpenAiCompatibleEmbeddingGateway implements EmbeddingGateway {
         }
     }
 
-    private List<EmbeddingVector> parse(String body, int expectedCount) {
+    private List<EmbeddingVector> parse(String body, int expectedCount,
+                                        EmbeddingProviderConfigService.ResolvedEmbeddingConfig properties) {
         try {
             JsonNode root = objectMapper.readTree(body);
             JsonNode data = root == null ? null : root.get("data");
@@ -168,7 +184,8 @@ public class OpenAiCompatibleEmbeddingGateway implements EmbeddingGateway {
         }
     }
 
-    private String normalizeInput(String input) {
+    private String normalizeInput(String input,
+                                  EmbeddingProviderConfigService.ResolvedEmbeddingConfig properties) {
         if (input == null || input.isBlank()) {
             throw new EmbeddingGatewayException(false, "embedding 输入不能为空");
         }
@@ -182,6 +199,27 @@ public class OpenAiCompatibleEmbeddingGateway implements EmbeddingGateway {
         return normalized;
     }
 
+    private EmbeddingProviderConfigService.ResolvedEmbeddingConfig resolve(String tenantId) {
+        return configService == null ? new EmbeddingProviderConfigService.ResolvedEmbeddingConfig(
+                defaultProperties.enabled(), defaultProperties.baseUrl(), defaultProperties.apiKey(),
+                defaultProperties.model(), defaultProperties.modelVersion(), defaultProperties.dimension(),
+                defaultProperties.batchSize(), defaultProperties.maxInputChars(), defaultProperties.maxInputTokens(),
+                defaultProperties.maxResponseChars(), defaultProperties.maxAttempts(), defaultProperties.retryBackoffMs(),
+                defaultProperties.timeoutMs(), "environment", null) : configService.resolve(tenantId);
+    }
+
+    private RestClient buildClient(EmbeddingProviderConfigService.ResolvedEmbeddingConfig properties) {
+        RestClient.Builder source = restClientBuilder.clone();
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout((int) properties.timeoutMs());
+        requestFactory.setReadTimeout((int) properties.timeoutMs());
+        source.baseUrl(properties.baseUrl()).requestFactory(requestFactory);
+        if (properties.apiKey() != null && !properties.apiKey().isBlank()) {
+            source.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + properties.apiKey());
+        }
+        return source.build();
+    }
+
     private boolean isRetryableStatus(int status) {
         return status == 408 || status == 425 || status == 429 || status >= 500;
     }
@@ -193,7 +231,8 @@ public class OpenAiCompatibleEmbeddingGateway implements EmbeddingGateway {
                 : "embedding 供应商返回 HTTP " + status + ": " + detail;
     }
 
-    private void sleepBeforeRetry(int attempt) {
+    private void sleepBeforeRetry(int attempt,
+                                  EmbeddingProviderConfigService.ResolvedEmbeddingConfig properties) {
         long delay = Math.min(10_000, properties.retryBackoffMs() * (1L << Math.min(attempt - 1, 10)));
         if (delay <= 0) return;
         try {

@@ -791,6 +791,9 @@ h3 { margin: 0; font-size: 13px; }
 .model-settings-test-result.failed { background: rgba(255,114,123,.08); color: var(--red); }
 .model-settings-test-code { display: inline-flex; margin-right: 7px; border: 1px solid currentColor; border-radius: 4px; padding: 2px 4px; font: 8px "DM Mono", monospace; letter-spacing: .04em; vertical-align: 1px; }
 .model-settings-actions { display: grid; grid-template-columns: auto 1fr auto auto auto; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
+.embedding-settings-inline-fields { display: grid; grid-template-columns: 1fr 150px; gap: 10px; }
+.embedding-settings-actions { grid-template-columns: auto 1fr auto auto auto; }
+.context-config-edit-button { justify-self: start; }
 .command-palette-overlay { position: fixed; z-index: 60; inset: 0; display: grid; place-items: start center; background: rgba(5,9,18,.6); padding: min(17vh, 150px) 20px 20px; backdrop-filter: blur(7px); }
 .command-palette-dialog { width: min(620px, calc(100vw - 32px)); overflow: hidden; border: 1px solid rgba(153,174,218,.24); border-radius: 13px; background: var(--panel); box-shadow: 0 30px 100px rgba(0,0,0,.48); }
 .command-palette-header { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); padding: 13px 15px; }
@@ -882,6 +885,7 @@ h3 { margin: 0; font-size: 13px; }
   .model-settings-actions { grid-template-columns: 1fr 1fr; }
   .model-settings-actions span { display: none; }
   .model-settings-actions .danger-button { grid-column: 1 / -1; justify-self: start; }
+  .embedding-settings-inline-fields { grid-template-columns: 1fr; }
   .workspace-explorer-layout.has-preview { grid-template-columns: minmax(145px, 34%) minmax(0, 1fr); gap: 10px; }
   .workspace-file-inspector { padding-left: 10px; }
   .conversation-sidebar { min-height: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 13px 12px; }
@@ -1142,6 +1146,7 @@ button svg {
 .chat-console-button,
 .chat-topbar .theme-toggle,
 .chat-topbar .command-palette-trigger {
+  height: 34px;
   padding: 7px 9px;
   font-size: 9px;
 }
@@ -1690,6 +1695,7 @@ button svg {
 .console-topbar .topbar-actions > .secondary-button,
 .console-topbar .topbar-actions > .theme-toggle,
 .console-topbar .topbar-actions > .command-palette-trigger {
+  height: 34px;
   padding: 7px 9px;
   font-size: 9px;
 }

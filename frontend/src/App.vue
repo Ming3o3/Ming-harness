@@ -98,6 +98,29 @@ const modelProviderPresets = [
   { id: 'custom', label: '自定义 OpenAI 兼容服务', baseUrl: '', modelName: '' },
 ]
 const modelConfigEditable = computed(() => !modelConfigError.value.startsWith('当前身份没有 model.configure'))
+const embeddingConfig = ref(null)
+const embeddingConfigLoading = ref(false)
+const embeddingConfigSaving = ref(false)
+const embeddingConfigTesting = ref(false)
+const embeddingConfigError = ref('')
+const embeddingConfigTestResult = ref(null)
+const showEmbeddingSettings = ref(false)
+const embeddingConfigForm = reactive({
+  enabled: false,
+  baseUrl: '',
+  modelName: '',
+  modelVersion: 'v1',
+  dimension: 1536,
+  apiKey: '',
+  clearApiKey: false,
+})
+const embeddingConfigEditable = computed(() => !embeddingConfigError.value.startsWith('当前身份没有 context.configure'))
+const embeddingProviderPreset = ref('custom')
+const embeddingProviderPresets = [
+  { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', modelName: 'text-embedding-3-small', dimension: 1536 },
+  { id: 'qwen', label: '通义千问（兼容模式）', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', modelName: 'text-embedding-v3', dimension: 1536 },
+  { id: 'custom', label: '自定义 OpenAI 兼容服务', baseUrl: '', modelName: '', dimension: 1536 },
+]
 // 工作区状态用于告知用户 Agent 是否直接连接到本地项目；接口不会返回绝对路径。
 const workspace = ref(null)
 // 已登记工作区是用户明确在桌面端授权的项目；选择只影响后续创建的会话。
@@ -388,7 +411,7 @@ const tenantPolicyForm = reactive({
 const apiKeyForm = reactive({
   tenantId: form.tenantId,
   userId: form.userId,
-  permissions: 'run.read, run.create, run.execute, run.approve, run.cancel, audit.read, context.read, context.write, evaluation.read, evaluation.run, tool.read, workspace.read, workspace.manage, ops.read, model.configure, tenant.policy.read, tenant.policy.write, auth.key.read, auth.key.manage',
+  permissions: 'run.read, run.create, run.execute, run.approve, run.cancel, audit.read, context.read, context.write, context.configure, evaluation.read, evaluation.run, tool.read, workspace.read, workspace.manage, ops.read, model.configure, tenant.policy.read, tenant.policy.write, auth.key.read, auth.key.manage',
   expiresAt: '',
 })
 
@@ -609,6 +632,15 @@ const commandPaletteItems = computed(() => [
     shortcut: '⌘ ,',
     action: () => { showModelSettings.value = true },
     disabled: modelConfigLoading.value,
+  },
+  {
+    id: 'embedding-settings',
+    label: '打开向量连接设置',
+    description: '配置当前组织知识库使用的 Embedding 服务和向量模型',
+    keywords: 'embedding vector retrieval provider api key 向量 检索 嵌入 设置',
+    icon: '◎',
+    action: () => { showEmbeddingSettings.value = true },
+    disabled: embeddingConfigLoading.value,
   },
   {
     id: 'toggle-console',
@@ -1079,7 +1111,7 @@ function useQuickStartPrompt(prompt) {
 }
 
 function openCommandPalette() {
-  if (showModelSettings.value) return
+  if (showModelSettings.value || showEmbeddingSettings.value) return
   showCommandPalette.value = true
   commandQuery.value = ''
   commandSelectedIndex.value = 0
@@ -1156,6 +1188,11 @@ function handleChatGlobalKeydown(event) {
   if (showModelSettings.value) {
     event.preventDefault()
     showModelSettings.value = false
+    return
+  }
+  if (showEmbeddingSettings.value) {
+    event.preventDefault()
+    showEmbeddingSettings.value = false
     return
   }
   if (showRejectDialog.value) {
@@ -2242,6 +2279,15 @@ async function loadDashboard() {
   }
 }
 
+async function loadContextConfiguration() {
+  try {
+    contextConfiguration.value = await api.contextConfiguration()
+  } catch (error) {
+    // 治理页已经有独立错误提示；配置弹窗保存成功时不因状态刷新失败而误报保存失败。
+    if (!contextConfiguration.value) errorMessage.value = errorText(error)
+  }
+}
+
 /** 加载当前分页，避免控制台一次性拉取全部 Run。 */
 async function loadRunsPage() {
   if (runPageRequest) return runPageRequest
@@ -2442,6 +2488,137 @@ async function resetModelConfig() {
     modelConfigError.value = errorText(error)
   } finally {
     modelConfigSaving.value = false
+  }
+}
+
+function matchingEmbeddingProviderPreset(baseUrl, modelName) {
+  return embeddingProviderPresets.find((preset) => preset.baseUrl === baseUrl && preset.modelName === modelName)?.id || 'custom'
+}
+
+function applyEmbeddingProviderPreset() {
+  const preset = embeddingProviderPresets.find((item) => item.id === embeddingProviderPreset.value)
+  if (!preset || preset.id === 'custom') return
+  embeddingConfigForm.baseUrl = preset.baseUrl
+  embeddingConfigForm.modelName = preset.modelName
+  embeddingConfigForm.dimension = preset.dimension
+  embeddingConfigForm.clearApiKey = false
+  embeddingConfigError.value = ''
+}
+
+function useCustomEmbeddingProvider() {
+  embeddingProviderPreset.value = 'custom'
+}
+
+async function loadEmbeddingConfig() {
+  embeddingConfigLoading.value = true
+  embeddingConfigError.value = ''
+  try {
+    const value = await api.getEmbeddingConfig()
+    embeddingConfig.value = value
+    Object.assign(embeddingConfigForm, {
+      enabled: Boolean(value?.enabled),
+      baseUrl: value?.baseUrl || '',
+      modelName: value?.modelName || '',
+      modelVersion: value?.modelVersion || 'v1',
+      dimension: value?.dimension || 1536,
+      apiKey: '',
+      clearApiKey: false,
+    })
+    embeddingProviderPreset.value = matchingEmbeddingProviderPreset(value?.baseUrl, value?.modelName)
+  } catch (error) {
+    embeddingConfigError.value = error.code === 'PERMISSION_DENIED'
+      ? '当前身份没有 context.configure 权限，无法修改向量连接。'
+      : errorText(error)
+  } finally {
+    embeddingConfigLoading.value = false
+  }
+}
+
+async function saveEmbeddingConfig() {
+  if (embeddingConfigSaving.value) return
+  clearMessages()
+  embeddingConfigSaving.value = true
+  embeddingConfigError.value = ''
+  try {
+    const value = await api.updateEmbeddingConfig({
+      enabled: Boolean(embeddingConfigForm.enabled),
+      baseUrl: embeddingConfigForm.baseUrl.trim(),
+      modelName: embeddingConfigForm.modelName.trim(),
+      modelVersion: embeddingConfigForm.modelVersion.trim(),
+      dimension: Number(embeddingConfigForm.dimension),
+      apiKey: embeddingConfigForm.apiKey,
+      clearApiKey: Boolean(embeddingConfigForm.clearApiKey),
+    })
+    embeddingConfig.value = value
+    embeddingConfigForm.apiKey = ''
+    embeddingConfigForm.clearApiKey = false
+    await loadContextConfiguration()
+    noticeMessage.value = '向量连接设置已保存；旧向量已标记为待重建，请在治理面板执行“重建索引”。'
+    showEmbeddingSettings.value = false
+  } catch (error) {
+    embeddingConfigError.value = errorText(error)
+  } finally {
+    embeddingConfigSaving.value = false
+  }
+}
+
+async function testEmbeddingConfig() {
+  if (embeddingConfigTesting.value || embeddingConfigSaving.value || !embeddingConfigForm.enabled) return
+  embeddingConfigError.value = ''
+  embeddingConfigTestResult.value = null
+  embeddingConfigTesting.value = true
+  try {
+    embeddingConfigTestResult.value = await api.testEmbeddingConfig({
+      enabled: true,
+      baseUrl: embeddingConfigForm.baseUrl.trim(),
+      modelName: embeddingConfigForm.modelName.trim(),
+      modelVersion: embeddingConfigForm.modelVersion.trim(),
+      dimension: Number(embeddingConfigForm.dimension),
+      apiKey: embeddingConfigForm.apiKey,
+      clearApiKey: Boolean(embeddingConfigForm.clearApiKey),
+    })
+  } catch (error) {
+    embeddingConfigTestResult.value = {
+      success: false,
+      status: 'FAILED',
+      message: errorText(error),
+      modelName: embeddingConfigForm.modelName.trim(),
+      dimension: 0,
+      latencyMs: 0,
+      errorCode: 'CLIENT_ERROR',
+    }
+  } finally {
+    embeddingConfigTesting.value = false
+  }
+}
+
+async function resetEmbeddingConfig() {
+  if (embeddingConfigSaving.value) return
+  if (typeof window !== 'undefined'
+    && !window.confirm('恢复环境默认 Embedding 配置吗？当前组织保存的地址和密钥会被删除。')) return
+  clearMessages()
+  embeddingConfigSaving.value = true
+  embeddingConfigError.value = ''
+  try {
+    const value = await api.resetEmbeddingConfig()
+    embeddingConfig.value = value
+    Object.assign(embeddingConfigForm, {
+      enabled: Boolean(value?.enabled),
+      baseUrl: value?.baseUrl || '',
+      modelName: value?.modelName || '',
+      modelVersion: value?.modelVersion || 'v1',
+      dimension: value?.dimension || 1536,
+      apiKey: '',
+      clearApiKey: false,
+    })
+    embeddingProviderPreset.value = matchingEmbeddingProviderPreset(value?.baseUrl, value?.modelName)
+    await loadContextConfiguration()
+    noticeMessage.value = '已恢复环境默认 Embedding 配置。'
+    showEmbeddingSettings.value = false
+  } catch (error) {
+    embeddingConfigError.value = errorText(error)
+  } finally {
+    embeddingConfigSaving.value = false
   }
 }
 
@@ -3135,7 +3312,7 @@ onMounted(async () => {
       void handleDesktopWorkspaceDropped(result)
     })
   }
-  await Promise.all([loadDashboard(), loadHealth(), loadModelConfig(), loadWorkspace(), loadTenantPolicy(), loadApiKeys(), loadLocalWorkspaces()])
+  await Promise.all([loadDashboard(), loadHealth(), loadModelConfig(), loadEmbeddingConfig(), loadWorkspace(), loadTenantPolicy(), loadApiKeys(), loadLocalWorkspaces()])
   await loadConversations()
   runPollTimer = window.setInterval(pollSelectedRun, 1500)
   conversationPollTimer = window.setInterval(pollConversation, 1200)
@@ -3175,6 +3352,7 @@ onBeforeUnmount(() => {
             <Sun v-if="theme === 'dark'" :size="15" aria-hidden="true" /><Moon v-else :size="15" aria-hidden="true" />{{ theme === 'dark' ? '白天' : '黑夜' }}
           </button>
           <button class="secondary-button chat-console-button" type="button" title="打开模型设置" @click="showModelSettings = true"><Settings2 :size="15" />模型设置</button>
+          <button class="secondary-button chat-console-button" type="button" title="打开向量连接设置" @click="showEmbeddingSettings = true">◎ 向量设置</button>
           <button class="secondary-button chat-console-button" type="button" title="打开运行控制台" @click="chatMode = false"><PanelRight :size="15" />运行控制台</button>
         </div>
       </header>
@@ -3694,6 +3872,7 @@ onBeforeUnmount(() => {
             {{ theme === 'dark' ? '白天' : '黑夜' }}
           </button>
           <button class="secondary-button" type="button" title="打开模型设置" @click="showModelSettings = true"><Settings2 :size="15" />模型设置</button>
+          <button class="secondary-button" type="button" title="打开向量连接设置" @click="showEmbeddingSettings = true">◎ 向量设置</button>
           <button class="secondary-button" type="button" title="打开聊天工作台" @click="chatMode = true"><MessageSquarePlus :size="15" />聊天工作台</button>
         </div>
       </div>
@@ -4121,7 +4300,8 @@ onBeforeUnmount(() => {
               </div>
               <span class="context-index-status" :class="contextConfiguration?.embeddingReady ? 'is-ready' : 'is-warning'">{{ contextConfiguration?.embeddingReady ? 'READY' : 'OFFLINE' }}</span>
             </div>
-            <p class="context-workbench-help">这是当前 Runtime 的脱敏快照。服务地址和 API Key 只由部署环境管理，不会回传到前端。</p>
+            <p class="context-workbench-help">这是当前组织的脱敏快照。服务地址可在“向量设置”中维护，API Key 只会提交给 Runtime，不会回传到前端。</p>
+            <button class="secondary-button context-config-edit-button" type="button" @click="showEmbeddingSettings = true">编辑向量连接</button>
             <div v-if="contextConfiguration" class="context-config-grid">
               <div><span>Embedding 模型</span><strong>{{ contextConfiguration.model }}</strong></div>
               <div><span>模型版本</span><strong>{{ contextConfiguration.modelVersion }}</strong></div>
@@ -4133,7 +4313,7 @@ onBeforeUnmount(() => {
               <div><span>混合排序</span><strong>{{ contextConfiguration.rrfEnabled ? 'RRF' : '向量优先' }}</strong></div>
             </div>
             <div v-else class="context-preview-empty">正在读取 Runtime 配置…</div>
-            <small class="form-hint">配置由环境变量注入；修改后重启 Runtime，并使用上方索引操作重新建立向量。</small>
+            <small class="form-hint">配置按组织保存；修改后旧向量会失效，请使用上方索引操作重新建立向量。</small>
           </section>
           <form class="governance-card" @submit.prevent="createDocument">
             <h3>添加授权知识文档</h3>
@@ -4413,6 +4593,59 @@ onBeforeUnmount(() => {
           <button class="secondary-button" type="button" :disabled="modelConfigSaving || modelConfigTesting || !modelConfigEditable || !modelConfigForm.enabled" @click="testModelConfig">{{ modelConfigTesting ? '测试中…' : '测试连接' }}</button>
           <button class="secondary-button" type="button" :disabled="modelConfigSaving" @click="showModelSettings = false">取消</button>
           <button class="primary-button" type="submit" :disabled="modelConfigSaving || modelConfigLoading || !modelConfigEditable">{{ modelConfigSaving ? '保存中…' : '保存并应用' }}</button>
+        </footer>
+      </template>
+    </form>
+  </div>
+  <div
+    v-if="showEmbeddingSettings"
+    class="model-settings-overlay"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="embedding-settings-title"
+    @click.self="showEmbeddingSettings = false"
+  >
+    <form class="model-settings-dialog embedding-settings-dialog" @submit.prevent="saveEmbeddingConfig">
+      <header class="model-settings-heading">
+        <div>
+          <p class="eyebrow">EMBEDDING CONNECTION</p>
+          <h2 id="embedding-settings-title">向量连接设置</h2>
+          <span>{{ embeddingConfig?.source === 'tenant' ? '当前组织配置' : '环境默认配置' }}</span>
+        </div>
+        <button class="icon-button" type="button" aria-label="关闭向量设置" @click="showEmbeddingSettings = false">×</button>
+      </header>
+      <div v-if="embeddingConfigLoading" class="model-settings-state">正在读取当前向量配置…</div>
+      <template v-else>
+        <p class="model-settings-help">支持 OpenAI 兼容的 <code>/embeddings</code> 地址。知识库向量是组织共享索引，保存后旧向量会标记为待重建；API Key 只会提交给当前 Runtime，服务端加密保存。</p>
+        <label class="check-field model-settings-toggle">
+          <input v-model="embeddingConfigForm.enabled" type="checkbox" :disabled="!embeddingConfigEditable" />
+          <span>启用外部 Embedding，不使用关键词降级</span>
+        </label>
+        <label class="field"><span>服务预设</span><select v-model="embeddingProviderPreset" :disabled="!embeddingConfigEditable || !embeddingConfigForm.enabled" @change="applyEmbeddingProviderPreset"><option v-for="preset in embeddingProviderPresets" :key="preset.id" :value="preset.id">{{ preset.label }}</option></select></label>
+        <label class="field"><span>Embedding API 地址</span><input v-model="embeddingConfigForm.baseUrl" :disabled="!embeddingConfigEditable || !embeddingConfigForm.enabled" :required="embeddingConfigForm.enabled" maxlength="512" placeholder="https://api.openai.com/v1" @input="useCustomEmbeddingProvider" /></label>
+        <label class="field"><span>Embedding 模型名称</span><input v-model="embeddingConfigForm.modelName" :disabled="!embeddingConfigEditable || !embeddingConfigForm.enabled" :required="embeddingConfigForm.enabled" maxlength="128" placeholder="例如：text-embedding-3-small" @input="useCustomEmbeddingProvider" /></label>
+        <div class="embedding-settings-inline-fields">
+          <label class="field"><span>模型版本</span><input v-model="embeddingConfigForm.modelVersion" :disabled="!embeddingConfigEditable || !embeddingConfigForm.enabled" required maxlength="128" placeholder="v1" /></label>
+          <label class="field"><span>向量维度</span><input v-model.number="embeddingConfigForm.dimension" :disabled="!embeddingConfigEditable || !embeddingConfigForm.enabled" required type="number" min="1" max="8192" /></label>
+        </div>
+        <small class="form-hint">当前数据库向量列固定为 1536 维；其他维度会被拒绝，需先做数据库迁移。</small>
+        <label class="field"><span>API Key（留空保留当前密钥）</span><input v-model="embeddingConfigForm.apiKey" :disabled="!embeddingConfigEditable" type="password" autocomplete="new-password" maxlength="1000" placeholder="不会回显已保存的密钥" /></label>
+        <label v-if="embeddingConfig?.apiKeyConfigured" class="check-field model-settings-clear-key">
+          <input v-model="embeddingConfigForm.clearApiKey" type="checkbox" :disabled="!embeddingConfigEditable" />
+          <span>同时删除服务端已保存的 API Key（适用于无密钥本地模型）</span>
+        </label>
+        <p v-if="embeddingConfig?.apiKeyConfigured" class="model-settings-hint">当前密钥：{{ embeddingConfig.apiKeyHint || '已配置（不显示明文）' }}</p>
+        <p v-if="embeddingConfigTestResult" class="model-settings-test-result" :class="embeddingConfigTestResult.success ? 'success' : 'failed'" role="status" aria-live="polite">
+          <span v-if="embeddingConfigTestResult.errorCode" class="model-settings-test-code">{{ embeddingConfigTestResult.errorCode }}</span>
+          {{ embeddingConfigTestResult.message }}<span v-if="embeddingConfigTestResult.dimension"> · {{ embeddingConfigTestResult.dimension }} 维</span><span v-if="embeddingConfigTestResult.latencyMs"> · {{ embeddingConfigTestResult.latencyMs }} ms</span>
+        </p>
+        <p v-if="embeddingConfigError" class="policy-error">{{ embeddingConfigError }}</p>
+        <footer class="model-settings-actions embedding-settings-actions">
+          <button class="danger-button" type="button" :disabled="embeddingConfigSaving || !embeddingConfig?.configured" @click="resetEmbeddingConfig">恢复环境默认</button>
+          <span></span>
+          <button class="secondary-button" type="button" :disabled="embeddingConfigSaving || embeddingConfigTesting || !embeddingConfigEditable || !embeddingConfigForm.enabled" @click="testEmbeddingConfig">{{ embeddingConfigTesting ? '测试中…' : '测试连接' }}</button>
+          <button class="secondary-button" type="button" :disabled="embeddingConfigSaving" @click="showEmbeddingSettings = false">取消</button>
+          <button class="primary-button" type="submit" :disabled="embeddingConfigSaving || embeddingConfigLoading || !embeddingConfigEditable">{{ embeddingConfigSaving ? '保存中…' : '保存并应用' }}</button>
         </footer>
       </template>
     </form>

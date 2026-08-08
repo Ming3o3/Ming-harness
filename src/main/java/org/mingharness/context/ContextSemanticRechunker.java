@@ -2,6 +2,7 @@ package org.mingharness.context;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /** 在独立事务中完成语义重分块，并在新子块提交后触发向量索引。 */
 @Service
@@ -11,15 +12,26 @@ public class ContextSemanticRechunker {
     private final MemoryEntryRepository memoryRepository;
     private final ContextChunkWriter chunkWriter;
     private final ContextEmbeddingDispatcher embeddingDispatcher;
+    private final EmbeddingProviderConfigService configService;
 
     public ContextSemanticRechunker(KnowledgeDocumentRepository documentRepository,
                                     MemoryEntryRepository memoryRepository,
                                     ContextChunkWriter chunkWriter,
                                     ContextEmbeddingDispatcher embeddingDispatcher) {
+        this(documentRepository, memoryRepository, chunkWriter, embeddingDispatcher, null);
+    }
+
+    @Autowired
+    public ContextSemanticRechunker(KnowledgeDocumentRepository documentRepository,
+                                    MemoryEntryRepository memoryRepository,
+                                    ContextChunkWriter chunkWriter,
+                                    ContextEmbeddingDispatcher embeddingDispatcher,
+                                    EmbeddingProviderConfigService configService) {
         this.documentRepository = documentRepository;
         this.memoryRepository = memoryRepository;
         this.chunkWriter = chunkWriter;
         this.embeddingDispatcher = embeddingDispatcher;
+        this.configService = configService;
     }
 
     @Transactional
@@ -27,7 +39,11 @@ public class ContextSemanticRechunker {
         ParentContent parent = findActiveParent(parentType, parentId);
         if (parent == null) return;
         chunkWriter.replaceSemantic(parent.tenantId(), parent.type(), parent.id(), parent.content());
-        embeddingDispatcher.dispatchAfterCommit(parent.type(), parent.id());
+        if (configService == null) {
+            embeddingDispatcher.dispatchAfterCommit(parent.type(), parent.id());
+        } else {
+            embeddingDispatcher.dispatchAfterCommit(parent.tenantId(), parent.type(), parent.id());
+        }
     }
 
     private ParentContent findActiveParent(String parentType, String parentId) {

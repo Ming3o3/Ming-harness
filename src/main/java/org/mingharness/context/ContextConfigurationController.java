@@ -2,7 +2,7 @@ package org.mingharness.context;
 
 import org.mingharness.config.ContextChunkingProperties;
 import org.mingharness.config.ContextRetrievalProperties;
-import org.mingharness.config.EmbeddingProperties;
+import org.mingharness.security.HarnessIdentityContext;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -12,33 +12,31 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/context")
 public class ContextConfigurationController {
 
-    private final EmbeddingProperties embeddingProperties;
+    private final EmbeddingProviderConfigService configService;
     private final ContextChunkingProperties chunkingProperties;
     private final ContextRetrievalProperties retrievalProperties;
-    private final EmbeddingGateway embeddingGateway;
     private final ContextEmbeddingStore embeddingStore;
 
-    public ContextConfigurationController(EmbeddingProperties embeddingProperties,
+    public ContextConfigurationController(EmbeddingProviderConfigService configService,
                                           ContextChunkingProperties chunkingProperties,
                                           ContextRetrievalProperties retrievalProperties,
-                                          EmbeddingGateway embeddingGateway,
                                           ContextEmbeddingStore embeddingStore) {
-        this.embeddingProperties = embeddingProperties;
+        this.configService = configService;
         this.chunkingProperties = chunkingProperties;
         this.retrievalProperties = retrievalProperties;
-        this.embeddingGateway = embeddingGateway;
         this.embeddingStore = embeddingStore;
     }
 
     @GetMapping("/configuration")
     public ContextConfigurationView configuration() {
+        var embedding = configService.resolve(HarnessIdentityContext.require().tenantId());
         return new ContextConfigurationView(
-                embeddingProperties.enabled(),
-                embeddingGateway.enabled() && embeddingStore.supported(),
-                embeddingProperties.model(),
-                embeddingProperties.modelVersion(),
-                embeddingProperties.dimension(),
-                embeddingProperties.batchSize(),
+                embedding.enabled(),
+                embedding.enabled() && embeddingStore.supported(),
+                embedding.model(),
+                embedding.modelVersion(),
+                embedding.dimension(),
+                embedding.batchSize(),
                 chunkingProperties.chunkMaxChars(),
                 chunkingProperties.parentWindowMaxChars(),
                 chunkingProperties.semanticEnabled(),

@@ -8,4 +8,13 @@ public interface EmbeddingGateway {
     boolean enabled();
 
     List<EmbeddingVector> embed(List<String> inputs);
+
+    /** 按组织解析用户在控制台保存的供应商配置；旧调用方仍可使用无租户重载。 */
+    default boolean enabled(String tenantId) {
+        return enabled();
+    }
+
+    default List<EmbeddingVector> embed(String tenantId, List<String> inputs) {
+        return embed(inputs);
+    }
 }

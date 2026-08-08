@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(properties = {
         "harness.auth.mode=api-key",
-        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,run.create,ops.read,model.configure,workspace.read,workspace.write,workspace.manage,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage,context.reindex;web-other-key|tenant-other|other-user|run.read,workspace.read",
+        "harness.auth.api-keys=web-test-key|tenant-web|web-user|tool.read,run.read,run.create,ops.read,model.configure,context.configure,workspace.read,workspace.write,workspace.manage,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage,context.reindex;web-other-key|tenant-other|other-user|run.read,workspace.read",
         "harness.workspace.enabled=true",
         "harness.workspace.local-registration-enabled=true",
         "management.endpoint.health.show-details=when_authorized",
@@ -134,6 +134,54 @@ class HarnessAuthWebTests {
         assertEquals(200, response.statusCode(), response.body());
         assertTrue(response.body().contains("\"status\":\"DISABLED\""), response.body());
         assertTrue(response.body().contains("未发起网络请求"), response.body());
+    }
+
+    @Test
+    void shouldSaveEmbeddingConfigWithoutReturningApiKey() throws Exception {
+        HttpResponse<String> saved = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/context/embedding-config"))
+                        .header("Authorization", "Bearer web-test-key")
+                        .header("Content-Type", "application/json")
+                        .PUT(HttpRequest.BodyPublishers.ofString("{\"enabled\":true,\"baseUrl\":\"http://localhost:11434/v1\","
+                                + "\"modelName\":\"nomic-embed-text\",\"modelVersion\":\"v1\",\"dimension\":1536,"
+                                + "\"apiKey\":\"secret-web-embedding\"}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, saved.statusCode(), saved.body());
+        assertTrue(saved.body().contains("\"source\":\"tenant\""), saved.body());
+        assertTrue(saved.body().contains("••••ding"), saved.body());
+        assertFalse(saved.body().contains("secret-web-embedding"), saved.body());
+
+        HttpResponse<String> loaded = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/context/embedding-config"))
+                        .header("Authorization", "Bearer web-test-key").GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, loaded.statusCode(), loaded.body());
+        assertFalse(loaded.body().contains("secret-web-embedding"), loaded.body());
+    }
+
+    @Test
+    void shouldProtectEmbeddingConfigWithContextConfigurePermission() throws Exception {
+        HttpResponse<String> denied = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/context/embedding-config"))
+                        .header("Authorization", "Bearer web-other-key").GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, denied.statusCode(), denied.body());
+        assertTrue(denied.body().contains("PERMISSION_DENIED"), denied.body());
+    }
+
+    @Test
+    void shouldTestDisabledEmbeddingConfigWithoutCallingProvider() throws Exception {
+        HttpResponse<String> response = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/context/embedding-config/test"))
+                        .header("Authorization", "Bearer web-test-key")
+                        .header("Content-Type", "application/json")
+                        .POST(HttpRequest.BodyPublishers.ofString("{\"enabled\":false,\"baseUrl\":\"\",\"modelName\":\"\",\"dimension\":1536}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode(), response.body());
+        assertTrue(response.body().contains("\"status\":\"DISABLED\""), response.body());
+        assertTrue(response.body().contains("请先启用外部 Embedding"), response.body());
     }
 
     @Test

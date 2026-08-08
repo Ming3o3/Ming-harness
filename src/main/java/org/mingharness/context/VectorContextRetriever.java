@@ -51,6 +51,7 @@ public class VectorContextRetriever {
                  WHERE c.tenant_id = :tenantId
                    AND c.deleted_at IS NULL
                    AND c.embedding IS NOT NULL
+                   AND c.embedding_model = :embeddingSignature
                    AND (
                         (c.parent_type = 'DOCUMENT'
                          AND d.deleted_at IS NULL
@@ -95,6 +96,7 @@ public class VectorContextRetriever {
     private final ContextEmbeddingStore embeddingStore;
     private final ContextEmbeddingCache embeddingCache;
     private final EmbeddingProperties embeddingProperties;
+    private final EmbeddingProviderConfigService configService;
     private final ContextRetrievalProperties retrievalProperties;
     private final SensitiveDataSanitizer sanitizer;
     private final HarnessMetrics metrics;
@@ -123,7 +125,6 @@ public class VectorContextRetriever {
                 embeddingProperties, retrievalProperties, sanitizer, new NoopContextEmbeddingCache(), metrics);
     }
 
-    @org.springframework.beans.factory.annotation.Autowired
     public VectorContextRetriever(NamedParameterJdbcTemplate jdbcTemplate,
                                   ContextChunkRepository chunkRepository,
                                   ContextParentWindowRepository parentWindowRepository,
@@ -134,6 +135,22 @@ public class VectorContextRetriever {
                                   SensitiveDataSanitizer sanitizer,
                                   ContextEmbeddingCache embeddingCache,
                                   HarnessMetrics metrics) {
+        this(jdbcTemplate, chunkRepository, parentWindowRepository, embeddingGateway, embeddingStore,
+                embeddingProperties, retrievalProperties, sanitizer, embeddingCache, metrics, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public VectorContextRetriever(NamedParameterJdbcTemplate jdbcTemplate,
+                                  ContextChunkRepository chunkRepository,
+                                  ContextParentWindowRepository parentWindowRepository,
+                                  EmbeddingGateway embeddingGateway,
+                                  ContextEmbeddingStore embeddingStore,
+                                  EmbeddingProperties embeddingProperties,
+                                  ContextRetrievalProperties retrievalProperties,
+                                  SensitiveDataSanitizer sanitizer,
+                                  ContextEmbeddingCache embeddingCache,
+                                  HarnessMetrics metrics,
+                                  EmbeddingProviderConfigService configService) {
         this.jdbcTemplate = jdbcTemplate;
         this.chunkRepository = chunkRepository;
         this.parentWindowRepository = parentWindowRepository;
@@ -141,23 +158,26 @@ public class VectorContextRetriever {
         this.embeddingStore = embeddingStore;
         this.embeddingCache = embeddingCache;
         this.embeddingProperties = embeddingProperties;
+        this.configService = configService;
         this.retrievalProperties = retrievalProperties;
         this.sanitizer = sanitizer;
         this.metrics = metrics;
     }
 
     public ContextResult retrieve(String tenantId, String userId, String query, int maxChars) {
+        EmbeddingProviderConfigService.ResolvedEmbeddingConfig config = config(tenantId);
         if (query == null || query.isBlank() || maxChars < 1
-                || !embeddingGateway.enabled() || !embeddingStore.supported()) {
+                || !enabled(tenantId) || !embeddingStore.supported()) {
             return new ContextResult("", List.of());
         }
         if (metrics != null) metrics.contextVectorQuery();
-        String boundedQuery = boundQuery(query);
-        EmbeddingVector queryVector = queryEmbedding(tenantId, boundedQuery);
+        String boundedQuery = boundQuery(query, config);
+        EmbeddingVector queryVector = queryEmbedding(tenantId, boundedQuery, config);
         Map<String, Object> parameters = new MapSqlParameterSource()
                 .addValue("tenantId", tenantId)
                 .addValue("userId", userId)
                 .addValue("queryVector", vectorLiteral(queryVector))
+                .addValue("embeddingSignature", config.signature())
                 .addValue("minSimilarity", retrievalProperties.minSimilarity())
                 .addValue("candidatePoolLimit", retrievalProperties.candidatePoolLimit())
                 .addValue("maxCandidatesPerParent", retrievalProperties.maxCandidatesPerParent())
@@ -239,20 +259,22 @@ public class VectorContextRetriever {
         return sanitizer.sanitize(result.toString());
     }
 
-    private String boundQuery(String query) {
+    private String boundQuery(String query,
+                              EmbeddingProviderConfigService.ResolvedEmbeddingConfig config) {
         String normalized = sanitizer.sanitize(query).trim();
-        if (normalized.length() > embeddingProperties.maxInputChars()) {
-            normalized = normalized.substring(0, embeddingProperties.maxInputChars());
+        if (normalized.length() > config.maxInputChars()) {
+            normalized = normalized.substring(0, config.maxInputChars());
         }
-        return EmbeddingTokenEstimator.truncate(normalized, embeddingProperties.maxInputTokens()).trim();
+        return EmbeddingTokenEstimator.truncate(normalized, config.maxInputTokens()).trim();
     }
 
-    private EmbeddingVector queryEmbedding(String tenantId, String boundedQuery) {
+    private EmbeddingVector queryEmbedding(String tenantId, String boundedQuery,
+                                           EmbeddingProviderConfigService.ResolvedEmbeddingConfig config) {
         String contentHash = EmbeddingContentHasher.sha256(boundedQuery);
         try {
             Optional<EmbeddingVector> cached = embeddingCache.find(tenantId, contentHash,
-                    embeddingProperties.model(), embeddingProperties.modelVersion(), embeddingProperties.dimension());
-            if (cached.isPresent() && cached.get().dimension() == embeddingProperties.dimension()) {
+                    config.model(), config.modelVersion(), config.dimension());
+            if (cached.isPresent() && cached.get().dimension() == config.dimension()) {
                 if (metrics != null) metrics.contextQueryEmbeddingCacheHit();
                 return cached.get();
             }
@@ -261,18 +283,34 @@ public class VectorContextRetriever {
         }
         if (metrics != null) metrics.contextQueryEmbeddingCacheMiss();
 
-        List<EmbeddingVector> queryVectors = embeddingGateway.embed(List.of(boundedQuery));
-        if (queryVectors.size() != 1 || queryVectors.get(0).dimension() != embeddingProperties.dimension()) {
+        List<EmbeddingVector> queryVectors = configService == null
+                ? embeddingGateway.embed(List.of(boundedQuery))
+                : embeddingGateway.embed(tenantId, List.of(boundedQuery));
+        if (queryVectors.size() != 1 || queryVectors.get(0).dimension() != config.dimension()) {
             throw new EmbeddingGatewayException(false, "查询 embedding 维度不匹配");
         }
         EmbeddingVector queryVector = queryVectors.get(0);
         try {
-            embeddingCache.save(tenantId, contentHash, embeddingProperties.model(),
-                    embeddingProperties.modelVersion(), queryVector);
+            embeddingCache.save(tenantId, contentHash, config.model(), config.modelVersion(), queryVector);
         } catch (RuntimeException ignored) {
             // 缓存写入失败不能影响本次检索结果。
         }
         return queryVector;
+    }
+
+    private boolean enabled(String tenantId) {
+        return configService == null ? embeddingGateway.enabled() : embeddingGateway.enabled(tenantId);
+    }
+
+    private EmbeddingProviderConfigService.ResolvedEmbeddingConfig config(String tenantId) {
+        return configService == null
+                ? new EmbeddingProviderConfigService.ResolvedEmbeddingConfig(embeddingProperties.enabled(),
+                embeddingProperties.baseUrl(), embeddingProperties.apiKey(), embeddingProperties.model(),
+                embeddingProperties.modelVersion(), embeddingProperties.dimension(), embeddingProperties.batchSize(),
+                embeddingProperties.maxInputChars(), embeddingProperties.maxInputTokens(), embeddingProperties.maxResponseChars(),
+                embeddingProperties.maxAttempts(), embeddingProperties.retryBackoffMs(), embeddingProperties.timeoutMs(),
+                "environment", null)
+                : configService.resolve(tenantId);
     }
 
     private String vectorLiteral(EmbeddingVector vector) {

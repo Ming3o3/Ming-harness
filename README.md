@@ -203,13 +203,15 @@ npm run dist:win:green
 
 聊天工作台和运行控制台都提供“模型设置”入口。用户可以输入 OpenAI 兼容 API 地址、模型名称和 API Key；保存后只影响当前组织/用户创建的新 Run，用户覆盖配置会在 Run 创建时固化供应商快照，因此正在排队、审批或执行的 Run 不会被中途切换。后端通过 `GET/PUT/DELETE /api/model-config` 管理设置，API Key 使用 AES-GCM 加密保存，读取接口只返回掩码，不写入浏览器 localStorage。使用 api-key/OIDC 认证时，当前身份需要 `model.configure` 权限。
 
+运行控制台和治理面板还提供“向量设置”入口。Embedding 配置按组织保存（知识库向量是组织共享索引），支持 OpenAI 兼容的 `/embeddings` 地址、模型、模型版本、API Key 和当前固定的 1536 维向量。保存后会清空该组织旧 chunk 向量，必须在“向量索引”中重新建立索引；API Key 使用独立 AES-GCM 密钥标签加密，读取接口只返回掩码。后端通过 `GET/PUT/DELETE /api/context/embedding-config` 和 `POST /api/context/embedding-config/test` 管理配置；使用 api-key/OIDC 认证时需要 `context.configure` 权限。
+
 聊天和运行控制台都支持 `⌘/Ctrl + K` 命令面板，可搜索并执行新建对话、聚焦输入框、打开项目文件、查看当前 Run、模型设置、工作台切换和主题切换等操作；面板会根据当前会话和权限自动隐藏不可用命令。
 
 前端共享环境可通过 `VITE_HARNESS_API_KEY` 使用 API Key；同时设置 `VITE_HARNESS_TENANT_ID` 和 `VITE_HARNESS_USER_ID`，让创建 Run 表单与 API Key 绑定的身份保持一致。
 
 ### API Key / OIDC 认证
 
-生产或共享环境建议设置 `HARNESS_AUTH_MODE=api-key`。调用方使用 `Authorization: Bearer <key>` 或 `X-Api-Key`，服务端根据配置或数据库凭证将请求绑定到固定组织和用户，并按接口校验权限，例如 `run.read`、`run.create`、`run.execute`、`run.approve`、`context.read`、`context.write`、`audit.read`、`evaluation.run`、`tool.read`、`model.configure` 和 `ops.read`。工作区读取工具还需要 `workspace.read`，写入工具需要 `workspace.write` 并进入人工审批；`model.configure` 允许当前用户在控制台保存自己的模型 URL、模型名和加密 API Key；`ops.read` 用于读取 `/api/health`、Actuator 指标、Prometheus 和应用信息。
+生产或共享环境建议设置 `HARNESS_AUTH_MODE=api-key`。调用方使用 `Authorization: Bearer <key>` 或 `X-Api-Key`，服务端根据配置或数据库凭证将请求绑定到固定组织和用户，并按接口校验权限，例如 `run.read`、`run.create`、`run.execute`、`run.approve`、`context.read`、`context.write`、`context.configure`、`audit.read`、`evaluation.run`、`tool.read`、`model.configure` 和 `ops.read`。工作区读取工具还需要 `workspace.read`，写入工具需要 `workspace.write` 并进入人工审批；`model.configure` 允许当前用户在控制台保存自己的模型 URL、模型名和加密 API Key；`context.configure` 允许组织内授权操作者保存共享知识库的 Embedding URL、模型和加密 API Key；`ops.read` 用于读取 `/api/health`、Actuator 指标、Prometheus 和应用信息。
 
 通过具有 `auth.key.manage` 权限的引导 Key 或 OIDC 服务账号，可调用 `POST /api/admin/api-keys` 创建数据库 API Key；明文 `secret` 仅在创建响应中出现一次，数据库只保存 SHA-256 摘要。`GET /api/admin/api-keys` 只返回前缀和元数据，`POST /api/admin/api-keys/{keyId}/rotate` 会在同一事务中创建同权限新 Key 并立即撤销旧 Key，`DELETE /api/admin/api-keys/{keyId}` 可即时撤销，`GET /api/admin/api-keys/audits` 可查看生命周期审计。读取接口需要 `auth.key.read`，跨组织管理还需 `auth.key.cross-tenant`。环境变量 `HARNESS_API_KEYS` 保留为紧急引导兼容方案，变更或撤销需要重启；正式环境应逐步迁移至数据库生命周期 Key。
 
@@ -450,6 +452,8 @@ curl -X POST http://localhost:8080/api/runs \
 - `POST/GET/DELETE /api/context/documents`：管理组织隔离的知识文档
 - `POST/GET/DELETE /api/context/memories`：管理用户范围的长期记忆
 - `GET /api/context/preview?query=...`：预览授权来源和引用
+- `GET/PUT/DELETE /api/context/embedding-config`：读取、保存或恢复当前组织的 Embedding 连接配置；密钥只返回掩码
+- `POST /api/context/embedding-config/test`：使用未保存配置测试一次 OpenAI 兼容 `/embeddings` 连接
 - `POST /api/context/reindex`：按租户有界重建上下文 chunk 和 embedding，需要 `context.reindex` 权限；`rechunk=true` 时按当前语义分块配置重新切块
 - `POST/GET /api/evaluations/retrieval`：运行或查询上下文检索离线评测，需要 `evaluation.run` / `evaluation.read` 权限；用例的 `relevantSources` 使用 `document:<id>` 或 `memory:<id>`，`expectedContains` 可选，用于计算上下文命中率
 - `POST/GET /api/evaluations`：运行固定回归用例并查询评测报告；`rabbit` 模式下接口会等待每个 Run 到终态，等待审批的用例不会自动审批，单个用例超时会记录当前状态并继续后续用例

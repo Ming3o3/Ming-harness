@@ -57,7 +57,12 @@ public class ContextEmbeddingDispatcher {
      * <p>没有事务时直接按配置执行，方便重建服务和独立调用复用。</p>
      */
     public void dispatchAfterCommit(String parentType, String parentId) {
-        if (!indexer.ready()) return;
+        dispatchAfterCommit(null, parentType, parentId);
+    }
+
+    public void dispatchAfterCommit(String tenantId, String parentType, String parentId) {
+        if (tenantId != null && !indexer.ready(tenantId)) return;
+        if (tenantId == null && !indexer.ready()) return;
         Runnable task = () -> index(parentType, parentId);
         if (TransactionSynchronizationManager.isSynchronizationActive()
                 && TransactionSynchronizationManager.isActualTransactionActive()) {
