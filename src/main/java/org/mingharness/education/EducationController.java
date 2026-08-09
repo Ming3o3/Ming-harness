@@ -6,6 +6,7 @@ import org.mingharness.conversation.api.ConversationDetail;
 import org.mingharness.education.api.EducationSourceRequest;
 import org.mingharness.education.api.EducationSourceView;
 import org.mingharness.education.api.AssessmentAttemptView;
+import org.mingharness.education.api.DeferLearningTaskRequest;
 import org.mingharness.education.api.ExecuteLearningActionRequest;
 import org.mingharness.education.api.LearnerMasteryView;
 import org.mingharness.education.api.LearnerProfileRequest;
@@ -15,6 +16,8 @@ import org.mingharness.education.api.LearningGoalStatusRequest;
 import org.mingharness.education.api.LearningGoalView;
 import org.mingharness.education.api.LearningRecommendationView;
 import org.mingharness.education.api.LearningReviewPlanView;
+import org.mingharness.education.api.LearningTaskStartView;
+import org.mingharness.education.api.LearningTaskView;
 import org.mingharness.education.api.ManualAssessmentSubmissionRequest;
 import org.mingharness.education.api.MasteryUpdateRequest;
 import org.mingharness.security.HarnessIdentity;
@@ -26,6 +29,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -42,19 +46,22 @@ public class EducationController {
     private final EducationAssessmentService assessmentService;
     private final LearningRecommendationService recommendationService;
     private final EducationActionService actionService;
+    private final LearningTaskService taskService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
                                LearningGoalService learningGoalService,
                                EducationAssessmentService assessmentService,
                                LearningRecommendationService recommendationService,
-                               EducationActionService actionService) {
+                               EducationActionService actionService,
+                               LearningTaskService taskService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
         this.assessmentService = assessmentService;
         this.recommendationService = recommendationService;
         this.actionService = actionService;
+        this.taskService = taskService;
     }
 
     @PostMapping("/sources")
@@ -175,6 +182,34 @@ public class EducationController {
                 recommendationService.reviewPlan(identity.tenantId(), identity.userId(), goalId));
     }
 
+    @GetMapping("/tasks")
+    public List<LearningTaskView> listTasks(@RequestParam(required = false) String status) {
+        HarnessIdentity identity = identity();
+        LearningTaskStatus requested = parseTaskStatus(status);
+        return taskService.list(identity.tenantId(), identity.userId(), requested).stream()
+                .map(LearningTaskView::from).toList();
+    }
+
+    @PostMapping("/tasks/{taskId}/start")
+    public LearningTaskStartView startTask(@PathVariable String taskId,
+                                           @Valid @RequestBody(required = false)
+                                           ExecuteLearningActionRequest request,
+                                           HttpServletRequest httpRequest) {
+        HarnessIdentity identity = identity();
+        String permissions = identity.usesTrustedPermissions()
+                ? identity.permissionsCsv() : httpRequest.getHeader("X-Permissions");
+        return taskService.start(identity.tenantId(), identity.userId(), taskId, request,
+                permissions, httpRequest.getHeader("Idempotency-Key"));
+    }
+
+    @PostMapping("/tasks/{taskId}/defer")
+    public LearningTaskView deferTask(@PathVariable String taskId,
+                                      @Valid @RequestBody(required = false)
+                                      DeferLearningTaskRequest request) {
+        HarnessIdentity identity = identity();
+        return LearningTaskView.from(taskService.defer(identity.tenantId(), identity.userId(), taskId, request));
+    }
+
     @PostMapping("/goals/{goalId}/next-action")
     public ConversationDetail executeNextAction(@PathVariable String goalId,
                                                  @Valid @RequestBody(required = false)
@@ -183,11 +218,29 @@ public class EducationController {
         HarnessIdentity identity = identity();
         String permissions = identity.usesTrustedPermissions()
                 ? identity.permissionsCsv() : httpRequest.getHeader("X-Permissions");
+        LearningGoal goal = learningGoalService.get(identity.tenantId(), identity.userId(), goalId);
+        if (goal.getStatus() == LearningGoalStatus.COMPLETED) {
+            LearningTask task = taskService.findStartableForGoal(identity.tenantId(), identity.userId(), goalId);
+            if (task != null) {
+                return taskService.start(identity.tenantId(), identity.userId(), task.getId(), request,
+                        permissions, httpRequest.getHeader("Idempotency-Key")).conversation();
+            }
+        }
         return actionService.execute(identity.tenantId(), identity.userId(), goalId, request,
                 permissions, httpRequest.getHeader("Idempotency-Key"));
     }
 
     private HarnessIdentity identity() {
         return HarnessIdentityContext.require();
+    }
+
+    private LearningTaskStatus parseTaskStatus(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return LearningTaskStatus.valueOf(raw.trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException exception) {
+            throw new org.mingharness.common.BusinessException(HttpStatus.BAD_REQUEST,
+                    "LEARNING_TASK_STATUS_INVALID", "学习任务状态不合法");
+        }
     }
 }

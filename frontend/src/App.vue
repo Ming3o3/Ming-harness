@@ -48,6 +48,10 @@ const activeLearningGoal = ref(null)
 const learningGoalAssessments = ref([])
 const learningRecommendation = ref(null)
 const learningGoalRecommendationMap = ref({})
+const learningTasks = ref([])
+const learningTaskLoading = ref(false)
+const learningTaskStartingId = ref('')
+const learningTaskDeferringId = ref('')
 const manualAssessmentForm = reactive({
   stepId: '',
   correct: '',
@@ -2569,6 +2573,7 @@ async function pollConversation() {
     if (selectionToken !== conversationSelectionToken || activeConversationId.value !== conversationId) return
     if (!detail.messages.some((message) => message.status === 'PENDING')) {
       await loadConversations(conversationId)
+      void loadLearningTasks()
     }
     scrollChatToBottom()
   } catch (error) {
@@ -2626,14 +2631,16 @@ async function loadDashboard() {
 
 async function loadEducationData() {
   try {
-    const [sources, profiles, goals] = await Promise.all([
+    const [sources, profiles, goals, tasks] = await Promise.all([
       api.listEducationSources(),
       api.listLearnerProfiles(),
       api.listLearningGoals(),
+      api.listLearningTasks(),
     ])
     educationSources.value = sources
     learnerProfiles.value = profiles
     learningGoals.value = goals
+    learningTasks.value = tasks
     const recommendationEntries = await Promise.all(goals.map(async (goal) => {
       try {
         return [goal.id, await api.getGoalRecommendation(goal.id)]
@@ -2655,6 +2662,15 @@ async function loadEducationData() {
   } catch (error) {
     // 教育权限是可选的；不应让没有教育权限的通用 Agent 用户无法打开控制台。
     educationError.value = errorText(error)
+  }
+}
+
+async function loadLearningTasks() {
+  try {
+    learningTasks.value = await api.listLearningTasks()
+  } catch (error) {
+    // 任务面板是教育模式的增强能力；权限不足时保留现有目标工作台。
+    if (!educationError.value) educationError.value = errorText(error)
   }
 }
 
@@ -2759,6 +2775,14 @@ async function useLearningRecommendation() {
   chatEducation.conceptKey = recommendation.conceptKey
   const goal = learningGoals.value.find((item) => item.id === recommendation.learningGoalId)
   if (goal) await selectLearningGoal(goal, false)
+  if (recommendation.goalStatus === 'COMPLETED') {
+    const task = learningTasks.value.find((item) => item.learningGoalId === recommendation.learningGoalId
+      && ['OPEN', 'IN_PROGRESS', 'DEFERRED'].includes(item.status))
+    if (task) {
+      await startLearningTask(task)
+      return
+    }
+  }
   chatInput.value = recommendation.nextActionPrompt
   chatMode.value = true
   await nextTick()
@@ -2789,6 +2813,46 @@ async function useLearningRecommendation() {
     saveChatDraft(activeConversationId.value, recommendation.nextActionPrompt)
     errorMessage.value = errorText(error)
     chatInputRef.value?.focus()
+  }
+}
+
+async function startLearningTask(task) {
+  if (!task || learningTaskStartingId.value) return
+  if (task.status === 'DEFERRED' && new Date(task.scheduledAt).getTime() > Date.now()) {
+    noticeMessage.value = `任务尚未到期：${formatDate(task.scheduledAt)}`
+    return
+  }
+  learningTaskStartingId.value = task.id
+  clearMessages()
+  try {
+    const result = await api.startLearningTask(task.id, { maxTurns: chatMaxTurns.value }, `learning-task-${task.id}`)
+    activeConversation.value = result.conversation
+    conversations.value = [result.conversation.conversation, ...conversations.value
+      .filter((item) => item.id !== result.conversation.conversation.id)]
+    rememberConversation(result.conversation.conversation.id)
+    chatMode.value = true
+    const runId = latestConversationRun(result.conversation)
+    if (runId) void selectRun(runId, false, false)
+    await loadLearningTasks()
+    noticeMessage.value = `已开始学习任务：${result.task.title}`
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    learningTaskStartingId.value = ''
+  }
+}
+
+async function deferLearningTask(task) {
+  if (!task || learningTaskDeferringId.value) return
+  learningTaskDeferringId.value = task.id
+  try {
+    await api.deferLearningTask(task.id, 1)
+    await loadLearningTasks()
+    noticeMessage.value = '已延期 1 天；到期后会重新出现在学习任务中。'
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    learningTaskDeferringId.value = ''
   }
 }
 
@@ -5085,6 +5149,20 @@ onBeforeUnmount(() => {
               </button>
             </div>
             <div class="learning-goal-workbench">
+              <div class="learning-task-workbench">
+                <div class="subsection-title"><h4>待处理学习任务</h4><span>{{ learningTasks.filter((task) => ['OPEN', 'IN_PROGRESS', 'DEFERRED'].includes(task.status)).length }} 条</span></div>
+                <p class="learning-task-help">复习计划到期后会自动生成任务；任务开始后绑定会话和 Run，复习测评完成会自动回写任务结果。</p>
+                <div v-if="learningTasks.length" class="learning-task-list">
+                  <article v-for="task in learningTasks.filter((item) => ['OPEN', 'IN_PROGRESS', 'DEFERRED'].includes(item.status)).slice(0, 8)" :key="task.id" class="learning-task-row">
+                    <div class="learning-task-main"><strong>{{ task.title }}</strong><small>{{ task.status === 'IN_PROGRESS' ? '进行中' : (task.status === 'DEFERRED' ? `延期至 ${formatDate(task.scheduledAt)}` : `到期 ${formatDate(task.scheduledAt)}`) }} · 第 {{ task.reviewSequence + 1 }} 次复习</small><p>{{ task.prompt }}</p></div>
+                    <div class="learning-task-actions">
+                      <button class="secondary-button" type="button" :disabled="learningTaskStartingId === task.id || learningTaskDeferringId === task.id" @click="startLearningTask(task)">{{ learningTaskStartingId === task.id ? '启动中…' : (task.status === 'IN_PROGRESS' ? '继续复习' : '开始复习') }}</button>
+                      <button v-if="task.status === 'OPEN'" class="text-button" type="button" :disabled="learningTaskDeferringId === task.id" @click="deferLearningTask(task)">{{ learningTaskDeferringId === task.id ? '延期中…' : '明天再复习' }}</button>
+                    </div>
+                  </article>
+                </div>
+                <div v-else class="context-preview-empty">暂无待处理任务；完成学习目标后，系统会自动建立保持度复习任务。</div>
+              </div>
               <div class="subsection-title"><h4>结构化学习目标</h4><span>{{ learningGoals.length }} 个目标</span></div>
               <form class="learning-goal-form" @submit.prevent="createLearningGoal">
                 <label class="field"><span>画像</span><select v-model="learningGoalForm.learnerProfileId" required><option value="">请选择画像</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>

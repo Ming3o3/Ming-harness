@@ -91,6 +91,19 @@ public class LearningReviewPlan {
         updatedAt = Instant.now();
     }
 
+    /** 学习者暂时无法完成任务时顺延计划，但不伪造一次复习结果。 */
+    public void deferUntil(Instant deferredUntil) {
+        Instant next = deferredUntil == null ? Instant.now() : deferredUntil;
+        if (status != LearningReviewPlanStatus.ACTIVE) {
+            throw new IllegalStateException("非活动复习计划不能延期");
+        }
+        if (next.isBefore(nextReviewAt)) {
+            throw new IllegalArgumentException("延期时间不能早于当前复习时间");
+        }
+        nextReviewAt = next;
+        updatedAt = Instant.now();
+    }
+
     public void changeStatus(LearningReviewPlanStatus nextStatus) {
         if (nextStatus == null) throw new IllegalArgumentException("复习计划状态不能为空");
         if (status == LearningReviewPlanStatus.ARCHIVED && nextStatus != LearningReviewPlanStatus.ARCHIVED) {

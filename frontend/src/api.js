@@ -316,6 +316,28 @@ export const api = {
   }),
   getGoalRecommendation: (goalId) => request(`/education/goals/${encodeURIComponent(goalId)}/recommendation`),
   getGoalReviewPlan: (goalId) => request(`/education/goals/${encodeURIComponent(goalId)}/review-plan`),
+  listLearningTasks: (status) => {
+    const query = status ? `?status=${encodeURIComponent(status)}` : ''
+    return request(`/education/tasks${query}`)
+  },
+  startLearningTask: (taskId, payload = {}, idempotencyKey) => request(
+    `/education/tasks/${encodeURIComponent(taskId)}/start`, {
+      method: 'POST',
+      headers: {
+        ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+        ...(configuredApiKey ? {} : {
+          'X-Permissions': localStorage.getItem('harnessChatPermissions') || defaultChatPermissions,
+        }),
+      },
+      body: JSON.stringify(payload),
+    },
+  ),
+  deferLearningTask: (taskId, days = 1) => request(
+    `/education/tasks/${encodeURIComponent(taskId)}/defer`, {
+      method: 'POST',
+      body: JSON.stringify({ days }),
+    },
+  ),
   executeLearningGoalNextAction: (goalId, payload = {}, idempotencyKey) => request(
     `/education/goals/${encodeURIComponent(goalId)}/next-action`, {
       method: 'POST',
