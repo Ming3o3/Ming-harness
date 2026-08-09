@@ -38,7 +38,7 @@ public record ContextRetrievalProperties(
         candidateLimit = Math.min(200, Math.max(1, candidateLimit));
         maxParents = Math.min(50, Math.max(1, maxParents));
         neighborRadius = Math.min(5, Math.max(0, neighborRadius));
-        minSimilarity = Double.isFinite(minSimilarity) ? Math.min(1.0, Math.max(-1.0, minSimilarity)) : 0.2;
+        minSimilarity = Double.isFinite(minSimilarity) ? Math.min(1.0, Math.max(-1.0, minSimilarity)) : 0.7;
         rrfK = Math.min(1_000, Math.max(1, rrfK));
         vectorWeight = finiteNonNegative(vectorWeight, 1.0);
         keywordWeight = finiteNonNegative(keywordWeight, 0.7);

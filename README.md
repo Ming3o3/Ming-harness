@@ -131,7 +131,7 @@ npm run dev
 | `CONTEXT_RETRIEVAL_CANDIDATE_LIMIT` | `20` | 向量召回候选子块数量 |
 | `CONTEXT_RETRIEVAL_MAX_PARENTS` | `5` | 最终展开的父文档数量 |
 | `CONTEXT_RETRIEVAL_NEIGHBOR_RADIUS` | `1` | 命中子块两侧补回的相邻子块数量 |
-| `CONTEXT_RETRIEVAL_MIN_SIMILARITY` | `0.2` | 向量余弦相似度最低阈值 |
+| `CONTEXT_RETRIEVAL_MIN_SIMILARITY` | `0.7` | 向量余弦相似度最低阈值 |
 | `RECOVERY_TIMEOUT_MS` | `120000` | Worker 中断后将 RUNNING 任务转为超时的阈值 |
 | `MAX_TOOL_ATTEMPTS` | `3` | 单个只读工具的自动重试次数上限，副作用工具固定为 1 |
 | `RUN_EVENT_STREAM_POLL_MS` | `750` | 已订阅 Run 的持久化快照检查间隔；可跨 Worker 实例推送状态变化 |

@@ -34,7 +34,7 @@ public class ContextBuilder {
                           VectorContextRetriever vectorContextRetriever,
                           HarnessMetrics metrics) {
         this(documentRepository, memoryRepository, vectorContextRetriever, metrics,
-                new ContextRetrievalProperties(20, 5, 1, 0.2));
+                new ContextRetrievalProperties(20, 5, 1, 0.7));
     }
 
     @Autowired
