@@ -2619,17 +2619,37 @@ async function createLearningGoal() {
   }
 }
 
-function useLearningRecommendation() {
+async function useLearningRecommendation() {
   const recommendation = learningRecommendation.value
   if (!recommendation) return
+  if (chatSending.value || chatUploading.value || pendingChatMessage.value) {
+    noticeMessage.value = '当前对话仍在执行；建议已保留在输入框中，请稍后发送。'
+    chatMode.value = true
+    return
+  }
   chatEducation.enabled = true
   chatEducation.learningGoalId = recommendation.learningGoalId
   chatEducation.conceptKey = recommendation.conceptKey
   const goal = learningGoals.value.find((item) => item.id === recommendation.learningGoalId)
-  if (goal) void selectLearningGoal(goal, false)
+  if (goal) await selectLearningGoal(goal, false)
   chatInput.value = recommendation.nextActionPrompt
-  nextTick(() => chatInputRef.value?.focus())
-  noticeMessage.value = `已准备下一步：${recommendation.nextActionTitle}`
+  chatMode.value = true
+  await nextTick()
+  if (recommendation.goalStatus !== 'ACTIVE') {
+    // 已完成目标暂不允许写入新的形成性测评；复习 Run 作为独立巩固动作发送，避免提交后被服务端拒绝。
+    chatEducation.learningGoalId = ''
+    noticeMessage.value = '该学习目标已完成；已准备独立巩固迁移题，请确认后手动开始复习。'
+    chatInputRef.value?.focus()
+    return
+  }
+  if (!activeConversationId.value) {
+    noticeMessage.value = '已准备下一步学习动作；请先打开或创建一个对话。'
+    chatInputRef.value?.focus()
+    return
+  }
+  // 推荐动作现在直接进入下一轮对话，仍复用现有幂等、权限和 Run 创建链路。
+  await sendChatMessage()
+  if (!errorMessage.value) noticeMessage.value = `已开始下一步：${recommendation.nextActionTitle}`
 }
 
 function selectChatLearnerProfile() {

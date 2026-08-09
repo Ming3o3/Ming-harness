@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class EducationLearnerServiceTests {
@@ -47,5 +48,34 @@ class EducationLearnerServiceTests {
         assertTrue(updated.getMasteryScore() > 0.4 && updated.getMasteryScore() < 1.0);
         assertEquals(3, updated.getAttempts());
         assertEquals(2, updated.getCorrectAttempts());
+    }
+
+    @Test
+    void shouldCompleteActiveGoalsWhenAnyMasteryWriteReachesTarget() {
+        LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        LearnerProfile profile = new LearnerProfile("tenant-a", "student-1", "数学",
+                "高中一年级", "人教A版", "掌握函数", "zh-CN");
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", profile.getId(),
+                "掌握函数", "函数", 0.2, 0.6);
+
+        when(profiles.findByIdAndTenantIdAndUserId(profile.getId(), "tenant-a", "student-1"))
+                .thenReturn(java.util.Optional.of(profile));
+        when(mastery.findByTenantIdAndLearnerProfileIdAndConceptKey(
+                "tenant-a", profile.getId(), "函数")).thenReturn(java.util.Optional.empty());
+        when(mastery.save(any(LearnerMastery.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(goals.findByTenantIdAndUserIdAndLearnerProfileIdAndConceptKeyIgnoreCase(
+                "tenant-a", "student-1", profile.getId(), "函数"))
+                .thenReturn(java.util.List.of(goal));
+        when(goals.save(any(LearningGoal.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        EducationLearnerService service = new EducationLearnerService(profiles, mastery, goals,
+                new SensitiveDataSanitizer());
+        service.updateMastery("tenant-a", "student-1", profile.getId(),
+                new MasteryUpdateRequest("函数", 1.0, null, null, null));
+
+        assertEquals(LearningGoalStatus.COMPLETED, goal.getStatus());
+        verify(goals).save(goal);
     }
 }

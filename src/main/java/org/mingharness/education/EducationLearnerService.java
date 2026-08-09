@@ -16,13 +16,24 @@ public class EducationLearnerService {
 
     private final LearnerProfileRepository profileRepository;
     private final LearnerMasteryRepository masteryRepository;
+    private final LearningGoalRepository goalRepository;
     private final SensitiveDataSanitizer sanitizer;
 
+    /** 兼容不启用学习目标存储的组件测试和旧扩展调用方。 */
     public EducationLearnerService(LearnerProfileRepository profileRepository,
                                    LearnerMasteryRepository masteryRepository,
                                    SensitiveDataSanitizer sanitizer) {
+        this(profileRepository, masteryRepository, null, sanitizer);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public EducationLearnerService(LearnerProfileRepository profileRepository,
+                                   LearnerMasteryRepository masteryRepository,
+                                   LearningGoalRepository goalRepository,
+                                   SensitiveDataSanitizer sanitizer) {
         this.profileRepository = profileRepository;
         this.masteryRepository = masteryRepository;
+        this.goalRepository = goalRepository;
         this.sanitizer = sanitizer;
     }
 
@@ -75,7 +86,9 @@ public class EducationLearnerService {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "MASTERY_UPDATE_REQUIRED",
                     "掌握度更新必须提供 masteryScore 或 correct");
         }
-        return masteryRepository.save(mastery);
+        LearnerMastery saved = masteryRepository.save(mastery);
+        completeEligibleGoals(tenantId, userId, profile.getId(), conceptKey, saved.getMasteryScore());
+        return saved;
     }
 
     @Transactional(readOnly = true)
@@ -88,5 +101,23 @@ public class EducationLearnerService {
 
     private String clean(String value) {
         return sanitizer.sanitize(value == null ? "" : value.trim());
+    }
+
+    /**
+     * 所有掌握度写入口共享同一条目标状态投影规则，避免“掌握度已达标但目标仍进行中”。
+     * 形成性测评服务仍会在保存测评事实后再次确认状态，以保证旧扩展实现也保持兼容。
+     */
+    private void completeEligibleGoals(String tenantId, String userId, String profileId,
+                                       String conceptKey, double masteryScore) {
+        if (goalRepository == null) return;
+        goalRepository.findByTenantIdAndUserIdAndLearnerProfileIdAndConceptKeyIgnoreCase(
+                        tenantId, userId, profileId, conceptKey)
+                .stream()
+                .filter(goal -> goal.getStatus() == LearningGoalStatus.ACTIVE)
+                .filter(goal -> masteryScore >= goal.getTargetMastery())
+                .forEach(goal -> {
+                    goal.changeStatus(LearningGoalStatus.COMPLETED);
+                    goalRepository.save(goal);
+                });
     }
 }

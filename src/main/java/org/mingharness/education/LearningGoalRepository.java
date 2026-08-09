@@ -10,4 +10,7 @@ public interface LearningGoalRepository extends JpaRepository<LearningGoal, Stri
     List<LearningGoal> findByTenantIdAndUserIdOrderByUpdatedAtDesc(String tenantId, String userId);
 
     Optional<LearningGoal> findByIdAndTenantIdAndUserId(String id, String tenantId, String userId);
+
+    List<LearningGoal> findByTenantIdAndUserIdAndLearnerProfileIdAndConceptKeyIgnoreCase(
+            String tenantId, String userId, String learnerProfileId, String conceptKey);
 }
