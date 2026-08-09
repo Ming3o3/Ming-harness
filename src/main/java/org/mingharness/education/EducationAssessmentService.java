@@ -21,6 +21,7 @@ public class EducationAssessmentService {
     private final LearningGoalRepository goalRepository;
     private final LearnerMasteryRepository masteryRepository;
     private final EducationLearnerService learnerService;
+    private final LearningReviewPlanService reviewPlanService;
     private final SensitiveDataSanitizer sanitizer;
 
     public EducationAssessmentService(AssessmentAttemptRepository attemptRepository,
@@ -29,11 +30,23 @@ public class EducationAssessmentService {
                                       LearnerMasteryRepository masteryRepository,
                                       EducationLearnerService learnerService,
                                       SensitiveDataSanitizer sanitizer) {
+        this(attemptRepository, runRepository, goalRepository, masteryRepository, learnerService, null, sanitizer);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public EducationAssessmentService(AssessmentAttemptRepository attemptRepository,
+                                      RunRepository runRepository,
+                                      LearningGoalRepository goalRepository,
+                                      LearnerMasteryRepository masteryRepository,
+                                      EducationLearnerService learnerService,
+                                      LearningReviewPlanService reviewPlanService,
+                                      SensitiveDataSanitizer sanitizer) {
         this.attemptRepository = attemptRepository;
         this.runRepository = runRepository;
         this.goalRepository = goalRepository;
         this.masteryRepository = masteryRepository;
         this.learnerService = learnerService;
+        this.reviewPlanService = reviewPlanService;
         this.sanitizer = sanitizer;
     }
 
@@ -114,9 +127,28 @@ public class EducationAssessmentService {
             throw new BusinessException(HttpStatus.CONFLICT, "ASSESSMENT_GOAL_MISMATCH",
                     "测评 Run 与请求路径中的学习目标不一致");
         }
-        if (goal.getStatus() != LearningGoalStatus.ACTIVE) {
+        String reviewPlanId = run.getEducationReviewPlanId();
+        AssessmentAttemptType attemptType = AssessmentAttemptType.FORMATIVE;
+        if (reviewPlanId != null && !reviewPlanId.isBlank()) {
+            if (reviewPlanService == null) {
+                throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_REVIEW_UNAVAILABLE",
+                        "当前运行环境未启用保持度复习计划");
+            }
+            LearningReviewPlan plan = reviewPlanService.getById(tenantId, userId, reviewPlanId);
+            if (!goal.getId().equals(plan.getLearningGoalId())
+                    || !profileId.equals(plan.getLearnerProfileId())
+                    || !goal.getConceptKey().equalsIgnoreCase(plan.getConceptKey())) {
+                throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_REVIEW_CONTEXT_MISMATCH",
+                        "复习计划与目标、画像或知识点不一致");
+            }
+            if (goal.getStatus() != LearningGoalStatus.COMPLETED) {
+                throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_REVIEW_GOAL_NOT_COMPLETED",
+                        "保持度复习只能用于已完成的学习目标");
+            }
+            attemptType = AssessmentAttemptType.REVIEW;
+        } else if (goal.getStatus() != LearningGoalStatus.ACTIVE) {
             throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_GOAL_NOT_ACTIVE",
-                    "只有进行中的学习目标可以记录测评");
+                    "只有进行中的学习目标可以记录形成性测评");
         }
         String normalizedConcept = clean(conceptKey);
         if (!goal.getConceptKey().equalsIgnoreCase(normalizedConcept)
@@ -134,11 +166,17 @@ public class EducationAssessmentService {
                 new MasteryUpdateRequest(normalizedConcept, boundedObserved, correct, null, null));
         AssessmentAttempt attempt = new AssessmentAttempt(tenantId, userId, runId, stepId,
                 goal.getId(), profileId, normalizedConcept, correct, boundedObserved, before,
-                updated.getMasteryScore(), normalizedEvidenceSource, cleanEvidence(evidenceText),
+                updated.getMasteryScore(), attemptType, reviewPlanId, normalizedEvidenceSource,
+                cleanEvidence(evidenceText),
                 cleanFeedback(feedback));
         AssessmentAttempt saved = attemptRepository.save(attempt);
-        if (updated.getMasteryScore() >= goal.getTargetMastery()) {
+        if (attemptType == AssessmentAttemptType.REVIEW) {
+            reviewPlanService.recordReview(tenantId, userId, reviewPlanId, correct, java.time.Instant.now());
+        } else if (updated.getMasteryScore() >= goal.getTargetMastery()) {
             goal.changeStatus(LearningGoalStatus.COMPLETED);
+            if (reviewPlanService != null) {
+                reviewPlanService.ensureForCompletedGoal(goal);
+            }
             goalRepository.save(goal);
         }
         return saved;

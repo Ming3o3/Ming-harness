@@ -37,7 +37,8 @@ public record RunSummary(
         String educationLearningGoalId,
         String educationLearningGoalTitle,
         Double educationLearningGoalTarget,
-        String educationConceptKey
+        String educationConceptKey,
+        String educationReviewPlanId
 ) {
 
     /** 兼容早期只返回幂等键的调用方。 */
@@ -48,7 +49,7 @@ public record RunSummary(
         this(id, tenantId, userId, title, modelName, promptVersion, policyVersion, input, output,
                 error, status, budget, createdAt, updatedAt, stepCount, idempotencyKey,
                 null, 0, BigDecimal.ZERO, false, 1, null,
-                false, null, null, null, null, null, null, null, null, null);
+                false, null, null, null, null, null, null, null, null, null, null);
     }
 
     /** 兼容上一版已经携带追踪、耗时和成本字段的调用方。 */
@@ -60,6 +61,6 @@ public record RunSummary(
         this(id, tenantId, userId, title, modelName, promptVersion, policyVersion, input, output,
                 error, status, budget, createdAt, updatedAt, stepCount, idempotencyKey,
                 traceId, durationMs, totalCost, false, 1, null,
-                false, null, null, null, null, null, null, null, null, null);
+                false, null, null, null, null, null, null, null, null, null, null);
     }
 }

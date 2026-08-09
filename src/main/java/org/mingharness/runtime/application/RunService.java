@@ -1623,7 +1623,8 @@ public class RunService {
                 run.getEducationGradeLevel(), run.getEducationCurriculumVersion(),
                 run.getEducationLearnerProfileId(), run.getEducationPedagogicalMode(),
                 run.getEducationLearningGoalId(), run.getEducationLearningGoalTitle(),
-                run.getEducationLearningGoalTarget(), run.getEducationConceptKey()
+                run.getEducationLearningGoalTarget(), run.getEducationConceptKey(),
+                run.getEducationReviewPlanId()
         );
     }
 

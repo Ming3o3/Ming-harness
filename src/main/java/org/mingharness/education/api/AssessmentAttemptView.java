@@ -17,6 +17,8 @@ public record AssessmentAttemptView(
         double observedMastery,
         double masteryBefore,
         double masteryAfter,
+        String assessmentType,
+        String reviewPlanId,
         String evidenceSource,
         String evidenceText,
         String feedback,
@@ -28,6 +30,7 @@ public record AssessmentAttemptView(
                 attempt.getRunId(), attempt.getStepId(), attempt.getLearningGoalId(),
                 attempt.getLearnerProfileId(), attempt.getConceptKey(), attempt.isCorrect(),
                 attempt.getObservedMastery(), attempt.getMasteryBefore(), attempt.getMasteryAfter(),
+                attempt.getAssessmentType().name(), attempt.getReviewPlanId(),
                 attempt.getEvidenceSource(), attempt.getEvidenceText(),
                 attempt.getFeedback(), attempt.getCreatedAt());
     }

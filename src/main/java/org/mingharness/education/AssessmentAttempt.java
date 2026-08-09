@@ -2,6 +2,8 @@ package org.mingharness.education;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
@@ -37,6 +39,11 @@ public class AssessmentAttempt {
     private double masteryBefore;
     @Column(nullable = false)
     private double masteryAfter;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "assessment_type", nullable = false, length = 32)
+    private AssessmentAttemptType assessmentType;
+    @Column(name = "review_plan_id", length = 255)
+    private String reviewPlanId;
     @Column(name = "evidence_source", nullable = false, length = 32)
     private String evidenceSource;
     @Column(name = "evidence_text", length = 4000)
@@ -55,13 +62,24 @@ public class AssessmentAttempt {
                              double masteryAfter, String feedback) {
         this(tenantId, userId, runId, stepId, learningGoalId, learnerProfileId, conceptKey,
                 correct, observedMastery, masteryBefore, masteryAfter,
-                "MODEL_TOOL", null, feedback);
+                AssessmentAttemptType.FORMATIVE, null, "MODEL_TOOL", null, feedback);
     }
 
     public AssessmentAttempt(String tenantId, String userId, String runId, String stepId,
                              String learningGoalId, String learnerProfileId, String conceptKey,
                              boolean correct, double observedMastery, double masteryBefore,
                              double masteryAfter, String evidenceSource, String evidenceText,
+                             String feedback) {
+        this(tenantId, userId, runId, stepId, learningGoalId, learnerProfileId, conceptKey,
+                correct, observedMastery, masteryBefore, masteryAfter,
+                AssessmentAttemptType.FORMATIVE, null, evidenceSource, evidenceText, feedback);
+    }
+
+    public AssessmentAttempt(String tenantId, String userId, String runId, String stepId,
+                             String learningGoalId, String learnerProfileId, String conceptKey,
+                             boolean correct, double observedMastery, double masteryBefore,
+                             double masteryAfter, AssessmentAttemptType assessmentType,
+                             String reviewPlanId, String evidenceSource, String evidenceText,
                              String feedback) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = required(tenantId, "tenantId");
@@ -75,6 +93,8 @@ public class AssessmentAttempt {
         this.observedMastery = clamp(observedMastery);
         this.masteryBefore = clamp(masteryBefore);
         this.masteryAfter = clamp(masteryAfter);
+        this.assessmentType = assessmentType == null ? AssessmentAttemptType.FORMATIVE : assessmentType;
+        this.reviewPlanId = reviewPlanId == null || reviewPlanId.isBlank() ? null : reviewPlanId.trim();
         this.evidenceSource = required(evidenceSource, "evidenceSource");
         this.evidenceText = evidenceText == null || evidenceText.isBlank() ? null : evidenceText.trim();
         this.feedback = feedback == null || feedback.isBlank() ? null : feedback.trim();
@@ -104,6 +124,8 @@ public class AssessmentAttempt {
     public double getObservedMastery() { return observedMastery; }
     public double getMasteryBefore() { return masteryBefore; }
     public double getMasteryAfter() { return masteryAfter; }
+    public AssessmentAttemptType getAssessmentType() { return assessmentType; }
+    public String getReviewPlanId() { return reviewPlanId; }
     public String getEvidenceSource() { return evidenceSource; }
     public String getEvidenceText() { return evidenceText; }
     public String getFeedback() { return feedback; }

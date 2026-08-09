@@ -4,6 +4,7 @@ import org.mingharness.common.BusinessException;
 import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.education.api.LearningGoalRequest;
 import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,15 +19,27 @@ public class LearningGoalService {
     private final LearnerProfileRepository profileRepository;
     private final LearnerMasteryRepository masteryRepository;
     private final SensitiveDataSanitizer sanitizer;
+    private final LearningReviewPlanService reviewPlanService;
 
+    /** 兼容只使用学习目标生命周期的组件测试和旧扩展调用方。 */
     public LearningGoalService(LearningGoalRepository goalRepository,
                                LearnerProfileRepository profileRepository,
                                LearnerMasteryRepository masteryRepository,
                                SensitiveDataSanitizer sanitizer) {
+        this(goalRepository, profileRepository, masteryRepository, sanitizer, null);
+    }
+
+    @Autowired
+    public LearningGoalService(LearningGoalRepository goalRepository,
+                               LearnerProfileRepository profileRepository,
+                               LearnerMasteryRepository masteryRepository,
+                               SensitiveDataSanitizer sanitizer,
+                               LearningReviewPlanService reviewPlanService) {
         this.goalRepository = goalRepository;
         this.profileRepository = profileRepository;
         this.masteryRepository = masteryRepository;
         this.sanitizer = sanitizer;
+        this.reviewPlanService = reviewPlanService;
     }
 
     @Transactional
@@ -73,6 +86,9 @@ public class LearningGoalService {
         } catch (IllegalStateException exception) {
             throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_GOAL_STATUS_CONFLICT",
                     exception.getMessage());
+        }
+        if (next == LearningGoalStatus.COMPLETED && reviewPlanService != null) {
+            reviewPlanService.ensureForCompletedGoal(goal);
         }
         return goalRepository.save(goal);
     }

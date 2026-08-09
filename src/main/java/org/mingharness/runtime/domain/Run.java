@@ -48,6 +48,8 @@ public class Run {
     private String educationLearnerProfileId;
     @Column(name = "education_learning_goal_id", length = 128)
     private String educationLearningGoalId;
+    @Column(name = "education_review_plan_id", length = 255)
+    private String educationReviewPlanId;
     @Column(name = "education_learning_goal_title", length = 255)
     private String educationLearningGoalTitle;
     @Column(name = "education_learning_goal_baseline")
@@ -192,6 +194,7 @@ public class Run {
         this.educationMode = value.enabled();
         this.educationLearnerProfileId = value.learnerProfileId();
         this.educationLearningGoalId = value.learningGoalId();
+        this.educationReviewPlanId = value.reviewPlanId();
         this.educationLearningGoalTitle = value.learningGoalTitle();
         this.educationLearningGoalBaseline = value.learningGoalBaselineMastery();
         this.educationLearningGoalTarget = value.learningGoalTargetMastery();
@@ -207,7 +210,7 @@ public class Run {
 
     public EducationRunConfiguration educationConfiguration() {
         return new EducationRunConfiguration(isEducationMode(), educationLearnerProfileId,
-                educationLearningGoalId, educationLearningGoalTitle,
+                educationLearningGoalId, educationReviewPlanId, educationLearningGoalTitle,
                 educationLearningGoalBaseline == null ? 0.0 : educationLearningGoalBaseline,
                 educationLearningGoalTarget == null ? 0.0 : educationLearningGoalTarget,
                 educationSubject, educationGradeLevel, educationCurriculumVersion, educationConceptKey,
@@ -350,6 +353,7 @@ public class Run {
     public boolean isEducationMode() { return Boolean.TRUE.equals(educationMode); }
     public String getEducationLearnerProfileId() { return educationLearnerProfileId; }
     public String getEducationLearningGoalId() { return educationLearningGoalId; }
+    public String getEducationReviewPlanId() { return educationReviewPlanId; }
     public String getEducationLearningGoalTitle() { return educationLearningGoalTitle; }
     public Double getEducationLearningGoalBaseline() { return educationLearningGoalBaseline; }
     public Double getEducationLearningGoalTarget() { return educationLearningGoalTarget; }

@@ -13,6 +13,7 @@ public record EducationRunConfiguration(
         boolean enabled,
         String learnerProfileId,
         String learningGoalId,
+        String reviewPlanId,
         String learningGoalTitle,
         double learningGoalBaselineMastery,
         double learningGoalTargetMastery,
@@ -27,8 +28,21 @@ public record EducationRunConfiguration(
 ) {
 
     public static EducationRunConfiguration disabled() {
-        return new EducationRunConfiguration(false, null, null, null, 0.0, 0.0,
+        return new EducationRunConfiguration(false, null, null, null, null, 0.0, 0.0,
                 null, null, null, null, null, null, "AUTO", "");
+    }
+
+    /** 兼容未绑定保持度复习计划的既有调用方。 */
+    public EducationRunConfiguration(boolean enabled, String learnerProfileId, String learningGoalId,
+                                     String learningGoalTitle, double learningGoalBaselineMastery,
+                                     double learningGoalTargetMastery, String subject, String gradeLevel,
+                                     String curriculumVersion, String conceptKey, Integer minDifficulty,
+                                     Integer maxDifficulty, String pedagogicalMode,
+                                     String learnerStateSummary) {
+        this(enabled, learnerProfileId, learningGoalId, null, learningGoalTitle,
+                learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
+                curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
+                learnerStateSummary);
     }
 
     public EducationRetrievalFilter retrievalFilter() {
@@ -70,6 +84,9 @@ public record EducationRunConfiguration(
             summary.append("；学习目标=").append(learningGoalTitle)
                     .append("；目标掌握度=").append(String.format(java.util.Locale.ROOT, "%.2f",
                             learningGoalTargetMastery));
+        }
+        if (reviewPlanId != null && !reviewPlanId.isBlank()) {
+            summary.append("；保持度复习=已绑定");
         }
         if (conceptKey != null && !conceptKey.isBlank()) {
             summary.append("；目标知识点=").append(conceptKey);
