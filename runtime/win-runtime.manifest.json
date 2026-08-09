@@ -1,0 +1,73 @@
+{
+  "platform": "win-x64",
+  "postgresql": {
+    "version": "17.6",
+    "source": "https://get.enterprisedb.com/postgresql/postgresql-17.6-1-windows-x64-binaries.zip",
+    "sha256": "d378882abd001a186735acd6f6ba716bca6ccd192e800412d4fd15ed25376b3e"
+  },
+  "pgvector": {
+    "version": "0.8.6",
+    "source": "https://github.com/pgvector/pgvector/tree/v0.8.6",
+    "buildScript": "runtime/scripts/build-pgvector.ps1",
+    "artifact": "publisher-built vector.dll plus SQL/control files",
+    "provenance": "postgres/share/extension/pgvector-build.json",
+    "license": "MIT; build the Windows extension from the upstream source and ship the provenance marker with the binary."
+  },
+  "garnet": {
+    "version": "2.1.1",
+    "redisApi": "RESP-compatible Redis API",
+    "source": "https://github.com/microsoft/garnet/releases/tag/v2.1.1",
+    "artifact": "win-x64-based-readytorun.zip (net8.0)",
+    "sha256": "73fd3c601176ae6aaa823e2d5b370a4afd6eaeac3416c572b8ebe1aab9556e89",
+    "license": "MIT; retain Garnet LICENSE and NOTICE.md. Garnet does not support Redis Modules; Ming-harness uses only supported string, TTL, counter and Lua commands."
+  },
+  "dotnet": {
+    "version": "8.0.18",
+    "source": "https://dotnetcli.blob.core.windows.net/dotnet/Runtime/8.0.18/dotnet-runtime-8.0.18-win-x64.zip",
+    "artifact": "dotnet-runtime-8.0.18-win-x64.zip",
+    "sha256": "595518cef68b0a111961f46346481d7da40409e5d6a7ba72ac418b5957b599af",
+    "license": "Microsoft .NET Runtime; redistribute with LICENSE.txt and ThirdPartyNotices.txt from the runtime archive."
+  },
+  "rabbitmq": {
+    "version": "4.3.4",
+    "source": "https://github.com/rabbitmq/rabbitmq-server/releases/tag/v4.3.4",
+    "artifact": "rabbitmq-server-windows-4.3.4.zip",
+    "sha256": "e311199de7b7e621eb43563ae9bb96962fa55e2f8129928b7f8d0b0c95691295"
+  },
+  "erlang": {
+    "version": "28.5.0.5",
+    "source": "https://github.com/erlang/otp/releases/tag/OTP-28.5.0.5",
+    "artifact": "otp_win64_28.5.0.5.zip",
+    "sha256": "ea3a6f78a981183384baedefd337b0542d7935335f6f865b8b6aab2542d205d6"
+  },
+  "java": {
+    "distribution": "Eclipse Temurin JRE",
+    "version": "17.0.20+8",
+    "source": "https://github.com/adoptium/temurin17-binaries/releases/tag/jdk-17.0.20%2B8",
+    "artifact": "OpenJDK17U-jre_x64_windows_hotspot_17.0.20_8.zip",
+    "sha256": "7fe2324cc5901a89aaa0e8dc232075c59f2aca5270c533bdb1b861a5274af834"
+  },
+  "requiredFiles": [
+    "jre/bin/java.exe",
+    "postgres/bin/initdb.exe",
+    "postgres/bin/postgres.exe",
+    "postgres/bin/pg_ctl.exe",
+    "postgres/bin/createdb.exe",
+    "postgres/lib/vector.dll",
+    "postgres/share/extension/vector.control",
+    "postgres/share/extension/vector--0.8.6.sql",
+    "postgres/share/extension/pgvector-build.json",
+    "garnet/GarnetServer.exe",
+    "garnet/LICENSE",
+    "garnet/NOTICE.md",
+    "garnet/dotnet/dotnet.exe",
+    "garnet/dotnet/LICENSE.txt",
+    "garnet/dotnet/ThirdPartyNotices.txt",
+    "garnet/dotnet/shared/Microsoft.NETCore.App/8.0.18/coreclr.dll",
+    "rabbitmq/sbin/rabbitmq-server.bat",
+    "rabbitmq/sbin/rabbitmqctl.bat",
+    "erlang/bin/erl.exe"
+  ],
+  "dataPolicy": "portable directory/data only; no LOCALAPPDATA fallback",
+  "licenseDirectory": "runtime/licenses"
+}

@@ -33,3 +33,12 @@ build/
 
 ### VS Code ###
 .vscode/
+runtime/vendor/
+runtime/infra/
+runtime/jre/
+runtime/ming-harness.jar
+frontend/release/
+/tmp/
+/paper/
+/graduation project/
+/docs/Templates ei论文模版和要求/

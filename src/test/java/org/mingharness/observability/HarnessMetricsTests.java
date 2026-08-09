@@ -43,4 +43,46 @@ class HarnessMetricsTests {
         assertNull(snapshot.queueDepth());
         assertNull(snapshot.queueCapacity());
     }
+
+    @Test
+    void shouldRecordContextRetrievalAndIndexSignals() {
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+        HarnessMetrics metrics = new HarnessMetrics(registry);
+
+        metrics.contextEmbeddingRequest();
+        metrics.contextEmbeddingRetry();
+        metrics.contextEmbeddingFailed();
+        metrics.contextEmbeddingCacheHit();
+        metrics.contextEmbeddingCacheMiss();
+        metrics.contextQueryEmbeddingCacheHit();
+        metrics.contextQueryEmbeddingCacheMiss();
+        metrics.contextSemanticEmbeddingCacheHit();
+        metrics.contextSemanticEmbeddingCacheMiss();
+        metrics.contextVectorQuery();
+        metrics.contextVectorHits(3);
+        metrics.contextKeywordSupplements(2);
+        metrics.contextFallback();
+        metrics.contextChunksIndexed(4);
+        metrics.contextIndexFailure();
+        metrics.contextIndexPending(7);
+        metrics.recordContextRetrieval(() -> "ok");
+
+        assertEquals(1.0, registry.get("harness.context.embedding.requests").counter().count());
+        assertEquals(1.0, registry.get("harness.context.embedding.retries").counter().count());
+        assertEquals(1.0, registry.get("harness.context.embedding.failed").counter().count());
+        assertEquals(1.0, registry.get("harness.context.embedding.cache.hits").counter().count());
+        assertEquals(1.0, registry.get("harness.context.embedding.cache.misses").counter().count());
+        assertEquals(1.0, registry.get("harness.context.query_embedding.cache.hits").counter().count());
+        assertEquals(1.0, registry.get("harness.context.query_embedding.cache.misses").counter().count());
+        assertEquals(1.0, registry.get("harness.context.semantic_embedding.cache.hits").counter().count());
+        assertEquals(1.0, registry.get("harness.context.semantic_embedding.cache.misses").counter().count());
+        assertEquals(1.0, registry.get("harness.context.vector.queries").counter().count());
+        assertEquals(3.0, registry.get("harness.context.vector.hits").counter().count());
+        assertEquals(2.0, registry.get("harness.context.keyword.supplements").counter().count());
+        assertEquals(1.0, registry.get("harness.context.retrieval.fallbacks").counter().count());
+        assertEquals(4.0, registry.get("harness.context.index.chunks").counter().count());
+        assertEquals(1.0, registry.get("harness.context.index.failures").counter().count());
+        assertEquals(7.0, registry.get("harness.context.index.pending").gauge().value());
+        assertEquals(1, registry.get("harness.context.retrieval.duration").timer().count());
+    }
 }

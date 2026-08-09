@@ -63,17 +63,85 @@ SPRING_PROFILES_ACTIVE=local-infra \
 ./mvnw spring-boot:run
 ```
 
-`local-infra` 启动时会执行 Flyway 迁移，创建 Run、Step、审计、上下文、评测、Outbox 和组织资源策略表，并声明 RabbitMQ 主队列和死信队列。
+`local-infra` 启动时会执行 Flyway 迁移，创建 Run、Step、审计、上下文、Outbox 和组织资源策略表，并声明 RabbitMQ 主队列和死信队列。
 Outbox Relay 会先在 PostgreSQL 中抢占短期发布租约，再在租约外等待 RabbitMQ 发布确认；多实例不会同时发送同一条待处理事件。进程在确认前中断时，租约到期后允许重新投递，Run 执行锁负责去重。当同一事件达到 `RABBITMQ_MAX_ATTEMPTS` 仍无法获得发布确认时，Outbox 会进入 `FAILED`，对应 Run 会在带行锁的短事务中立即落为 `FAILED`，并追加 `RUN_DISPATCH_FAILED` 审计事件，不再等待 Worker 租约超时后才让用户看到失败。
 
-Rabbit Worker 的模型和工具调用在数据库事务之外执行；领取租约、步骤开始/完成、心跳、审计和终态写回分别是短事务。每个步骤前后都会续租 Redis 锁并刷新 PostgreSQL Worker 租约，旧 Worker 丢失所有权后不能覆盖新 Worker 或取消操作的结果。Worker 执行锁会自动使用不小于 `RECOVERY_TIMEOUT_MS` 的租期，避免数据库恢复器在一个受控长步骤期间过早回收 Run。
+### 启用上下文向量检索
 
-评测接口在 Rabbit 模式下会轮询每个 Run 的详情，直到成功、失败、取消、超时或等待审批；等待审批不会被评测逻辑自动批准。单个 Run 超过等待边界后，报告会记录 `TIMEOUT` 和当时的 `QUEUED/RUNNING` 状态，然后继续下一个用例，不会让整批评测持有长数据库事务。默认等待 120 秒、每 250 毫秒轮询一次，可按模型响应时间和 API 请求超时覆盖：
+`local-infra` 使用 PostgreSQL + pgvector 保存上下文子块向量。Flyway 会自动执行向量列和 HNSW 索引迁移；应用只有在 PostgreSQL、embedding 网关和 `EMBEDDING_ENABLED=true` 同时满足时才会执行向量召回，否则继续使用关键词召回。
+
+先配置一个 OpenAI 兼容的 `/embeddings` 服务：
 
 ```bash
-export EVALUATION_WAIT_TIMEOUT_MS=120000
-export EVALUATION_POLL_INTERVAL_MS=250
+export EMBEDDING_ENABLED=true
+export EMBEDDING_BASE_URL=https://api.example.com/v1
+export EMBEDDING_API_KEY='由密钥系统注入'
+export EMBEDDING_MODEL=text-embedding-3-small
+export EMBEDDING_MODEL_VERSION=v1
+export EMBEDDING_DIMENSION=1536
+export EMBEDDING_BATCH_SIZE=32
+export EMBEDDING_MAX_INPUT_TOKENS=8192
 ```
+
+也可以在桌面端的“向量设置”弹窗中保存组织级配置。页面保存的配置优先于同名环境变量；切换供应商、模型或版本后，旧 chunk 向量会自动清空，必须执行一次“重建索引”。当前迁移的 pgvector 列固定为 1536 维，其他维度需要先扩展数据库迁移，不支持直接在页面中混用。
+
+#### 导入 PDF/DOCX 知识文档
+
+运行控制台的“上下文治理”面板可以选择或拖入一个 PDF/DOCX。服务端按文件扩展名和文件头双重校验后提取纯文本，原始二进制不会写入知识库；解析结果随后沿用现有文档权限、chunk、父窗口和 embedding 索引流程。默认原始文件上限为 25 MB，解析正文上限为 100000 字符，可通过 `CONTEXT_DOCUMENT_MAX_UPLOAD_BYTES` 和 `CONTEXT_DOCUMENT_MAX_CONTENT_CHARS` 调整。只有包含文本层的 PDF 可以直接提取，扫描型 PDF 需要先 OCR；加密或损坏文件会返回结构化解析错误。
+
+也可以直接调用上传接口（调用方需要 `context.write` 权限）：
+
+```bash
+curl -X POST http://localhost:8080/api/context/documents/upload \
+  -H 'Authorization: Bearer demo-key' \
+  -F 'file=@./docs/release-rules.pdf' \
+  -F 'title=发布规则' \
+  -F 'sensitivity=INTERNAL' \
+  -F 'allowedUsers=operator'
+```
+
+接口返回的文档正文是脱敏后的文本；embedding 网关不可用时，正文和确定性 chunk 仍会保存，待处理 chunk 可通过“向量索引”或 `POST /api/context/reindex` 补齐。
+
+`EMBEDDING_DIMENSION` 必须与数据库中的 `vector(1536)` 一致；更换模型、维度或语义分块版本后，应执行一次有界重建。语义分块默认关闭，开启后会对段落/句子原子单元批量向量化，按相邻单元余弦相似度寻找边界，同时保留最大长度、最小单元数和 overlap 约束：
+
+```bash
+export CONTEXT_SEMANTIC_ENABLED=true
+export CONTEXT_SEMANTIC_BREAKPOINT=0.35
+export CONTEXT_SEMANTIC_MIN_UNITS=3
+```
+
+代码块等结构单元仍优先于语义边界；embedding 服务暂时不可用时，写入和重建会回退到确定性分块，并留下待索引数量等待下次重建。生产环境建议把重建放在低峰期，并观察 `harness.context.embedding.*`、`harness.context.vector.*` 和 `harness.context.index.*` 指标。
+
+索引器会把成功的 chunk embedding 写入 PostgreSQL 缓存，缓存键包含租户、内容哈希、请求模型、模型版本和维度。命中缓存时不会再次调用供应商，但仍会把向量写入当前 chunk；缓存只作为加速层，缓存数据库读写失败会自动退化为正常 API 索引。更换模型权重、供应商部署或预处理方式时递增 `EMBEDDING_MODEL_VERSION`，旧缓存不会被误用。缓存命中和未命中可分别通过 `harness.context.embedding.cache.hits`、`harness.context.embedding.cache.misses` 观察，并由 `EMBEDDING_CACHE_RETENTION_DAYS` 控制清理。
+
+检索阶段使用“小块召回，大块推理”。每个子块单独写入 pgvector，向量命中后按连续子块聚合为有界父窗口，再将父窗口作为模型上下文返回。父窗口默认上限为 4800 字符，可通过 `CONTEXT_PARENT_WINDOW_MAX_CHARS` 调整；父窗口不单独参与向量召回，也不会绕过文档权限、租户隔离或记忆用户过滤。
+
+```bash
+export CONTEXT_PARENT_WINDOW_MAX_CHARS=4800
+```
+
+修改子块大小、语义分块阈值或父窗口上限后，应使用 `rechunk=true` 重新物化子块和父窗口，再补齐 embedding：
+
+正文写入默认只在事务中保存父对象和 chunk，事务提交后再由有界后台队列执行 embedding，避免供应商网络延迟占住数据库连接。可通过以下参数调整并发；队列满或进程在任务完成前退出时，数据库中仍保留 `embedded_at` 为空的 chunk，下一次重建会继续处理：
+
+```bash
+export CONTEXT_INDEX_ASYNC_ENABLED=true
+export CONTEXT_INDEX_CONCURRENCY=2
+export CONTEXT_INDEX_QUEUE_CAPACITY=100
+```
+
+重建接口按租户、父对象和 chunk 数量设上限，不会一次性把整个租户发送给外部服务。调用方需要 `context.reindex` 权限：
+
+```bash
+curl -X POST http://localhost:8080/api/context/reindex \
+  -H 'Authorization: Bearer demo-key' \
+  -H 'Content-Type: application/json' \
+  -d '{"scope":"DOCUMENT","parentLimit":100,"chunkLimit":1000,"rechunk":true}'
+```
+
+`scope` 可取 `ALL`、`DOCUMENT` 或 `MEMORY`；`rechunk=true` 才会按当前分块配置替换已有子块，省略时只补齐缺失的 chunk 并为未向量化的 chunk 建索引。响应中的 `chunksFailed` 和 `pendingChunks` 可用于判断是否需要重试。
+
+Rabbit Worker 的模型和工具调用在数据库事务之外执行；领取租约、步骤开始/完成、心跳、审计和终态写回分别是短事务。每个步骤前后都会续租 Redis 锁并刷新 PostgreSQL Worker 租约，旧 Worker 丢失所有权后不能覆盖新 Worker 或取消操作的结果。Worker 执行锁会自动使用不小于 `RECOVERY_TIMEOUT_MS` 的租期，避免数据库恢复器在一个受控长步骤期间过早回收 Run。
 
 Worker 默认每个实例启动 1 个消费者，最多扩展到 4 个消费者，每个消费者预取 1 条消息。Outbox Relay 发布前会读取执行队列深度：达到 `RABBITMQ_MAX_QUEUE_DEPTH`（默认 1000）时暂停抢占，RabbitMQ 队列状态读取失败时也会安全暂停，待下一轮恢复后继续。可以根据模型供应商并发额度和数据库容量覆盖：
 
@@ -112,7 +180,7 @@ export MODEL_FALLBACK_NAME=backup-model
 
 ```bash
 export HARNESS_AUTH_MODE=api-key
-export HARNESS_API_KEYS='demo-key|tenant-demo|operator|run.read,run.create,run.execute,run.approve,run.cancel,audit.read,context.read,context.write,evaluation.read,evaluation.run,tool.read,ops.read,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage'
+export HARNESS_API_KEYS='demo-key|tenant-demo|operator|run.read,run.create,run.execute,run.approve,run.cancel,audit.read,context.read,context.write,context.configure,tool.read,ops.read,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage'
 ```
 
 调用时使用 `Authorization: Bearer demo-key`。API Key 绑定的组织和用户会覆盖请求头，Run 创建请求中的 `tenantId/userId` 必须与认证身份一致。默认 `local` 模式仍兼容 `X-Tenant-Id`、`X-User-Id` 和 `X-Permissions`，仅适合本地演示。
@@ -231,7 +299,6 @@ export RUN_RETENTION_DAYS=90
 export AUDIT_RETENTION_DAYS=365
 export MEMORY_RETENTION_DAYS=30
 export DOCUMENT_RETENTION_DAYS=30
-export EVALUATION_RETENTION_DAYS=90
 export OUTBOX_RETENTION_DAYS=14
 export RETENTION_BATCH_SIZE=100
 ```

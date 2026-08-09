@@ -2,13 +2,33 @@ const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron')
 const http = require('node:http')
 const fs = require('node:fs/promises')
 const path = require('node:path')
+const { randomBytes } = require('node:crypto')
+const { ManagedInfrastructure } = require('./infra-supervisor.cjs')
+const { ManagedSpringBootRuntime } = require('./backend-runtime.cjs')
 
-const configuredFrontendUrl = process.env.HARNESS_FRONTEND_URL || ''
-const apiBaseUrl = normalizeApiBaseUrl(process.env.HARNESS_API_BASE_URL || 'http://127.0.0.1:8080/api')
-const bridgeToken = process.env.HARNESS_DESKTOP_BRIDGE_TOKEN || ''
+const configuredFrontendUrl = process.platform === 'win32' && app.isPackaged
+  ? ''
+  : (process.env.HARNESS_FRONTEND_URL || '')
+let apiBaseUrl = normalizeApiBaseUrl(process.env.HARNESS_API_BASE_URL || 'http://127.0.0.1:8080/api')
+const bridgeToken = process.env.HARNESS_DESKTOP_BRIDGE_TOKEN
+  || (process.platform === 'win32' && app.isPackaged ? randomBytes(32).toString('base64url') : '')
 let mainWindow
 let frontendUrl = configuredFrontendUrl
 let staticServer
+let infrastructure
+let backendRuntime
+let shuttingDown = false
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
+  })
+}
 
 function normalizeApiBaseUrl(value) {
   const parsed = new URL(value)
@@ -33,9 +53,9 @@ function isTrustedRenderer(contents) {
  * 这样 Spring Boot 可以继续用严格的 localhost CORS 白名单，且不会放宽网页文件协议权限。
  */
 async function startStaticFrontendServer() {
-  const distRoot = path.resolve(__dirname, '..', 'dist')
+  const distRoot = path.join(app.getAppPath(), 'dist')
   await fs.access(path.join(distRoot, 'index.html'))
-  const port = Number(process.env.HARNESS_DESKTOP_UI_PORT || 5173)
+  const port = Number(process.env.HARNESS_DESKTOP_UI_PORT || (app.isPackaged ? 0 : 5173))
   const mimeTypes = {
     '.css': 'text/css; charset=utf-8',
     '.html': 'text/html; charset=utf-8',
@@ -78,7 +98,9 @@ async function startStaticFrontendServer() {
     staticServer.once('error', reject)
     staticServer.listen(port, '127.0.0.1', resolve)
   })
-  return `http://127.0.0.1:${port}`
+  const address = staticServer.address()
+  const actualPort = typeof address === 'object' && address ? address.port : port
+  return `http://127.0.0.1:${actualPort}`
 }
 
 function createWindow() {
@@ -112,8 +134,75 @@ function createWindow() {
   if (frontendUrl) {
     mainWindow.loadURL(frontendUrl)
   } else {
-    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
+    mainWindow.loadFile(path.join(app.getAppPath(), 'dist', 'index.html'))
   }
+}
+
+async function resolveDataBaseRoot() {
+  const portableRoot = await resolvePortableRoot()
+  if (portableRoot) {
+    const dataRoot = path.join(portableRoot, 'data')
+    await fs.mkdir(dataRoot, { recursive: true })
+    try {
+      await fs.access(dataRoot, fs.constants.W_OK)
+    } catch {
+      throw new Error(`绿色版数据目录不可写，请将软件移动到有写权限的目录：${dataRoot}`)
+    }
+    return dataRoot
+  }
+  return app.getPath('userData')
+}
+
+async function resolvePortableRoot() {
+  const executableDir = path.dirname(process.execPath)
+  const explicitRoot = process.env.PORTABLE_EXECUTABLE_DIR
+  if (explicitRoot) return explicitRoot
+  const candidates = [
+    executableDir,
+    process.resourcesPath,
+  ]
+  for (const candidate of candidates) {
+    try {
+      await fs.access(path.join(candidate, 'portable.flag'))
+      return executableDir
+    } catch {
+      // This is an installed build or a normal development launch.
+    }
+  }
+  return null
+}
+
+function shouldManageWindowsInfrastructure() {
+  return process.platform === 'win32'
+    && app.isPackaged
+    && process.env.MING_HARNESS_MANAGED_INFRA !== 'false'
+}
+
+async function startManagedWindowsDesktop() {
+  const dataBaseRoot = await resolveDataBaseRoot()
+  const infraDataRoot = path.join(dataBaseRoot, 'infra')
+  const logRoot = path.join(dataBaseRoot, 'logs')
+  const runtimeRoot = path.join(process.resourcesPath, 'infra', 'win-x64')
+  infrastructure = new ManagedInfrastructure({ runtimeRoot, dataRoot: infraDataRoot, logRoot })
+  const infrastructureEnv = await infrastructure.start()
+  backendRuntime = new ManagedSpringBootRuntime({
+    resourcesRoot: process.resourcesPath,
+    logRoot,
+  })
+  const runtime = await backendRuntime.start({
+    ...infrastructureEnv,
+    CORS_ALLOWED_ORIGINS: frontendUrl,
+    HARNESS_DESKTOP_BRIDGE_TOKEN: bridgeToken,
+    HARNESS_WORKSPACE_ROOT: path.join(dataBaseRoot, 'workspace'),
+  })
+  apiBaseUrl = runtime.apiBaseUrl
+}
+
+function closeStaticServer() {
+  if (!staticServer) return Promise.resolve()
+  const server = staticServer
+  staticServer = null
+  return new Promise((resolve) => server.close(() => resolve()))
 }
 
 function text(value, maxLength = 255) {
@@ -213,16 +302,19 @@ async function resolveDroppedWorkspaceRoot(droppedPaths) {
   return uniqueDirectories[0]
 }
 
-app.whenReady().then(() => {
-  return (frontendUrl ? Promise.resolve(frontendUrl) : startStaticFrontendServer())
-    .then((resolvedUrl) => {
-      frontendUrl = resolvedUrl
-      createWindow()
-    })
-    .catch((error) => {
-      dialog.showErrorBox('无法启动桌面工作台', error.message)
-      app.quit()
-    })
+app.whenReady().then(async () => {
+  if (!hasSingleInstanceLock) return
+  frontendUrl = frontendUrl || await startStaticFrontendServer()
+  if (shouldManageWindowsInfrastructure()) {
+    await startManagedWindowsDesktop()
+  }
+  createWindow()
+}).catch(async (error) => {
+  await closeStaticServer()
+  await backendRuntime?.stop()
+  await infrastructure?.stop()
+  dialog.showErrorBox('无法启动 Ming Harness', error.message)
+  app.exit(1)
 })
 
 app.on('activate', () => {
@@ -233,6 +325,14 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', () => {
-  staticServer?.close()
+app.on('before-quit', (event) => {
+  if (shuttingDown) return
+  event.preventDefault()
+  shuttingDown = true
+  Promise.resolve()
+    .then(() => closeStaticServer())
+    .then(() => backendRuntime?.stop())
+    .then(() => infrastructure?.stop())
+    .catch((error) => console.error(`关闭本地 Runtime 失败：${error.message}`))
+    .finally(() => app.exit(0))
 })

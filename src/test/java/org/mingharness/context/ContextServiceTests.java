@@ -8,7 +8,9 @@ import org.mingharness.context.api.CreateMemoryRequest;
 import org.mingharness.context.api.ContextResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.mock.web.MockMultipartFile;
 
+import java.io.ByteArrayOutputStream;
 import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -26,10 +28,16 @@ class ContextServiceTests {
     private KnowledgeDocumentRepository documentRepository;
     @Autowired
     private MemoryEntryRepository memoryRepository;
+    @Autowired
+    private ContextChunkRepository chunkRepository;
+    @Autowired
+    private ContextParentWindowRepository parentWindowRepository;
 
     @BeforeEach
     void cleanDatabase() {
         memoryRepository.deleteAll();
+        chunkRepository.deleteAll();
+        parentWindowRepository.deleteAll();
         documentRepository.deleteAll();
     }
 
@@ -80,7 +88,7 @@ class ContextServiceTests {
 
         assertEquals(1, result.evidences().size());
         assertEquals(visible.getId(), result.evidences().get(0).documentId());
-        assertTrue(result.text().contains("memory:" + visible.getId()));
+        assertTrue(result.text().contains("[来源：记忆 · preference]"));
         assertTrue(result.text().contains("项目默认使用 Java 17"));
     }
 
@@ -92,5 +100,55 @@ class ContextServiceTests {
         assertEquals(1, contextService.listMemories("tenant-a", "operator").size());
         contextService.deleteMemory("tenant-a", "operator", memory.getId());
         assertEquals(0, contextService.listMemories("tenant-a", "operator").size());
+    }
+
+    @Test
+    void shouldPersistOrderedParentDocumentChunksAndSoftDeleteThemWithParent() {
+        String content = "第一部分说明。".repeat(180);
+        KnowledgeDocument document = contextService.createDocument("tenant-a", "owner",
+                new CreateDocumentRequest("分块文档", content, "INTERNAL", "operator"));
+
+        var chunks = chunkRepository.findByParentTypeAndParentIdAndDeletedAtIsNullOrderByChunkIndexAsc(
+                "DOCUMENT", document.getId());
+        assertTrue(chunks.size() > 1);
+        assertEquals(0, chunks.get(0).getChunkIndex());
+        assertEquals(chunks.size() - 1, chunks.get(chunks.size() - 1).getChunkIndex());
+        assertTrue(chunks.stream().allMatch(chunk -> chunk.getTenantId().equals("tenant-a")));
+        var windows = parentWindowRepository
+                .findByTenantIdAndParentTypeAndParentIdAndDeletedAtIsNullOrderByWindowIndexAsc(
+                        "tenant-a", "DOCUMENT", document.getId());
+        assertTrue(windows.size() > 1);
+
+        contextService.deleteDocument("tenant-a", "owner", document.getId());
+
+        assertEquals(0, chunkRepository.findByParentTypeAndParentIdAndDeletedAtIsNullOrderByChunkIndexAsc(
+                "DOCUMENT", document.getId()).size());
+        assertEquals(0, parentWindowRepository
+                .findByTenantIdAndParentTypeAndParentIdAndDeletedAtIsNullOrderByWindowIndexAsc(
+                        "tenant-a", "DOCUMENT", document.getId()).size());
+        assertTrue(windows.stream().allMatch(window -> parentWindowRepository.findById(window.getId())
+                .map(ContextParentWindow::getDeletedAt).orElse(null) != null));
+    }
+
+    @Test
+    void shouldImportDocxIntoTheSameChunkAndRetrievalPipeline() throws Exception {
+        byte[] bytes;
+        try (org.apache.poi.xwpf.usermodel.XWPFDocument docx = new org.apache.poi.xwpf.usermodel.XWPFDocument()) {
+            docx.createParagraph().createRun().setText("上传文档中的发布回滚规则");
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            docx.write(output);
+            bytes = output.toByteArray();
+        }
+
+        KnowledgeDocument document = contextService.createDocumentFromUpload("tenant-a", "owner",
+                new MockMultipartFile("file", "release-rules.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", bytes),
+                null, "INTERNAL", "operator");
+
+        assertEquals("release-rules", document.getTitle());
+        assertTrue(document.getContent().contains("上传文档中的发布回滚规则"));
+        assertTrue(chunkRepository.findByParentTypeAndParentIdAndDeletedAtIsNullOrderByChunkIndexAsc(
+                "DOCUMENT", document.getId()).size() > 0);
+        assertEquals(1, contextBuilder.build("tenant-a", "operator", "发布回滚规则", 4_000)
+                .evidences().size());
     }
 }

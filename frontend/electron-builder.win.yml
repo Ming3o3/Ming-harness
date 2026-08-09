@@ -1,0 +1,30 @@
+appId: com.ming.harness
+productName: Ming Harness
+artifactName: Ming-Harness-${version}-win-${arch}.${ext}
+asar: true
+directories:
+  output: release/win-installer
+files:
+  - dist/**
+  - electron/**
+  - package.json
+extraResources:
+  - from: ../runtime/ming-harness.jar
+    to: runtime/ming-harness.jar
+  - from: ../runtime/jre
+    to: runtime/jre
+  - from: ../runtime/infra/win-x64
+    to: infra/win-x64
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  requestedExecutionLevel: asInvoker
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Ming Harness

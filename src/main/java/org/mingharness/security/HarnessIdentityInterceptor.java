@@ -198,6 +198,7 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
         if ("GET".equalsIgnoreCase(method) && path.matches("/api/runs/[^/]+/audit-events(?:/verify)?")) {
             return "audit.read";
         }
+        if (path.matches("/api/runs/[^/]+/feedback")) return "run.read";
         if (path.equals("/api/runs")) {
             return "GET".equalsIgnoreCase(method) ? "run.read" : "POST".equalsIgnoreCase(method) ? "run.create" : null;
         }
@@ -216,13 +217,14 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
             return "GET".equalsIgnoreCase(method) ? "run.read" : "run.create";
         }
         if (path.equals("/api/dashboard/summary")) return "run.read";
+        if (path.equals("/api/context/reindex")) return "context.reindex";
+        if (path.equals("/api/context/configuration")) return "context.read";
+        if (path.equals("/api/context/embedding-config")
+                || path.equals("/api/context/embedding-config/test")) return "context.configure";
         if (path.matches("/api/context/(documents|memories)(/[^/]+)?")) {
             return "GET".equalsIgnoreCase(method) ? "context.read" : "context.write";
         }
         if (path.equals("/api/context/preview")) return "context.read";
-        if (path.equals("/api/evaluations")) {
-            return "GET".equalsIgnoreCase(method) ? "evaluation.read" : "evaluation.run";
-        }
         if ("GET".equalsIgnoreCase(method)
                 && (path.equals("/api/workspace")
                 || path.equals("/api/workspace/files")

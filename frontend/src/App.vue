@@ -1,5 +1,5 @@
 <script setup>
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   Activity,
   Bot,
@@ -21,10 +21,10 @@ import {
   Settings2,
   RefreshCw,
   Send,
+  ShieldCheck,
   Square,
   Sparkles,
   Sun,
-  Wrench,
   X,
 } from '@lucide/vue'
 import { api } from './api'
@@ -39,7 +39,22 @@ const summary = ref(null)
 const selectedRun = ref(null)
 const auditEvents = ref([])
 const documents = ref([])
-const evaluations = ref([])
+const memories = ref([])
+const contextPreviewQuery = ref('')
+const contextPreviewMaxChars = ref(4000)
+const contextPreviewResult = ref(null)
+const contextPreviewLoading = ref(false)
+const contextPreviewError = ref('')
+const contextReindexForm = reactive({
+  scope: 'ALL',
+  parentLimit: 100,
+  chunkLimit: 1000,
+  rechunk: false,
+})
+const contextReindexResult = ref(null)
+const contextReindexLoading = ref(false)
+const contextReindexError = ref('')
+const contextConfiguration = ref(null)
 const tenantPolicy = ref(null)
 const tenantPolicyAudits = ref([])
 const tenantPolicyError = ref('')
@@ -49,9 +64,15 @@ const apiKeyError = ref('')
 const createdApiKeySecret = ref('')
 const loading = ref(false)
 const documentDeletingId = ref('')
+const documentUploadInput = ref(null)
+const documentUploadFile = ref(null)
+const documentUploadDragging = ref(false)
+const documentUploadError = ref('')
+const documentUploading = ref(false)
 const detailLoading = ref(false)
 const errorMessage = ref('')
 const noticeMessage = ref('')
+let noticeDismissTimer = 0
 const showCreateForm = ref(true)
 const showGovernance = ref(false)
 const health = ref(null)
@@ -78,6 +99,63 @@ const modelProviderPresets = [
   { id: 'custom', label: '自定义 OpenAI 兼容服务', baseUrl: '', modelName: '' },
 ]
 const modelConfigEditable = computed(() => !modelConfigError.value.startsWith('当前身份没有 model.configure'))
+const embeddingConfig = ref(null)
+const embeddingConfigLoading = ref(false)
+const embeddingConfigSaving = ref(false)
+const embeddingConfigTesting = ref(false)
+const embeddingConfigError = ref('')
+const embeddingConfigTestResult = ref(null)
+const showEmbeddingSettings = ref(false)
+const embeddingConfigForm = reactive({
+  enabled: false,
+  baseUrl: '',
+  modelName: '',
+  modelVersion: 'v1',
+  dimension: 1536,
+  apiKey: '',
+  clearApiKey: false,
+})
+const embeddingConfigEditable = computed(() => !embeddingConfigError.value.startsWith('当前身份没有 context.configure'))
+const embeddingProviderPreset = ref('custom')
+const embeddingProviderPresets = [
+  { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', modelName: 'text-embedding-3-small', dimension: 1536 },
+  { id: 'qwen', label: '通义千问（兼容模式）', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', modelName: 'text-embedding-v4', dimension: 1536 },
+  { id: 'custom', label: '自定义 OpenAI 兼容服务', baseUrl: '', modelName: '', dimension: 1536 },
+]
+// API Key 权限使用固定目录，避免手动输入时出现拼写错误；提交协议仍保持为字符串数组。
+const apiKeyPermissionOptions = [
+  { value: 'run.read', label: '查看 Run' },
+  { value: 'run.create', label: '创建 Run' },
+  { value: 'run.execute', label: '执行 / 重试 Run' },
+  { value: 'run.approve', label: '审批 Run' },
+  { value: 'run.cancel', label: '取消 Run' },
+  { value: 'audit.read', label: '查看审计记录' },
+  { value: 'context.read', label: '读取上下文' },
+  { value: 'context.write', label: '写入上下文' },
+  { value: 'context.configure', label: '配置向量模型' },
+  { value: 'context.reindex', label: '重建上下文索引' },
+  { value: 'tool.read', label: '查看工具列表' },
+  { value: 'workspace.read', label: '读取工作区' },
+  { value: 'workspace.write', label: '写入工作区' },
+  { value: 'workspace.exec', label: '执行工作区命令' },
+  { value: 'workspace.manage', label: '管理工作区' },
+  { value: 'ops.read', label: '查看基础设施状态' },
+  { value: 'model.configure', label: '配置模型连接' },
+  { value: 'tenant.policy.read', label: '读取组织策略' },
+  { value: 'tenant.policy.write', label: '修改组织策略' },
+  { value: 'tenant.policy.cross-tenant', label: '跨组织管理策略' },
+  { value: 'auth.key.read', label: '查看 API Key' },
+  { value: 'auth.key.manage', label: '创建 / 撤销 API Key' },
+  { value: 'auth.key.cross-tenant', label: '跨组织管理 API Key' },
+  { value: 'network.external', label: '访问外部网络工具' },
+]
+const defaultApiKeyPermissions = [
+  'run.read', 'run.create', 'run.execute', 'run.approve', 'run.cancel',
+  'audit.read', 'context.read', 'context.write', 'context.configure',
+  'tool.read', 'workspace.read', 'workspace.manage', 'ops.read',
+  'model.configure', 'tenant.policy.read', 'tenant.policy.write',
+  'auth.key.read', 'auth.key.manage',
+]
 // 工作区状态用于告知用户 Agent 是否直接连接到本地项目；接口不会返回绝对路径。
 const workspace = ref(null)
 // 已登记工作区是用户明确在桌面端授权的项目；选择只影响后续创建的会话。
@@ -259,9 +337,45 @@ function setActiveConsoleSection(section) {
   activeConsoleSection.value = section
 }
 
+function scrollToConsoleSection(section, behavior = 'smooth') {
+  if (typeof document === 'undefined') return
+  window.requestAnimationFrame(() => {
+    // Hash navigation can scroll the document root when the nested console
+    // surface is already scrolled away from the target. Keep the app chrome
+    // anchored to the viewport and let only .main-content handle scrolling.
+    if (window.scrollY) window.scrollTo({ top: 0, behavior: 'auto' })
+    const container = document.querySelector('.console-layout .main-content')
+    if (!container) return
+    const target = section === 'runtime' ? container : document.getElementById(section)
+    if (!target) return
+    if (section === 'runtime') {
+      container.scrollTo({ top: 0, behavior })
+      return
+    }
+    const containerRect = container.getBoundingClientRect()
+    const targetRect = target.getBoundingClientRect()
+    const top = container.scrollTop + targetRect.top - containerRect.top - 16
+    container.scrollTo({ top: Math.max(0, top), behavior })
+  })
+}
+
+function navigateConsoleSection(section) {
+  setActiveConsoleSection(section)
+  if (window.location.hash !== `#${section}`) {
+    // Updating location.hash invokes the browser's native anchor scrolling in
+    // addition to our nested-container scroll, which can move the whole app
+    // up by the topbar height after governance is expanded. pushState keeps
+    // the URL shareable without triggering that competing scroll operation.
+    window.history.pushState({ consoleSection: section }, '', `#${section}`)
+  }
+  scrollToConsoleSection(section)
+}
+
 function syncActiveConsoleSectionFromHash() {
   const section = window.location.hash.slice(1)
-  activeConsoleSection.value = ['runtime', 'tools', 'audit'].includes(section) ? section : 'runtime'
+  const nextSection = ['runtime', 'audit'].includes(section) ? section : 'runtime'
+  activeConsoleSection.value = nextSection
+  scrollToConsoleSection(nextSection, 'auto')
 }
 
 function readStoredValue(key, fallback) {
@@ -282,7 +396,6 @@ const form = reactive({
   title: '订单状态分析',
   input: '请分析这条任务并返回可追溯结果',
   toolName: 'demo.echo',
-  modelName: '',
   promptVersion: 'prompt-v1',
   policyVersion: 'policy-v1',
   budget: 1,
@@ -292,18 +405,58 @@ const form = reactive({
   maxTurns: 1000,
 })
 
+// 权限选项从工具注册表的 requiredPermissions 聚合而来，避免创建 Run 时手写权限字符串。
+// 权限快照仍以逗号分隔字符串保存在 form 中，兼容现有 API 和审计格式。
+const permissionDescriptions = {
+  'workspace.read': { label: '工作区读取', description: '浏览、搜索和读取项目文件' },
+  'workspace.write': { label: '工作区写入', description: '编辑或写入项目文件（仍需审批）' },
+  'workspace.exec': { label: '工作区命令执行', description: '运行白名单命令（仍需审批）' },
+  'network.external': { label: '外部网络访问', description: '允许工具访问外部网络' },
+}
+
+function permissionList(value) {
+  return [...new Set(String(value || '').split(',').map((item) => item.trim()).filter(Boolean))]
+}
+
+const selectedPermissions = computed({
+  get: () => permissionList(form.permissions),
+  set: (values) => {
+    form.permissions = [...new Set(values || [])].join(',')
+  },
+})
+
+const permissionOptions = computed(() => {
+  const values = new Set()
+  tools.value.forEach((tool) => {
+    const requiredPermissions = tool.requiredPermissions || []
+    requiredPermissions.forEach((permission) => values.add(permission))
+    if (String(tool.networkPolicy || '').toUpperCase() === 'ALLOW_EXTERNAL') values.add('network.external')
+  })
+  return [...values].sort().map((value) => ({
+    value,
+    label: permissionDescriptions[value]?.label || value,
+    description: permissionDescriptions[value]?.description || '允许调用声明该权限的工具',
+  }))
+})
+
+const selectedPermissionSummary = computed(() => {
+  const count = selectedPermissions.value.length
+  return count ? `已选择 ${count} 项：${selectedPermissions.value.join('、')}` : '未选择额外工具权限'
+})
+
 const documentForm = reactive({
   title: '订单处理规则',
-  content: '订单状态变更必须经过审核，并保留操作来源。',
   sensitivity: 'INTERNAL',
   allowedUsers: '',
 })
 
-const evaluationForm = reactive({
-  name: '控制台快速回归',
-  input: '请分析订单状态',
-  expectedContains: '请分析订单状态',
+const memoryForm = reactive({
+  memoryType: 'USER_PREFERENCE',
+  content: '',
+  expiresAt: '',
 })
+const memoryDeletingId = ref('')
+
 
 const tenantPolicyForm = reactive({
   maxActiveRuns: 20,
@@ -314,11 +467,48 @@ const tenantPolicyForm = reactive({
   allowedTools: '',
 })
 
+// 组织策略沿用后端的逗号分隔协议，界面改为从工具注册表中勾选，避免手输工具名。
+const allowedToolOptions = computed(() => tools.value
+  .map((tool) => ({
+    value: tool.name,
+    label: tool.name,
+    description: tool.description || '已注册工具',
+    riskLevel: tool.riskLevel || 'UNKNOWN',
+  }))
+  .filter((tool) => tool.value)
+  .sort((left, right) => left.value.localeCompare(right.value)))
+
+const selectedAllowedTools = computed({
+  get: () => permissionList(tenantPolicyForm.allowedTools),
+  set: (values) => {
+    tenantPolicyForm.allowedTools = [...new Set(values || [])].join(', ')
+  },
+})
+
+const allAllowedToolsSelected = computed(() => {
+  const options = allowedToolOptions.value
+  return options.length > 0 && options.every((tool) => selectedAllowedTools.value.includes(tool.value))
+})
+
+const selectedAllowedToolsSummary = computed(() => {
+  const selected = selectedAllowedTools.value
+  if (!selected.length) return '留空：允许全部已注册工具'
+  return selected.length === 1
+    ? `已选择：${selected[0]}`
+    : `已选择 ${selected.length} 项：${selected.join('、')}`
+})
+
+function toggleAllAllowedTools() {
+  selectedAllowedTools.value = allAllowedToolsSelected.value
+    ? []
+    : allowedToolOptions.value.map((tool) => tool.value)
+}
+
 // 创建表单只保存过期时间和权限，生成的明文密钥不会写入浏览器存储。
 const apiKeyForm = reactive({
   tenantId: form.tenantId,
   userId: form.userId,
-  permissions: 'run.read, run.create, run.execute, run.approve, run.cancel, audit.read, context.read, context.write, evaluation.read, evaluation.run, tool.read, workspace.read, workspace.manage, ops.read, model.configure, tenant.policy.read, tenant.policy.write, auth.key.read, auth.key.manage',
+  permissions: [...defaultApiKeyPermissions],
   expiresAt: '',
 })
 
@@ -328,6 +518,7 @@ const stats = computed(() => ({
   running: summary.value?.running ?? runs.value.filter((run) => run.status === 'RUNNING').length,
   succeeded: summary.value?.succeeded ?? runs.value.filter((run) => run.status === 'SUCCEEDED').length,
   failed: summary.value?.failed ?? runs.value.filter((run) => run.status === 'FAILED').length,
+  waitingApproval: summary.value?.waitingApproval ?? runs.value.filter((run) => run.status === 'WAITING_APPROVAL').length,
 }))
 
 const selectedStatus = computed(() => selectedRun.value?.run?.status || 'NONE')
@@ -418,6 +609,12 @@ const runPageLabel = computed(() => {
 const canPreviousRunPage = computed(() => runPage.page > 0)
 const canNextRunPage = computed(() => runPage.hasNext)
 const chatMessages = computed(() => activeConversation.value?.messages || [])
+const chatMessagePresentations = computed(() => new Map(chatMessages.value.map((message) => [
+  message.id,
+  message.role === 'ASSISTANT'
+    ? presentChatCitations(message.content)
+    : { content: message.content || '', sources: [] },
+])))
 const activeConversationId = computed(() => activeConversation.value?.conversation?.id || '')
 const filteredConversations = computed(() => {
   const query = conversationQuery.value.trim().toLowerCase()
@@ -533,12 +730,21 @@ const commandPaletteItems = computed(() => [
   {
     id: 'model-settings',
     label: '打开模型设置',
-    description: '配置当前用户的新 Run 使用的模型连接',
+    description: '从顶部配置新 Run 使用的大语言模型连接',
     keywords: 'model provider api key settings 模型 供应商 设置 密钥',
     icon: '◈',
     shortcut: '⌘ ,',
-    action: () => { showModelSettings.value = true },
+    action: () => { chatMode.value = false; showGovernance.value = true; showModelSettings.value = true },
     disabled: modelConfigLoading.value,
+  },
+  {
+    id: 'embedding-settings',
+    label: '打开向量连接设置',
+    description: '从顶部配置知识库检索使用的向量模型连接',
+    keywords: 'embedding vector retrieval provider api key 向量 检索 嵌入 设置',
+    icon: '◎',
+    action: () => { chatMode.value = false; showGovernance.value = true; showEmbeddingSettings.value = true },
+    disabled: embeddingConfigLoading.value,
   },
   {
     id: 'toggle-console',
@@ -671,7 +877,7 @@ function decodeAgentStep(step) {
 }
 
 function runModeLabel(run) {
-  return run?.agentMode ? `代码 Agent · 最多 ${run.maxTurns || '—'} 轮` : '单轮执行'
+  return run?.agentMode ? `最多 ${run.maxTurns || '—'} 轮` : '单轮执行'
 }
 
 function decodeWorkspaceExec(step) {
@@ -814,8 +1020,24 @@ function formatDate(value) {
 
 function clearMessages() {
   errorMessage.value = ''
+  if (noticeDismissTimer) {
+    window.clearTimeout(noticeDismissTimer)
+    noticeDismissTimer = 0
+  }
   noticeMessage.value = ''
 }
+
+watch(noticeMessage, (message) => {
+  if (noticeDismissTimer) {
+    window.clearTimeout(noticeDismissTimer)
+    noticeDismissTimer = 0
+  }
+  if (!message) return
+  noticeDismissTimer = window.setTimeout(() => {
+    if (noticeMessage.value === message) noticeMessage.value = ''
+    noticeDismissTimer = 0
+  }, 10000)
+})
 
 function activeConversationStorageScope() {
   return `${form.tenantId}:${form.userId}`
@@ -940,7 +1162,7 @@ function useQuickStartPrompt(prompt) {
 }
 
 function openCommandPalette() {
-  if (showModelSettings.value) return
+  if (showModelSettings.value || showEmbeddingSettings.value) return
   showCommandPalette.value = true
   commandQuery.value = ''
   commandSelectedIndex.value = 0
@@ -1012,6 +1234,11 @@ function handleChatGlobalKeydown(event) {
     showModelSettings.value = false
     return
   }
+  if (showEmbeddingSettings.value) {
+    event.preventDefault()
+    showEmbeddingSettings.value = false
+    return
+  }
   if (showRejectDialog.value) {
     event.preventDefault()
     closeRejectDialog()
@@ -1052,6 +1279,73 @@ function messageStatusClass(status) {
   return `message-status-${String(status || 'unknown').toLowerCase()}`
 }
 
+const chatSourceLinePattern = /(^|\n)[ \t]*(?:来源|参考来源)\s*[:：]\s*\[((?:document|memory):[^\]\s]+)\]\s*([^\n]*)/g
+const chatReadableSourceLinePattern = /(^|\n)[ \t]*(?:来源|参考来源)\s*[:：]\s*(?!\[?来源\s+\d+\]?\s*$)(?!\[来源：)([^\n]+)/g
+const chatReadableCitationPattern = /\[来源：([^\]\n]+)\]/g
+const chatCitationPattern = /\[((?:document|memory):[^\]\s]+)\]/g
+
+function chatSourceBase(citation) {
+  return String(citation || '').split('#', 1)[0]
+}
+
+function chatSourceMetadata(citation, fallbackTitle = '') {
+  const normalized = chatSourceBase(citation)
+  const separator = normalized.indexOf(':')
+  const type = separator > 0 ? normalized.slice(0, separator) : ''
+  const id = separator > 0 ? normalized.slice(separator + 1) : ''
+  const cleanFallbackTitle = String(fallbackTitle || '').trim()
+  const document = type === 'document'
+    ? documents.value.find((item) => item.id === id)
+    : documents.value.find((item) => cleanFallbackTitle === item.title || cleanFallbackTitle.startsWith(`${item.title}（`))
+  const memory = type === 'memory'
+    ? memories.value.find((item) => item.id === id)
+    : memories.value.find((item) => cleanFallbackTitle.includes(item.memoryType))
+  const title = document?.title
+    || (memory ? `长期记忆 · ${memory.memoryType}` : '')
+    || cleanFallbackTitle
+    || (type === 'memory' ? '长期记忆' : '知识文档')
+  return {
+    key: normalized || `title:${title}`,
+    citation,
+    title,
+    kindLabel: type === 'memory' || memory ? '长期记忆' : '知识文档',
+    updatedAt: document?.updatedAt || document?.createdAt || memory?.createdAt || '',
+  }
+}
+
+function presentChatCitations(content) {
+  const sources = []
+  const sourceByKey = new Map()
+  const addSource = (citation, fallbackTitle = '') => {
+    const metadata = chatSourceMetadata(citation, fallbackTitle)
+    const existing = sourceByKey.get(metadata.key)
+    if (existing) return existing
+    const source = { ...metadata, index: sources.length + 1 }
+    sourceByKey.set(metadata.key, source)
+    sources.push(source)
+    return source
+  }
+
+  let displayContent = String(content || '')
+  displayContent = displayContent.replace(chatReadableCitationPattern, (match, title) => {
+    const source = addSource('', title)
+    return `[来源 ${source.index}]`
+  })
+  displayContent = displayContent.replace(chatSourceLinePattern, (match, prefix, citation, fallbackTitle) => {
+    addSource(citation, fallbackTitle)
+    return prefix
+  })
+  displayContent = displayContent.replace(chatReadableSourceLinePattern, (match, prefix, title) => {
+    addSource('', title)
+    return prefix
+  })
+  displayContent = displayContent.replace(chatCitationPattern, (match, citation) => {
+    const source = addSource(citation)
+    return `[来源 ${source.index}]`
+  })
+  return { content: displayContent, sources }
+}
+
 function auditEventLabel(eventType) {
   return {
     AGENT_TOOL_RECOVERABLE: 'Agent 工具可恢复降级',
@@ -1073,7 +1367,10 @@ function attachmentLabel(attachment) {
 }
 
 function messageNavigationLabel(message) {
-  const content = String(message?.content || '').trim()
+  const rawContent = String(message?.content || '').trim()
+  const content = message?.role === 'ASSISTANT'
+    ? presentChatCitations(rawContent).content.trim()
+    : rawContent
   if (content) return content.length > 30 ? `${content.slice(0, 30)}…` : content
   return attachmentLabel(message?.attachments?.[0])
 }
@@ -1082,7 +1379,8 @@ async function copyChatMessage(message) {
   if (!message?.content || copyingMessageId.value) return
   copyingMessageId.value = message.id
   try {
-    await navigator.clipboard.writeText(message.content)
+    const presentation = chatMessagePresentations.value.get(message.id)
+    await navigator.clipboard.writeText(presentation?.content || message.content)
     noticeMessage.value = '助手回复已复制到剪贴板。'
   } catch {
     errorMessage.value = '复制失败，请检查浏览器剪贴板权限。'
@@ -2069,17 +2367,19 @@ async function refreshActiveConversation() {
 async function loadDashboard() {
   clearMessages()
   try {
-    const [, toolData, summaryData, documentData, evaluationData] = await Promise.all([
+    const [, toolData, summaryData, documentData, memoryData, contextConfigurationData] = await Promise.all([
       loadRunsPage(),
       api.listTools(),
       api.dashboardSummary(),
       api.listDocuments(),
-      api.listEvaluations(),
+      api.listMemories(),
+      api.contextConfiguration(),
     ])
     tools.value = toolData
     summary.value = summaryData
     documents.value = documentData
-    evaluations.value = evaluationData
+    memories.value = memoryData
+    contextConfiguration.value = contextConfigurationData
     if (selectedRun.value) {
       await selectRun(selectedRun.value.run.id, false)
     } else if (runs.value.length) {
@@ -2087,6 +2387,15 @@ async function loadDashboard() {
     }
   } catch (error) {
     errorMessage.value = errorText(error)
+  }
+}
+
+async function loadContextConfiguration() {
+  try {
+    contextConfiguration.value = await api.contextConfiguration()
+  } catch (error) {
+    // 治理页已经有独立错误提示；配置弹窗保存成功时不因状态刷新失败而误报保存失败。
+    if (!contextConfiguration.value) errorMessage.value = errorText(error)
   }
 }
 
@@ -2293,6 +2602,137 @@ async function resetModelConfig() {
   }
 }
 
+function matchingEmbeddingProviderPreset(baseUrl, modelName) {
+  return embeddingProviderPresets.find((preset) => preset.baseUrl === baseUrl && preset.modelName === modelName)?.id || 'custom'
+}
+
+function applyEmbeddingProviderPreset() {
+  const preset = embeddingProviderPresets.find((item) => item.id === embeddingProviderPreset.value)
+  if (!preset || preset.id === 'custom') return
+  embeddingConfigForm.baseUrl = preset.baseUrl
+  embeddingConfigForm.modelName = preset.modelName
+  embeddingConfigForm.dimension = preset.dimension
+  embeddingConfigForm.clearApiKey = false
+  embeddingConfigError.value = ''
+}
+
+function useCustomEmbeddingProvider() {
+  embeddingProviderPreset.value = 'custom'
+}
+
+async function loadEmbeddingConfig() {
+  embeddingConfigLoading.value = true
+  embeddingConfigError.value = ''
+  try {
+    const value = await api.getEmbeddingConfig()
+    embeddingConfig.value = value
+    Object.assign(embeddingConfigForm, {
+      enabled: Boolean(value?.enabled),
+      baseUrl: value?.baseUrl || '',
+      modelName: value?.modelName || '',
+      modelVersion: value?.modelVersion || 'v1',
+      dimension: value?.dimension || 1536,
+      apiKey: '',
+      clearApiKey: false,
+    })
+    embeddingProviderPreset.value = matchingEmbeddingProviderPreset(value?.baseUrl, value?.modelName)
+  } catch (error) {
+    embeddingConfigError.value = error.code === 'PERMISSION_DENIED'
+      ? '当前身份没有 context.configure 权限，无法修改向量连接。'
+      : errorText(error)
+  } finally {
+    embeddingConfigLoading.value = false
+  }
+}
+
+async function saveEmbeddingConfig() {
+  if (embeddingConfigSaving.value) return
+  clearMessages()
+  embeddingConfigSaving.value = true
+  embeddingConfigError.value = ''
+  try {
+    const value = await api.updateEmbeddingConfig({
+      enabled: Boolean(embeddingConfigForm.enabled),
+      baseUrl: embeddingConfigForm.baseUrl.trim(),
+      modelName: embeddingConfigForm.modelName.trim(),
+      modelVersion: embeddingConfigForm.modelVersion.trim(),
+      dimension: Number(embeddingConfigForm.dimension),
+      apiKey: embeddingConfigForm.apiKey,
+      clearApiKey: Boolean(embeddingConfigForm.clearApiKey),
+    })
+    embeddingConfig.value = value
+    embeddingConfigForm.apiKey = ''
+    embeddingConfigForm.clearApiKey = false
+    await loadContextConfiguration()
+    noticeMessage.value = '向量连接设置已保存；旧向量已标记为待重建，请在治理面板执行“重建索引”。'
+    showEmbeddingSettings.value = false
+  } catch (error) {
+    embeddingConfigError.value = errorText(error)
+  } finally {
+    embeddingConfigSaving.value = false
+  }
+}
+
+async function testEmbeddingConfig() {
+  if (embeddingConfigTesting.value || embeddingConfigSaving.value || !embeddingConfigForm.enabled) return
+  embeddingConfigError.value = ''
+  embeddingConfigTestResult.value = null
+  embeddingConfigTesting.value = true
+  try {
+    embeddingConfigTestResult.value = await api.testEmbeddingConfig({
+      enabled: true,
+      baseUrl: embeddingConfigForm.baseUrl.trim(),
+      modelName: embeddingConfigForm.modelName.trim(),
+      modelVersion: embeddingConfigForm.modelVersion.trim(),
+      dimension: Number(embeddingConfigForm.dimension),
+      apiKey: embeddingConfigForm.apiKey,
+      clearApiKey: Boolean(embeddingConfigForm.clearApiKey),
+    })
+  } catch (error) {
+    embeddingConfigTestResult.value = {
+      success: false,
+      status: 'FAILED',
+      message: errorText(error),
+      modelName: embeddingConfigForm.modelName.trim(),
+      dimension: 0,
+      latencyMs: 0,
+      errorCode: 'CLIENT_ERROR',
+    }
+  } finally {
+    embeddingConfigTesting.value = false
+  }
+}
+
+async function resetEmbeddingConfig() {
+  if (embeddingConfigSaving.value) return
+  if (typeof window !== 'undefined'
+    && !window.confirm('恢复环境默认 Embedding 配置吗？当前组织保存的地址和密钥会被删除。')) return
+  clearMessages()
+  embeddingConfigSaving.value = true
+  embeddingConfigError.value = ''
+  try {
+    const value = await api.resetEmbeddingConfig()
+    embeddingConfig.value = value
+    Object.assign(embeddingConfigForm, {
+      enabled: Boolean(value?.enabled),
+      baseUrl: value?.baseUrl || '',
+      modelName: value?.modelName || '',
+      modelVersion: value?.modelVersion || 'v1',
+      dimension: value?.dimension || 1536,
+      apiKey: '',
+      clearApiKey: false,
+    })
+    embeddingProviderPreset.value = matchingEmbeddingProviderPreset(value?.baseUrl, value?.modelName)
+    await loadContextConfiguration()
+    noticeMessage.value = '已恢复环境默认 Embedding 配置。'
+    showEmbeddingSettings.value = false
+  } catch (error) {
+    embeddingConfigError.value = errorText(error)
+  } finally {
+    embeddingConfigSaving.value = false
+  }
+}
+
 /** 工作区状态失败不影响聊天；权限不足时仍可使用不依赖本地文件的 Agent 能力。 */
 async function loadWorkspace() {
   try {
@@ -2401,10 +2841,22 @@ async function loadApiKeys() {
 }
 
 function parseApiKeyPermissions() {
-  return String(apiKeyForm.permissions || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
+  const values = Array.isArray(apiKeyForm.permissions)
+    ? apiKeyForm.permissions
+    : String(apiKeyForm.permissions || '').split(',')
+  return [...new Set(values.map((item) => String(item).trim()).filter(Boolean))]
+}
+
+const apiKeyPermissionCount = computed(() => parseApiKeyPermissions().length)
+const allApiKeyPermissionsSelected = computed(() => {
+  const selected = parseApiKeyPermissions()
+  return apiKeyPermissionOptions.every(({ value }) => selected.includes(value))
+})
+
+function toggleAllApiKeyPermissions() {
+  apiKeyForm.permissions = allApiKeyPermissionsSelected.value
+    ? []
+    : apiKeyPermissionOptions.map(({ value }) => value)
 }
 
 async function createManagedApiKey() {
@@ -2476,16 +2928,84 @@ function closeApiKeySecret() {
   createdApiKeySecret.value = ''
 }
 
+const DOCUMENT_UPLOAD_MAX_BYTES = 25 * 1024 * 1024
+
+function openDocumentUploadPicker() {
+  if (loading.value || documentUploading.value) return
+  documentUploadInput.value?.click()
+}
+
+function documentFileTitle(fileName) {
+  const name = String(fileName || '').split(/[\\/]/).pop() || ''
+  const dot = name.lastIndexOf('.')
+  return dot > 0 ? name.slice(0, dot) : name
+}
+
+function setDocumentUploadFile(file) {
+  documentUploadError.value = ''
+  documentUploadFile.value = null
+  if (!file || file.size <= 0) {
+    documentUploadError.value = '请选择一个非空的 PDF 或 DOCX 文件。'
+    return
+  }
+  const extension = String(file.name || '').split('.').pop()?.toLowerCase()
+  if (!['pdf', 'docx'].includes(extension)) {
+    documentUploadError.value = '知识库导入目前只支持 PDF 和 DOCX 文件。'
+    return
+  }
+  if (file.size > DOCUMENT_UPLOAD_MAX_BYTES) {
+    documentUploadError.value = `文件不能超过 ${formatFileSize(DOCUMENT_UPLOAD_MAX_BYTES)}。`
+    return
+  }
+  documentUploadFile.value = file
+  // 文件名是默认标题时自动换成来源文件名，用户改过标题则保留用户输入。
+  if (!documentForm.title.trim() || documentForm.title === '订单处理规则') {
+    documentForm.title = documentFileTitle(file.name)
+  }
+}
+
+function handleDocumentUploadInput(event) {
+  setDocumentUploadFile(event.target?.files?.[0])
+  event.target.value = ''
+}
+
+function handleDocumentUploadDrop(event) {
+  documentUploadDragging.value = false
+  if (loading.value || documentUploading.value) return
+  const files = Array.from(event.dataTransfer?.files || [])
+  if (files.length > 1) noticeMessage.value = '一次只导入一个知识文档，已使用第一个文件。'
+  setDocumentUploadFile(files[0])
+}
+
+function clearDocumentUploadFile() {
+  documentUploadFile.value = null
+  documentUploadError.value = ''
+  if (documentUploadInput.value) documentUploadInput.value.value = ''
+}
+
 async function createDocument() {
   clearMessages()
+  if (!documentUploadFile.value) {
+    documentUploadError.value = '请先选择一个 PDF 或 DOCX 文件。'
+    return
+  }
   loading.value = true
   try {
-    await api.createDocument({ ...documentForm })
-    noticeMessage.value = '知识文档已保存，后续模型步骤会按组织和用户权限检索'
+    documentUploading.value = true
+    const document = await api.uploadDocument({
+      file: documentUploadFile.value,
+      title: documentForm.title,
+      sensitivity: documentForm.sensitivity,
+      allowedUsers: documentForm.allowedUsers,
+    })
+    documents.value = [document, ...documents.value.filter((item) => item.id !== document.id)]
+    clearDocumentUploadFile()
+    noticeMessage.value = '文件已解析并建立知识索引；后续模型步骤会按组织和用户权限检索'
     await loadDashboard()
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
+    documentUploading.value = false
     loading.value = false
   }
 }
@@ -2507,30 +3027,106 @@ async function deleteDocument(document) {
   }
 }
 
-async function runQuickEvaluation() {
+async function createMemory() {
+  const content = memoryForm.content.trim()
+  if (!content || loading.value) return
   clearMessages()
   loading.value = true
   try {
-    await api.runEvaluation({
-      name: evaluationForm.name,
-      modelName: form.modelName || null,
-      promptVersion: form.promptVersion,
-      policyVersion: form.policyVersion,
-      cases: [{
-        name: '控制台用例',
-        input: evaluationForm.input,
-        toolName: 'demo.echo',
-        expectedContains: evaluationForm.expectedContains,
-        budget: 1,
-      }],
+    const memory = await api.createMemory({
+      memoryType: memoryForm.memoryType.trim(),
+      content,
+      sourceRunId: null,
+      expiresAt: memoryForm.expiresAt ? new Date(memoryForm.expiresAt).toISOString() : null,
     })
-    noticeMessage.value = '评测完成，报告已记录'
-    await loadDashboard()
+    memories.value = [memory, ...memories.value]
+    memoryForm.content = ''
+    memoryForm.expiresAt = ''
+    noticeMessage.value = '长期记忆已保存，后续模型步骤会按当前用户权限检索'
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
     loading.value = false
   }
+}
+
+async function deleteMemory(memory) {
+  if (!memory?.id || memoryDeletingId.value) return
+  if (typeof window !== 'undefined'
+    && !window.confirm(`确认删除这条“${memory.memoryType}”长期记忆吗？`)) return
+  clearMessages()
+  memoryDeletingId.value = memory.id
+  try {
+    await api.deleteMemory(memory.id)
+    memories.value = memories.value.filter((item) => item.id !== memory.id)
+    noticeMessage.value = '长期记忆已删除'
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    memoryDeletingId.value = ''
+  }
+}
+
+async function previewContext() {
+  const query = contextPreviewQuery.value.trim()
+  if (!query || contextPreviewLoading.value) return
+  contextPreviewLoading.value = true
+  contextPreviewError.value = ''
+  try {
+    contextPreviewResult.value = await api.previewContext(query, Number(contextPreviewMaxChars.value) || 4000)
+  } catch (error) {
+    contextPreviewError.value = errorText(error)
+  } finally {
+    contextPreviewLoading.value = false
+  }
+}
+
+async function rebuildContextIndex() {
+  if (contextReindexLoading.value) return
+  contextReindexLoading.value = true
+  contextReindexError.value = ''
+  try {
+    const result = await api.reindexContext({
+      scope: contextReindexForm.scope,
+      parentLimit: Number(contextReindexForm.parentLimit) || 100,
+      chunkLimit: Number(contextReindexForm.chunkLimit) || 1000,
+      rechunk: Boolean(contextReindexForm.rechunk),
+    })
+    contextReindexResult.value = result
+    noticeMessage.value = contextReindexNotice(result)
+  } catch (error) {
+    contextReindexError.value = errorText(error)
+  } finally {
+    contextReindexLoading.value = false
+  }
+}
+
+function contextReindexNotice(result) {
+  const indexed = Number(result?.chunksIndexed) || 0
+  const failed = Number(result?.chunksFailed) || 0
+  const pending = Number(result?.pendingChunks) || 0
+  if (failed > 0) {
+    return `索引任务部分完成，${failed} 个向量处理失败，仍有 ${pending} 个待处理`
+  }
+  if (pending > 0 && !result?.embeddingReady) {
+    return `索引任务完成，但向量服务或 pgvector 未就绪，仍有 ${pending} 个待处理`
+  }
+  if (indexed > 0) return `索引任务完成，已写入 ${indexed} 个向量`
+  return '索引已是最新，当前没有待处理向量'
+}
+
+function contextReindexStatusClass(result) {
+  if (!result) return 'is-unknown'
+  if (Number(result.chunksFailed) > 0) return 'is-negative'
+  if (Number(result.pendingChunks) > 0) return 'is-warning'
+  return result.embeddingReady ? 'is-ready' : 'is-warning'
+}
+
+function contextReindexStatusLabel(result) {
+  if (!result) return '未检查'
+  if (Number(result.chunksFailed) > 0) return 'ERROR'
+  if (Number(result.pendingChunks) > 0) return 'PENDING'
+  return result.embeddingReady ? 'READY' : 'CHECK'
 }
 
 async function selectRun(runId, announce = true, showLoading = true) {
@@ -2727,7 +3323,6 @@ async function createAndStartRun() {
     const created = await api.createRun({
       ...form,
       budget: Number(form.budget),
-      modelName: form.modelName || null,
     })
     const started = await api.startRun(created.id)
     noticeMessage.value = started.run.status === 'WAITING_APPROVAL'
@@ -2864,13 +3459,14 @@ onMounted(async () => {
   window.addEventListener('online', handleNetworkOnline)
   syncActiveConsoleSectionFromHash()
   window.addEventListener('hashchange', syncActiveConsoleSectionFromHash)
+  window.addEventListener('popstate', syncActiveConsoleSectionFromHash)
   if (desktopWorkspaceAvailable.value) {
     api.configureDesktopWorkspaceDrop()
     api.onDesktopWorkspaceDropped((result) => {
       void handleDesktopWorkspaceDropped(result)
     })
   }
-  await Promise.all([loadDashboard(), loadHealth(), loadModelConfig(), loadWorkspace(), loadTenantPolicy(), loadApiKeys(), loadLocalWorkspaces()])
+  await Promise.all([loadDashboard(), loadHealth(), loadModelConfig(), loadEmbeddingConfig(), loadWorkspace(), loadTenantPolicy(), loadApiKeys(), loadLocalWorkspaces()])
   await loadConversations()
   runPollTimer = window.setInterval(pollSelectedRun, 1500)
   conversationPollTimer = window.setInterval(pollConversation, 1200)
@@ -2883,12 +3479,14 @@ onBeforeUnmount(() => {
   window.removeEventListener('offline', handleNetworkOffline)
   window.removeEventListener('online', handleNetworkOnline)
   window.removeEventListener('hashchange', syncActiveConsoleSectionFromHash)
+  window.removeEventListener('popstate', syncActiveConsoleSectionFromHash)
   stopRunEventStream()
   api.clearDesktopWorkspaceDropListener()
   window.clearInterval(runPollTimer)
   window.clearInterval(conversationPollTimer)
   window.clearInterval(healthPollTimer)
   window.clearTimeout(chatHighlightTimer)
+  if (noticeDismissTimer) window.clearTimeout(noticeDismissTimer)
   cancelScheduledAuditEventsRefresh()
 })
 </script>
@@ -2905,17 +3503,18 @@ onBeforeUnmount(() => {
           <span class="chat-identity">{{ form.tenantId }} / {{ form.userId }}</span>
           <span class="chat-health" :class="infraOnline ? 'health-up' : 'health-warning'"><i></i>{{ infraLabel }}</span>
           <span class="chat-model-status" :class="modelStatusClass" :title="modelConfig?.enabled ? `当前用户模型：${modelConfig.modelName || '外部模型'}` : '当前使用本地演示模型，不会访问外部模型服务'"><i></i>{{ modelLabel }}</span>
-          <button class="secondary-button chat-console-button" type="button" title="打开模型设置" @click="showModelSettings = true"><Settings2 :size="15" />模型设置</button>
           <button class="command-palette-trigger" type="button" title="打开命令面板（⌘/Ctrl + K）" @click="openCommandPalette"><Command :size="14" /><span>⌘K</span><em>命令</em></button>
           <button class="theme-toggle" type="button" :aria-label="theme === 'dark' ? '切换到白天模式' : '切换到黑夜模式'" @click="toggleTheme">
             <Sun v-if="theme === 'dark'" :size="15" aria-hidden="true" /><Moon v-else :size="15" aria-hidden="true" />{{ theme === 'dark' ? '白天' : '黑夜' }}
           </button>
+          <button class="secondary-button chat-console-button top-config-button" type="button" title="配置大语言模型" @click="showModelSettings = true"><Settings2 :size="15" />大语言模型</button>
+          <button class="secondary-button chat-console-button top-config-button" type="button" title="配置向量模型" @click="showEmbeddingSettings = true"><Settings2 :size="15" />向量模型</button>
           <button class="secondary-button chat-console-button" type="button" title="打开运行控制台" @click="chatMode = false"><PanelRight :size="15" />运行控制台</button>
         </div>
       </header>
 
-      <div v-if="errorMessage" class="message error-message chat-message-banner">{{ errorMessage }}</div>
-      <div v-if="noticeMessage" class="message notice-message chat-message-banner">{{ noticeMessage }}</div>
+      <div v-if="errorMessage" :key="`error-${errorMessage}`" class="message error-message chat-message-banner">{{ errorMessage }}</div>
+      <div v-if="noticeMessage" :key="`notice-${noticeMessage}`" class="message notice-message chat-message-banner">{{ noticeMessage }}</div>
 
       <div class="chat-layout">
         <aside class="conversation-sidebar">
@@ -2923,13 +3522,10 @@ onBeforeUnmount(() => {
             <button class="chat-primary-nav-item chat-primary-nav-item-primary" type="button" :disabled="chatLoading || chatSending || chatUploading" @click="createChatConversation">
               <MessageSquarePlus :size="15" /><span>新对话</span><kbd>⌘N</kbd>
             </button>
-            <button class="chat-primary-nav-item" type="button" @click="chatMode = false; setActiveConsoleSection('runtime')">
+            <button class="chat-primary-nav-item" type="button" @click="chatMode = false; navigateConsoleSection('runtime')">
               <CircleDot :size="15" /><span>运行中心</span>
             </button>
-            <button class="chat-primary-nav-item" type="button" @click="chatMode = false; setActiveConsoleSection('tools')">
-              <Wrench :size="15" /><span>工具注册</span>
-            </button>
-            <button class="chat-primary-nav-item" type="button" @click="chatMode = false; setActiveConsoleSection('audit')">
+            <button class="chat-primary-nav-item" type="button" @click="chatMode = false; navigateConsoleSection('audit')">
               <Check :size="15" /><span>审计追踪</span>
             </button>
           </nav>
@@ -3068,8 +3664,20 @@ onBeforeUnmount(() => {
                     <span class="chat-thinking"><i></i><i></i><i></i>{{ chatRunActivity || messageStatusLabel(message.status) }}</span>
                   </template>
                   <template v-else>
-                    <div v-if="message.content" class="chat-markdown" v-html="renderMarkdown(message.content)" @click="handleChatMarkdownClick"></div>
-                    <p v-else>{{ messageStatusLabel(message.status) }}</p>
+                    <div v-if="message.content" class="chat-markdown" v-html="renderMarkdown(chatMessagePresentations.get(message.id)?.content || message.content)" @click="handleChatMarkdownClick"></div>
+                    <section v-if="message.role === 'ASSISTANT' && chatMessagePresentations.get(message.id)?.sources?.length" class="chat-source-section" aria-label="参考来源">
+                      <div class="chat-source-heading"><span>参考来源</span><small>{{ chatMessagePresentations.get(message.id).sources.length }} 个</small></div>
+                      <div class="chat-source-list">
+                        <article v-for="source in chatMessagePresentations.get(message.id).sources" :key="`${message.id}-${source.key}`" class="chat-source-card">
+                          <div class="chat-source-card-heading">
+                            <span class="chat-source-kind">{{ source.kindLabel }}</span>
+                            <strong>{{ source.title }}</strong>
+                          </div>
+                          <small v-if="source.updatedAt">更新于 {{ formatDate(source.updatedAt) }}</small>
+                        </article>
+                      </div>
+                    </section>
+                    <p v-if="!message.content">{{ messageStatusLabel(message.status) }}</p>
                     <small v-if="message.role === 'ASSISTANT' && message.status !== 'COMPLETED'">{{ messageStatusLabel(message.status) }}</small>
                   </template>
                   <div v-if="message.attachments?.length" class="chat-attachment-list" aria-label="已导入的工作区文件">
@@ -3082,7 +3690,9 @@ onBeforeUnmount(() => {
                   <button v-if="message.content" type="button" :disabled="copyingMessageId === message.id" @click="copyChatMessage(message)">{{ copyingMessageId === message.id ? '复制中…' : '复制回复' }}</button>
                   <button v-if="canRetryChatMessage(message)" type="button" :disabled="retryingMessageId === message.id" @click="retryChatMessage(message)">{{ retryingMessageId === message.id ? '重试中…' : '重试本轮' }}</button>
                 </div>
-                <button v-if="message.runId && message.role === 'ASSISTANT'" class="message-run-link" type="button" @click="openRunPanel(message.runId)">查看执行步骤 · {{ message.runId.slice(0, 8) }}</button>
+                <div v-if="message.runId && message.role === 'ASSISTANT'" class="message-run-reference">
+                  <span class="message-run-status" :class="messageStatusClass(message.status)"><i></i>{{ messageStatusLabel(message.status) }}</span>
+                </div>
               </div>
             </article>
             <button
@@ -3142,7 +3752,7 @@ onBeforeUnmount(() => {
               v-model="chatInput"
               rows="3"
               :disabled="chatSending || chatUploading || !activeConversationId"
-              placeholder="描述代码任务；桌面版可拖入项目文件夹，浏览器会导入文本副本…"
+              placeholder="描述你的业务目标；可提问、分析项目或发起受控流程…"
               aria-label="输入消息"
               @input="handleChatInput"
               @keydown="handleChatKeydown"
@@ -3406,37 +4016,17 @@ onBeforeUnmount(() => {
     </div>
   </template>
   <template v-else>
-  <div class="app-shell">
-    <aside class="sidebar">
-      <div class="brand">
+  <div class="console-app">
+    <header class="console-topbar">
+      <div class="brand console-topbar-brand">
         <div class="brand-mark" aria-hidden="true"><Sparkles :size="17" :stroke-width="1.8" /></div>
         <div>
           <strong>Ming Harness</strong>
           <span>Agent Operations</span>
         </div>
       </div>
-
-      <nav class="side-nav" aria-label="主导航">
-        <a class="nav-item" :class="{ active: activeConsoleSection === 'runtime' }" href="#runtime" :aria-current="activeConsoleSection === 'runtime' ? 'page' : undefined" @click="setActiveConsoleSection('runtime')"><span class="nav-icon"><CircleDot :size="16" /></span>运行中心</a>
-        <a class="nav-item" :class="{ active: activeConsoleSection === 'tools' }" href="#tools" :aria-current="activeConsoleSection === 'tools' ? 'page' : undefined" @click="setActiveConsoleSection('tools')"><span class="nav-icon"><Wrench :size="16" /></span>工具注册</a>
-        <a class="nav-item" :class="{ active: activeConsoleSection === 'audit' }" href="#audit" :aria-current="activeConsoleSection === 'audit' ? 'page' : undefined" @click="setActiveConsoleSection('audit')"><span class="nav-icon"><Check :size="16" /></span>审计追踪</a>
-      </nav>
-
-      <div class="sidebar-foot">
-        <div class="system-state"><span class="pulse" :class="{ offline: !infraOnline }"></span><span>{{ infraLabel }}</span></div>
-        <small>Runtime v0.1 · Java 17</small>
-      </div>
-    </aside>
-
-    <main class="main-content" id="runtime">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">RUNTIME / OVERVIEW</p>
-          <h1>运行中心</h1>
-        </div>
+      <div class="console-topbar-content">
         <div class="topbar-actions">
-          <button class="secondary-button" type="button" title="打开聊天工作台" @click="chatMode = true"><MessageSquarePlus :size="15" />聊天工作台</button>
-          <button class="secondary-button" type="button" title="打开模型设置" @click="showModelSettings = true"><Settings2 :size="15" />模型设置</button>
           <button class="command-palette-trigger" type="button" title="打开命令面板（⌘/Ctrl + K）" @click="openCommandPalette"><Command :size="14" /><span>⌘K</span><em>命令</em></button>
           <button
             class="theme-toggle"
@@ -3448,15 +4038,29 @@ onBeforeUnmount(() => {
             <Sun v-if="theme === 'dark'" :size="15" aria-hidden="true" /><Moon v-else :size="15" aria-hidden="true" />
             {{ theme === 'dark' ? '白天' : '黑夜' }}
           </button>
-          <span class="date-chip">本地演示环境</span>
-          <button class="primary-button" type="button" @click="showCreateForm = !showCreateForm">
-            <Plus :size="16" /> 新建 Run
-          </button>
+          <button class="secondary-button top-config-button" type="button" title="配置大语言模型" @click="showModelSettings = true"><Settings2 :size="15" />大语言模型</button>
+          <button class="secondary-button top-config-button" type="button" title="配置向量模型" @click="showEmbeddingSettings = true"><Settings2 :size="15" />向量模型</button>
+          <button class="secondary-button" type="button" title="打开聊天工作台" @click="chatMode = true"><MessageSquarePlus :size="15" />聊天工作台</button>
         </div>
-      </header>
+      </div>
+    </header>
 
-      <div v-if="errorMessage" class="message error-message">{{ errorMessage }}</div>
-      <div v-if="noticeMessage" class="message notice-message">{{ noticeMessage }}</div>
+    <div class="console-layout">
+      <aside class="sidebar">
+      <nav class="side-nav" aria-label="主导航">
+        <a class="nav-item" :class="{ active: activeConsoleSection === 'runtime' }" href="#runtime" :aria-current="activeConsoleSection === 'runtime' ? 'page' : undefined" @click.prevent="navigateConsoleSection('runtime')"><span class="nav-icon"><CircleDot :size="16" /></span>运行中心</a>
+        <a class="nav-item" :class="{ active: activeConsoleSection === 'audit' }" href="#audit" :aria-current="activeConsoleSection === 'audit' ? 'page' : undefined" @click.prevent="navigateConsoleSection('audit')"><span class="nav-icon"><Check :size="16" /></span>审计追踪</a>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="system-state"><span class="pulse" :class="{ offline: !infraOnline }"></span><span>{{ infraLabel }}</span></div>
+        <small>Runtime v0.1 · Java 17</small>
+      </div>
+    </aside>
+
+    <main class="main-content" id="runtime">
+      <div v-if="errorMessage" :key="`error-${errorMessage}`" class="message error-message console-message-banner">{{ errorMessage }}</div>
+      <div v-if="noticeMessage" :key="`notice-${noticeMessage}`" class="message notice-message console-message-banner">{{ noticeMessage }}</div>
 
       <section class="infra-strip panel" aria-label="基础设施状态">
         <div><p class="eyebrow">INFRASTRUCTURE</p><h2>本地依赖状态</h2></div>
@@ -3477,37 +4081,34 @@ onBeforeUnmount(() => {
       </section>
 
       <section class="stats-grid" aria-label="运行统计">
-        <div class="stat-card stat-total">
-          <div class="stat-top"><span>全部 Run</span><span class="stat-icon"><ListChecks :size="16" /></span></div>
-          <strong>{{ stats.total }}</strong>
-          <small>最近 50 条执行记录</small>
-        </div>
         <div class="stat-card stat-running">
-          <div class="stat-top"><span>执行中</span><span class="stat-icon"><Activity :size="16" /></span></div>
-          <strong>{{ stats.running }}</strong>
-          <small>{{ stats.queued }} 条排队等待</small>
+          <div class="stat-top"><span>活动 Run</span><span class="stat-icon"><Activity :size="16" /></span></div>
+          <strong>{{ stats.running + stats.queued }}</strong>
+          <small>{{ stats.running }} 执行中 · {{ stats.queued }} 排队</small>
         </div>
-        <div class="stat-card stat-success">
-          <div class="stat-top"><span>成功率</span><span class="stat-icon"><Check :size="16" /></span></div>
-          <strong>{{ stats.total ? Math.round((stats.succeeded / stats.total) * 100) : 0 }}<em>%</em></strong>
-          <small>{{ stats.succeeded }} 条任务已完成</small>
+        <div class="stat-card stat-total">
+          <div class="stat-top"><span>待审批</span><span class="stat-icon"><ShieldCheck :size="16" /></span></div>
+          <strong>{{ stats.waitingApproval }}</strong>
+          <small>需要人工确认的高风险操作</small>
         </div>
         <div class="stat-card stat-failed">
-          <div class="stat-top"><span>需关注</span><span class="stat-icon"><CircleAlert :size="16" /></span></div>
+          <div class="stat-top"><span>失败 Run</span><span class="stat-icon"><CircleAlert :size="16" /></span></div>
           <strong>{{ stats.failed }}</strong>
-          <small>失败或需要人工处理</small>
+          <small>成功率 {{ stats.total ? Math.round((stats.succeeded / stats.total) * 100) : 0 }}%</small>
         </div>
       </section>
 
-      <section v-if="showCreateForm" class="create-panel">
+      <section class="create-panel" :class="{ 'create-panel-collapsed': !showCreateForm }">
         <div class="section-heading">
           <div>
             <p class="eyebrow">CREATE EXECUTION</p>
             <h2>创建一次可追溯执行</h2>
           </div>
-          <button class="icon-button" type="button" aria-label="关闭创建表单" @click="showCreateForm = false"><X :size="15" /></button>
+          <button class="secondary-button" type="button" :aria-expanded="showCreateForm" @click="showCreateForm = !showCreateForm">
+            {{ showCreateForm ? '收起创建面板' : '展开创建面板' }}
+          </button>
         </div>
-        <form class="run-form" @submit.prevent="createAndStartRun">
+        <form v-if="showCreateForm" class="run-form" @submit.prevent="createAndStartRun">
           <label class="field field-wide">
             <span>任务名称</span>
             <input v-model="form.title" required maxlength="120" placeholder="例如：分析一条退款申请" />
@@ -3530,26 +4131,32 @@ onBeforeUnmount(() => {
               <option v-for="tool in tools" :key="tool.name" :value="tool.name">{{ tool.name }}</option>
             </select>
           </label>
-          <label class="field run-input-field">
-            <span>模型（可选）</span>
-            <input v-model="form.modelName" placeholder="默认演示模型" />
-          </label>
           <label class="field">
             <span>Prompt 版本</span>
             <input v-model="form.promptVersion" required />
           </label>
-          <label class="field">
+          <label class="field run-secondary-field">
             <span>策略版本</span>
             <input v-model="form.policyVersion" required />
           </label>
-          <label class="field">
+          <label class="field run-secondary-field">
             <span>幂等键（可选）</span>
             <input v-model="form.idempotencyKey" maxlength="128" placeholder="例如：order-123" />
           </label>
-          <label class="field">
+          <div class="field run-secondary-field permission-field">
             <span>权限快照（可选）</span>
-            <input v-model="form.permissions" maxlength="1000" placeholder="例如：orders.read,orders.write" />
-          </label>
+            <div class="permission-picker" role="group" aria-label="选择本次 Run 的工具权限">
+              <label v-for="permission in permissionOptions" :key="permission.value" class="permission-option" :title="permission.description">
+                <input v-model="selectedPermissions" type="checkbox" :value="permission.value" />
+                <span class="permission-option-copy">
+                  <strong>{{ permission.label }}</strong>
+                  <code>{{ permission.value }}</code>
+                </span>
+              </label>
+              <small v-if="!permissionOptions.length" class="permission-empty">当前注册工具没有额外权限要求</small>
+            </div>
+            <small class="form-hint">{{ selectedPermissionSummary }}；选项来自已注册工具的权限声明。</small>
+          </div>
           <div class="field field-wide agent-mode-field">
             <span>运行模式</span>
             <div class="agent-mode-controls">
@@ -3668,6 +4275,13 @@ onBeforeUnmount(() => {
                       <span class="tool-call-heading">Tool Call</span>
                       <code v-for="call in decodeAgentStep(step).toolCalls" :key="call.id">{{ call.name }} · {{ call.id }}</code>
                     </div>
+                    <details v-if="step.contextEvidence?.length" class="run-evidence-details" open>
+                      <summary>上下文证据 · {{ step.contextEvidence.length }} 个已授权来源</summary>
+                      <article v-for="evidence in step.contextEvidence" :key="`${step.id}-${evidence.citation}`" class="run-evidence-row">
+                        <div><strong>{{ evidence.title || '未命名来源' }}</strong><code>{{ evidence.citation }}</code></div>
+                        <p>{{ evidence.excerpt }}</p>
+                      </article>
+                    </details>
                     <template v-if="decodeWorkspaceExec(step)">
                       <p class="command-line"><span>$</span> {{ decodeWorkspaceExec(step).command }} {{ (decodeWorkspaceExec(step).args || []).join(' ') }}</p>
                       <div class="command-summary">
@@ -3766,16 +4380,145 @@ onBeforeUnmount(() => {
 
       <section class="governance-section panel" id="governance">
         <div class="panel-heading">
-          <div><p class="eyebrow">CONTEXT / EVALUATION</p><h2>上下文与评测治理</h2></div>
-          <button class="secondary-button" type="button" @click="showGovernance = !showGovernance">{{ showGovernance ? '收起' : '展开治理面板' }}</button>
+          <div><p class="eyebrow">ADVANCED GOVERNANCE</p><h2>高级治理设置</h2><p class="panel-heading-help">知识源、索引、组织策略和凭证设置只在这里维护。</p></div>
+          <button class="secondary-button" type="button" @click="showGovernance = !showGovernance">{{ showGovernance ? '收起高级设置' : '展开高级设置' }}</button>
         </div>
         <div v-if="showGovernance" class="governance-grid">
-          <form class="governance-card" @submit.prevent="createDocument">
-            <h3>添加授权知识文档</h3>
+          <section class="governance-card context-workbench-card">
+            <div class="context-workbench-heading">
+              <div>
+                <p class="eyebrow">VECTOR SEARCH</p>
+                <h3>检索工作台</h3>
+              </div>
+              <span class="context-mode-chip">语义 + 关键词</span>
+            </div>
+            <p class="context-workbench-help">用和 Run 相同的查询链路预览授权上下文，检查命中来源、父窗口和 citation。</p>
+            <form class="context-preview-form" @submit.prevent="previewContext">
+              <label class="field context-query-field">
+                <span>查询内容</span>
+                <textarea v-model="contextPreviewQuery" rows="3" required placeholder="请输入要检索的问题"></textarea>
+              </label>
+              <div class="context-preview-controls">
+                <label class="field">
+                  <span>上下文上限</span>
+                  <select v-model.number="contextPreviewMaxChars">
+                    <option :value="2000">2,000 字符</option>
+                    <option :value="4000">4,000 字符</option>
+                    <option :value="8000">8,000 字符</option>
+                    <option :value="12000">12,000 字符</option>
+                  </select>
+                </label>
+                <button class="primary-button context-preview-button" type="submit" :disabled="contextPreviewLoading || !contextPreviewQuery.trim()">
+                  {{ contextPreviewLoading ? '检索中…' : '运行检索' }}
+                </button>
+              </div>
+            </form>
+            <p v-if="contextPreviewError" class="policy-error">{{ contextPreviewError }}</p>
+            <div v-if="contextPreviewResult" class="context-preview-result">
+              <div class="subsection-title">
+                <div><h3>召回结果</h3><span>{{ contextPreviewResult.evidences?.length || 0 }} 个授权来源</span></div>
+                <span class="context-result-state">已完成</span>
+              </div>
+              <pre v-if="contextPreviewResult.text" class="context-preview-text">{{ contextPreviewResult.text }}</pre>
+              <div v-else class="context-preview-empty">没有达到相似度阈值的来源，Run 会继续使用关键词检索。</div>
+              <div v-if="contextPreviewResult.evidences?.length" class="context-evidence-list">
+                <article v-for="evidence in contextPreviewResult.evidences" :key="evidence.citation" class="context-evidence-row">
+                  <div class="context-evidence-heading">
+                    <strong>{{ evidence.title || '未命名来源' }}</strong>
+                    <code>{{ evidence.citation }}</code>
+                  </div>
+                  <p>{{ evidence.excerpt }}</p>
+                </article>
+              </div>
+            </div>
+            <div v-else class="context-preview-empty context-preview-empty-initial">尚未运行查询。这里的结果与模型步骤实际收到的上下文格式一致。</div>
+          </section>
+          <section class="governance-card governance-fixed-card context-index-card">
+            <div class="context-workbench-heading">
+              <div>
+                <p class="eyebrow">INDEX OPERATIONS</p>
+                <h3>向量索引</h3>
+              </div>
+              <span class="context-index-status" :class="contextReindexStatusClass(contextReindexResult)">
+                {{ contextReindexStatusLabel(contextReindexResult) }}
+              </span>
+            </div>
+            <p class="context-workbench-help">按租户有界重建 chunk 和 embedding，不会把整租户数据一次性发送给供应商。</p>
+            <form class="context-index-form" @submit.prevent="rebuildContextIndex">
+              <label class="field"><span>重建范围</span><select v-model="contextReindexForm.scope"><option value="ALL">全部来源</option><option value="DOCUMENT">仅知识文档</option><option value="MEMORY">仅长期记忆</option></select></label>
+              <label class="field"><span>父对象上限</span><input v-model.number="contextReindexForm.parentLimit" type="number" min="1" max="500" /></label>
+              <label class="field"><span>chunk 上限</span><input v-model.number="contextReindexForm.chunkLimit" type="number" min="1" max="5000" /></label>
+              <label class="check-field context-rechunk-field"><input v-model="contextReindexForm.rechunk" type="checkbox" /><span>按当前配置重新分块</span></label>
+              <button class="secondary-button context-index-button" type="submit" :disabled="contextReindexLoading">
+                {{ contextReindexLoading ? '重建中…' : '重建索引' }}
+              </button>
+            </form>
+            <p v-if="contextReindexError" class="policy-error">{{ contextReindexError }}</p>
+            <div v-if="contextReindexResult" class="context-index-result">
+              <div><span>扫描父对象</span><strong>{{ contextReindexResult.parentsScanned }}</strong></div>
+              <div><span>写入向量</span><strong class="is-positive">{{ contextReindexResult.chunksIndexed }}</strong></div>
+              <div><span>待处理</span><strong :class="contextReindexResult.pendingChunks ? 'is-attention' : 'is-positive'">{{ contextReindexResult.pendingChunks }}</strong></div>
+              <div><span>失败</span><strong :class="contextReindexResult.chunksFailed ? 'is-negative' : 'is-positive'">{{ contextReindexResult.chunksFailed }}</strong></div>
+            </div>
+            <small class="form-hint">需要 <code>context.reindex</code> 权限；开启“重新分块”后建议在低峰期执行。</small>
+          </section>
+          <section class="governance-card governance-fixed-card context-config-card">
+            <div class="context-workbench-heading">
+              <div>
+                <p class="eyebrow">RUNTIME CONFIG</p>
+                <h3>向量运行配置</h3>
+              </div>
+              <span class="context-index-status" :class="contextConfiguration?.embeddingReady ? 'is-ready' : 'is-warning'">{{ contextConfiguration?.embeddingReady ? 'READY' : 'OFFLINE' }}</span>
+            </div>
+            <p class="context-workbench-help">这是当前组织的脱敏快照。服务地址可在“向量设置”中维护，API Key 只会提交给 Runtime，不会回传到前端。</p>
+            <button class="secondary-button context-config-edit-button" type="button" @click="showEmbeddingSettings = true">编辑向量连接</button>
+            <div v-if="contextConfiguration" class="context-config-grid">
+              <div><span>Embedding 模型</span><strong>{{ contextConfiguration.model }}</strong></div>
+              <div><span>模型版本</span><strong>{{ contextConfiguration.modelVersion }}</strong></div>
+              <div><span>向量维度</span><strong>{{ contextConfiguration.dimension }}</strong></div>
+              <div><span>批量大小</span><strong>{{ contextConfiguration.batchSize }}</strong></div>
+              <div><span>Chunk 上限</span><strong>{{ contextConfiguration.chunkMaxChars }}</strong></div>
+              <div><span>父窗口上限</span><strong>{{ contextConfiguration.parentWindowMaxChars }}</strong></div>
+              <div><span>最低相似度</span><strong>{{ contextConfiguration.minSimilarity }}</strong></div>
+              <div><span>混合排序</span><strong>{{ contextConfiguration.rrfEnabled ? 'RRF' : '向量优先' }}</strong></div>
+            </div>
+            <div v-else class="context-preview-empty">正在读取 Runtime 配置…</div>
+            <small class="form-hint">配置按组织保存；修改后旧向量会失效，请使用上方索引操作重新建立向量。</small>
+          </section>
+          <form class="governance-card governance-fixed-card" @submit.prevent="createDocument">
+            <div class="context-workbench-heading">
+              <div><h3>添加授权知识文档</h3><small class="form-hint">仅支持 PDF/DOCX 上传解析，上传后自动建立索引。</small></div>
+              <span class="context-mode-chip">文件 → 文本 → 向量</span>
+            </div>
+            <div
+              class="document-upload-dropzone"
+              :class="{ 'is-dragging': documentUploadDragging, 'has-file': documentUploadFile }"
+              @dragenter.prevent="documentUploadDragging = true"
+              @dragover.prevent="documentUploadDragging = true"
+              @dragleave.prevent="documentUploadDragging = false"
+              @drop.prevent="handleDocumentUploadDrop"
+            >
+              <input
+                ref="documentUploadInput"
+                class="document-upload-input"
+                type="file"
+                accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                @change="handleDocumentUploadInput"
+              />
+              <div class="document-upload-copy">
+                <strong>{{ documentUploadFile ? documentUploadFile.name : '拖入 PDF 或 DOCX 文件' }}</strong>
+                <small v-if="documentUploadFile">{{ formatFileSize(documentUploadFile.size) }} · 上传后自动解析、切块并建立索引</small>
+                <small v-else>单个文件最大 25 MB；扫描型 PDF 需要先经过 OCR 才能提取文字</small>
+              </div>
+              <div class="document-upload-actions">
+                <button class="secondary-button" type="button" :disabled="loading || documentUploading" @click="openDocumentUploadPicker">{{ documentUploadFile ? '更换文件' : '选择文件' }}</button>
+                <button v-if="documentUploadFile" class="text-button" type="button" :disabled="loading || documentUploading" @click="clearDocumentUploadFile">移除</button>
+              </div>
+            </div>
+            <p v-if="documentUploadError" class="policy-error">{{ documentUploadError }}</p>
             <label class="field"><span>标题</span><input v-model="documentForm.title" required /></label>
-            <label class="field"><span>内容</span><textarea v-model="documentForm.content" required rows="3"></textarea></label>
             <label class="field"><span>可见用户（逗号分隔，可留空）</span><input v-model="documentForm.allowedUsers" /></label>
-            <button class="secondary-button" type="submit" :disabled="loading">保存文档</button>
+            <button class="secondary-button" type="submit" :disabled="loading || documentUploading || !documentUploadFile">上传并建立索引</button>
             <small class="form-hint">当前 {{ documents.length }} 篇文档；模型检索前会先执行组织和用户过滤。</small>
             <div v-if="documents.length" class="document-list" aria-label="已保存知识文档">
               <div v-for="document in documents" :key="document.id" class="document-row">
@@ -3794,13 +4537,29 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </form>
-          <form class="governance-card" @submit.prevent="runQuickEvaluation">
-            <h3>运行快速回归评测</h3>
-            <label class="field"><span>报告名称</span><input v-model="evaluationForm.name" required /></label>
-            <label class="field"><span>测试输入</span><textarea v-model="evaluationForm.input" required rows="2"></textarea></label>
-            <label class="field"><span>期望包含</span><input v-model="evaluationForm.expectedContains" /></label>
-            <button class="secondary-button" type="submit" :disabled="loading">执行评测</button>
-            <small class="form-hint">历史报告 {{ evaluations.length }} 份；每份报告绑定模型、Prompt 和策略版本。</small>
+          <form class="governance-card governance-fixed-card memory-card" @submit.prevent="createMemory">
+            <div class="context-workbench-heading">
+              <div>
+                <p class="eyebrow">PERSONAL CONTEXT</p>
+                <h3>长期记忆</h3>
+              </div>
+              <span class="context-mode-chip">{{ memories.length }} 条</span>
+            </div>
+            <p class="context-workbench-help">仅当前用户可检索。适合保存偏好、工作习惯和可过期的运行背景，不建议写入密钥或凭证。</p>
+            <label class="field"><span>记忆类型</span><input v-model="memoryForm.memoryType" required maxlength="64" placeholder="例如：USER_PREFERENCE" /></label>
+            <label class="field"><span>记忆内容</span><textarea v-model="memoryForm.content" rows="3" required maxlength="20000" placeholder="例如：用户偏好在回答中给出文件路径和验证命令"></textarea></label>
+            <label class="field"><span>过期时间（可选）</span><input v-model="memoryForm.expiresAt" type="datetime-local" /></label>
+            <button class="secondary-button" type="submit" :disabled="loading || !memoryForm.content.trim()">保存记忆</button>
+            <div v-if="memories.length" class="memory-list" aria-label="已保存长期记忆">
+              <article v-for="memory in memories" :key="memory.id" class="memory-row">
+                <div class="memory-row-content">
+                  <div class="memory-row-heading"><strong>{{ memory.memoryType }}</strong><span>{{ memory.expiresAt ? `到期 ${formatDate(memory.expiresAt)}` : '长期有效' }}</span></div>
+                  <p>{{ memory.content }}</p>
+                </div>
+                <button class="danger-button document-delete-button" type="button" :disabled="loading || memoryDeletingId === memory.id" @click="deleteMemory(memory)">{{ memoryDeletingId === memory.id ? '删除中…' : '删除' }}</button>
+              </article>
+            </div>
+            <div v-else class="context-preview-empty">还没有当前用户的长期记忆。</div>
           </form>
           <form class="governance-card policy-card" @submit.prevent="saveTenantPolicy">
             <div class="subsection-title"><h3>组织资源策略</h3><span v-if="tenantPolicy">{{ tenantPolicy.defaulted ? '平台默认' : '组织覆盖' }}</span></div>
@@ -3810,7 +4569,31 @@ onBeforeUnmount(() => {
             <label class="field"><span>最大输入字符数</span><input v-model.number="tenantPolicyForm.maxInputLength" type="number" min="1" required /></label>
             <label class="field"><span>单次最大预算</span><input v-model.number="tenantPolicyForm.maxBudget" type="number" min="0.000001" step="0.000001" required /></label>
             <label class="field"><span>每分钟创建 Run 数</span><input v-model.number="tenantPolicyForm.maxCreatesPerMinute" type="number" min="1" required /></label>
-            <label class="field"><span>工具白名单（逗号分隔，留空表示全部）</span><input v-model="tenantPolicyForm.allowedTools" placeholder="例如：demo.echo" /></label>
+            <div class="field tenant-policy-tools-field">
+              <span>工具白名单（可多选，留空表示全部）</span>
+              <details class="tenant-policy-tool-picker">
+                <summary>
+                  <span>{{ selectedAllowedTools.length ? `已选择 ${selectedAllowedTools.length} 项` : '允许全部已注册工具' }}</span>
+                  <small>展开选择</small>
+                </summary>
+                <div class="tenant-policy-tool-menu">
+                  <div class="tenant-policy-tool-menu-actions">
+                    <span>只允许勾选的工具参与组织 Run</span>
+                    <button class="text-button" type="button" :disabled="!allowedToolOptions.length" @click="toggleAllAllowedTools">{{ allAllowedToolsSelected ? '清空' : '全选' }}</button>
+                  </div>
+                  <label v-for="tool in allowedToolOptions" :key="tool.value" class="tenant-policy-tool-option" :title="tool.description">
+                    <input v-model="selectedAllowedTools" type="checkbox" :value="tool.value" />
+                    <span class="tenant-policy-tool-copy">
+                      <strong>{{ tool.label }}</strong>
+                      <small>{{ tool.description }}</small>
+                    </span>
+                    <code>{{ tool.riskLevel }}</code>
+                  </label>
+                  <small v-if="!allowedToolOptions.length" class="tenant-policy-tool-empty">暂未读取到已注册工具，请先刷新页面或检查 tool.read 权限。</small>
+                </div>
+              </details>
+              <small class="form-hint">{{ selectedAllowedToolsSummary }}</small>
+            </div>
             <div class="policy-actions"><button class="secondary-button" type="button" :disabled="loading" @click="loadTenantPolicy">读取策略</button><button class="secondary-button" type="submit" :disabled="loading">保存策略</button><button class="danger-button" type="button" :disabled="loading" @click="resetTenantPolicy">恢复默认</button></div>
             <small class="form-hint">策略只能收紧平台硬上限；最近 {{ tenantPolicyAudits.length }} 条变更已留痕。</small>
           </form>
@@ -3824,7 +4607,27 @@ onBeforeUnmount(() => {
               <label class="field"><span>组织 ID</span><input v-model="apiKeyForm.tenantId" required maxlength="128" /></label>
               <label class="field"><span>用户 ID</span><input v-model="apiKeyForm.userId" required maxlength="128" /></label>
               <label class="field api-key-expiry-field"><span>过期时间（可选）</span><input v-model="apiKeyForm.expiresAt" type="datetime-local" /></label>
-              <label class="field api-key-permissions-field"><span>权限（逗号分隔）</span><input v-model="apiKeyForm.permissions" maxlength="2000" placeholder="例如：run.read, run.create" /></label>
+              <div class="field api-key-permissions-field">
+                <span>权限（可多选）</span>
+                <details class="api-key-permission-picker">
+                  <summary>
+                    <span>{{ apiKeyPermissionCount ? `已选择 ${apiKeyPermissionCount} 项` : '请选择权限' }}</span>
+                    <small>展开选择</small>
+                  </summary>
+                  <div class="api-key-permission-menu">
+                    <div class="api-key-permission-menu-actions">
+                      <span>勾选后会随 API Key 一起授予</span>
+                      <button class="text-button" type="button" @click="toggleAllApiKeyPermissions">{{ allApiKeyPermissionsSelected ? '清空' : '全选' }}</button>
+                    </div>
+                    <label v-for="permission in apiKeyPermissionOptions" :key="permission.value" class="api-key-permission-option">
+                      <input v-model="apiKeyForm.permissions" type="checkbox" :value="permission.value" />
+                      <span>{{ permission.label }}</span>
+                      <code>{{ permission.value }}</code>
+                    </label>
+                  </div>
+                </details>
+                <small class="form-hint">{{ apiKeyPermissionCount ? parseApiKeyPermissions().join('、') : '未授予接口权限' }}</small>
+              </div>
             </div>
             <div class="policy-actions">
               <button class="secondary-button" type="submit" :disabled="loading">{{ loading ? '生成中…' : '生成数据库 API Key' }}</button>
@@ -3855,15 +4658,11 @@ onBeforeUnmount(() => {
             </div>
           </form>
         </div>
-        <div v-if="showGovernance && evaluations.length" class="evaluation-list">
-          <div v-for="report in evaluations.slice(0, 5)" :key="report.id" class="evaluation-row">
-            <strong>{{ report.name }}</strong><span>{{ report.passedCases }}/{{ report.totalCases }} 通过</span><small>{{ report.promptVersion }} · {{ formatDate(report.createdAt) }}</small>
-          </div>
-        </div>
       </section>
 
       <footer class="footer">Ming Harness · 每次执行都可恢复、可解释、可审计、可限制</footer>
     </main>
+  </div>
   </div>
   </template>
   <div
@@ -3943,6 +4742,59 @@ onBeforeUnmount(() => {
           <button class="secondary-button" type="button" :disabled="modelConfigSaving || modelConfigTesting || !modelConfigEditable || !modelConfigForm.enabled" @click="testModelConfig">{{ modelConfigTesting ? '测试中…' : '测试连接' }}</button>
           <button class="secondary-button" type="button" :disabled="modelConfigSaving" @click="showModelSettings = false">取消</button>
           <button class="primary-button" type="submit" :disabled="modelConfigSaving || modelConfigLoading || !modelConfigEditable">{{ modelConfigSaving ? '保存中…' : '保存并应用' }}</button>
+        </footer>
+      </template>
+    </form>
+  </div>
+  <div
+    v-if="showEmbeddingSettings"
+    class="model-settings-overlay"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="embedding-settings-title"
+    @click.self="showEmbeddingSettings = false"
+  >
+    <form class="model-settings-dialog embedding-settings-dialog" @submit.prevent="saveEmbeddingConfig">
+      <header class="model-settings-heading">
+        <div>
+          <p class="eyebrow">EMBEDDING CONNECTION</p>
+          <h2 id="embedding-settings-title">向量连接设置</h2>
+          <span>{{ embeddingConfig?.source === 'tenant' ? '当前组织配置' : '环境默认配置' }}</span>
+        </div>
+        <button class="icon-button" type="button" aria-label="关闭向量设置" @click="showEmbeddingSettings = false">×</button>
+      </header>
+      <div v-if="embeddingConfigLoading" class="model-settings-state">正在读取当前向量配置…</div>
+      <template v-else>
+        <p class="model-settings-help">支持 OpenAI 兼容的 <code>/embeddings</code> 地址。知识库向量是组织共享索引，保存后旧向量会标记为待重建；API Key 只会提交给当前 Runtime，服务端加密保存。</p>
+        <label class="check-field model-settings-toggle">
+          <input v-model="embeddingConfigForm.enabled" type="checkbox" :disabled="!embeddingConfigEditable" />
+          <span>启用外部 Embedding，不使用关键词降级</span>
+        </label>
+        <label class="field"><span>服务预设</span><select v-model="embeddingProviderPreset" :disabled="!embeddingConfigEditable || !embeddingConfigForm.enabled" @change="applyEmbeddingProviderPreset"><option v-for="preset in embeddingProviderPresets" :key="preset.id" :value="preset.id">{{ preset.label }}</option></select></label>
+        <label class="field"><span>Embedding API 地址</span><input v-model="embeddingConfigForm.baseUrl" :disabled="!embeddingConfigEditable || !embeddingConfigForm.enabled" :required="embeddingConfigForm.enabled" maxlength="512" placeholder="https://api.openai.com/v1" @input="useCustomEmbeddingProvider" /></label>
+        <label class="field"><span>Embedding 模型名称</span><input v-model="embeddingConfigForm.modelName" :disabled="!embeddingConfigEditable || !embeddingConfigForm.enabled" :required="embeddingConfigForm.enabled" maxlength="128" placeholder="例如：text-embedding-3-small" @input="useCustomEmbeddingProvider" /></label>
+        <div class="embedding-settings-inline-fields">
+          <label class="field"><span>模型版本</span><input v-model="embeddingConfigForm.modelVersion" :disabled="!embeddingConfigEditable || !embeddingConfigForm.enabled" required maxlength="128" placeholder="v1" /></label>
+          <label class="field"><span>向量维度</span><input v-model.number="embeddingConfigForm.dimension" :disabled="!embeddingConfigEditable || !embeddingConfigForm.enabled" required type="number" min="1" max="8192" /></label>
+        </div>
+        <small class="form-hint">当前数据库向量列固定为 1536 维；其他维度会被拒绝，需先做数据库迁移。</small>
+        <label class="field"><span>API Key（留空保留当前密钥）</span><input v-model="embeddingConfigForm.apiKey" :disabled="!embeddingConfigEditable" type="password" autocomplete="new-password" maxlength="1000" placeholder="不会回显已保存的密钥" /></label>
+        <label v-if="embeddingConfig?.apiKeyConfigured" class="check-field model-settings-clear-key">
+          <input v-model="embeddingConfigForm.clearApiKey" type="checkbox" :disabled="!embeddingConfigEditable" />
+          <span>同时删除服务端已保存的 API Key（适用于无密钥本地模型）</span>
+        </label>
+        <p v-if="embeddingConfig?.apiKeyConfigured" class="model-settings-hint">当前密钥：{{ embeddingConfig.apiKeyHint || '已配置（不显示明文）' }}</p>
+        <p v-if="embeddingConfigTestResult" class="model-settings-test-result" :class="embeddingConfigTestResult.success ? 'success' : 'failed'" role="status" aria-live="polite">
+          <span v-if="embeddingConfigTestResult.errorCode" class="model-settings-test-code">{{ embeddingConfigTestResult.errorCode }}</span>
+          {{ embeddingConfigTestResult.message }}<span v-if="embeddingConfigTestResult.dimension"> · {{ embeddingConfigTestResult.dimension }} 维</span><span v-if="embeddingConfigTestResult.latencyMs"> · {{ embeddingConfigTestResult.latencyMs }} ms</span>
+        </p>
+        <p v-if="embeddingConfigError" class="policy-error">{{ embeddingConfigError }}</p>
+        <footer class="model-settings-actions embedding-settings-actions">
+          <button class="danger-button" type="button" :disabled="embeddingConfigSaving || !embeddingConfig?.configured" @click="resetEmbeddingConfig">恢复环境默认</button>
+          <span></span>
+          <button class="secondary-button" type="button" :disabled="embeddingConfigSaving || embeddingConfigTesting || !embeddingConfigEditable || !embeddingConfigForm.enabled" @click="testEmbeddingConfig">{{ embeddingConfigTesting ? '测试中…' : '测试连接' }}</button>
+          <button class="secondary-button" type="button" :disabled="embeddingConfigSaving" @click="showEmbeddingSettings = false">取消</button>
+          <button class="primary-button" type="submit" :disabled="embeddingConfigSaving || embeddingConfigLoading || !embeddingConfigEditable">{{ embeddingConfigSaving ? '保存中…' : '保存并应用' }}</button>
         </footer>
       </template>
     </form>

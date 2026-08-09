@@ -35,6 +35,9 @@ public class Step {
     private String input;
     @Column(name = "output_data", columnDefinition = "text")
     private String output;
+    /** 模型步骤使用的授权检索来源快照；正文已按上下文治理边界脱敏。 */
+    @Column(name = "context_evidence_data", columnDefinition = "text")
+    private String contextEvidenceJson;
     @Column(columnDefinition = "text")
     private String error;
     /**
@@ -240,6 +243,11 @@ public class Step {
     public String getName() { return name; }
     public String getInput() { return input; }
     public String getOutput() { return output; }
+    public String getContextEvidenceJson() { return contextEvidenceJson; }
+
+    public void setContextEvidenceJson(String contextEvidenceJson) {
+        this.contextEvidenceJson = contextEvidenceJson == null ? "[]" : contextEvidenceJson;
+    }
     public String getError() { return error; }
     public int getAttempt() { return attempt; }
     public int getInputTokens() { return inputTokens; }

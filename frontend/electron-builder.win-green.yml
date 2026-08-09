@@ -1,0 +1,28 @@
+appId: com.ming.harness
+productName: Ming Harness
+artifactName: Ming-Harness-${version}-win-${arch}-green.${ext}
+asar: true
+directories:
+  output: release/win-green
+files:
+  - dist/**
+  - electron/**
+  - package.json
+extraResources:
+  - from: ../runtime/ming-harness.jar
+    to: runtime/ming-harness.jar
+  - from: ../runtime/jre
+    to: runtime/jre
+  - from: ../runtime/infra/win-x64
+    to: infra/win-x64
+  - from: packaging/portable.flag
+    to: portable.flag
+win:
+  target:
+    - target: dir
+      arch:
+        - x64
+    - target: zip
+      arch:
+        - x64
+  requestedExecutionLevel: asInvoker

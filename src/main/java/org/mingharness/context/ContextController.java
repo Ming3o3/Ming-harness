@@ -2,6 +2,8 @@ package org.mingharness.context;
 
 import jakarta.validation.Valid;
 import org.mingharness.context.api.ContextBuilderResponse;
+import org.mingharness.context.api.ContextReindexRequest;
+import org.mingharness.context.api.ContextReindexResponse;
 import org.mingharness.context.api.CreateDocumentRequest;
 import org.mingharness.context.api.CreateMemoryRequest;
 import org.mingharness.context.api.DocumentView;
@@ -9,15 +11,18 @@ import org.mingharness.context.api.MemoryView;
 import org.mingharness.security.HarnessIdentity;
 import org.mingharness.security.HarnessIdentityContext;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -27,10 +32,13 @@ public class ContextController {
 
     private final ContextService contextService;
     private final ContextBuilder contextBuilder;
+    private final ContextIndexRebuildService indexRebuildService;
 
-    public ContextController(ContextService contextService, ContextBuilder contextBuilder) {
+    public ContextController(ContextService contextService, ContextBuilder contextBuilder,
+                             ContextIndexRebuildService indexRebuildService) {
         this.contextService = contextService;
         this.contextBuilder = contextBuilder;
+        this.indexRebuildService = indexRebuildService;
     }
 
     @PostMapping("/documents")
@@ -38,6 +46,17 @@ public class ContextController {
     public DocumentView createDocument(
             @Valid @RequestBody CreateDocumentRequest request) {
         return DocumentView.from(contextService.createDocument(identity().tenantId(), identity().userId(), request));
+    }
+
+    @PostMapping(value = "/documents/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public DocumentView uploadDocument(
+            @RequestPart("file") MultipartFile file,
+            @RequestParam(required = false) String title,
+            @RequestParam(required = false) String sensitivity,
+            @RequestParam(required = false) String allowedUsers) {
+        return DocumentView.from(contextService.createDocumentFromUpload(identity().tenantId(), identity().userId(),
+                file, title, sensitivity, allowedUsers));
     }
 
     @GetMapping("/documents")
@@ -75,6 +94,12 @@ public class ContextController {
             @RequestParam(defaultValue = "4000") int maxChars) {
         var result = contextBuilder.build(identity().tenantId(), identity().userId(), query, Math.min(maxChars, 20_000));
         return new ContextBuilderResponse(result.text(), result.evidences());
+    }
+
+    @PostMapping("/reindex")
+    public ContextReindexResponse reindex(
+            @Valid @RequestBody(required = false) ContextReindexRequest request) {
+        return indexRebuildService.rebuild(identity().tenantId(), request);
     }
 
     private HarnessIdentity identity() {

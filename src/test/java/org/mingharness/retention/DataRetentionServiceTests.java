@@ -5,12 +5,14 @@ import org.junit.jupiter.api.Test;
 import org.mingharness.audit.AuditEvent;
 import org.mingharness.audit.AuditEventRepository;
 import org.mingharness.audit.AuditTrailService;
+import org.mingharness.context.ContextChunk;
+import org.mingharness.context.ContextChunkRepository;
+import org.mingharness.context.ContextParentWindow;
+import org.mingharness.context.ContextParentWindowRepository;
 import org.mingharness.context.KnowledgeDocument;
 import org.mingharness.context.KnowledgeDocumentRepository;
 import org.mingharness.context.MemoryEntry;
 import org.mingharness.context.MemoryEntryRepository;
-import org.mingharness.evaluation.EvaluationReport;
-import org.mingharness.evaluation.EvaluationReportRepository;
 import org.mingharness.messaging.OutboxEvent;
 import org.mingharness.messaging.OutboxEventRepository;
 import org.mingharness.runtime.domain.Run;
@@ -50,7 +52,9 @@ class DataRetentionServiceTests {
     @Autowired
     private KnowledgeDocumentRepository documentRepository;
     @Autowired
-    private EvaluationReportRepository evaluationReportRepository;
+    private ContextChunkRepository contextChunkRepository;
+    @Autowired
+    private ContextParentWindowRepository contextParentWindowRepository;
     @Autowired
     private TenantPolicyAuditRepository tenantPolicyAuditRepository;
     @Autowired
@@ -65,7 +69,8 @@ class DataRetentionServiceTests {
         runRepository.deleteAll();
         memoryEntryRepository.deleteAll();
         documentRepository.deleteAll();
-        evaluationReportRepository.deleteAll();
+        contextChunkRepository.deleteAll();
+        contextParentWindowRepository.deleteAll();
         tenantPolicyAuditRepository.deleteAll();
         apiKeyAuditRepository.deleteAll();
     }
@@ -76,6 +81,11 @@ class DataRetentionServiceTests {
 
         MemoryEntry expiredMemory = memoryEntryRepository.save(new MemoryEntry(
                 "tenant-retention", "operator", "preference", "过期偏好", null, old));
+        ContextParentWindow expiredMemoryWindow = contextParentWindowRepository.save(new ContextParentWindow(
+                "tenant-retention", "MEMORY", expiredMemory.getId(), 0, "过期偏好", "window-memory"));
+        ContextChunk expiredMemoryChunk = contextChunkRepository.save(new ContextChunk(
+                "tenant-retention", "MEMORY", expiredMemory.getId(), 0, "过期偏好", "hash-memory",
+                "DETERMINISTIC", "deterministic-v1", expiredMemoryWindow.getId()));
         MemoryEntry deletedMemory = memoryEntryRepository.save(new MemoryEntry(
                 "tenant-retention", "operator", "preference", "已删除偏好", null, null));
         deletedMemory.markDeleted();
@@ -85,16 +95,24 @@ class DataRetentionServiceTests {
 
         KnowledgeDocument deletedDocument = documentRepository.save(new KnowledgeDocument(
                 "tenant-retention", "operator", "旧文档", "旧文档内容", "INTERNAL", ""));
+        ContextParentWindow deletedDocumentWindow = contextParentWindowRepository.save(new ContextParentWindow(
+                "tenant-retention", "DOCUMENT", deletedDocument.getId(), 0, "旧文档内容", "window-document"));
+        ContextChunk deletedDocumentChunk = contextChunkRepository.save(new ContextChunk(
+                "tenant-retention", "DOCUMENT", deletedDocument.getId(), 0, "旧文档内容", "hash-document",
+                "DETERMINISTIC", "deterministic-v1", deletedDocumentWindow.getId()));
         deletedDocument.markDeleted();
         documentRepository.save(deletedDocument);
         jdbcTemplate.update("UPDATE harness_context_documents SET deleted_at = ? WHERE id = ?",
                 Timestamp.from(old), deletedDocument.getId());
 
-        EvaluationReport report = evaluationReportRepository.save(new EvaluationReport(
-                "tenant-retention", "旧评测", "demo-model", "prompt-v1", "policy-v1",
-                1, 1, 0, BigDecimal.ONE, "旧评测详情"));
-        jdbcTemplate.update("UPDATE harness_evaluation_reports SET created_at = ? WHERE id = ?",
-                Timestamp.from(old), report.getId());
+        MemoryEntry retainedMemory = memoryEntryRepository.save(new MemoryEntry(
+                "tenant-retention", "operator", "preference", "仍有效的偏好", null, null));
+        ContextParentWindow staleWindow = contextParentWindowRepository.save(new ContextParentWindow(
+                "tenant-retention", "MEMORY", retainedMemory.getId(), 0, "历史窗口", "window-stale"));
+        staleWindow.markDeleted();
+        contextParentWindowRepository.save(staleWindow);
+        jdbcTemplate.update("UPDATE harness_context_parent_windows SET deleted_at = ? WHERE id = ?",
+                Timestamp.from(old), staleWindow.getId());
 
         TenantPolicyAudit policyAudit = tenantPolicyAuditRepository.save(new TenantPolicyAudit(
                 "tenant-retention", "operator", "TENANT_POLICY_UPDATED", "old policy"));
@@ -142,7 +160,8 @@ class DataRetentionServiceTests {
         assertEquals(0, result.stepsDeleted());
         assertEquals(2, result.memoriesDeleted());
         assertEquals(1, result.documentsDeleted());
-        assertEquals(1, result.evaluationReportsDeleted());
+        assertEquals(2, result.chunksDeleted());
+        assertEquals(3, result.parentWindowsDeleted());
         assertEquals(1, result.outboxEventsDeleted());
         assertEquals(1, result.tenantPolicyAuditsDeleted());
         assertEquals(1, result.apiKeyAuditsDeleted());
@@ -152,6 +171,11 @@ class DataRetentionServiceTests {
         assertTrue(outboxEventRepository.findById(pendingOutbox.getId()).isPresent());
         assertTrue(outboxEventRepository.findById(publishingOutbox.getId()).isPresent());
         assertFalse(memoryEntryRepository.findById(expiredMemory.getId()).isPresent());
+        assertFalse(contextChunkRepository.findById(expiredMemoryChunk.getId()).isPresent());
+        assertFalse(contextChunkRepository.findById(deletedDocumentChunk.getId()).isPresent());
+        assertFalse(contextParentWindowRepository.findById(expiredMemoryWindow.getId()).isPresent());
+        assertFalse(contextParentWindowRepository.findById(deletedDocumentWindow.getId()).isPresent());
+        assertFalse(contextParentWindowRepository.findById(staleWindow.getId()).isPresent());
         assertFalse(apiKeyAuditRepository.findById(apiKeyAudit.getId()).isPresent());
     }
 }

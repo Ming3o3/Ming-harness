@@ -1,0 +1,88 @@
+name: Windows Garnet green package
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - package/garnet
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Windows x64 green package
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.0
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Prepare Garnet Windows runtime
+        shell: pwsh
+        run: .\runtime\scripts\prepare-garnet-runtime.ps1 -ProjectRoot $env:GITHUB_WORKSPACE
+
+      - name: Set up MSVC x64 environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Check Visual Studio build tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Get-Command nmake.exe
+          Get-Command cl.exe
+
+      - name: Check out pgvector source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git clone --branch v0.8.6 --depth 1 https://github.com/pgvector/pgvector.git runtime/vendor/pgvector-src
+
+      - name: Build pgvector from source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          .\runtime\scripts\build-pgvector.ps1 `
+            -SourceDir runtime/vendor/pgvector-src `
+            -PostgresRoot runtime/vendor/win-x64/postgres
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run backend tests
+        shell: pwsh
+        run: .\mvnw.cmd test
+
+      - name: Verify Windows runtime source
+        working-directory: frontend
+        run: npm run verify:win-runtime
+
+      - name: Build and package
+        working-directory: frontend
+        run: npm run dist:win:green
+
+      - name: Upload Garnet green ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: ming-harness-garnet-win-x64-green
+          path: frontend/release/win-green/Ming-Harness-*-win-x64-green.zip
+          if-no-files-found: error
+          retention-days: 7

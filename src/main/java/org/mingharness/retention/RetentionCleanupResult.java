@@ -7,14 +7,18 @@ public record RetentionCleanupResult(
         int stepsDeleted,
         int memoriesDeleted,
         int documentsDeleted,
-        int evaluationReportsDeleted,
+        int chunksDeleted,
+        int parentWindowsDeleted,
         int outboxEventsDeleted,
         int tenantPolicyAuditsDeleted,
-        int apiKeyAuditsDeleted
+        int apiKeyAuditsDeleted,
+        int embeddingCacheEntriesDeleted,
+        int runFeedbackDeleted
 ) {
     public int totalDeleted() {
         return runsDeleted + auditEventsDeleted + stepsDeleted + memoriesDeleted
-                + documentsDeleted + evaluationReportsDeleted + outboxEventsDeleted + tenantPolicyAuditsDeleted
-                + apiKeyAuditsDeleted;
+                + documentsDeleted + chunksDeleted + parentWindowsDeleted
+                + outboxEventsDeleted + tenantPolicyAuditsDeleted
+                + apiKeyAuditsDeleted + embeddingCacheEntriesDeleted + runFeedbackDeleted;
     }
 }

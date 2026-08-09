@@ -4,7 +4,10 @@ import org.mingharness.audit.AuditEventRepository;
 import org.mingharness.config.DataRetentionProperties;
 import org.mingharness.context.KnowledgeDocumentRepository;
 import org.mingharness.context.MemoryEntryRepository;
-import org.mingharness.evaluation.EvaluationReportRepository;
+import org.mingharness.context.ContextChunkRepository;
+import org.mingharness.context.ContextEmbeddingCache;
+import org.mingharness.context.ContextParentWindowRepository;
+import org.mingharness.feedback.RunFeedbackRepository;
 import org.mingharness.messaging.OutboxEventRepository;
 import org.mingharness.messaging.OutboxStatus;
 import org.mingharness.observability.HarnessMetrics;
@@ -40,9 +43,12 @@ public class DataRetentionService {
     private final OutboxEventRepository outboxEventRepository;
     private final MemoryEntryRepository memoryEntryRepository;
     private final KnowledgeDocumentRepository documentRepository;
-    private final EvaluationReportRepository evaluationReportRepository;
+    private final ContextChunkRepository contextChunkRepository;
+    private final ContextParentWindowRepository contextParentWindowRepository;
+    private final RunFeedbackRepository runFeedbackRepository;
     private final TenantPolicyAuditRepository tenantPolicyAuditRepository;
     private final ApiKeyAuditRepository apiKeyAuditRepository;
+    private final ContextEmbeddingCache contextEmbeddingCache;
     private final HarnessMetrics metrics;
 
     public DataRetentionService(DataRetentionProperties properties,
@@ -51,9 +57,12 @@ public class DataRetentionService {
                                 OutboxEventRepository outboxEventRepository,
                                 MemoryEntryRepository memoryEntryRepository,
                                 KnowledgeDocumentRepository documentRepository,
-                                EvaluationReportRepository evaluationReportRepository,
+                                ContextChunkRepository contextChunkRepository,
+                                ContextParentWindowRepository contextParentWindowRepository,
+                                RunFeedbackRepository runFeedbackRepository,
                                 TenantPolicyAuditRepository tenantPolicyAuditRepository,
                                 ApiKeyAuditRepository apiKeyAuditRepository,
+                                ContextEmbeddingCache contextEmbeddingCache,
                                 HarnessMetrics metrics) {
         this.properties = properties;
         this.runRepository = runRepository;
@@ -61,9 +70,12 @@ public class DataRetentionService {
         this.outboxEventRepository = outboxEventRepository;
         this.memoryEntryRepository = memoryEntryRepository;
         this.documentRepository = documentRepository;
-        this.evaluationReportRepository = evaluationReportRepository;
+        this.contextChunkRepository = contextChunkRepository;
+        this.contextParentWindowRepository = contextParentWindowRepository;
+        this.runFeedbackRepository = runFeedbackRepository;
         this.tenantPolicyAuditRepository = tenantPolicyAuditRepository;
         this.apiKeyAuditRepository = apiKeyAuditRepository;
+        this.contextEmbeddingCache = contextEmbeddingCache;
         this.metrics = metrics;
     }
 
@@ -92,6 +104,10 @@ public class DataRetentionService {
         int auditEventsDeleted = 0;
         int stepsDeleted = 0;
         int outboxEventsDeleted = 0;
+        int chunksDeleted = 0;
+        int parentWindowsDeleted = 0;
+        int embeddingCacheEntriesDeleted = 0;
+        int runFeedbackDeleted = 0;
 
         // 每轮只处理有限数量的 Run，避免历史数据很多时长事务阻塞线上写入。
         List<Run> candidates = runRepository.findByStatusInAndFinishedAtBeforeOrderByFinishedAtAsc(
@@ -99,6 +115,8 @@ public class DataRetentionService {
         for (Run run : candidates) {
             auditEventsDeleted += Math.toIntExact(auditEventRepository.deleteByRunId(run.getId()));
             outboxEventsDeleted += Math.toIntExact(outboxEventRepository.deleteByRunId(run.getId()));
+            // 反馈通过外键绑定 Run，必须在删除 Run 前清理，兼容已部署的非级联 V31 约束。
+            runFeedbackDeleted += Math.toIntExact(runFeedbackRepository.deleteByRunId(run.getId()));
             stepsDeleted += run.getSteps().size();
             runRepository.delete(run);
             runsDeleted++;
@@ -109,8 +127,14 @@ public class DataRetentionService {
                 now.minus(properties.memoryDays(), ChronoUnit.DAYS)));
         int documentsDeleted = Math.toIntExact(documentRepository.deleteByDeletedAtBefore(
                 now.minus(properties.documentDays(), ChronoUnit.DAYS)));
-        int evaluationReportsDeleted = Math.toIntExact(evaluationReportRepository.deleteByCreatedAtBefore(
-                now.minus(properties.evaluationDays(), ChronoUnit.DAYS)));
+        chunksDeleted += Math.toIntExact(contextChunkRepository.deleteByDeletedAtBefore(
+                now.minus(properties.documentDays(), ChronoUnit.DAYS)));
+        // 记忆过期和历史父记录清理使用硬删除，必须在父记录删除后补扫孤儿 chunk。
+        chunksDeleted += contextChunkRepository.deleteOrphanedChunks();
+        parentWindowsDeleted += Math.toIntExact(contextParentWindowRepository.deleteByDeletedAtBefore(
+                now.minus(properties.documentDays(), ChronoUnit.DAYS)));
+        // 先清理无主 chunk，再清理不再被 chunk 引用的窗口，避免触发外键约束。
+        parentWindowsDeleted += contextParentWindowRepository.deleteOrphanedParentWindows();
         // 仅清理已经完成投递或已明确失败的历史 Outbox，PENDING 事件永远保留。
         outboxEventsDeleted += Math.toIntExact(outboxEventRepository.deleteByStatusInAndCreatedAtBefore(
                 List.of(OutboxStatus.PUBLISHED, OutboxStatus.FAILED),
@@ -119,10 +143,14 @@ public class DataRetentionService {
                 now.minus(properties.tenantPolicyAuditDays(), ChronoUnit.DAYS)));
         int apiKeyAuditsDeleted = Math.toIntExact(apiKeyAuditRepository.deleteByCreatedAtBefore(
                 now.minus(properties.apiKeyAuditDays(), ChronoUnit.DAYS)));
+        embeddingCacheEntriesDeleted = contextEmbeddingCache.deleteUpdatedBefore(
+                now.minus(properties.embeddingCacheDays(), ChronoUnit.DAYS));
 
         RetentionCleanupResult result = new RetentionCleanupResult(
                 runsDeleted, auditEventsDeleted, stepsDeleted, memoriesDeleted, documentsDeleted,
-                evaluationReportsDeleted, outboxEventsDeleted, tenantPolicyAuditsDeleted, apiKeyAuditsDeleted);
+                chunksDeleted, parentWindowsDeleted,
+                outboxEventsDeleted, tenantPolicyAuditsDeleted, apiKeyAuditsDeleted,
+                embeddingCacheEntriesDeleted, runFeedbackDeleted);
         metrics.retentionDeleted(result.totalDeleted());
         return result;
     }

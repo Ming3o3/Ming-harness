@@ -623,11 +623,11 @@ public class RunService {
                     started.get().input(), runtimeLimits.maxContextChars());
             if (!context.isEmpty()) {
                 executionStateService.recordContextRetrieved(run.id(), run.tenantId(), workerId,
-                        step.id(), context.evidences().size());
+                        step.id(), context.evidences().size(), ContextEvidenceCodec.encode(context.evidences()));
             }
             String modelInput = context.isEmpty()
                     ? started.get().input()
-                    : started.get().input() + "\n\n参考资料（请保留来源标记）:\n" + context.text();
+                    : started.get().input() + "\n\n参考资料（请使用来源标题引用；不要输出 document:/memory: ID、window 或 chunk 等内部标识）:\n" + context.text();
             ModelResponse response = executeStreamingModelCall(run, started.get(), modelInput, workerId);
             if (run.agentMode()) {
                 validateAgentToolCalls(run, response.toolCalls());
@@ -787,12 +787,13 @@ public class RunService {
                 ContextResult context = contextBuilder.build(run.getTenantId(), run.getUserId(),
                         step.getInput(), runtimeLimits.maxContextChars());
                 if (!context.isEmpty()) {
+                    step.setContextEvidenceJson(ContextEvidenceCodec.encode(context.evidences()));
                     record(run.getId(), step.getId(), "CONTEXT_RETRIEVED",
                             "检索到 " + context.evidences().size() + " 条授权来源");
                 }
                 String modelInput = context.isEmpty()
                         ? step.getInput()
-                        : step.getInput() + "\n\n参考资料（请保留来源标记）:\n" + context.text();
+                        : step.getInput() + "\n\n参考资料（请使用来源标题引用；不要输出 document:/memory: ID、window 或 chunk 等内部标识）:\n" + context.text();
                 ModelResponse response = executeModelCall(run, step, modelInput, workerId, false);
                 if (run.isAgentMode()) {
                     validateAgentToolCalls(new RunExecutionStateService.RunExecutionSnapshot(
@@ -1557,7 +1558,8 @@ public class RunService {
                         step.getInput(), step.getOutput(), step.getError(), step.getAttempt(),
                         step.getInputTokens(), step.getOutputTokens(),
                         step.getStartedAt(), step.getFinishedAt(), step.getSpanId(),
-                        step.getDurationMs(), step.getCost()
+                        step.getDurationMs(), step.getCost(),
+                        ContextEvidenceCodec.decode(step.getContextEvidenceJson())
                 )).toList()
         );
     }

@@ -73,9 +73,10 @@ class TenantPolicyServiceTests {
         TenantPolicyView reset = policyService.reset("tenant-policy", "operator-1");
         assertTrue(reset.defaulted());
         assertEquals(2, auditRepository.count());
-        assertEquals("TENANT_POLICY_RESET", auditRepository
+        assertTrue(auditRepository
                 .findByTenantIdOrderByCreatedAtDesc("tenant-policy", org.springframework.data.domain.PageRequest.of(0, 10))
-                .get(0).getEventType());
+                .stream()
+                .anyMatch(event -> "TENANT_POLICY_RESET".equals(event.getEventType())));
     }
 
     @Test

@@ -117,6 +117,17 @@ export const api = {
     body: JSON.stringify(payload),
   }),
   resetModelConfig: () => request('/model-config', { method: 'DELETE' }),
+  // Embedding 密钥只在保存时提交，读取接口仅返回组织级配置和掩码。
+  getEmbeddingConfig: () => request('/context/embedding-config'),
+  updateEmbeddingConfig: (payload) => request('/context/embedding-config', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  }),
+  testEmbeddingConfig: (payload) => request('/context/embedding-config/test', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+  resetEmbeddingConfig: () => request('/context/embedding-config', { method: 'DELETE' }),
   // 仅返回工作区名称和能力摘要，绝对路径始终只保留在本地后端进程。
   workspace: () => request('/workspace'),
   // 工作区浏览接口只接受相对路径；后端会按当前组织、用户和 workspaceId 再次解析根目录。
@@ -203,6 +214,11 @@ export const api = {
   }),
   retryRun: (runId) => request(`/runs/${runId}/retry`, { method: 'POST' }),
   cancelRun: (runId) => request(`/runs/${runId}`, { method: 'DELETE' }),
+  getRunFeedback: (runId) => request(`/runs/${encodeURIComponent(runId)}/feedback`),
+  saveRunFeedback: (runId, payload) => request(`/runs/${encodeURIComponent(runId)}/feedback`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
   listConversations: () => request('/conversations'),
   createConversation: (payload = {}) => request('/conversations', {
     method: 'POST',
@@ -244,12 +260,27 @@ export const api = {
   listAuditEvents: (runId) => request(`/runs/${runId}/audit-events`),
   listDocuments: () => request('/context/documents'),
   createDocument: (payload) => request('/context/documents', { method: 'POST', body: JSON.stringify(payload) }),
+  uploadDocument: ({ file, title = '', sensitivity = '', allowedUsers = '' } = {}) => {
+    const body = new FormData()
+    body.append('file', file)
+    if (title) body.append('title', title)
+    if (sensitivity) body.append('sensitivity', sensitivity)
+    if (allowedUsers) body.append('allowedUsers', allowedUsers)
+    return request('/context/documents/upload', { method: 'POST', body })
+  },
   deleteDocument: (documentId) => request(`/context/documents/${documentId}`, { method: 'DELETE' }),
-  previewContext: (query) => request(`/context/preview?query=${encodeURIComponent(query)}`),
+  previewContext: (query, maxChars = 4000) => {
+    const params = new URLSearchParams({ query, maxChars: String(maxChars) })
+    return request(`/context/preview?${params.toString()}`)
+  },
+  contextConfiguration: () => request('/context/configuration'),
+  reindexContext: (payload = {}) => request('/context/reindex', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
   listMemories: () => request('/context/memories'),
   createMemory: (payload) => request('/context/memories', { method: 'POST', body: JSON.stringify(payload) }),
-  listEvaluations: () => request('/evaluations'),
-  runEvaluation: (payload) => request('/evaluations', { method: 'POST', body: JSON.stringify(payload) }),
+  deleteMemory: (memoryId) => request(`/context/memories/${encodeURIComponent(memoryId)}`, { method: 'DELETE' }),
   getTenantPolicy: (tenantId) => request(`/admin/tenants/${encodeURIComponent(tenantId)}/policy`),
   updateTenantPolicy: (tenantId, payload) => request(`/admin/tenants/${encodeURIComponent(tenantId)}/policy`, {
     method: 'PUT',

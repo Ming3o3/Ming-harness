@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -75,6 +76,17 @@ public class GlobalExceptionHandler {
                 Instant.now()
         );
         return jsonResponse(HttpStatus.UNSUPPORTED_MEDIA_TYPE, response);
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ErrorResponse> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException exception) {
+        ErrorResponse response = new ErrorResponse(
+                "DOCUMENT_FILE_TOO_LARGE",
+                "上传文件超过服务允许的大小限制",
+                Map.of(),
+                Instant.now()
+        );
+        return jsonResponse(HttpStatus.PAYLOAD_TOO_LARGE, response);
     }
 
     @ExceptionHandler(Exception.class)
