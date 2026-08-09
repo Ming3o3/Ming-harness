@@ -108,7 +108,9 @@ public record EducationRetrievalFilter(
         values.forEach((key, value) -> {
             String concept = normalize(key);
             if (concept == null || value == null || !Double.isFinite(value)) return;
-            normalized.put(concept, Math.max(0.0, Math.min(1.0, value)));
+            double bounded = Math.max(0.0, Math.min(1.0, value));
+            // Run 快照的摘要使用两位小数；过滤器采用同一规范化精度，确保幂等重放稳定。
+            normalized.put(concept, Math.round(bounded * 100.0) / 100.0);
         });
         return normalized.isEmpty()
                 ? Map.of() : Collections.unmodifiableMap(normalized);
