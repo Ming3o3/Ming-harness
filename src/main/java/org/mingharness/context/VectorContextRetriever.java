@@ -5,6 +5,7 @@ import org.mingharness.config.ContextRetrievalProperties;
 import org.mingharness.config.EmbeddingProperties;
 import org.mingharness.context.api.ContextEvidence;
 import org.mingharness.context.api.ContextResult;
+import org.mingharness.education.EducationRetrievalFilter;
 import org.mingharness.observability.HarnessMetrics;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -52,6 +53,27 @@ public class VectorContextRetriever {
                    AND c.deleted_at IS NULL
                    AND c.embedding IS NOT NULL
                    AND c.embedding_model = :embeddingSignature
+                   AND (
+                        :educationFilterEnabled = FALSE
+                        OR c.parent_type = 'MEMORY'
+                        OR EXISTS (
+                            SELECT 1
+                              FROM harness_education_sources es
+                             WHERE es.tenant_id = c.tenant_id
+                               AND es.document_id = c.parent_id
+                               AND es.deleted_at IS NULL
+                               AND (:educationSubject IS NULL OR es.subject = :educationSubject)
+                               AND (:educationGradeLevel IS NULL OR es.grade_level = :educationGradeLevel)
+                               AND (:educationCurriculumVersion IS NULL
+                                    OR es.curriculum_version = :educationCurriculumVersion)
+                               AND (:educationConceptKey IS NULL
+                                    OR :educationConceptKey = ANY(string_to_array(es.concept_tags, ',')))
+                               AND (:educationMinDifficulty IS NULL
+                                    OR es.difficulty_level >= :educationMinDifficulty)
+                               AND (:educationMaxDifficulty IS NULL
+                                    OR es.difficulty_level <= :educationMaxDifficulty)
+                        )
+                   )
                    AND (
                         (c.parent_type = 'DOCUMENT'
                          AND d.deleted_at IS NULL
@@ -165,6 +187,12 @@ public class VectorContextRetriever {
     }
 
     public ContextResult retrieve(String tenantId, String userId, String query, int maxChars) {
+        return retrieve(tenantId, userId, query, maxChars, null);
+    }
+
+    /** 向量检索的教育约束路径；普通调用保持原有 SQL 参数和行为。 */
+    public ContextResult retrieve(String tenantId, String userId, String query, int maxChars,
+                                  EducationRetrievalFilter educationFilter) {
         EmbeddingProviderConfigService.ResolvedEmbeddingConfig config = config(tenantId);
         if (query == null || query.isBlank() || maxChars < 1
                 || !enabled(tenantId) || !embeddingStore.supported()) {
@@ -182,6 +210,16 @@ public class VectorContextRetriever {
                 .addValue("candidatePoolLimit", retrievalProperties.candidatePoolLimit())
                 .addValue("maxCandidatesPerParent", retrievalProperties.maxCandidatesPerParent())
                 .addValue("candidateLimit", retrievalProperties.expandedCandidateLimit())
+                .addValue("educationFilterEnabled", educationFilter != null && educationFilter.active())
+                .addValue("educationSubject", educationFilter == null ? null : educationFilter.subjectOrNull())
+                .addValue("educationGradeLevel", educationFilter == null ? null : educationFilter.gradeLevelOrNull())
+                .addValue("educationCurriculumVersion", educationFilter == null
+                        ? null : educationFilter.curriculumVersionOrNull())
+                .addValue("educationConceptKey", educationFilter == null ? null : educationFilter.conceptKeyOrNull())
+                .addValue("educationMinDifficulty", educationFilter == null
+                        ? null : educationFilter.minDifficultyOrNull())
+                .addValue("educationMaxDifficulty", educationFilter == null
+                        ? null : educationFilter.maxDifficultyOrNull())
                 .getValues();
         List<VectorHit> hits = jdbcTemplate.query(SEARCH_SQL, new MapSqlParameterSource(parameters),
                 (row, rowNumber) -> new VectorHit(

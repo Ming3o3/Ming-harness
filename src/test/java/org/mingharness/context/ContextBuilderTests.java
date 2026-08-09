@@ -5,9 +5,13 @@ import org.junit.jupiter.api.Test;
 import org.mingharness.config.ContextRetrievalProperties;
 import org.mingharness.context.api.ContextEvidence;
 import org.mingharness.context.api.ContextResult;
+import org.mingharness.education.EducationKnowledgeSource;
+import org.mingharness.education.EducationKnowledgeSourceRepository;
+import org.mingharness.education.EducationRetrievalFilter;
 import org.mingharness.observability.HarnessMetrics;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -83,5 +87,44 @@ class ContextBuilderTests {
                 .equals(keywordOnlyDocument.getId())));
         assertTrue(result.evidences().stream().noneMatch(evidence -> evidence.citation()
                 .equals("document:" + vectorDocument.getId())));
+    }
+
+    @Test
+    void shouldApplyEducationCourseConstraintsBeforeKeywordRecall() {
+        KnowledgeDocumentRepository documentRepository = mock(KnowledgeDocumentRepository.class);
+        MemoryEntryRepository memoryRepository = mock(MemoryEntryRepository.class);
+        VectorContextRetriever vectorRetriever = mock(VectorContextRetriever.class);
+        EducationKnowledgeSourceRepository sourceRepository = mock(EducationKnowledgeSourceRepository.class);
+        HarnessMetrics metrics = new HarnessMetrics(new SimpleMeterRegistry());
+        ContextBuilder builder = new ContextBuilder(documentRepository, memoryRepository, vectorRetriever,
+                metrics, new ContextRetrievalProperties(20, 5, 1, 0.2), sourceRepository);
+
+        KnowledgeDocument math = new KnowledgeDocument("tenant-a", "teacher", "函数课件",
+                "函数定义域与值域", "INTERNAL", "student");
+        KnowledgeDocument physics = new KnowledgeDocument("tenant-a", "teacher", "力学课件",
+                "函数在物理中的应用", "INTERNAL", "student");
+        EducationKnowledgeSource mathSource = new EducationKnowledgeSource("tenant-a", math.getId(),
+                "数学", "高中一年级", "人教A版", "第一章", "理解函数",
+                "函数,定义域", "集合", 3, "TEXTBOOK");
+        EducationKnowledgeSource physicsSource = new EducationKnowledgeSource("tenant-a", physics.getId(),
+                "物理", "高中一年级", "人教版", "第一章", "理解力学",
+                "函数", "代数", 3, "TEXTBOOK");
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "数学", "高中一年级", "人教A版", "函数", null, null);
+        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 4_000, filter))
+                .thenReturn(new ContextResult("", List.of()));
+        when(documentRepository.findTop100ByTenantIdAndDeletedAtIsNullOrderByCreatedAtDesc("tenant-a"))
+                .thenReturn(List.of(math, physics));
+        when(memoryRepository.findTop100ByTenantIdAndUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(
+                "tenant-a", "student")).thenReturn(List.of());
+        when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", math.getId()))
+                .thenReturn(Optional.of(mathSource));
+        when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", physics.getId()))
+                .thenReturn(Optional.of(physicsSource));
+
+        ContextResult result = builder.build("tenant-a", "student", "函数", 4_000, filter);
+
+        assertEquals(1, result.evidences().size());
+        assertEquals(math.getId(), result.evidences().get(0).documentId());
     }
 }

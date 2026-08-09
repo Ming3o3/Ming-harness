@@ -3,6 +3,8 @@ package org.mingharness.context;
 import org.mingharness.config.ContextRetrievalProperties;
 import org.mingharness.context.api.ContextEvidence;
 import org.mingharness.context.api.ContextResult;
+import org.mingharness.education.EducationKnowledgeSourceRepository;
+import org.mingharness.education.EducationRetrievalFilter;
 import org.mingharness.observability.HarnessMetrics;
 import org.springframework.dao.DataAccessException;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +29,7 @@ public class ContextBuilder {
     private final VectorContextRetriever vectorContextRetriever;
     private final HarnessMetrics metrics;
     private final ContextRetrievalProperties retrievalProperties;
+    private final EducationKnowledgeSourceRepository educationSourceRepository;
 
     /** 兼容单元测试和本地调用；生产环境使用配置注入的构造器。 */
     public ContextBuilder(KnowledgeDocumentRepository documentRepository,
@@ -34,7 +37,7 @@ public class ContextBuilder {
                           VectorContextRetriever vectorContextRetriever,
                           HarnessMetrics metrics) {
         this(documentRepository, memoryRepository, vectorContextRetriever, metrics,
-                new ContextRetrievalProperties(20, 5, 1, 0.7));
+                new ContextRetrievalProperties(20, 5, 1, 0.7), null);
     }
 
     @Autowired
@@ -43,28 +46,50 @@ public class ContextBuilder {
                           VectorContextRetriever vectorContextRetriever,
                           HarnessMetrics metrics,
                           ContextRetrievalProperties retrievalProperties) {
+        this(documentRepository, memoryRepository, vectorContextRetriever, metrics,
+                retrievalProperties, null);
+    }
+
+    @Autowired
+    public ContextBuilder(KnowledgeDocumentRepository documentRepository,
+                          MemoryEntryRepository memoryRepository,
+                          VectorContextRetriever vectorContextRetriever,
+                          HarnessMetrics metrics,
+                          ContextRetrievalProperties retrievalProperties,
+                          EducationKnowledgeSourceRepository educationSourceRepository) {
         this.documentRepository = documentRepository;
         this.memoryRepository = memoryRepository;
         this.vectorContextRetriever = vectorContextRetriever;
         this.metrics = metrics;
         this.retrievalProperties = retrievalProperties;
+        this.educationSourceRepository = educationSourceRepository;
     }
 
     public ContextResult build(String tenantId, String userId, String query, int maxChars) {
+        return build(tenantId, userId, query, maxChars, null);
+    }
+
+    /** 使用教育硬约束构建上下文；null 表示旧的通用检索路径。 */
+    public ContextResult build(String tenantId, String userId, String query, int maxChars,
+                               EducationRetrievalFilter educationFilter) {
         if (query == null || query.isBlank() || maxChars < 1) {
             return new ContextResult("", List.of());
         }
-        return metrics.recordContextRetrieval(() -> buildInternal(tenantId, userId, query, maxChars));
+        return metrics.recordContextRetrieval(() -> buildInternal(tenantId, userId, query, maxChars,
+                educationFilter));
     }
 
-    private ContextResult buildInternal(String tenantId, String userId, String query, int maxChars) {
+    private ContextResult buildInternal(String tenantId, String userId, String query, int maxChars,
+                                        EducationRetrievalFilter educationFilter) {
         ContextResult vectorResult = new ContextResult("", List.of());
         try {
-            vectorResult = vectorContextRetriever.retrieve(tenantId, userId, query, maxChars);
+            vectorResult = educationFilter == null
+                    ? vectorContextRetriever.retrieve(tenantId, userId, query, maxChars)
+                    : vectorContextRetriever.retrieve(tenantId, userId, query, maxChars, educationFilter);
         } catch (EmbeddingGatewayException | DataAccessException exception) {
             // embedding 服务或 pgvector 暂时不可用时保持旧的确定性关键词召回能力。
         }
-        ContextResult keywordResult = buildKeyword(tenantId, userId, query, maxChars);
+        ContextResult keywordResult = buildKeyword(tenantId, userId, query, maxChars, educationFilter);
         if (vectorResult.isEmpty()) {
             if (!keywordResult.isEmpty()) metrics.contextFallback();
             return keywordResult;
@@ -76,13 +101,17 @@ public class ContextBuilder {
         return merged;
     }
 
-    private ContextResult buildKeyword(String tenantId, String userId, String query, int maxChars) {
+    private ContextResult buildKeyword(String tenantId, String userId, String query, int maxChars,
+                                      EducationRetrievalFilter educationFilter) {
         String normalizedQuery = query.toLowerCase(Locale.ROOT);
         String[] terms = normalizedQuery.split("\\s+|[，。！？、,:：;；]+");
         List<ScoredContext> candidates = new ArrayList<>();
         for (KnowledgeDocument document : documentRepository
                 .findTop100ByTenantIdAndDeletedAtIsNullOrderByCreatedAtDesc(tenantId)) {
             if (!document.isVisibleTo(userId)) {
+                continue;
+            }
+            if (!matchesEducationFilter(tenantId, document, educationFilter)) {
                 continue;
             }
             String searchable = (document.getTitle() + "\n" + document.getContent()).toLowerCase(Locale.ROOT);
@@ -122,6 +151,16 @@ public class ContextBuilder {
                     candidate.citation(), excerpt));
         }
         return new ContextResult(context.toString(), List.copyOf(evidences));
+    }
+
+    private boolean matchesEducationFilter(String tenantId, KnowledgeDocument document,
+                                           EducationRetrievalFilter educationFilter) {
+        if (educationFilter == null || !educationFilter.active()) return true;
+        if (educationSourceRepository == null) return false;
+        return educationSourceRepository
+                .findByTenantIdAndDocumentIdAndDeletedAtIsNull(tenantId, document.getId())
+                .map(educationFilter::matches)
+                .orElse(false);
     }
 
     /** 以父来源为单位融合语义召回和关键词召回，兼顾语义匹配与错误码/名称精确匹配。 */
