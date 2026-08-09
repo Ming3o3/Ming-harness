@@ -364,35 +364,6 @@ h3 { margin: 0; font-size: 13px; }
 .memory-row-heading strong { overflow: hidden; color: var(--soft); font: 10px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .memory-row-heading span { color: var(--muted); font: 8px "DM Mono", monospace; white-space: nowrap; }
 .memory-row p { display: -webkit-box; overflow: hidden; margin: 6px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
-.retrieval-evaluation-card { min-width: 0; }
-.retrieval-evaluation-card code { color: var(--accent-light); font: inherit; }
-.retrieval-source-picker { display: grid; gap: 9px; max-height: 260px; overflow: auto; border: 1px solid rgba(153,174,218,.16); border-radius: 7px; background: var(--input-bg); padding: 9px; }
-.retrieval-source-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--line); padding-bottom: 8px; color: var(--muted); font: 9px "DM Mono", monospace; }
-.retrieval-source-actions { display: flex; gap: 8px; }
-.retrieval-source-action { border: 0; background: transparent; color: var(--accent-light); padding: 0; font: 9px "DM Mono", monospace; cursor: pointer; }
-.retrieval-source-action:hover:not(:disabled) { color: var(--soft); }
-.retrieval-source-action:disabled { cursor: not-allowed; opacity: .45; }
-.retrieval-source-group { display: grid; gap: 5px; }
-.retrieval-source-group-title { color: var(--muted); font: 9px "DM Mono", monospace; }
-.retrieval-source-option { display: flex; align-items: flex-start; gap: 8px; min-width: 0; border: 1px solid transparent; border-radius: 6px; padding: 7px 6px; cursor: pointer; transition: .16s ease; }
-.retrieval-source-option:hover { border-color: rgba(141,124,255,.24); background: var(--hover-bg); }
-.retrieval-source-option input { width: 15px; height: 15px; flex: 0 0 auto; margin: 1px 0 0; accent-color: var(--accent); }
-.retrieval-source-option > span { display: grid; min-width: 0; gap: 3px; }
-.retrieval-source-option strong { overflow: hidden; color: var(--soft); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.retrieval-source-option small { overflow: hidden; color: var(--muted); font: 8px/1.45 "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
-.retrieval-source-empty { padding: 10px 0 5px; }
-.retrieval-evaluation-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.retrieval-report-section { display: grid; gap: 7px; margin-top: 3px; border-top: 1px solid var(--line); padding-top: 12px; }
-.retrieval-report-list-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--soft); font-size: 10px; font-weight: 700; }
-.retrieval-report-list-heading small { color: var(--muted); font: 8px "DM Mono", monospace; font-weight: 400; }
-.retrieval-report-list { display: grid; gap: 5px; max-height: 260px; overflow-y: auto; margin-top: 0; padding-right: 4px; overscroll-behavior: contain; scrollbar-gutter: stable; }
-.retrieval-report-row { display: grid; gap: 8px; border-bottom: 1px solid rgba(153,174,218,.08); padding: 9px 0; }
-.retrieval-report-heading { display: flex; justify-content: space-between; gap: 10px; }
-.retrieval-report-heading strong { overflow: hidden; color: var(--soft); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.retrieval-report-heading span { color: var(--muted); font: 8px "DM Mono", monospace; white-space: nowrap; }
-.retrieval-report-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
-.retrieval-report-metrics span { border: 1px solid var(--line); border-radius: 6px; color: var(--muted); padding: 6px 7px; font: 8px "DM Mono", monospace; }
-.retrieval-report-metrics strong { display: block; margin-top: 3px; color: var(--accent-light); font-size: 11px; }
 .footer { padding: 28px 0 0; color: #4d5b75; font: 9px "DM Mono", monospace; letter-spacing: .04em; }
 
 /* 白天模式覆盖色板，保留状态色和品牌紫色的识别度。 */
@@ -1834,7 +1805,7 @@ button svg {
   .context-index-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .context-index-form > .field:first-child { grid-column: 1 / -1; }
   .context-index-button { grid-column: 1 / -1; width: 100%; }
-  .context-config-grid, .context-index-result, .retrieval-report-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .context-config-grid, .context-index-result { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .context-evidence-heading { align-items: flex-start; flex-direction: column; gap: 5px; }
   .context-evidence-heading code { max-width: 100%; }
 }

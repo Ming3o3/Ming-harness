@@ -7,7 +7,6 @@ import org.mingharness.context.MemoryEntryRepository;
 import org.mingharness.context.ContextChunkRepository;
 import org.mingharness.context.ContextEmbeddingCache;
 import org.mingharness.context.ContextParentWindowRepository;
-import org.mingharness.evaluation.ContextRetrievalEvaluationReportRepository;
 import org.mingharness.feedback.RunFeedbackRepository;
 import org.mingharness.messaging.OutboxEventRepository;
 import org.mingharness.messaging.OutboxStatus;
@@ -46,7 +45,6 @@ public class DataRetentionService {
     private final KnowledgeDocumentRepository documentRepository;
     private final ContextChunkRepository contextChunkRepository;
     private final ContextParentWindowRepository contextParentWindowRepository;
-    private final ContextRetrievalEvaluationReportRepository retrievalEvaluationReportRepository;
     private final RunFeedbackRepository runFeedbackRepository;
     private final TenantPolicyAuditRepository tenantPolicyAuditRepository;
     private final ApiKeyAuditRepository apiKeyAuditRepository;
@@ -61,7 +59,6 @@ public class DataRetentionService {
                                 KnowledgeDocumentRepository documentRepository,
                                 ContextChunkRepository contextChunkRepository,
                                 ContextParentWindowRepository contextParentWindowRepository,
-                                ContextRetrievalEvaluationReportRepository retrievalEvaluationReportRepository,
                                 RunFeedbackRepository runFeedbackRepository,
                                 TenantPolicyAuditRepository tenantPolicyAuditRepository,
                                 ApiKeyAuditRepository apiKeyAuditRepository,
@@ -75,7 +72,6 @@ public class DataRetentionService {
         this.documentRepository = documentRepository;
         this.contextChunkRepository = contextChunkRepository;
         this.contextParentWindowRepository = contextParentWindowRepository;
-        this.retrievalEvaluationReportRepository = retrievalEvaluationReportRepository;
         this.runFeedbackRepository = runFeedbackRepository;
         this.tenantPolicyAuditRepository = tenantPolicyAuditRepository;
         this.apiKeyAuditRepository = apiKeyAuditRepository;
@@ -139,8 +135,6 @@ public class DataRetentionService {
                 now.minus(properties.documentDays(), ChronoUnit.DAYS)));
         // 先清理无主 chunk，再清理不再被 chunk 引用的窗口，避免触发外键约束。
         parentWindowsDeleted += contextParentWindowRepository.deleteOrphanedParentWindows();
-        int retrievalEvaluationReportsDeleted = Math.toIntExact(retrievalEvaluationReportRepository
-                .deleteByCreatedAtBefore(now.minus(properties.evaluationDays(), ChronoUnit.DAYS)));
         // 仅清理已经完成投递或已明确失败的历史 Outbox，PENDING 事件永远保留。
         outboxEventsDeleted += Math.toIntExact(outboxEventRepository.deleteByStatusInAndCreatedAtBefore(
                 List.of(OutboxStatus.PUBLISHED, OutboxStatus.FAILED),
@@ -154,7 +148,7 @@ public class DataRetentionService {
 
         RetentionCleanupResult result = new RetentionCleanupResult(
                 runsDeleted, auditEventsDeleted, stepsDeleted, memoriesDeleted, documentsDeleted,
-                chunksDeleted, parentWindowsDeleted, retrievalEvaluationReportsDeleted,
+                chunksDeleted, parentWindowsDeleted,
                 outboxEventsDeleted, tenantPolicyAuditsDeleted, apiKeyAuditsDeleted,
                 embeddingCacheEntriesDeleted, runFeedbackDeleted);
         metrics.retentionDeleted(result.totalDeleted());

@@ -214,7 +214,7 @@ public class ContextBuilder {
 
     /**
      * 给模型的上下文只展示用户可读的来源名称；内部 citation 仍保留在 ContextEvidence 中，
-     * 供评测、审计和诊断使用，避免把 document:<id>#window:<n>#chunk:<m> 泄漏到最终回答。
+     * 供审计和诊断使用，避免把 document:<id>#window:<n>#chunk:<m> 泄漏到最终回答。
      */
     private String contextBlock(String title, String excerpt) {
         String readableTitle = title == null || title.isBlank() ? "未命名来源" : title.trim();

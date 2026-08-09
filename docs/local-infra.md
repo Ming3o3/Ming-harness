@@ -63,7 +63,7 @@ SPRING_PROFILES_ACTIVE=local-infra \
 ./mvnw spring-boot:run
 ```
 
-`local-infra` 启动时会执行 Flyway 迁移，创建 Run、Step、审计、上下文、评测、Outbox 和组织资源策略表，并声明 RabbitMQ 主队列和死信队列。
+`local-infra` 启动时会执行 Flyway 迁移，创建 Run、Step、审计、上下文、Outbox 和组织资源策略表，并声明 RabbitMQ 主队列和死信队列。
 Outbox Relay 会先在 PostgreSQL 中抢占短期发布租约，再在租约外等待 RabbitMQ 发布确认；多实例不会同时发送同一条待处理事件。进程在确认前中断时，租约到期后允许重新投递，Run 执行锁负责去重。当同一事件达到 `RABBITMQ_MAX_ATTEMPTS` 仍无法获得发布确认时，Outbox 会进入 `FAILED`，对应 Run 会在带行锁的短事务中立即落为 `FAILED`，并追加 `RUN_DISPATCH_FAILED` 审计事件，不再等待 Worker 租约超时后才让用户看到失败。
 
 ### 启用上下文向量检索
@@ -87,7 +87,7 @@ export EMBEDDING_MAX_INPUT_TOKENS=8192
 
 #### 导入 PDF/DOCX 知识文档
 
-运行控制台的“上下文与评测治理”面板可以选择或拖入一个 PDF/DOCX。服务端按文件扩展名和文件头双重校验后提取纯文本，原始二进制不会写入知识库；解析结果随后沿用现有文档权限、chunk、父窗口和 embedding 索引流程。默认原始文件上限为 25 MB，解析正文上限为 100000 字符，可通过 `CONTEXT_DOCUMENT_MAX_UPLOAD_BYTES` 和 `CONTEXT_DOCUMENT_MAX_CONTENT_CHARS` 调整。只有包含文本层的 PDF 可以直接提取，扫描型 PDF 需要先 OCR；加密或损坏文件会返回结构化解析错误。
+运行控制台的“上下文治理”面板可以选择或拖入一个 PDF/DOCX。服务端按文件扩展名和文件头双重校验后提取纯文本，原始二进制不会写入知识库；解析结果随后沿用现有文档权限、chunk、父窗口和 embedding 索引流程。默认原始文件上限为 25 MB，解析正文上限为 100000 字符，可通过 `CONTEXT_DOCUMENT_MAX_UPLOAD_BYTES` 和 `CONTEXT_DOCUMENT_MAX_CONTENT_CHARS` 调整。只有包含文本层的 PDF 可以直接提取，扫描型 PDF 需要先 OCR；加密或损坏文件会返回结构化解析错误。
 
 也可以直接调用上传接口（调用方需要 `context.write` 权限）：
 
@@ -141,27 +141,6 @@ curl -X POST http://localhost:8080/api/context/reindex \
 
 `scope` 可取 `ALL`、`DOCUMENT` 或 `MEMORY`；`rechunk=true` 才会按当前分块配置替换已有子块，省略时只补齐缺失的 chunk 并为未向量化的 chunk 建索引。响应中的 `chunksFailed` 和 `pendingChunks` 可用于判断是否需要重试。
 
-可以使用检索评测接口比较不同的分块、父窗口和召回参数。`relevantSources` 填写授权父来源（例如 `document:<id>` 或 `memory:<id>`），服务会把 `#window`、`#chunk` citation 归一化后计算 Recall@K、MRR 和 HitRate@K；如果用例提供 `expectedContains`，还会在实际返回上下文中计算 `contextHitRate`。评测报告只保存聚合指标和脱敏的用例状态，不保存查询正文：
-
-```bash
-curl -X POST http://localhost:8080/api/evaluations/retrieval \
-  -H 'Authorization: Bearer demo-key' \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name":"发布知识库检索基线",
-    "topK":5,
-    "maxChars":4000,
-    "cases":[{
-      "name":"回滚步骤",
-      "query":"如何回滚发布",
-      "relevantSources":["document:替换为真实文档ID"],
-      "expectedContains":["回滚"]
-    }]
-  }'
-```
-
-`contextCases` 表示提供了 `expectedContains` 的用例数；没有内容断言时，`contextHitRate` 为 0 且不影响 Recall/MRR。建议固定一组查询和来源标注，在修改 `CONTEXT_CHUNK_MAX_CHARS`、`CONTEXT_PARENT_WINDOW_MAX_CHARS`、相似度阈值或候选数量后重新运行并比较报告。
-
 Rabbit Worker 的模型和工具调用在数据库事务之外执行；领取租约、步骤开始/完成、心跳、审计和终态写回分别是短事务。每个步骤前后都会续租 Redis 锁并刷新 PostgreSQL Worker 租约，旧 Worker 丢失所有权后不能覆盖新 Worker 或取消操作的结果。Worker 执行锁会自动使用不小于 `RECOVERY_TIMEOUT_MS` 的租期，避免数据库恢复器在一个受控长步骤期间过早回收 Run。
 
 Worker 默认每个实例启动 1 个消费者，最多扩展到 4 个消费者，每个消费者预取 1 条消息。Outbox Relay 发布前会读取执行队列深度：达到 `RABBITMQ_MAX_QUEUE_DEPTH`（默认 1000）时暂停抢占，RabbitMQ 队列状态读取失败时也会安全暂停，待下一轮恢复后继续。可以根据模型供应商并发额度和数据库容量覆盖：
@@ -201,7 +180,7 @@ export MODEL_FALLBACK_NAME=backup-model
 
 ```bash
 export HARNESS_AUTH_MODE=api-key
-export HARNESS_API_KEYS='demo-key|tenant-demo|operator|run.read,run.create,run.execute,run.approve,run.cancel,audit.read,context.read,context.write,context.configure,evaluation.read,evaluation.run,tool.read,ops.read,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage'
+export HARNESS_API_KEYS='demo-key|tenant-demo|operator|run.read,run.create,run.execute,run.approve,run.cancel,audit.read,context.read,context.write,context.configure,tool.read,ops.read,tenant.policy.read,tenant.policy.write,auth.key.read,auth.key.manage'
 ```
 
 调用时使用 `Authorization: Bearer demo-key`。API Key 绑定的组织和用户会覆盖请求头，Run 创建请求中的 `tenantId/userId` 必须与认证身份一致。默认 `local` 模式仍兼容 `X-Tenant-Id`、`X-User-Id` 和 `X-Permissions`，仅适合本地演示。
@@ -320,7 +299,6 @@ export RUN_RETENTION_DAYS=90
 export AUDIT_RETENTION_DAYS=365
 export MEMORY_RETENTION_DAYS=30
 export DOCUMENT_RETENTION_DAYS=30
-export EVALUATION_RETENTION_DAYS=90
 export OUTBOX_RETENTION_DAYS=14
 export RETENTION_BATCH_SIZE=100
 ```

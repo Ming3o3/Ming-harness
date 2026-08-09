@@ -281,8 +281,6 @@ export const api = {
   listMemories: () => request('/context/memories'),
   createMemory: (payload) => request('/context/memories', { method: 'POST', body: JSON.stringify(payload) }),
   deleteMemory: (memoryId) => request(`/context/memories/${encodeURIComponent(memoryId)}`, { method: 'DELETE' }),
-  listRetrievalEvaluations: () => request('/evaluations/retrieval'),
-  runRetrievalEvaluation: (payload) => request('/evaluations/retrieval', { method: 'POST', body: JSON.stringify(payload) }),
   getTenantPolicy: (tenantId) => request(`/admin/tenants/${encodeURIComponent(tenantId)}/policy`),
   updateTenantPolicy: (tenantId, payload) => request(`/admin/tenants/${encodeURIComponent(tenantId)}/policy`, {
     method: 'PUT',

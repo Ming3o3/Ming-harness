@@ -39,7 +39,6 @@ const selectedRun = ref(null)
 const auditEvents = ref([])
 const documents = ref([])
 const memories = ref([])
-const retrievalEvaluations = ref([])
 const contextPreviewQuery = ref('')
 const contextPreviewMaxChars = ref(4000)
 const contextPreviewResult = ref(null)
@@ -386,36 +385,6 @@ const memoryForm = reactive({
 })
 const memoryDeletingId = ref('')
 
-const retrievalEvaluationForm = reactive({
-  name: '检索基线',
-  query: '',
-  expectedContains: '',
-  topK: 5,
-  maxChars: 4000,
-})
-// 评测用例提交时仍使用 document:<id>/memory:<id>，界面通过可见名称让用户选择来源。
-const selectedRetrievalSources = ref([])
-const retrievalEvaluationLoading = ref(false)
-const retrievalEvaluationError = ref('')
-
-const retrievalSourceValues = computed(() => new Set([
-  ...documents.value.map((document) => `document:${document.id}`),
-  ...memories.value.map((memory) => `memory:${memory.id}`),
-]))
-
-function retrievalSourceValue(type, id) {
-  return `${type}:${id}`
-}
-
-function selectAllRetrievalDocuments() {
-  const documentSources = documents.value.map((document) => retrievalSourceValue('document', document.id))
-  const existingMemorySources = selectedRetrievalSources.value.filter((source) => source.startsWith('memory:'))
-  selectedRetrievalSources.value = [...new Set([...existingMemorySources, ...documentSources])].slice(0, 50)
-}
-
-function clearRetrievalSources() {
-  selectedRetrievalSources.value = []
-}
 
 const contextPreviewPresets = [
   '如何回滚发布',
@@ -436,7 +405,7 @@ const tenantPolicyForm = reactive({
 const apiKeyForm = reactive({
   tenantId: form.tenantId,
   userId: form.userId,
-  permissions: 'run.read, run.create, run.execute, run.approve, run.cancel, audit.read, context.read, context.write, context.configure, evaluation.read, evaluation.run, tool.read, workspace.read, workspace.manage, ops.read, model.configure, tenant.policy.read, tenant.policy.write, auth.key.read, auth.key.manage',
+  permissions: 'run.read, run.create, run.execute, run.approve, run.cancel, audit.read, context.read, context.write, context.configure, tool.read, workspace.read, workspace.manage, ops.read, model.configure, tenant.policy.read, tenant.policy.write, auth.key.read, auth.key.manage',
   expiresAt: '',
 })
 
@@ -2292,22 +2261,18 @@ async function refreshActiveConversation() {
 async function loadDashboard() {
   clearMessages()
   try {
-    const [, toolData, summaryData, documentData, memoryData, retrievalEvaluationData, contextConfigurationData] = await Promise.all([
+    const [, toolData, summaryData, documentData, memoryData, contextConfigurationData] = await Promise.all([
       loadRunsPage(),
       api.listTools(),
       api.dashboardSummary(),
       api.listDocuments(),
       api.listMemories(),
-      api.listRetrievalEvaluations(),
       api.contextConfiguration(),
     ])
     tools.value = toolData
     summary.value = summaryData
     documents.value = documentData
     memories.value = memoryData
-    // 刷新文档/记忆列表后移除已经不存在的勾选项，避免提交失效来源。
-    selectedRetrievalSources.value = selectedRetrievalSources.value.filter((source) => retrievalSourceValues.value.has(source))
-    retrievalEvaluations.value = retrievalEvaluationData
     contextConfiguration.value = contextConfigurationData
     if (selectedRun.value) {
       await selectRun(selectedRun.value.run.id, false)
@@ -2936,7 +2901,6 @@ async function deleteDocument(document) {
   try {
     await api.deleteDocument(document.id)
     documents.value = documents.value.filter((item) => item.id !== document.id)
-    selectedRetrievalSources.value = selectedRetrievalSources.value.filter((source) => source !== retrievalSourceValue('document', document.id))
     noticeMessage.value = `知识文档“${document.title}”已删除`
   } catch (error) {
     errorMessage.value = errorText(error)
@@ -2977,7 +2941,6 @@ async function deleteMemory(memory) {
   try {
     await api.deleteMemory(memory.id)
     memories.value = memories.value.filter((item) => item.id !== memory.id)
-    selectedRetrievalSources.value = selectedRetrievalSources.value.filter((source) => source !== retrievalSourceValue('memory', memory.id))
     noticeMessage.value = '长期记忆已删除'
   } catch (error) {
     errorMessage.value = errorText(error)
@@ -3023,36 +2986,6 @@ async function rebuildContextIndex() {
     contextReindexError.value = errorText(error)
   } finally {
     contextReindexLoading.value = false
-  }
-}
-
-async function runRetrievalEvaluation() {
-  const query = retrievalEvaluationForm.query.trim()
-  const relevantSources = selectedRetrievalSources.value.filter(Boolean)
-  if (!query || !relevantSources.length || retrievalEvaluationLoading.value) return
-  retrievalEvaluationLoading.value = true
-  retrievalEvaluationError.value = ''
-  try {
-    const report = await api.runRetrievalEvaluation({
-      name: retrievalEvaluationForm.name.trim() || '检索基线',
-      topK: Number(retrievalEvaluationForm.topK) || 5,
-      maxChars: Number(retrievalEvaluationForm.maxChars) || 4000,
-      cases: [{
-        name: '控制台用例',
-        query,
-        relevantSources,
-        expectedContains: retrievalEvaluationForm.expectedContains
-          .split(/[\n,，]+/)
-          .map((value) => value.trim())
-          .filter(Boolean),
-      }],
-    })
-    retrievalEvaluations.value = [report, ...retrievalEvaluations.value]
-    noticeMessage.value = `检索评测完成，Recall@K ${report.recallAtK} · MRR ${report.mrr}`
-  } catch (error) {
-    retrievalEvaluationError.value = errorText(error)
-  } finally {
-    retrievalEvaluationLoading.value = false
   }
 }
 
@@ -4317,7 +4250,7 @@ onBeforeUnmount(() => {
 
       <section class="governance-section panel" id="governance">
         <div class="panel-heading">
-          <div><p class="eyebrow">ADVANCED GOVERNANCE</p><h2>高级治理设置</h2><p class="panel-heading-help">知识源、索引、评测、组织策略和凭证设置只在这里维护。</p></div>
+          <div><p class="eyebrow">ADVANCED GOVERNANCE</p><h2>高级治理设置</h2><p class="panel-heading-help">知识源、索引、组织策略和凭证设置只在这里维护。</p></div>
           <button class="secondary-button" type="button" @click="showGovernance = !showGovernance">{{ showGovernance ? '收起高级设置' : '展开高级设置' }}</button>
         </div>
         <div v-if="showGovernance" class="governance-grid">
@@ -4501,79 +4434,6 @@ onBeforeUnmount(() => {
               </article>
             </div>
             <div v-else class="context-preview-empty">还没有当前用户的长期记忆。</div>
-          </form>
-          <form class="governance-card governance-fixed-card retrieval-evaluation-card" @submit.prevent="runRetrievalEvaluation">
-            <div class="context-workbench-heading">
-              <div>
-                <p class="eyebrow">RETRIEVAL QUALITY</p>
-                <h3>检索评测</h3>
-              </div>
-              <span class="context-mode-chip">Recall / MRR</span>
-            </div>
-            <p class="context-workbench-help">选择与测试查询相关的知识文档或长期记忆，系统会自动转换为评测所需的来源标识。</p>
-            <label class="field"><span>报告名称</span><input v-model="retrievalEvaluationForm.name" required maxlength="200" /></label>
-            <label class="field"><span>测试查询</span><textarea v-model="retrievalEvaluationForm.query" rows="2" required placeholder="例如：如何回滚发布？"></textarea></label>
-            <div class="field">
-              <span>相关来源（选择文档或记忆）</span>
-              <div class="retrieval-source-picker" role="group" aria-label="选择检索评测相关来源">
-                <div class="retrieval-source-toolbar">
-                  <small>已选择 {{ selectedRetrievalSources.length }} / 50 个来源</small>
-                  <div class="retrieval-source-actions">
-                    <button class="retrieval-source-action" type="button" :disabled="!documents.length" @click="selectAllRetrievalDocuments">全选文档</button>
-                    <button class="retrieval-source-action" type="button" :disabled="!selectedRetrievalSources.length" @click="clearRetrievalSources">清空</button>
-                  </div>
-                </div>
-                <div v-if="documents.length" class="retrieval-source-group">
-                  <small class="retrieval-source-group-title">知识文档</small>
-                  <label v-for="document in documents" :key="`document:${document.id}`" class="retrieval-source-option">
-                    <input
-                      v-model="selectedRetrievalSources"
-                      type="checkbox"
-                      :value="retrievalSourceValue('document', document.id)"
-                      :disabled="selectedRetrievalSources.length >= 50 && !selectedRetrievalSources.includes(retrievalSourceValue('document', document.id))"
-                    />
-                    <span>
-                      <strong>{{ document.title }}</strong>
-                      <small>{{ formatDate(document.createdAt) }}</small>
-                    </span>
-                  </label>
-                </div>
-                <div v-if="memories.length" class="retrieval-source-group">
-                  <small class="retrieval-source-group-title">长期记忆</small>
-                  <label v-for="memory in memories" :key="`memory:${memory.id}`" class="retrieval-source-option">
-                    <input
-                      v-model="selectedRetrievalSources"
-                      type="checkbox"
-                      :value="retrievalSourceValue('memory', memory.id)"
-                      :disabled="selectedRetrievalSources.length >= 50 && !selectedRetrievalSources.includes(retrievalSourceValue('memory', memory.id))"
-                    />
-                    <span>
-                      <strong>{{ memory.memoryType }}</strong>
-                      <small>{{ memory.content }}</small>
-                    </span>
-                  </label>
-                </div>
-                <div v-if="!documents.length && !memories.length" class="context-preview-empty retrieval-source-empty">还没有可选择的文档或长期记忆，请先添加来源。</div>
-              </div>
-              <small class="form-hint">至少选择一个来源；最多选择 50 个。评测时会自动使用所选来源计算 Recall/MRR。</small>
-            </div>
-            <label class="field"><span>期望包含（可选）</span><input v-model="retrievalEvaluationForm.expectedContains" placeholder="例如：审批、回滚" /></label>
-            <div class="retrieval-evaluation-options">
-              <label class="field"><span>Top-K</span><input v-model.number="retrievalEvaluationForm.topK" type="number" min="1" max="50" /></label>
-              <label class="field"><span>上下文上限</span><select v-model.number="retrievalEvaluationForm.maxChars"><option :value="2000">2,000 字符</option><option :value="4000">4,000 字符</option><option :value="8000">8,000 字符</option></select></label>
-            </div>
-            <button class="secondary-button" type="submit" :disabled="retrievalEvaluationLoading || !retrievalEvaluationForm.query.trim() || !selectedRetrievalSources.length">{{ retrievalEvaluationLoading ? '评测中…' : '运行检索评测' }}</button>
-            <p v-if="retrievalEvaluationError" class="policy-error">{{ retrievalEvaluationError }}</p>
-            <div v-if="retrievalEvaluations.length" class="retrieval-report-section">
-              <div class="retrieval-report-list-heading"><span>历史评测</span><small>共 {{ retrievalEvaluations.length }} 份</small></div>
-              <div class="retrieval-report-list" aria-label="检索评测报告">
-                <article v-for="report in retrievalEvaluations" :key="report.id" class="retrieval-report-row">
-                  <div class="retrieval-report-heading"><strong>{{ report.name }}</strong><span>{{ formatDate(report.createdAt) }}</span></div>
-                  <div class="retrieval-report-metrics"><span>Hit@K <strong>{{ report.hitRateAtK }}</strong></span><span>Recall@K <strong>{{ report.recallAtK }}</strong></span><span>MRR <strong>{{ report.mrr }}</strong></span><span>Context <strong>{{ report.contextHitRate }}</strong></span></div>
-                </article>
-              </div>
-            </div>
-            <div v-else class="context-preview-empty">还没有检索评测报告。</div>
           </form>
           <form class="governance-card policy-card" @submit.prevent="saveTenantPolicy">
             <div class="subsection-title"><h3>组织资源策略</h3><span v-if="tenantPolicy">{{ tenantPolicy.defaulted ? '平台默认' : '组织覆盖' }}</span></div>

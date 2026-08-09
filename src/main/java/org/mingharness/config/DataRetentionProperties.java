@@ -12,7 +12,6 @@ public record DataRetentionProperties(
         int auditDays,
         int memoryDays,
         int documentDays,
-        int evaluationDays,
         int outboxDays,
         int tenantPolicyAuditDays,
         int apiKeyAuditDays,
@@ -27,7 +26,6 @@ public record DataRetentionProperties(
         auditDays = positiveOrDefault(auditDays, 365);
         memoryDays = positiveOrDefault(memoryDays, 30);
         documentDays = positiveOrDefault(documentDays, 30);
-        evaluationDays = positiveOrDefault(evaluationDays, 90);
         outboxDays = positiveOrDefault(outboxDays, 14);
         tenantPolicyAuditDays = positiveOrDefault(tenantPolicyAuditDays, 365);
         apiKeyAuditDays = positiveOrDefault(apiKeyAuditDays, 365);

@@ -13,13 +13,13 @@ Ming Harness 是一个面向企业 Agent 开发与治理的平台：后端使用
 | 后端语言与构建 | Java 17、Maven Wrapper | 编写服务端业务代码，并统一本地构建与启动方式 |
 | Web/API | Spring Boot 4.1.0、Spring MVC、Spring Validation | 提供 REST API、参数校验、全局异常处理和 Run 实时 SSE 事件流 |
 | 模型访问 | Spring `RestClient`、OpenAI 兼容 Chat Completions API | 对接演示模型或外部模型供应商，支持重试、熔断、备用供应商和成本统计 |
-| 持久化 | Spring Data JPA、Hibernate、H2、PostgreSQL 17 | 保存 Run、Step、会话、上下文、审计、评测和 Outbox 等业务数据；H2 用于本地演示，PostgreSQL 用于基础设施模式 |
+| 持久化 | Spring Data JPA、Hibernate、H2、PostgreSQL 17 | 保存 Run、Step、会话、上下文、审计和 Outbox 等业务数据；H2 用于本地演示，PostgreSQL 用于基础设施模式 |
 | 数据库迁移 | Flyway | 以 `src/main/resources/db/migration` 中的版本脚本管理表结构演进，并可启用 PostgreSQL `pgvector` 扩展 |
 | 缓存与分布式治理 | Redis、Spring Data Redis | 跨实例限流、组织活动 Run 配额、执行锁和取消协作信号；不保存业务正文 |
 | 异步消息 | RabbitMQ、Spring AMQP、Outbox、死信队列 | 解耦 Run 投递与 Worker 执行，支持发布租约、重试、背压和失败恢复 |
 | 安全 | Spring Security、OAuth2 Resource Server、OIDC/JWT、API Key、RBAC | 支持本地演示身份、API Key 和企业 OIDC，执行组织隔离、接口权限和工作区审批控制 |
 | 可观测性 | Spring Boot Actuator、Micrometer、Prometheus、`X-Request-Id` / `X-Trace-Id` | 提供健康探针、运行指标、请求关联追踪以及 Run/Step 级耗时、Token 和成本观测 |
-| 前端 | Vue 3.5、JavaScript ES Modules、Vite 8.1 | 构建聊天工作台、Run 控制台、审批审计、上下文管理和评测页面；开发服务器代理 `/api` 到后端 |
+| 前端 | Vue 3.5、JavaScript ES Modules、Vite 8.1 | 构建聊天工作台、Run 控制台、审批审计和上下文管理页面；开发服务器代理 `/api` 到后端 |
 | 前端增强 | Monaco Editor、Markdown-it、highlight.js、Lucide Vue | 提供代码/JSON 编辑预览、Markdown 渲染、代码高亮和界面图标 |
 | 桌面端 | Electron 38.8、Node.js 20.19+ | 提供本地项目选择、受信任桌面桥接令牌和受控工作区能力；绝对路径只保留在主进程 |
 | 测试 | Spring Boot Test | 覆盖 Runtime、策略、工具、消息、认证、数据保留和 API 等服务端测试 |
@@ -46,10 +46,8 @@ Ming Harness 是一个面向企业 Agent 开发与治理的平台：后端使用
 - 上下文父文档子块索引：文档和长期记忆写入时按结构和长度生成有序子块，为后续 embedding/pgvector 检索保留稳定的父子关系
 - embedding 索引写入：启用外部 embedding API 且使用 PostgreSQL 时，文档和长期记忆子块会批量写入 pgvector；供应商暂时不可用时保留关键词召回并等待后续重建
 - embedding 缓存：按租户、内容哈希、模型、模型版本和维度持久化复用结果，减少重建索引的重复 API 调用，并按保留策略清理
-- 上下文检索离线评测：按租户保存 Recall@K、MRR、HitRate@K 和可选的上下文命中率，用于比较分块、父窗口和召回参数
 - 敏感数据治理：Run、Step、审计、模型、工具和上下文边界统一凭证脱敏，长期记忆拒绝写入疑似凭证
-- 数据保留策略：终态 Run 与审计链原子清理，过期记忆/文档/评测和已完成 Outbox 定时删除，待投递消息不自动删除
-- 离线评测：固定用例回放并保存模型/Prompt/策略版本报告
+- 数据保留策略：终态 Run 与审计链原子清理，过期记忆/文档和已完成 Outbox 定时删除，待投递消息不自动删除
 - 业务闭环沉淀：每次 Run 持久化实际上下文证据，助手消息支持有用/需改进反馈
 - 本地基础设施 Profile：PostgreSQL + Flyway、Redis 共享治理、RabbitMQ Outbox Worker
 - 健康检查与运行指标：公开存活探针、受 `ops.read` 保护的 `/api/health` 和 Actuator 指标
@@ -159,7 +157,6 @@ npm run dev
 | `AUDIT_RETENTION_DAYS` | `365` | 审计链保留天数，避免清理部分事件破坏完整性 |
 | `MEMORY_RETENTION_DAYS` | `30` | 已删除长期记忆的保留天数；已到期记忆会立即清理 |
 | `DOCUMENT_RETENTION_DAYS` | `30` | 已删除知识文档的保留天数 |
-| `EVALUATION_RETENTION_DAYS` | `90` | 评测报告保留天数 |
 | `OUTBOX_RETENTION_DAYS` | `14` | 已发布/最终失败 Outbox 保留天数，`PENDING` 永不自动清理 |
 | `TENANT_POLICY_AUDIT_RETENTION_DAYS` | `365` | 组织资源策略变更审计保留天数 |
 | `API_KEY_AUDIT_RETENTION_DAYS` | `365` | 数据库 API Key 生命周期审计保留天数 |
@@ -204,7 +201,7 @@ npm run dist:win:green
 
 ### 控制台模型设置
 
-大语言模型和向量模型配置从运行控制台顶部直接进入；知识源、索引、组织策略、评测和凭证仍收纳在“高级治理设置”中。用户可以输入 OpenAI 兼容 API 地址、模型名称和 API Key；保存后只影响当前组织/用户创建的新 Run，用户覆盖配置会在 Run 创建时固化供应商快照，因此正在排队、审批或执行的 Run 不会被中途切换。后端通过 `GET/PUT/DELETE /api/model-config` 管理设置，API Key 使用 AES-GCM 加密保存，读取接口只返回掩码，不写入浏览器 localStorage。使用 api-key/OIDC 认证时，当前身份需要 `model.configure` 权限。
+大语言模型和向量模型配置从运行控制台顶部直接进入；知识源、索引、组织策略和凭证仍收纳在“高级治理设置”中。用户可以输入 OpenAI 兼容 API 地址、模型名称和 API Key；保存后只影响当前组织/用户创建的新 Run，用户覆盖配置会在 Run 创建时固化供应商快照，因此正在排队、审批或执行的 Run 不会被中途切换。后端通过 `GET/PUT/DELETE /api/model-config` 管理设置，API Key 使用 AES-GCM 加密保存，读取接口只返回掩码，不写入浏览器 localStorage。使用 api-key/OIDC 认证时，当前身份需要 `model.configure` 权限。
 
 Embedding 配置按组织保存（知识库向量是组织共享索引），从运行控制台顶部的“向量模型”入口维护。它支持 OpenAI 兼容的 `/embeddings` 地址、模型、模型版本、API Key 和当前固定的 1536 维向量。保存后会清空该组织旧 chunk 向量，必须在“高级治理设置”的“向量索引”中重新建立索引；API Key 使用独立 AES-GCM 密钥标签加密，读取接口只返回掩码。后端通过 `GET/PUT/DELETE /api/context/embedding-config` 和 `POST /api/context/embedding-config/test` 管理配置；使用 api-key/OIDC 认证时需要 `context.configure` 权限。
 
@@ -216,7 +213,7 @@ Embedding 配置按组织保存（知识库向量是组织共享索引），从�
 
 ### API Key / OIDC 认证
 
-生产或共享环境建议设置 `HARNESS_AUTH_MODE=api-key`。调用方使用 `Authorization: Bearer <key>` 或 `X-Api-Key`，服务端根据配置或数据库凭证将请求绑定到固定组织和用户，并按接口校验权限，例如 `run.read`、`run.create`、`run.execute`、`run.approve`、`context.read`、`context.write`、`context.configure`、`audit.read`、`evaluation.run`、`tool.read`、`model.configure` 和 `ops.read`。工作区读取工具还需要 `workspace.read`，写入工具需要 `workspace.write` 并进入人工审批；`model.configure` 允许当前用户在控制台保存自己的模型 URL、模型名和加密 API Key；`context.configure` 允许组织内授权操作者保存共享知识库的 Embedding URL、模型和加密 API Key；`ops.read` 用于读取 `/api/health`、Actuator 指标、Prometheus 和应用信息。
+生产或共享环境建议设置 `HARNESS_AUTH_MODE=api-key`。调用方使用 `Authorization: Bearer <key>` 或 `X-Api-Key`，服务端根据配置或数据库凭证将请求绑定到固定组织和用户，并按接口校验权限，例如 `run.read`、`run.create`、`run.execute`、`run.approve`、`context.read`、`context.write`、`context.configure`、`audit.read`、`tool.read`、`model.configure` 和 `ops.read`。工作区读取工具还需要 `workspace.read`，写入工具需要 `workspace.write` 并进入人工审批；`model.configure` 允许当前用户在控制台保存自己的模型 URL、模型名和加密 API Key；`context.configure` 允许组织内授权操作者保存共享知识库的 Embedding URL、模型和加密 API Key；`ops.read` 用于读取 `/api/health`、Actuator 指标、Prometheus 和应用信息。
 
 通过具有 `auth.key.manage` 权限的引导 Key 或 OIDC 服务账号，可调用 `POST /api/admin/api-keys` 创建数据库 API Key；明文 `secret` 仅在创建响应中出现一次，数据库只保存 SHA-256 摘要。`GET /api/admin/api-keys` 只返回前缀和元数据，`POST /api/admin/api-keys/{keyId}/rotate` 会在同一事务中创建同权限新 Key 并立即撤销旧 Key，`DELETE /api/admin/api-keys/{keyId}` 可即时撤销，`GET /api/admin/api-keys/audits` 可查看生命周期审计。读取接口需要 `auth.key.read`，跨组织管理还需 `auth.key.cross-tenant`。环境变量 `HARNESS_API_KEYS` 保留为紧急引导兼容方案，变更或撤销需要重启；正式环境应逐步迁移至数据库生命周期 Key。
 
@@ -428,7 +425,7 @@ Rabbit Worker 仅在抛出临时基础设施异常时由队列重试；业务、
 
 ### 敏感数据与保留策略
 
-Harness 会在写入 Run/Step、审计、上下文、评测和 Outbox 错误前，统一替换常见的 API Key、Bearer Token、JWT、连接串密码、PEM 私钥和厂商 Token 为 `[REDACTED]`。模型调用前也会再次执行脱敏；长期记忆发现疑似凭证时直接拒绝写入。该规则是安全基线，不替代生产环境的密钥托管、DLP 和权限控制。
+Harness 会在写入 Run/Step、审计、上下文和 Outbox 错误前，统一替换常见的 API Key、Bearer Token、JWT、连接串密码、PEM 私钥和厂商 Token 为 `[REDACTED]`。模型调用前也会再次执行脱敏；长期记忆发现疑似凭证时直接拒绝写入。该规则是安全基线，不替代生产环境的密钥托管、DLP 和权限控制。
 
 `local` 默认关闭自动清理，避免演示数据被删除；`local-infra` 默认开启。Run 与其 Step、审计链会作为一个完整单元清理，`RUN_RETENTION_DAYS` 会自动提升到不小于 `AUDIT_RETENTION_DAYS`，从而不会留下可查询但无法校验的半截审计链。正式环境应按合规要求设置保留天数，并在发布前评估删除不可逆性。
 
@@ -451,7 +448,7 @@ curl -X POST http://localhost:8080/api/runs \
 
 创建后调用 `POST /api/runs/{runId}/start` 启动；高风险工具会进入等待审批状态，再调用 `POST /api/runs/{runId}/approve` 或 `POST /api/runs/{runId}/reject`。失败任务可调用 `POST /api/runs/{runId}/retry`。
 
-上下文与评测接口：
+上下文接口：
 
 - `GET /api/runs/page?page=0&size=20&status=RUNNING`：按组织分页查询 Run，`status` 可选，单页最多 100 条；原 `GET /api/runs` 继续返回最近 50 条数组
 - `POST/GET/DELETE /api/context/documents`：管理组织隔离的知识文档
@@ -461,7 +458,6 @@ curl -X POST http://localhost:8080/api/runs \
 - `GET/PUT/DELETE /api/context/embedding-config`：读取、保存或恢复当前组织的 Embedding 连接配置；密钥只返回掩码
 - `POST /api/context/embedding-config/test`：使用未保存配置测试一次 OpenAI 兼容 `/embeddings` 连接
 - `POST /api/context/reindex`：按租户有界重建上下文 chunk 和 embedding，需要 `context.reindex` 权限；`rechunk=true` 时按当前语义分块配置重新切块
-- `POST/GET /api/evaluations/retrieval`：运行或查询上下文检索离线评测，需要 `evaluation.run` / `evaluation.read` 权限；用例的 `relevantSources` 使用 `document:<id>` 或 `memory:<id>`，`expectedContains` 可选，用于计算上下文命中率
 - `POST/GET /api/runs/{runId}/feedback`：对自己的 Run 记录 `POSITIVE`/`NEGATIVE` 反馈、原因和备注；重复提交会覆盖同一用户对该 Run 的反馈，并写入审计事件
 - `GET /api/runs/{runId}` 的 Step 详情包含 `contextEvidence`：模型步骤实际注入的授权来源、标题、citation 和摘要，可从聊天消息追溯到 Run 详情
 

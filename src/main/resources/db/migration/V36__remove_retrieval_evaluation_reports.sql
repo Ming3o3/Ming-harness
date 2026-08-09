@@ -1,0 +1,1 @@
+DROP TABLE IF EXISTS harness_context_retrieval_evaluation_reports;

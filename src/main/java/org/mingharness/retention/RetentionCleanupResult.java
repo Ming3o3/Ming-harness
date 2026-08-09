@@ -9,7 +9,6 @@ public record RetentionCleanupResult(
         int documentsDeleted,
         int chunksDeleted,
         int parentWindowsDeleted,
-        int retrievalEvaluationReportsDeleted,
         int outboxEventsDeleted,
         int tenantPolicyAuditsDeleted,
         int apiKeyAuditsDeleted,
@@ -18,7 +17,7 @@ public record RetentionCleanupResult(
 ) {
     public int totalDeleted() {
         return runsDeleted + auditEventsDeleted + stepsDeleted + memoriesDeleted
-                + documentsDeleted + chunksDeleted + parentWindowsDeleted + retrievalEvaluationReportsDeleted
+                + documentsDeleted + chunksDeleted + parentWindowsDeleted
                 + outboxEventsDeleted + tenantPolicyAuditsDeleted
                 + apiKeyAuditsDeleted + embeddingCacheEntriesDeleted + runFeedbackDeleted;
     }

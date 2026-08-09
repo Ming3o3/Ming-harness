@@ -13,8 +13,6 @@ import org.mingharness.context.KnowledgeDocument;
 import org.mingharness.context.KnowledgeDocumentRepository;
 import org.mingharness.context.MemoryEntry;
 import org.mingharness.context.MemoryEntryRepository;
-import org.mingharness.evaluation.ContextRetrievalEvaluationReport;
-import org.mingharness.evaluation.ContextRetrievalEvaluationReportRepository;
 import org.mingharness.messaging.OutboxEvent;
 import org.mingharness.messaging.OutboxEventRepository;
 import org.mingharness.runtime.domain.Run;
@@ -58,8 +56,6 @@ class DataRetentionServiceTests {
     @Autowired
     private ContextParentWindowRepository contextParentWindowRepository;
     @Autowired
-    private ContextRetrievalEvaluationReportRepository retrievalEvaluationReportRepository;
-    @Autowired
     private TenantPolicyAuditRepository tenantPolicyAuditRepository;
     @Autowired
     private ApiKeyAuditRepository apiKeyAuditRepository;
@@ -75,7 +71,6 @@ class DataRetentionServiceTests {
         documentRepository.deleteAll();
         contextChunkRepository.deleteAll();
         contextParentWindowRepository.deleteAll();
-        retrievalEvaluationReportRepository.deleteAll();
         tenantPolicyAuditRepository.deleteAll();
         apiKeyAuditRepository.deleteAll();
     }
@@ -118,12 +113,6 @@ class DataRetentionServiceTests {
         contextParentWindowRepository.save(staleWindow);
         jdbcTemplate.update("UPDATE harness_context_parent_windows SET deleted_at = ? WHERE id = ?",
                 Timestamp.from(old), staleWindow.getId());
-
-        ContextRetrievalEvaluationReport retrievalReport = retrievalEvaluationReportRepository.save(
-                new ContextRetrievalEvaluationReport("tenant-retention", "旧检索评测", 5, 1, 1,
-                        BigDecimal.ONE, BigDecimal.ONE, BigDecimal.ONE, 1, 1, BigDecimal.ONE, "case-1"));
-        jdbcTemplate.update("UPDATE harness_context_retrieval_evaluation_reports SET created_at = ? WHERE id = ?",
-                Timestamp.from(old), retrievalReport.getId());
 
         TenantPolicyAudit policyAudit = tenantPolicyAuditRepository.save(new TenantPolicyAudit(
                 "tenant-retention", "operator", "TENANT_POLICY_UPDATED", "old policy"));
@@ -173,7 +162,6 @@ class DataRetentionServiceTests {
         assertEquals(1, result.documentsDeleted());
         assertEquals(2, result.chunksDeleted());
         assertEquals(3, result.parentWindowsDeleted());
-        assertEquals(1, result.retrievalEvaluationReportsDeleted());
         assertEquals(1, result.outboxEventsDeleted());
         assertEquals(1, result.tenantPolicyAuditsDeleted());
         assertEquals(1, result.apiKeyAuditsDeleted());
