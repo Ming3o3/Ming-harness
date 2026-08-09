@@ -95,4 +95,36 @@ class EducationRunConfigurationServiceTests {
         assertEquals(0.8, configuration.learningGoalTargetMastery());
         assertTrue(configuration.promptSummary().contains("学习目标=掌握函数基础"));
     }
+
+    @Test
+    void shouldAllowACompletedGoalOnlyWhenItsReviewPlanIsDue() {
+        LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        LearningReviewPlanService reviewPlans = mock(LearningReviewPlanService.class);
+        LearnerProfile profile = new LearnerProfile("tenant-a", "student-1", "数学",
+                "高中一年级", "人教A版", null, "zh-CN");
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", profile.getId(),
+                "掌握函数基础", "函数", 0.35, 0.8);
+        goal.changeStatus(LearningGoalStatus.COMPLETED);
+        LearningReviewPlan plan = new LearningReviewPlan("tenant-a", "student-1", goal.getId(),
+                profile.getId(), goal.getConceptKey(), java.time.Instant.now().minusSeconds(1));
+        when(profiles.findByIdAndTenantIdAndUserId(profile.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(profile));
+        when(goals.findByIdAndTenantIdAndUserId(goal.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(goal));
+        when(reviewPlans.getById("tenant-a", "student-1", plan.getId())).thenReturn(plan);
+        when(mastery.findByTenantIdAndLearnerProfileIdOrderByConceptKeyAsc("tenant-a", profile.getId()))
+                .thenReturn(List.of());
+
+        EducationRunConfigurationService service = new EducationRunConfigurationService(
+                profiles, mastery, goals, reviewPlans, new SensitiveDataSanitizer());
+        EducationRunConfiguration configuration = service.resolve("tenant-a", "student-1",
+                new EducationRunOptions(true, profile.getId(), goal.getId(), plan.getId(), null, null,
+                        null, null, null, null, "PRACTICE"));
+
+        assertEquals(goal.getId(), configuration.learningGoalId());
+        assertEquals(plan.getId(), configuration.reviewPlanId());
+        assertEquals(profile.getId(), configuration.learnerProfileId());
+    }
 }

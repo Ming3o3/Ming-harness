@@ -99,4 +99,59 @@ class EducationAssessmentServiceTests {
         assertEquals("学生写出了定义域判定依据", result.getEvidenceText());
         assertEquals("复核通过", result.getFeedback());
     }
+
+    @Test
+    void shouldRecordACompletedGoalReviewAgainstItsPlan() {
+        AssessmentAttemptRepository attempts = mock(AssessmentAttemptRepository.class);
+        RunRepository runs = mock(RunRepository.class);
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        EducationLearnerService learnerService = mock(EducationLearnerService.class);
+        LearningReviewPlanService reviewPlans = mock(LearningReviewPlanService.class);
+        Run run = new Run("tenant-a", "student-1", "函数保持度复习", "请复习函数",
+                BigDecimal.ONE, "demo-model", "prompt-v1", "policy-v1");
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", "profile-1",
+                "掌握函数", "函数", 0.2, 0.8);
+        goal.changeStatus(LearningGoalStatus.COMPLETED);
+        LearningReviewPlan plan = new LearningReviewPlan("tenant-a", "student-1", goal.getId(),
+                "profile-1", "函数", java.time.Instant.now().minusSeconds(1));
+        run.attachEducationConfiguration(new EducationRunConfiguration(true, "profile-1", goal.getId(),
+                plan.getId(), goal.getTitle(), 0.2, 0.8, "数学", "高中一年级", "人教A版", "函数",
+                null, null, "PRACTICE", "函数=0.85"));
+        Step step = new Step(1, StepType.MODEL, "复习题", "题目");
+        run.addStep(step);
+        run.start();
+        step.start();
+        step.succeed("已完成");
+        run.succeed("已完成");
+        LearnerMastery previous = new LearnerMastery("tenant-a", "profile-1", "函数", 0.85, 3, 3);
+        LearnerMastery updated = new LearnerMastery("tenant-a", "profile-1", "函数", 0.895, 4, 4);
+
+        when(runs.findById(run.getId())).thenReturn(Optional.of(run));
+        when(goals.findByIdAndTenantIdAndUserId(goal.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(goal));
+        when(reviewPlans.getById("tenant-a", "student-1", plan.getId())).thenReturn(plan);
+        when(mastery.findByTenantIdAndLearnerProfileIdAndConceptKey("tenant-a", "profile-1", "函数"))
+                .thenReturn(Optional.of(previous));
+        when(learnerService.updateMastery(any(), any(), any(), any())).thenReturn(updated);
+        when(attempts.save(any(AssessmentAttempt.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(reviewPlans.recordReview(org.mockito.ArgumentMatchers.eq("tenant-a"),
+                org.mockito.ArgumentMatchers.eq("student-1"),
+                org.mockito.ArgumentMatchers.eq(plan.getId()),
+                org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(plan);
+
+        EducationAssessmentService service = new EducationAssessmentService(attempts, runs, goals, mastery,
+                learnerService, reviewPlans, new SensitiveDataSanitizer());
+        AssessmentAttempt result = service.record("tenant-a", "student-1", run.getId(), step.getId(),
+                "profile-1", "函数", true, 1.0, "MANUAL_REVIEW", "学生完成迁移题并写出依据", "复习通过");
+
+        assertEquals(AssessmentAttemptType.REVIEW, result.getAssessmentType());
+        assertEquals(plan.getId(), result.getReviewPlanId());
+        org.mockito.Mockito.verify(reviewPlans).recordReview(
+                org.mockito.ArgumentMatchers.eq("tenant-a"),
+                org.mockito.ArgumentMatchers.eq("student-1"),
+                org.mockito.ArgumentMatchers.eq(plan.getId()),
+                org.mockito.ArgumentMatchers.eq(true), org.mockito.ArgumentMatchers.any());
+    }
 }

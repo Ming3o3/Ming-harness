@@ -84,9 +84,50 @@ class EducationActionServiceTests {
                 "tenant-a", "student-1", goal.getId(), null,
                 "education.read,education.write", "action-2"));
 
-        assertEquals("LEARNING_GOAL_ACTION_NOT_AVAILABLE", exception.getCode());
+        assertEquals("LEARNING_REVIEW_UNAVAILABLE", exception.getCode());
         verify(recommendations, never()).recommend(any(), any(), any());
         verify(conversations, never()).send(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void shouldBindCompletedGoalActionToDueReviewPlan() {
+        LearningGoalService goals = mock(LearningGoalService.class);
+        LearningRecommendationService recommendations = mock(LearningRecommendationService.class);
+        LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
+        ConversationService conversations = mock(ConversationService.class);
+        LearningReviewPlanService reviewPlans = mock(LearningReviewPlanService.class);
+        LearnerProfile profile = new LearnerProfile("tenant-a", "student-1", "数学",
+                "高中一年级", "人教A版", "掌握函数", "zh-CN");
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", profile.getId(),
+                "掌握函数", "函数", 0.2, 0.8);
+        goal.changeStatus(LearningGoalStatus.COMPLETED);
+        LearningReviewPlan plan = new LearningReviewPlan("tenant-a", "student-1", goal.getId(),
+                profile.getId(), goal.getConceptKey(), java.time.Instant.now().minusSeconds(1));
+        LearningRecommendationView recommendation = new LearningRecommendationView(
+                goal.getId(), goal.getTitle(), "COMPLETED", "函数", 0.82, 0.2, 0.8,
+                1.0, 2, 2, java.time.Instant.now(), "REVIEW", "巩固并迁移应用",
+                "请完成保持度复习。", "目标已达标，需要验证长期保持。");
+        ConversationDetail detail = detail("conversation-review");
+        when(goals.get("tenant-a", "student-1", goal.getId())).thenReturn(goal);
+        when(reviewPlans.ensureForCompletedGoal(goal)).thenReturn(plan);
+        when(recommendations.recommend("tenant-a", "student-1", goal.getId())).thenReturn(recommendation);
+        when(profiles.findByIdAndTenantIdAndUserId(profile.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(profile));
+        when(conversations.create(eq("tenant-a"), eq("student-1"), any())).thenReturn(detail);
+        when(conversations.send(eq("conversation-review"), eq("tenant-a"), eq("student-1"),
+                any(), eq("review-1"), eq("education.read,education.write"))).thenReturn(detail);
+
+        EducationActionService service = new EducationActionService(goals, recommendations, profiles,
+                conversations, reviewPlans);
+        service.execute("tenant-a", "student-1", goal.getId(), null,
+                "education.read,education.write", "review-1");
+
+        var messageCaptor = org.mockito.ArgumentCaptor.forClass(
+                org.mingharness.conversation.api.SendConversationMessageRequest.class);
+        verify(conversations).send(eq("conversation-review"), eq("tenant-a"), eq("student-1"),
+                messageCaptor.capture(), eq("review-1"), eq("education.read,education.write"));
+        assertEquals(plan.getId(), messageCaptor.getValue().education().reviewPlanId());
+        assertEquals(goal.getId(), messageCaptor.getValue().education().learningGoalId());
     }
 
     private ConversationDetail detail(String conversationId) {

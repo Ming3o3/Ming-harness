@@ -598,8 +598,8 @@ const manualAssessmentGoal = computed(() => {
 const manualAssessmentAvailable = computed(() => Boolean(
   selectedRun.value?.run?.educationMode
   && selectedRun.value?.run?.educationLearningGoalId
+  && (selectedRun.value?.run?.educationReviewPlanId || manualAssessmentGoal.value?.status === 'ACTIVE')
   && selectedStatus.value === 'SUCCEEDED'
-  && manualAssessmentGoal.value?.status === 'ACTIVE'
   && manualAssessmentSteps.value.length,
 ))
 const canStart = computed(() => selectedStatus.value === 'QUEUED')
@@ -2762,10 +2762,8 @@ async function useLearningRecommendation() {
   chatInput.value = recommendation.nextActionPrompt
   chatMode.value = true
   await nextTick()
-  if (recommendation.goalStatus !== 'ACTIVE') {
-    // 已完成目标暂不允许写入新的形成性测评；复习 Run 作为独立巩固动作发送，避免提交后被服务端拒绝。
-    chatEducation.learningGoalId = ''
-    noticeMessage.value = '该学习目标已完成；已准备独立巩固迁移题，请确认后手动开始复习。'
+  if (recommendation.nextActionType === 'WAIT') {
+    noticeMessage.value = recommendation.nextActionPrompt
     chatInputRef.value?.focus()
     return
   }
@@ -2783,7 +2781,9 @@ async function useLearningRecommendation() {
     const runId = latestConversationRun(detail)
     if (runId) void selectRun(runId, false, false)
     void loadConversations(detail.conversation.id)
-    noticeMessage.value = `已开始下一步：${recommendation.nextActionTitle}`
+    noticeMessage.value = recommendation.goalStatus === 'COMPLETED'
+      ? `已开始保持度复习：${recommendation.nextActionTitle}`
+      : `已开始下一步：${recommendation.nextActionTitle}`
   } catch (error) {
     chatInput.value = recommendation.nextActionPrompt
     saveChatDraft(activeConversationId.value, recommendation.nextActionPrompt)
@@ -5103,7 +5103,8 @@ onBeforeUnmount(() => {
                 <div class="learning-recommendation-heading"><div><span>下一步学习动作</span><strong>{{ learningRecommendation.nextActionTitle }}</strong></div><button class="secondary-button" type="button" @click="useLearningRecommendation">带着建议开始</button></div>
                 <p>{{ learningRecommendation.rationale }}</p>
                 <small>掌握度 {{ Math.round(learningRecommendation.currentMastery * 100) }}% / 目标 {{ Math.round(learningRecommendation.targetMastery * 100) }}% · 测评 {{ learningRecommendation.attemptCount }} 次 · 正确 {{ learningRecommendation.correctAttemptCount }} 次</small>
-                <details v-if="learningGoalAssessments.length" class="learning-assessment-history"><summary>查看测评历史（{{ learningGoalAssessments.length }}）</summary><div v-for="attempt in learningGoalAssessments.slice().reverse().slice(0, 5)" :key="attempt.id"><span :class="attempt.correct ? 'assessment-correct' : 'assessment-wrong'">{{ attempt.correct ? '正确' : '错误' }}</span><span>{{ Math.round(attempt.masteryBefore * 100) }}% → {{ Math.round(attempt.masteryAfter * 100) }}%</span><small>{{ attempt.evidenceSource === 'MANUAL_REVIEW' ? '人工复核' : 'Agent观察' }} · {{ formatDate(attempt.createdAt) }}</small></div></details>
+                <small v-if="learningRecommendation.reviewPlanId">保持度复习 {{ learningRecommendation.reviewCount }} 次 · 成功 {{ learningRecommendation.successfulReviewCount }} 次 · 下次 {{ formatDate(learningRecommendation.nextReviewAt) }}</small>
+                <details v-if="learningGoalAssessments.length" class="learning-assessment-history"><summary>查看测评历史（{{ learningGoalAssessments.length }}）</summary><div v-for="attempt in learningGoalAssessments.slice().reverse().slice(0, 5)" :key="attempt.id"><span :class="attempt.correct ? 'assessment-correct' : 'assessment-wrong'">{{ attempt.correct ? '正确' : '错误' }}</span><span>{{ Math.round(attempt.masteryBefore * 100) }}% → {{ Math.round(attempt.masteryAfter * 100) }}%</span><small>{{ attempt.assessmentType === 'REVIEW' ? '保持度复习' : (attempt.evidenceSource === 'MANUAL_REVIEW' ? '人工复核' : 'Agent观察') }} · {{ formatDate(attempt.createdAt) }}</small></div></details>
               </div>
             </div>
             <div class="education-source-editor">

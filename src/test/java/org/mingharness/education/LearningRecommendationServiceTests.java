@@ -86,4 +86,31 @@ class LearningRecommendationServiceTests {
         assertEquals("EXPLAIN", recommendation.nextActionType());
         assertEquals("根据反馈调整教学方式", recommendation.nextActionTitle());
     }
+
+    @Test
+    void shouldWaitUntilTheNextReviewDateAfterSuccessfulRetentionCheck() {
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        AssessmentAttemptRepository attempts = mock(AssessmentAttemptRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        LearningReviewPlanService reviewPlans = mock(LearningReviewPlanService.class);
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", "profile-1",
+                "掌握函数", "函数", 0.2, 0.8);
+        goal.changeStatus(LearningGoalStatus.COMPLETED);
+        LearningReviewPlan plan = new LearningReviewPlan("tenant-a", "student-1", goal.getId(),
+                "profile-1", "函数", java.time.Instant.now().plusSeconds(3600));
+        when(goals.findByIdAndTenantIdAndUserId(goal.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(goal));
+        when(attempts.findByTenantIdAndUserIdAndLearningGoalIdOrderByCreatedAtAsc(
+                "tenant-a", "student-1", goal.getId())).thenReturn(List.of());
+        when(mastery.findByTenantIdAndLearnerProfileIdAndConceptKey("tenant-a", "profile-1", "函数"))
+                .thenReturn(Optional.of(new LearnerMastery("tenant-a", "profile-1", "函数", 0.85, 3, 3)));
+        when(reviewPlans.find("tenant-a", "student-1", goal.getId())).thenReturn(plan);
+
+        var recommendation = new LearningRecommendationService(goals, attempts, mastery, null, reviewPlans)
+                .recommend("tenant-a", "student-1", goal.getId());
+
+        assertEquals("WAIT", recommendation.nextActionType());
+        assertEquals(plan.getId(), recommendation.reviewPlanId());
+        assertEquals(plan.getNextReviewAt(), recommendation.nextReviewAt());
+    }
 }

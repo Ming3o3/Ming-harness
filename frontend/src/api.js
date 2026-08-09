@@ -315,6 +315,7 @@ export const api = {
     body: JSON.stringify(payload),
   }),
   getGoalRecommendation: (goalId) => request(`/education/goals/${encodeURIComponent(goalId)}/recommendation`),
+  getGoalReviewPlan: (goalId) => request(`/education/goals/${encodeURIComponent(goalId)}/review-plan`),
   executeLearningGoalNextAction: (goalId, payload = {}, idempotencyKey) => request(
     `/education/goals/${encodeURIComponent(goalId)}/next-action`, {
       method: 'POST',

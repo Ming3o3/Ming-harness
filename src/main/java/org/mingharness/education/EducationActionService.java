@@ -23,15 +23,26 @@ public class EducationActionService {
     private final LearningRecommendationService recommendationService;
     private final LearnerProfileRepository profileRepository;
     private final ConversationService conversationService;
+    private final LearningReviewPlanService reviewPlanService;
 
     public EducationActionService(LearningGoalService goalService,
                                   LearningRecommendationService recommendationService,
                                   LearnerProfileRepository profileRepository,
                                   ConversationService conversationService) {
+        this(goalService, recommendationService, profileRepository, conversationService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public EducationActionService(LearningGoalService goalService,
+                                  LearningRecommendationService recommendationService,
+                                  LearnerProfileRepository profileRepository,
+                                  ConversationService conversationService,
+                                  LearningReviewPlanService reviewPlanService) {
         this.goalService = goalService;
         this.recommendationService = recommendationService;
         this.profileRepository = profileRepository;
         this.conversationService = conversationService;
+        this.reviewPlanService = reviewPlanService;
     }
 
     @Transactional
@@ -39,11 +50,26 @@ public class EducationActionService {
                                       ExecuteLearningActionRequest request,
                                       String permissions, String idempotencyKey) {
         LearningGoal goal = goalService.get(tenantId, userId, goalId);
-        if (goal.getStatus() != LearningGoalStatus.ACTIVE) {
+        LearningReviewPlan reviewPlan = null;
+        if (goal.getStatus() == LearningGoalStatus.COMPLETED) {
+            if (reviewPlanService == null) {
+                throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_REVIEW_UNAVAILABLE",
+                        "当前运行环境未启用保持度复习计划");
+            }
+            reviewPlan = reviewPlanService.ensureForCompletedGoal(goal);
+            if (!reviewPlan.isDue(java.time.Instant.now())) {
+                throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_REVIEW_NOT_DUE",
+                        "下一次保持度复习尚未到期");
+            }
+        } else if (goal.getStatus() != LearningGoalStatus.ACTIVE) {
             throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_GOAL_ACTION_NOT_AVAILABLE",
-                    "已完成或已暂停的学习目标不能继续写入形成性测评，请先创建新的复习目标");
+                    "已暂停或已归档的学习目标不能继续执行学习动作");
         }
         LearningRecommendationView recommendation = recommendationService.recommend(tenantId, userId, goalId);
+        if ("WAIT".equalsIgnoreCase(recommendation.nextActionType())) {
+            throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_REVIEW_NOT_DUE",
+                    "下一次保持度复习尚未到期");
+        }
         LearnerProfile profile = profileRepository.findByIdAndTenantIdAndUserId(
                         goal.getLearnerProfileId(), tenantId, userId)
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
@@ -57,7 +83,8 @@ public class EducationActionService {
         }
 
         EducationRunOptions education = new EducationRunOptions(
-                true, profile.getId(), goal.getId(), profile.getSubject(), profile.getGradeLevel(),
+                true, profile.getId(), goal.getId(), reviewPlan == null ? null : reviewPlan.getId(),
+                profile.getSubject(), profile.getGradeLevel(),
                 profile.getCurriculumVersion(), goal.getConceptKey(), null, null,
                 pedagogicalMode(recommendation.nextActionType()));
         SendConversationMessageRequest message = new SendConversationMessageRequest(
@@ -72,7 +99,7 @@ public class EducationActionService {
         return switch (normalized) {
             case "DIAGNOSE" -> "DIAGNOSE";
             case "EXPLAIN" -> "EXPLAIN";
-            case "PRACTICE", "ASSESS" -> "PRACTICE";
+            case "PRACTICE", "ASSESS", "REVIEW" -> "PRACTICE";
             default -> "AUTO";
         };
     }

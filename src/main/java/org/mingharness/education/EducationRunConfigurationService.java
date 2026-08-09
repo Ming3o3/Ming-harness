@@ -76,6 +76,15 @@ public class EducationRunConfigurationService {
         LearningGoal goal = resolveGoal(tenantId, userId, requestedGoalId, reviewPlan != null);
         String profileId = options.learnerProfileId();
         if (goal != null) {
+            if (reviewPlan != null && goal.getStatus() != LearningGoalStatus.COMPLETED) {
+                throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_REVIEW_GOAL_NOT_COMPLETED",
+                        "保持度复习计划只能绑定已完成的学习目标");
+            }
+            if (reviewPlan != null && (!goal.getLearnerProfileId().equals(reviewPlan.getLearnerProfileId())
+                    || !goal.getConceptKey().equalsIgnoreCase(reviewPlan.getConceptKey()))) {
+                throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_REVIEW_CONTEXT_MISMATCH",
+                        "复习计划与学习目标的画像或知识点不一致");
+            }
             String expectedProfileId = reviewPlan == null ? goal.getLearnerProfileId()
                     : reviewPlan.getLearnerProfileId();
             if (profileId != null && !profileId.isBlank() && !profileId.trim().equals(expectedProfileId)) {
@@ -131,7 +140,8 @@ public class EducationRunConfigurationService {
         if (goal.getStatus() != LearningGoalStatus.ACTIVE
                 && !(allowCompleted && goal.getStatus() == LearningGoalStatus.COMPLETED)) {
             throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_GOAL_NOT_ACTIVE",
-                    "只有进行中的学习目标可以绑定新的教育 Run");
+                    allowCompleted ? "只有已完成且绑定复习计划的学习目标可以创建复习 Run"
+                            : "只有进行中的学习目标可以绑定新的教育 Run");
         }
         return goal;
     }

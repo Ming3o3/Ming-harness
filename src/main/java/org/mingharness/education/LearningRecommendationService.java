@@ -18,23 +18,34 @@ public class LearningRecommendationService {
     private final AssessmentAttemptRepository attemptRepository;
     private final LearnerMasteryRepository masteryRepository;
     private final RunFeedbackRepository feedbackRepository;
+    private final LearningReviewPlanService reviewPlanService;
 
     /** 兼容只使用教育状态的组件测试和旧扩展调用方。 */
     public LearningRecommendationService(LearningGoalRepository goalRepository,
                                          AssessmentAttemptRepository attemptRepository,
                                          LearnerMasteryRepository masteryRepository) {
-        this(goalRepository, attemptRepository, masteryRepository, null);
+        this(goalRepository, attemptRepository, masteryRepository, null, null);
+    }
+
+    /** 兼容已有反馈回流测试和旧扩展调用方。 */
+    public LearningRecommendationService(LearningGoalRepository goalRepository,
+                                         AssessmentAttemptRepository attemptRepository,
+                                         LearnerMasteryRepository masteryRepository,
+                                         RunFeedbackRepository feedbackRepository) {
+        this(goalRepository, attemptRepository, masteryRepository, feedbackRepository, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
     public LearningRecommendationService(LearningGoalRepository goalRepository,
                                          AssessmentAttemptRepository attemptRepository,
                                          LearnerMasteryRepository masteryRepository,
-                                         RunFeedbackRepository feedbackRepository) {
+                                         RunFeedbackRepository feedbackRepository,
+                                         LearningReviewPlanService reviewPlanService) {
         this.goalRepository = goalRepository;
         this.attemptRepository = attemptRepository;
         this.masteryRepository = masteryRepository;
         this.feedbackRepository = feedbackRepository;
+        this.reviewPlanService = reviewPlanService;
     }
 
     @Transactional(readOnly = true)
@@ -54,6 +65,9 @@ public class LearningRecommendationService {
         double denominator = Math.max(0.0001, goal.getTargetMastery() - goal.getBaselineMastery());
         double progress = clamp((current - goal.getBaselineMastery()) / denominator);
         long correct = attempts.stream().filter(AssessmentAttempt::isCorrect).count();
+        LearningReviewPlan reviewPlan = goal.getStatus() == LearningGoalStatus.COMPLETED
+                && reviewPlanService != null ? reviewPlanService.find(tenantId, userId, goalId) : null;
+        java.time.Instant now = java.time.Instant.now();
         boolean latestNegativeFeedback = latest != null && feedbackRepository != null
                 && feedbackRepository.findByRunIdAndUserId(latest.getRunId(), userId)
                 .map(RunFeedback::getRating)
@@ -65,10 +79,22 @@ public class LearningRecommendationService {
         String prompt;
         String rationale;
         if (goal.getStatus() == LearningGoalStatus.COMPLETED || gap <= 0.0001) {
-            actionType = "REVIEW";
-            actionTitle = "巩固并迁移应用";
-            prompt = "请围绕“" + goal.getConceptKey() + "”设计一道迁移题，要求我解释解题依据并说明它与已学内容的联系。";
-            rationale = "当前掌握度已达到目标，下一步应验证跨题型迁移和保持度。";
+            if (reviewPlan != null && !reviewPlan.isDue(now)) {
+                actionType = "WAIT";
+                actionTitle = "等待下一次保持度复习";
+                prompt = "本目标已完成。下一次保持度复习时间为 " + reviewPlan.getNextReviewAt()
+                        + "，到期后再开始复习。";
+                rationale = "本轮复习已完成，系统按间隔计划安排下一次复习，避免把一次达标当作长期保持。";
+            } else {
+                actionType = "REVIEW";
+                actionTitle = reviewPlan != null && Boolean.FALSE.equals(reviewPlan.getLastReviewCorrect())
+                        ? "修复保持度并重新迁移" : "巩固并迁移应用";
+                prompt = reviewPlan != null && Boolean.FALSE.equals(reviewPlan.getLastReviewCorrect())
+                        ? "请先回顾“" + goal.getConceptKey()
+                        + "”上次复习暴露的薄弱点，再设计一道迁移题，要求我解释解题依据。"
+                        : "请围绕“" + goal.getConceptKey() + "”设计一道迁移题，要求我解释解题依据并说明它与已学内容的联系。";
+                rationale = "当前目标已达标，下一步验证跨题型迁移和长期保持度。";
+            }
         } else if (attempts.isEmpty()) {
             actionType = "DIAGNOSE";
             actionTitle = "先做一次基线诊断";
@@ -99,8 +125,22 @@ public class LearningRecommendationService {
         }
         return new LearningRecommendationView(goal.getId(), goal.getTitle(), goal.getStatus().name(),
                 goal.getConceptKey(), current, goal.getBaselineMastery(), goal.getTargetMastery(), progress,
-                attempts.size(), correct, latest == null ? null : latest.getCreatedAt(), actionType,
-                actionTitle, prompt, rationale);
+                attempts.size(), correct, latest == null ? null : latest.getCreatedAt(),
+                reviewPlan == null ? null : reviewPlan.getId(),
+                reviewPlan == null ? null : reviewPlan.getStatus().name(),
+                reviewPlan == null ? null : reviewPlan.getNextReviewAt(),
+                reviewPlan == null ? 0 : reviewPlan.getIntervalDays(),
+                reviewPlan == null ? 0 : reviewPlan.getReviewCount(),
+                reviewPlan == null ? 0 : reviewPlan.getSuccessfulReviewCount(),
+                actionType, actionTitle, prompt, rationale);
+    }
+
+    @Transactional(readOnly = true)
+    public LearningReviewPlan reviewPlan(String tenantId, String userId, String goalId) {
+        goalRepository.findByIdAndTenantIdAndUserId(goalId, tenantId, userId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
+                        "LEARNING_GOAL_NOT_FOUND", "学习目标不存在"));
+        return reviewPlanService == null ? null : reviewPlanService.find(tenantId, userId, goalId);
     }
 
     private double clamp(double value) {

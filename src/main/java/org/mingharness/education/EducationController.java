@@ -14,6 +14,7 @@ import org.mingharness.education.api.LearningGoalRequest;
 import org.mingharness.education.api.LearningGoalStatusRequest;
 import org.mingharness.education.api.LearningGoalView;
 import org.mingharness.education.api.LearningRecommendationView;
+import org.mingharness.education.api.LearningReviewPlanView;
 import org.mingharness.education.api.ManualAssessmentSubmissionRequest;
 import org.mingharness.education.api.MasteryUpdateRequest;
 import org.mingharness.security.HarnessIdentity;
@@ -164,6 +165,14 @@ public class EducationController {
     public LearningRecommendationView recommendation(@PathVariable String goalId) {
         HarnessIdentity identity = identity();
         return recommendationService.recommend(identity.tenantId(), identity.userId(), goalId);
+    }
+
+    @GetMapping("/goals/{goalId}/review-plan")
+    public LearningReviewPlanView reviewPlan(@PathVariable String goalId) {
+        HarnessIdentity identity = identity();
+        learningGoalService.get(identity.tenantId(), identity.userId(), goalId);
+        return LearningReviewPlanView.from(
+                recommendationService.reviewPlan(identity.tenantId(), identity.userId(), goalId));
     }
 
     @PostMapping("/goals/{goalId}/next-action")
