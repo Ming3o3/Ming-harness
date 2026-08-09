@@ -12,6 +12,7 @@ import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import jakarta.persistence.UniqueConstraint;
+import org.mingharness.education.EducationRunConfiguration;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -40,6 +41,27 @@ public class Run {
     /** Run 创建时冻结工作区，防止用户后来切换项目而让旧 Worker 写入新目录。 */
     @Column(name = "workspace_id", length = 128)
     private String workspaceId;
+    /** 教育 Agent 在创建时冻结的课程和学习者状态配置。 */
+    @Column(name = "education_mode")
+    private Boolean educationMode;
+    @Column(name = "education_learner_profile_id", length = 128)
+    private String educationLearnerProfileId;
+    @Column(name = "education_subject", length = 128)
+    private String educationSubject;
+    @Column(name = "education_grade_level", length = 128)
+    private String educationGradeLevel;
+    @Column(name = "education_curriculum_version", length = 128)
+    private String educationCurriculumVersion;
+    @Column(name = "education_concept_key", length = 255)
+    private String educationConceptKey;
+    @Column(name = "education_min_difficulty")
+    private Integer educationMinDifficulty;
+    @Column(name = "education_max_difficulty")
+    private Integer educationMaxDifficulty;
+    @Column(name = "education_pedagogical_mode", length = 64)
+    private String educationPedagogicalMode;
+    @Column(name = "education_learner_state", columnDefinition = "text")
+    private String educationLearnerState;
     /** 创建 Run 时固化的用户模型供应商快照；为空表示沿用环境默认模型或旧数据兼容路径。 */
     @Column(name = "model_config_snapshot_id", length = 128)
     private String modelConfigSnapshotId;
@@ -153,6 +175,30 @@ public class Run {
 
     public void attachModelConfigSnapshot(String snapshotId) {
         this.modelConfigSnapshotId = snapshotId;
+    }
+
+    /** 在 Run 持久化前冻结教育上下文，保证重试和异步 Worker 使用同一课程快照。 */
+    public void attachEducationConfiguration(EducationRunConfiguration configuration) {
+        EducationRunConfiguration value = configuration == null
+                ? EducationRunConfiguration.disabled() : configuration;
+        this.educationMode = value.enabled();
+        this.educationLearnerProfileId = value.learnerProfileId();
+        this.educationSubject = value.subject();
+        this.educationGradeLevel = value.gradeLevel();
+        this.educationCurriculumVersion = value.curriculumVersion();
+        this.educationConceptKey = value.conceptKey();
+        this.educationMinDifficulty = value.minDifficulty();
+        this.educationMaxDifficulty = value.maxDifficulty();
+        this.educationPedagogicalMode = value.pedagogicalMode();
+        this.educationLearnerState = value.learnerStateSummary();
+    }
+
+    public EducationRunConfiguration educationConfiguration() {
+        return new EducationRunConfiguration(isEducationMode(), educationLearnerProfileId,
+                educationSubject, educationGradeLevel, educationCurriculumVersion, educationConceptKey,
+                educationMinDifficulty, educationMaxDifficulty,
+                educationPedagogicalMode == null ? "AUTO" : educationPedagogicalMode,
+                educationLearnerState == null ? "" : educationLearnerState);
     }
 
     /** Worker 成功获取执行锁后建立租约。 */
@@ -286,6 +332,16 @@ public class Run {
     public String getPolicyVersion() { return policyVersion; }
     public String getConversationId() { return conversationId; }
     public String getWorkspaceId() { return workspaceId; }
+    public boolean isEducationMode() { return Boolean.TRUE.equals(educationMode); }
+    public String getEducationLearnerProfileId() { return educationLearnerProfileId; }
+    public String getEducationSubject() { return educationSubject; }
+    public String getEducationGradeLevel() { return educationGradeLevel; }
+    public String getEducationCurriculumVersion() { return educationCurriculumVersion; }
+    public String getEducationConceptKey() { return educationConceptKey; }
+    public Integer getEducationMinDifficulty() { return educationMinDifficulty; }
+    public Integer getEducationMaxDifficulty() { return educationMaxDifficulty; }
+    public String getEducationPedagogicalMode() { return educationPedagogicalMode; }
+    public String getEducationLearnerState() { return educationLearnerState; }
     public String getModelConfigSnapshotId() { return modelConfigSnapshotId; }
     public String getIdempotencyKey() { return idempotencyKey; }
     public String getPermissionsSnapshot() { return permissionsSnapshot; }

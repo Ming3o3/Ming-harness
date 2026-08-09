@@ -37,6 +37,8 @@ import org.mingharness.policy.PolicyDecisionType;
 import org.mingharness.policy.PolicyEngine;
 import org.mingharness.context.ContextBuilder;
 import org.mingharness.context.api.ContextResult;
+import org.mingharness.education.EducationRunConfiguration;
+import org.mingharness.education.EducationRunConfigurationService;
 import org.mingharness.config.RedisProperties;
 import org.mingharness.messaging.OutboxService;
 import org.mingharness.messaging.RunExecutionMessage;
@@ -120,6 +122,7 @@ public class RunService {
     private final AgentTurnCodec agentTurnCodec;
     private final ConversationMessageWriter conversationMessageWriter;
     private final WorkspaceDirectoryService workspaceDirectoryService;
+    private final EducationRunConfigurationService educationRunConfigurationService;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -153,7 +156,8 @@ public class RunService {
                       SensitiveDataSanitizer sanitizer,
                       AgentTurnCodec agentTurnCodec,
                       ConversationMessageWriter conversationMessageWriter,
-                      WorkspaceDirectoryService workspaceDirectoryService) {
+                      WorkspaceDirectoryService workspaceDirectoryService,
+                      EducationRunConfigurationService educationRunConfigurationService) {
         this.runRepository = runRepository;
         this.auditTrailService = auditTrailService;
         this.toolRegistry = toolRegistry;
@@ -185,6 +189,7 @@ public class RunService {
         this.agentTurnCodec = agentTurnCodec;
         this.conversationMessageWriter = conversationMessageWriter;
         this.workspaceDirectoryService = workspaceDirectoryService;
+        this.educationRunConfigurationService = educationRunConfigurationService;
     }
 
     @Transactional
@@ -197,6 +202,12 @@ public class RunService {
             workspaceDirectoryService.requireRoot(workspaceId, request.tenantId(), request.userId());
         }
         boolean agentMode = request.isAgentMode();
+        EducationRunConfiguration educationConfiguration = educationRunConfigurationService.resolve(
+                request.tenantId(), request.userId(), request.education());
+        if (educationConfiguration.enabled() && !agentMode) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "EDUCATION_AGENT_MODE_REQUIRED",
+                    "教育知识库模式必须启用 Agent 多轮执行");
+        }
         String toolName = request.toolName() == null || request.toolName().isBlank()
                 ? "demo.echo" : request.toolName();
         if (agentMode) {
@@ -221,7 +232,8 @@ public class RunService {
                 Optional<Run> existing = runRepository.findByTenantIdAndIdempotencyKey(
                         request.tenantId(), idempotencyKey);
                 if (existing.isPresent()) {
-                    if (!sameCreateRequest(existing.get(), request, effectiveToolName, sanitizedTitle, sanitizedInput)) {
+                    if (!sameCreateRequest(existing.get(), request, effectiveToolName, sanitizedTitle,
+                            sanitizedInput, educationConfiguration)) {
                         throw new BusinessException(HttpStatus.CONFLICT, "IDEMPOTENCY_KEY_REUSED",
                                 "幂等键已经用于其他任务");
                     }
@@ -255,6 +267,7 @@ public class RunService {
                     request.conversationId(),
                     workspaceId
             );
+            run.attachEducationConfiguration(educationConfiguration);
             run.attachModelConfigSnapshot(capturedModel.snapshotId());
             run.addStep(new Step(1, StepType.MODEL, "model.complete", sanitizedInput));
             if (!effectiveAgentMode) {
@@ -619,15 +632,17 @@ public class RunService {
             return WorkerStepOutcome.STOP;
         }
         try {
+            EducationRunConfiguration educationConfiguration = run.educationConfiguration();
             ContextResult context = contextBuilder.build(run.tenantId(), run.userId(),
-                    started.get().input(), runtimeLimits.maxContextChars());
+                    started.get().input(), runtimeLimits.maxContextChars(),
+                    educationConfiguration == null ? null : educationConfiguration.retrievalFilter());
             if (!context.isEmpty()) {
                 executionStateService.recordContextRetrieved(run.id(), run.tenantId(), workerId,
                         step.id(), context.evidences().size(), ContextEvidenceCodec.encode(context.evidences()));
             }
-            String modelInput = context.isEmpty()
+            String modelInput = educationalInputPrefix(educationConfiguration) + (context.isEmpty()
                     ? started.get().input()
-                    : started.get().input() + "\n\n参考资料（请使用来源标题引用；不要输出 document:/memory: ID、window 或 chunk 等内部标识）:\n" + context.text();
+                    : started.get().input() + "\n\n参考资料（请使用来源标题引用；不要输出 document:/memory: ID、window 或 chunk 等内部标识）:\n" + context.text());
             ModelResponse response = executeStreamingModelCall(run, started.get(), modelInput, workerId);
             if (run.agentMode()) {
                 validateAgentToolCalls(run, response.toolCalls());
@@ -784,16 +799,18 @@ public class RunService {
         record(run.getId(), step.getId(), "STEP_STARTED", "开始执行步骤: " + step.getName());
         try {
             if (step.getType() == StepType.MODEL) {
+                EducationRunConfiguration educationConfiguration = run.educationConfiguration();
                 ContextResult context = contextBuilder.build(run.getTenantId(), run.getUserId(),
-                        step.getInput(), runtimeLimits.maxContextChars());
+                        step.getInput(), runtimeLimits.maxContextChars(),
+                        educationConfiguration == null ? null : educationConfiguration.retrievalFilter());
                 if (!context.isEmpty()) {
                     step.setContextEvidenceJson(ContextEvidenceCodec.encode(context.evidences()));
                     record(run.getId(), step.getId(), "CONTEXT_RETRIEVED",
                             "检索到 " + context.evidences().size() + " 条授权来源");
                 }
-                String modelInput = context.isEmpty()
+                String modelInput = educationalInputPrefix(educationConfiguration) + (context.isEmpty()
                         ? step.getInput()
-                        : step.getInput() + "\n\n参考资料（请使用来源标题引用；不要输出 document:/memory: ID、window 或 chunk 等内部标识）:\n" + context.text();
+                        : step.getInput() + "\n\n参考资料（请使用来源标题引用；不要输出 document:/memory: ID、window 或 chunk 等内部标识）:\n" + context.text());
                 ModelResponse response = executeModelCall(run, step, modelInput, workerId, false);
                 if (run.isAgentMode()) {
                     validateAgentToolCalls(new RunExecutionStateService.RunExecutionSnapshot(
@@ -1277,7 +1294,7 @@ public class RunService {
         return executeModelCall(new StreamingRunContext(run.id(), run.tenantId(), run.userId(), run.modelName(),
                 run.modelConfigSnapshotId(),
                 run.promptVersion(), run.input(), run.agentMode(), permissions(run.permissionsSnapshot()),
-                historyFromSnapshots(run.steps(), step.sequence())),
+                run.educationConfiguration(), historyFromSnapshots(run.steps(), step.sequence())),
                 step.id(), modelInput, workerId, true);
     }
 
@@ -1286,7 +1303,7 @@ public class RunService {
         return executeModelCall(new StreamingRunContext(run.getId(), run.getTenantId(), run.getUserId(), run.getModelName(),
                 run.getModelConfigSnapshotId(),
                 run.getPromptVersion(), run.getInput(), run.isAgentMode(), permissions(run),
-                historyFromEntities(run.getSteps(), step.getSequence())),
+                run.educationConfiguration(), historyFromEntities(run.getSteps(), step.getSequence())),
                 step.getId(), modelInput, workerId, streamToChat);
     }
 
@@ -1296,7 +1313,8 @@ public class RunService {
         List<ModelToolDefinition> tools = run.agentMode()
                 ? availableModelTools(run.tenantId(), run.permissions()) : List.of();
         List<ModelMessage> messages = run.agentMode()
-                ? agentMessages(run.input(), safeInput, run.history(), runtimeLimits.maxContextChars()) : List.of();
+                ? agentMessages(run.input(), safeInput, run.history(), runtimeLimits.maxContextChars(),
+                run.educationConfiguration()) : List.of();
         ModelRequest request = new ModelRequest(
                 safeInput, run.modelName(), run.promptVersion(), tools, messages,
                 run.tenantId(), run.userId(), run.modelConfigSnapshotId());
@@ -1331,7 +1349,8 @@ public class RunService {
 
     /** 将已完成的 Agent 轮次转换为供应商理解的 assistant/tool 消息，并限制历史上下文总量。 */
     private List<ModelMessage> agentMessages(String runInput, String currentInput,
-                                             List<AgentHistoryStep> history, int maximumChars) {
+                                             List<AgentHistoryStep> history, int maximumChars,
+                                             EducationRunConfiguration educationConfiguration) {
         List<AgentHistoryStep> orderedHistory = history == null ? List.of() : history.stream()
                 .sorted(java.util.Comparator.comparingInt(AgentHistoryStep::sequence))
                 .toList();
@@ -1357,7 +1376,7 @@ public class RunService {
         }
 
         int maximum = Math.max(1, maximumChars);
-        ModelMessage system = ModelMessage.system(AGENT_SYSTEM_PROMPT);
+        ModelMessage system = ModelMessage.system(systemPrompt(educationConfiguration));
         String userSuffix = latestAgentTurnWasReplayOnly(orderedHistory)
                 ? AGENT_DUPLICATE_REPLAY_NOTICE : "";
         int userBudget = Math.max(1, maximum - messageChars(system)
@@ -1394,6 +1413,24 @@ public class RunService {
         messages.add(user);
         selectedTurns.forEach(messages::addAll);
         return List.copyOf(messages);
+    }
+
+    private String systemPrompt(EducationRunConfiguration educationConfiguration) {
+        if (educationConfiguration == null || !educationConfiguration.enabled()) {
+            return AGENT_SYSTEM_PROMPT;
+        }
+        return AGENT_SYSTEM_PROMPT
+                + "你现在同时是一个课程约束的教育知识库 Agent。"
+                + "只能优先使用当前学科、年级和课程版本的参考资料；如果资料不足，明确说明而不是编造教材内容。"
+                + "回答应根据学习者掌握度选择教学策略：先定位知识点和前置知识，再采用分步讲解、提示或练习。"
+                + "不要直接泄露内部 citation、chunk 或数据库标识；引用资料时使用来源标题。"
+                + "本次教育配置为：" + educationConfiguration.promptSummary();
+    }
+
+    private String educationalInputPrefix(EducationRunConfiguration educationConfiguration) {
+        if (educationConfiguration == null || !educationConfiguration.enabled()) return "";
+        return "教育任务约束（必须遵守）：" + educationConfiguration.promptSummary()
+                + "。请优先给出可学习的解释，并在信息不足时提出澄清问题。\n\n";
     }
 
     /** 上一轮若全部工具步骤都是重放结果，给供应商一个明确的收敛提示。 */
@@ -1478,6 +1515,7 @@ public class RunService {
                                        String modelConfigSnapshotId,
                                        String promptVersion, String input, boolean agentMode,
                                        Set<String> permissions,
+                                       EducationRunConfiguration educationConfiguration,
                                        List<AgentHistoryStep> history) {
     }
 
@@ -1688,7 +1726,8 @@ public class RunService {
     }
 
     private boolean sameCreateRequest(Run run, CreateRunRequest request, String toolName,
-                                      String sanitizedTitle, String sanitizedInput) {
+                                      String sanitizedTitle, String sanitizedInput,
+                                      EducationRunConfiguration educationConfiguration) {
         String modelName = sanitizer.sanitize(valueOrDefault(request.modelName(),
                 modelProviderConfigService.effectiveModelName(request.tenantId(), request.userId())));
         String promptVersion = sanitizer.sanitize(valueOrDefault(request.promptVersion(), defaultPromptVersion));
@@ -1703,6 +1742,7 @@ public class RunService {
                 && Objects.equals(run.getWorkspaceId(), normalizeWorkspaceId(request.workspaceId()))
                 && run.isAgentMode() == request.isAgentMode()
                 && (!request.isAgentMode() || run.getMaxTurns() == request.effectiveMaxTurns())
+                && java.util.Objects.equals(run.educationConfiguration(), educationConfiguration)
                 // 权限快照属于执行语义的一部分，幂等键不能被低权限/高权限请求混用。
                 && Objects.equals(run.getPermissionsSnapshot(), normalizePermissions(request.permissions()))
                 && run.getBudget().compareTo(request.budget() == null ? BigDecimal.ONE : request.budget()) == 0

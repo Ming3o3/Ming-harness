@@ -9,6 +9,7 @@ import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.runtime.domain.Step;
 import org.mingharness.runtime.domain.StepStatus;
 import org.mingharness.runtime.domain.StepType;
+import org.mingharness.education.EducationRunConfiguration;
 import org.mingharness.runtime.repository.RunRepository;
 import org.mingharness.model.AgentTurnCodec;
 import org.mingharness.model.ModelToolCall;
@@ -743,7 +744,7 @@ public class RunExecutionStateService {
         return new RunExecutionSnapshot(run.getId(), run.getTenantId(), run.getUserId(),
                 run.getModelName(), run.getModelConfigSnapshotId(), run.getPromptVersion(), run.getInput(), run.getBudget(),
                 run.getPermissionsSnapshot(), run.isAgentMode(), run.getMaxTurns(),
-                run.getWorkspaceId(),
+                run.getWorkspaceId(), run.educationConfiguration(),
                 run.getSteps().stream()
                         .sorted(Comparator.comparingInt(Step::getSequence))
                         .map(this::stepSnapshot).toList());
@@ -774,8 +775,18 @@ public class RunExecutionStateService {
             boolean agentMode,
             int maxTurns,
             String workspaceId,
+            EducationRunConfiguration educationConfiguration,
             List<StepExecutionSnapshot> steps
     ) {
+
+        public RunExecutionSnapshot(String id, String tenantId, String userId, String modelName,
+                                    String modelConfigSnapshotId, String promptVersion, String input,
+                                    BigDecimal budget, String permissionsSnapshot, boolean agentMode,
+                                    int maxTurns, String workspaceId, List<StepExecutionSnapshot> steps) {
+            this(id, tenantId, userId, modelName, modelConfigSnapshotId, promptVersion, input, budget,
+                    permissionsSnapshot, agentMode, maxTurns, workspaceId,
+                    EducationRunConfiguration.disabled(), steps);
+        }
     }
 
     public record StepExecutionSnapshot(

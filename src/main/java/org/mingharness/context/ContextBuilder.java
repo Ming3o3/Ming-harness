@@ -40,7 +40,6 @@ public class ContextBuilder {
                 new ContextRetrievalProperties(20, 5, 1, 0.7), null);
     }
 
-    @Autowired
     public ContextBuilder(KnowledgeDocumentRepository documentRepository,
                           MemoryEntryRepository memoryRepository,
                           VectorContextRetriever vectorContextRetriever,
