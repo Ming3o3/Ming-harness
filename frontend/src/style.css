@@ -114,7 +114,7 @@ h3 { margin: 0; font-size: 13px; }
 .icon-button { width: 30px; height: 30px; }
 .icon-button:hover, .refresh-button:hover { border-color: var(--accent); color: var(--accent-light); }
 .run-form {
-  --form-control-height: 60px;
+  --form-control-height: 78px;
   --form-control-large-height: 78px;
   --form-control-radius: 8px;
   display: grid;

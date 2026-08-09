@@ -4365,7 +4365,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section v-if="showGovernance" class="tool-section panel" id="tools">
+      <section class="tool-section panel" id="tools">
         <div class="panel-heading"><div><p class="eyebrow">TOOL REGISTRY</p><h2>已注册工具</h2></div><span class="registry-count">{{ tools.length }} tools</span></div>
         <div class="tool-grid">
           <div v-for="tool in tools" :key="tool.name" class="tool-card">
