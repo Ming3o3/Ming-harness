@@ -1,5 +1,5 @@
 <script setup>
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   Activity,
   Bot,
@@ -71,6 +71,7 @@ const documentUploading = ref(false)
 const detailLoading = ref(false)
 const errorMessage = ref('')
 const noticeMessage = ref('')
+let noticeDismissTimer = 0
 const showCreateForm = ref(true)
 const showGovernance = ref(false)
 const health = ref(null)
@@ -929,8 +930,24 @@ function formatDate(value) {
 
 function clearMessages() {
   errorMessage.value = ''
+  if (noticeDismissTimer) {
+    window.clearTimeout(noticeDismissTimer)
+    noticeDismissTimer = 0
+  }
   noticeMessage.value = ''
 }
+
+watch(noticeMessage, (message) => {
+  if (noticeDismissTimer) {
+    window.clearTimeout(noticeDismissTimer)
+    noticeDismissTimer = 0
+  }
+  if (!message) return
+  noticeDismissTimer = window.setTimeout(() => {
+    if (noticeMessage.value === message) noticeMessage.value = ''
+    noticeDismissTimer = 0
+  }, 10000)
+})
 
 function activeConversationStorageScope() {
   return `${form.tenantId}:${form.userId}`
@@ -3347,6 +3364,7 @@ onBeforeUnmount(() => {
   window.clearInterval(conversationPollTimer)
   window.clearInterval(healthPollTimer)
   window.clearTimeout(chatHighlightTimer)
+  if (noticeDismissTimer) window.clearTimeout(noticeDismissTimer)
   cancelScheduledAuditEventsRefresh()
 })
 </script>
@@ -3373,8 +3391,8 @@ onBeforeUnmount(() => {
         </div>
       </header>
 
-      <div v-if="errorMessage" class="message error-message chat-message-banner">{{ errorMessage }}</div>
-      <div v-if="noticeMessage" class="message notice-message chat-message-banner">{{ noticeMessage }}</div>
+      <div v-if="errorMessage" :key="`error-${errorMessage}`" class="message error-message chat-message-banner">{{ errorMessage }}</div>
+      <div v-if="noticeMessage" :key="`notice-${noticeMessage}`" class="message notice-message chat-message-banner">{{ noticeMessage }}</div>
 
       <div class="chat-layout">
         <aside class="conversation-sidebar">
@@ -3920,8 +3938,8 @@ onBeforeUnmount(() => {
     </aside>
 
     <main class="main-content" id="runtime">
-      <div v-if="errorMessage" class="message error-message">{{ errorMessage }}</div>
-      <div v-if="noticeMessage" class="message notice-message">{{ noticeMessage }}</div>
+      <div v-if="errorMessage" :key="`error-${errorMessage}`" class="message error-message console-message-banner">{{ errorMessage }}</div>
+      <div v-if="noticeMessage" :key="`notice-${noticeMessage}`" class="message notice-message console-message-banner">{{ noticeMessage }}</div>
 
       <section class="infra-strip panel" aria-label="基础设施状态">
         <div><p class="eyebrow">INFRASTRUCTURE</p><h2>本地依赖状态</h2></div>

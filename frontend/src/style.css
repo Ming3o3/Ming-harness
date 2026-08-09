@@ -356,7 +356,7 @@ h3 { margin: 0; font-size: 13px; }
 .document-row-content strong { display: block; overflow: hidden; color: var(--soft); font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .document-row-content small, .document-owner-hint { display: block; margin-top: 4px; color: var(--muted); font: 9px "DM Mono", monospace; overflow-wrap: anywhere; }
 .document-delete-button { padding: 7px 10px; font-size: 10px; white-space: nowrap; }
-.memory-card { min-width: 0; }
+.memory-card { align-self: stretch; min-width: 0; height: auto; min-height: 0; overflow: visible; }
 .memory-list { display: grid; gap: 5px; max-height: 230px; overflow-y: auto; margin-top: 4px; border-top: 1px solid var(--line); padding-top: 13px; padding-right: 4px; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .memory-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 9px; border-bottom: 1px solid rgba(153,174,218,.08); padding: 9px 0; }
 .memory-row-content { min-width: 0; }
@@ -413,7 +413,7 @@ h3 { margin: 0; font-size: 13px; }
 
 /*
  * 聊天工作台固定在视口内：页面本身不再随消息变长，三个工作区各自处理滚动。
- * 使用 flex 而非两行 grid，是为了让顶部的提示条出现时也能正确压缩下方工作区。
+ * 提示条使用 fixed toast，不参与工作区布局，避免成功提示出现时把页面整体下移。
  */
 .chat-app { display: flex; height: 100vh; height: 100dvh; min-height: 0; flex-direction: column; overflow: hidden; background: var(--bg); color: var(--text); }
 .chat-topbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; border-bottom: 1px solid var(--line); background: var(--sidebar-bg); padding: 15px 28px; }
@@ -436,7 +436,37 @@ h3 { margin: 0; font-size: 13px; }
 .chat-model-status.health-up { border-color: rgba(85,214,138,.25); color: var(--green); }
 .chat-model-status.health-unknown { border-color: rgba(141,124,255,.25); color: var(--accent-light); }
 .chat-console-button { padding: 8px 11px; font-size: 10px; }
-.chat-message-banner { width: min(100% - 44px, 1040px); flex: 0 0 auto; margin: 14px auto 0; }
+.chat-message-banner,
+.console-message-banner {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  top: 58px;
+  left: 50%;
+  width: min(calc(100vw - 44px), 1040px);
+  margin: 14px 0 0;
+  transform: translateX(-50%);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .12);
+}
+
+.chat-message-banner.notice-message,
+.console-message-banner.notice-message {
+  animation: message-toast-fade-out 10s ease forwards;
+}
+
+@keyframes message-toast-fade-out {
+  0%, 84% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@media (max-width: 720px) {
+  .chat-message-banner,
+  .console-message-banner {
+    top: 104px;
+    width: calc(100vw - 28px);
+  }
+}
+
 .chat-layout { display: grid; min-height: 0; flex: 1 1 auto; overflow: hidden; grid-template-columns: 252px minmax(0, 1fr) 320px; grid-template-rows: minmax(0, 1fr); }
 .conversation-sidebar { display: flex; min-height: 0; overflow: hidden; flex-direction: column; border-right: 1px solid var(--line); background: var(--sidebar-bg); padding: 24px 13px 16px; }
 .conversation-sidebar-heading { justify-content: space-between; padding: 0 9px 14px; }
