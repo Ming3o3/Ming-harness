@@ -2777,7 +2777,7 @@ async function useLearningRecommendation() {
   if (goal) await selectLearningGoal(goal, false)
   if (recommendation.goalStatus === 'COMPLETED') {
     const task = learningTasks.value.find((item) => item.learningGoalId === recommendation.learningGoalId
-      && ['OPEN', 'IN_PROGRESS', 'DEFERRED'].includes(item.status))
+      && ['OPEN', 'IN_PROGRESS', 'AWAITING_EVIDENCE', 'DEFERRED', 'FAILED'].includes(item.status))
     if (task) {
       await startLearningTask(task)
       return
@@ -5150,13 +5150,13 @@ onBeforeUnmount(() => {
             </div>
             <div class="learning-goal-workbench">
               <div class="learning-task-workbench">
-                <div class="subsection-title"><h4>待处理学习任务</h4><span>{{ learningTasks.filter((task) => ['OPEN', 'IN_PROGRESS', 'DEFERRED'].includes(task.status)).length }} 条</span></div>
-                <p class="learning-task-help">复习计划到期后会自动生成任务；任务开始后绑定会话和 Run，复习测评完成会自动回写任务结果。</p>
+                <div class="subsection-title"><h4>待处理学习任务</h4><span>{{ learningTasks.filter((task) => ['OPEN', 'IN_PROGRESS', 'AWAITING_EVIDENCE', 'DEFERRED', 'FAILED'].includes(task.status)).length }} 条</span></div>
+                <p class="learning-task-help">复习计划到期后会自动生成任务；Run 失败会进入可重试，Run 成功但没有测评证据会进入待补证据。</p>
                 <div v-if="learningTasks.length" class="learning-task-list">
-                  <article v-for="task in learningTasks.filter((item) => ['OPEN', 'IN_PROGRESS', 'DEFERRED'].includes(item.status)).slice(0, 8)" :key="task.id" class="learning-task-row">
-                    <div class="learning-task-main"><strong>{{ task.title }}</strong><small>{{ task.status === 'IN_PROGRESS' ? '进行中' : (task.status === 'DEFERRED' ? `延期至 ${formatDate(task.scheduledAt)}` : `到期 ${formatDate(task.scheduledAt)}`) }} · 第 {{ task.reviewSequence + 1 }} 次复习</small><p>{{ task.prompt }}</p></div>
+                  <article v-for="task in learningTasks.filter((item) => ['OPEN', 'IN_PROGRESS', 'AWAITING_EVIDENCE', 'DEFERRED', 'FAILED'].includes(item.status)).slice(0, 8)" :key="task.id" class="learning-task-row">
+                    <div class="learning-task-main"><strong>{{ task.title }}</strong><small>{{ task.status === 'IN_PROGRESS' ? '进行中' : (task.status === 'AWAITING_EVIDENCE' ? '待补测评证据' : (task.status === 'FAILED' ? `执行失败${task.failureReason ? `：${task.failureReason}` : ''}` : (task.status === 'DEFERRED' ? `延期至 ${formatDate(task.scheduledAt)}` : `到期 ${formatDate(task.scheduledAt)}`))) }} · 第 {{ task.reviewSequence + 1 }} 次复习</small><p>{{ task.prompt }}</p></div>
                     <div class="learning-task-actions">
-                      <button class="secondary-button" type="button" :disabled="learningTaskStartingId === task.id || learningTaskDeferringId === task.id" @click="startLearningTask(task)">{{ learningTaskStartingId === task.id ? '启动中…' : (task.status === 'IN_PROGRESS' ? '继续复习' : '开始复习') }}</button>
+                      <button class="secondary-button" type="button" :disabled="learningTaskStartingId === task.id || learningTaskDeferringId === task.id" @click="startLearningTask(task)">{{ learningTaskStartingId === task.id ? '启动中…' : (task.status === 'FAILED' ? '重试任务' : (task.status === 'AWAITING_EVIDENCE' ? '补充证据' : (task.status === 'IN_PROGRESS' ? '继续复习' : '开始复习'))) }}</button>
                       <button v-if="task.status === 'OPEN'" class="text-button" type="button" :disabled="learningTaskDeferringId === task.id" @click="deferLearningTask(task)">{{ learningTaskDeferringId === task.id ? '延期中…' : '明天再复习' }}</button>
                     </div>
                   </article>

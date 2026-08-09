@@ -1,6 +1,7 @@
 package org.mingharness.education;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.domain.Pageable;
 
 import java.util.Collection;
 import java.util.List;
@@ -21,4 +22,7 @@ public interface LearningTaskRepository extends JpaRepository<LearningTask, Stri
 
     Optional<LearningTask> findFirstByTenantIdAndUserIdAndRunIdAndStatusIn(
             String tenantId, String userId, String runId, Collection<LearningTaskStatus> statuses);
+
+    List<LearningTask> findByStatusInOrderByUpdatedAtAsc(Collection<LearningTaskStatus> statuses,
+                                                          Pageable pageable);
 }

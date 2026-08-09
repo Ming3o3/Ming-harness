@@ -25,8 +25,9 @@ public class LearningTaskCompletionService {
                                   boolean correct, Instant completedAt) {
         if (runId == null || runId.isBlank()) return;
         taskRepository.findFirstByTenantIdAndUserIdAndRunIdAndStatusIn(
-                        tenantId, userId, runId,
-                        List.of(LearningTaskStatus.OPEN, LearningTaskStatus.IN_PROGRESS))
+                tenantId, userId, runId,
+                        List.of(LearningTaskStatus.OPEN, LearningTaskStatus.IN_PROGRESS,
+                                LearningTaskStatus.AWAITING_EVIDENCE))
                 .ifPresent(task -> {
                     task.complete(correct, completedAt);
                     taskRepository.save(task);

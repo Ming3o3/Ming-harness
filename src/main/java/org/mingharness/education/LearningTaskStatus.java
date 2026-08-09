@@ -4,7 +4,9 @@ package org.mingharness.education;
 public enum LearningTaskStatus {
     OPEN,
     IN_PROGRESS,
+    AWAITING_EVIDENCE,
     DEFERRED,
+    FAILED,
     COMPLETED,
     CANCELLED
 }

@@ -15,4 +15,7 @@ public interface AssessmentAttemptRepository extends JpaRepository<AssessmentAtt
 
     List<AssessmentAttempt> findByTenantIdAndUserIdAndRunIdOrderByCreatedAtAsc(
             String tenantId, String userId, String runId);
+
+    boolean existsByTenantIdAndUserIdAndRunIdAndAssessmentType(
+            String tenantId, String userId, String runId, AssessmentAttemptType assessmentType);
 }

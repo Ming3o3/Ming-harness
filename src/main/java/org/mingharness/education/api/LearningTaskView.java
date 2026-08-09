@@ -22,6 +22,10 @@ public record LearningTaskView(
         Boolean outcomeCorrect,
         int deferCount,
         Instant lastDeferredAt,
+        int failureCount,
+        String failureReason,
+        Instant lastFailedAt,
+        String lastFailedRunId,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -31,6 +35,7 @@ public record LearningTaskView(
                 task.getLearningGoalId(), task.getReviewPlanId(), task.getReviewSequence(), task.getTitle(),
                 task.getPrompt(), task.getScheduledAt(), task.getConversationId(), task.getRunId(),
                 task.getStartedAt(), task.getCompletedAt(), task.getOutcomeCorrect(), task.getDeferCount(),
-                task.getLastDeferredAt(), task.getCreatedAt(), task.getUpdatedAt());
+                task.getLastDeferredAt(), task.getFailureCount(), task.getFailureReason(),
+                task.getLastFailedAt(), task.getLastFailedRunId(), task.getCreatedAt(), task.getUpdatedAt());
     }
 }

@@ -57,6 +57,12 @@ public class LearningTask {
     private int deferCount;
     private Instant lastDeferredAt;
     @Column(nullable = false)
+    private int failureCount;
+    @Column(columnDefinition = "text")
+    private String failureReason;
+    private Instant lastFailedAt;
+    private String lastFailedRunId;
+    @Column(nullable = false)
     private Instant createdAt;
     @Column(nullable = false)
     private Instant updatedAt;
@@ -80,6 +86,7 @@ public class LearningTask {
         this.prompt = required(prompt, "prompt");
         this.scheduledAt = scheduledAt == null ? Instant.now() : scheduledAt;
         this.deferCount = 0;
+        this.failureCount = 0;
         this.createdAt = Instant.now();
         this.updatedAt = this.createdAt;
     }
@@ -92,6 +99,36 @@ public class LearningTask {
         this.runId = required(runId, "runId");
         this.startedAt = startedAt == null ? Instant.now() : startedAt;
         this.status = LearningTaskStatus.IN_PROGRESS;
+        this.updatedAt = Instant.now();
+    }
+
+    /** Run 成功但没有形成测评事实时，任务不能假装完成，转为待补证据。 */
+    public void awaitEvidence(Instant observedAt) {
+        if (status != LearningTaskStatus.IN_PROGRESS) return;
+        this.status = LearningTaskStatus.AWAITING_EVIDENCE;
+        this.updatedAt = observedAt == null ? Instant.now() : observedAt;
+    }
+
+    /** 执行失败可解释地落库，用户随后可以重试同一业务任务。 */
+    public void fail(String reason, String failedRunId, Instant failedAt) {
+        if (status != LearningTaskStatus.IN_PROGRESS) return;
+        this.status = LearningTaskStatus.FAILED;
+        this.failureCount = Math.min(Integer.MAX_VALUE, failureCount + 1);
+        this.failureReason = reason == null || reason.isBlank() ? "教育 Run 执行失败" : reason.trim();
+        this.lastFailedRunId = failedRunId;
+        this.lastFailedAt = failedAt == null ? Instant.now() : failedAt;
+        this.updatedAt = Instant.now();
+    }
+
+    public void retry(Instant retriedAt) {
+        if (status != LearningTaskStatus.FAILED) {
+            throw new IllegalStateException("只有失败的学习任务可以重试");
+        }
+        this.status = LearningTaskStatus.OPEN;
+        this.scheduledAt = retriedAt == null ? Instant.now() : retriedAt;
+        this.conversationId = null;
+        this.runId = null;
+        this.startedAt = null;
         this.updatedAt = Instant.now();
     }
 
@@ -115,7 +152,8 @@ public class LearningTask {
     }
 
     public void complete(boolean correct, Instant completedAt) {
-        if (status != LearningTaskStatus.OPEN && status != LearningTaskStatus.IN_PROGRESS) {
+        if (status != LearningTaskStatus.OPEN && status != LearningTaskStatus.IN_PROGRESS
+                && status != LearningTaskStatus.AWAITING_EVIDENCE) {
             throw new IllegalStateException("当前学习任务不能记录完成结果");
         }
         this.outcomeCorrect = correct;
@@ -156,6 +194,10 @@ public class LearningTask {
     public Boolean getOutcomeCorrect() { return outcomeCorrect; }
     public int getDeferCount() { return deferCount; }
     public Instant getLastDeferredAt() { return lastDeferredAt; }
+    public int getFailureCount() { return failureCount; }
+    public String getFailureReason() { return failureReason; }
+    public Instant getLastFailedAt() { return lastFailedAt; }
+    public String getLastFailedRunId() { return lastFailedRunId; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

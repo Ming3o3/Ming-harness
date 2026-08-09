@@ -42,6 +42,23 @@ class LearningTaskTests {
         assertThrows(IllegalStateException.class, () -> task.complete(false, Instant.now()));
     }
 
+    @Test
+    void shouldRequireEvidenceAfterSuccessfulRunAndAllowRetryAfterFailure() {
+        LearningTask task = task(Instant.now());
+        task.start("conversation-1", "run-1", Instant.now());
+        task.awaitEvidence(Instant.now());
+        assertEquals(LearningTaskStatus.AWAITING_EVIDENCE, task.getStatus());
+        task.complete(true, Instant.now());
+        assertEquals(LearningTaskStatus.COMPLETED, task.getStatus());
+
+        LearningTask failed = task(Instant.now());
+        failed.start("conversation-2", "run-2", Instant.now());
+        failed.fail("模型超时", "run-2", Instant.now());
+        assertEquals(LearningTaskStatus.FAILED, failed.getStatus());
+        failed.retry(Instant.now());
+        assertEquals(LearningTaskStatus.OPEN, failed.getStatus());
+    }
+
     private LearningTask task(Instant scheduledAt) {
         return new LearningTask("tenant-a", "student-1", LearningTaskType.REVIEW,
                 "goal-1", "plan-1", 0, "保持度复习", "请完成复习题", scheduledAt);

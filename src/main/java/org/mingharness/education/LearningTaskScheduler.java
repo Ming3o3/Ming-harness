@@ -10,9 +10,12 @@ import java.time.Instant;
 public class LearningTaskScheduler {
 
     private final LearningTaskService taskService;
+    private final LearningTaskReconciliationService reconciliationService;
 
-    public LearningTaskScheduler(LearningTaskService taskService) {
+    public LearningTaskScheduler(LearningTaskService taskService,
+                                LearningTaskReconciliationService reconciliationService) {
         this.taskService = taskService;
+        this.reconciliationService = reconciliationService;
     }
 
     @Scheduled(
@@ -20,6 +23,7 @@ public class LearningTaskScheduler {
             initialDelayString = "${harness.education.task-materialization-initial-delay-ms:10000}"
     )
     public void materializeDueTasks() {
+        reconciliationService.reconcile(Instant.now(), 100);
         taskService.materializeDueTasks(Instant.now(), 100);
     }
 }

@@ -29,7 +29,8 @@ public class LearningTaskService {
 
     private static final Collection<LearningTaskStatus> LISTABLE_STATUSES = List.of(
             LearningTaskStatus.OPEN, LearningTaskStatus.IN_PROGRESS,
-            LearningTaskStatus.DEFERRED, LearningTaskStatus.COMPLETED);
+            LearningTaskStatus.AWAITING_EVIDENCE, LearningTaskStatus.DEFERRED,
+            LearningTaskStatus.FAILED, LearningTaskStatus.COMPLETED);
 
     private final LearningTaskRepository taskRepository;
     private final LearningReviewPlanRepository reviewPlanRepository;
@@ -142,7 +143,8 @@ public class LearningTaskService {
             return new LearningTaskStartView(LearningTaskView.from(task),
                     conversationService.detail(task.getConversationId(), tenantId, userId));
         }
-        if (task.getStatus() == LearningTaskStatus.IN_PROGRESS) {
+        if (task.getStatus() == LearningTaskStatus.IN_PROGRESS
+                || task.getStatus() == LearningTaskStatus.AWAITING_EVIDENCE) {
             if (task.getConversationId() == null) {
                 throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_TASK_SESSION_MISSING",
                         "进行中的学习任务缺少绑定会话");
@@ -151,6 +153,10 @@ public class LearningTaskService {
                     conversationService.detail(task.getConversationId(), tenantId, userId));
         }
         Instant now = Instant.now();
+        if (task.getStatus() == LearningTaskStatus.FAILED) {
+            task.retry(now);
+            taskRepository.save(task);
+        }
         if (task.getStatus() == LearningTaskStatus.DEFERRED && task.getScheduledAt().isAfter(now)) {
             throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_TASK_NOT_DUE",
                     "延期后的学习任务尚未到期");
