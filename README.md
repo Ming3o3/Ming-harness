@@ -49,6 +49,7 @@ Ming Harness 是一个面向企业 Agent 开发与治理的平台：后端使用
 - 敏感数据治理：Run、Step、审计、模型、工具和上下文边界统一凭证脱敏，长期记忆拒绝写入疑似凭证
 - 数据保留策略：终态 Run 与审计链原子清理，过期记忆/文档和已完成 Outbox 定时删除，待投递消息不自动删除
 - 业务闭环沉淀：每次 Run 持久化实际上下文证据，助手消息支持有用/需改进反馈
+- 教育业务闭环：课程约束与学习者状态驱动教育 Run；目标达标后自动建立保持度计划，到期计划由调度器幂等物化为学习任务，任务可开始、延期并在复习测评后回写完成结果
 - 本地基础设施 Profile：PostgreSQL + Flyway、Redis 共享治理、RabbitMQ Outbox Worker
 - 健康检查与运行指标：公开存活探针、受 `ops.read` 保护的 `/api/health` 和 Actuator 指标
 - 请求关联追踪：自动生成并回传 `X-Request-Id`、`X-Trace-Id`，错误响应包含 `traceId`
@@ -454,6 +455,10 @@ curl -X POST http://localhost:8080/api/runs \
 - `POST/GET/DELETE /api/context/documents`：管理组织隔离的知识文档
 - `POST /api/context/documents/upload`：以 multipart 上传一个 PDF/DOCX，字段为 `file`（必填）、`title`、`sensitivity`、`allowedUsers`（可选）；需要 `context.write` 权限，成功后立即创建 chunk 并异步补齐 embedding
 - `POST/GET/DELETE /api/context/memories`：管理用户范围的长期记忆
+- `POST/GET /api/education/goals`：创建和查询绑定学习者画像的结构化学习目标；目标测评、推荐和保持度计划接口位于 `/api/education/goals/{goalId}/...`
+- `GET /api/education/tasks`：查询当前用户的教育学习任务；到期复习会在查询或后台调度时自动物化
+- `POST /api/education/tasks/{taskId}/start`：启动任务并绑定学习会话与教育 Run；重复调用会恢复已绑定会话
+- `POST /api/education/tasks/{taskId}/defer`：延期任务并同步顺延复习计划，不记录虚假的复习结果
 - `GET /api/context/preview?query=...`：预览授权来源和引用
 - `GET/PUT/DELETE /api/context/embedding-config`：读取、保存或恢复当前组织的 Embedding 连接配置；密钥只返回掩码
 - `POST /api/context/embedding-config/test`：使用未保存配置测试一次 OpenAI 兼容 `/embeddings` 连接
