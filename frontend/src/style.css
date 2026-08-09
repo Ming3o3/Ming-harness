@@ -337,11 +337,6 @@ h3 { margin: 0; font-size: 13px; }
 .api-key-audit-row > span, .api-key-audit-row > strong { font: 9px "DM Mono", monospace; }
 .api-key-audit-row > strong { color: var(--soft); }
 .api-key-audit-row small { color: var(--muted); font: 9px "DM Mono", monospace; overflow-wrap: anywhere; }
-.evaluation-case-library { display: grid; gap: 6px; max-height: 220px; overflow: auto; border-top: 1px solid var(--line); padding-top: 10px; }
-.evaluation-case-library-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; border-bottom: 1px solid rgba(153,174,218,.08); padding: 8px 0; }
-.evaluation-case-library-row > div { display: grid; min-width: 0; gap: 4px; }
-.evaluation-case-library-row strong { overflow: hidden; color: var(--soft); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.evaluation-case-library-row small { overflow: hidden; color: var(--muted); font: 9px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .text-button { border: 0; background: transparent; color: var(--muted); padding: 5px 7px; font-size: 10px; }
 .text-button:hover:not(:disabled) { color: var(--accent-light); }
 .text-button:disabled { cursor: not-allowed; opacity: .55; }
@@ -897,7 +892,6 @@ h3 { margin: 0; font-size: 13px; }
   .embedding-settings-dialog { height: auto; max-height: 92vh; }
   .reject-dialog-overlay { align-items: end; padding: 0; }
   .reject-dialog { width: 100vw; border-radius: 14px 14px 0 0; padding: 16px; }
-  .evaluation-case-library-row { align-items: flex-start; }
   .run-evidence-row > div { align-items: flex-start; flex-direction: column; gap: 4px; }
   .run-evidence-row code { max-width: 100%; }
   .model-settings-actions { grid-template-columns: 1fr 1fr; }

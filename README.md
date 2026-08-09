@@ -462,7 +462,6 @@ curl -X POST http://localhost:8080/api/runs \
 - `POST /api/context/embedding-config/test`：使用未保存配置测试一次 OpenAI 兼容 `/embeddings` 连接
 - `POST /api/context/reindex`：按租户有界重建上下文 chunk 和 embedding，需要 `context.reindex` 权限；`rechunk=true` 时按当前语义分块配置重新切块
 - `POST/GET /api/evaluations/retrieval`：运行或查询上下文检索离线评测，需要 `evaluation.run` / `evaluation.read` 权限；用例的 `relevantSources` 使用 `document:<id>` 或 `memory:<id>`，`expectedContains` 可选，用于计算上下文命中率
-- `GET /api/evaluations/cases`、`POST /api/evaluations/cases/from-run`、`DELETE /api/evaluations/cases/{caseId}`：查询、从真实 Run 一键保存或删除回归用例；用例保留来源 Run、业务场景和工具信息，并受组织/用户权限隔离
 - `POST/GET /api/runs/{runId}/feedback`：对自己的 Run 记录 `POSITIVE`/`NEGATIVE` 反馈、原因和备注；重复提交会覆盖同一用户对该 Run 的反馈，并写入审计事件
 - `GET /api/runs/{runId}` 的 Step 详情包含 `contextEvidence`：模型步骤实际注入的授权来源、标题、citation 和摘要，可从聊天消息追溯到 Run 详情
 

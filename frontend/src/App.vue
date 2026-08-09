@@ -39,7 +39,6 @@ const selectedRun = ref(null)
 const auditEvents = ref([])
 const documents = ref([])
 const memories = ref([])
-const savedEvaluationCases = ref([])
 const retrievalEvaluations = ref([])
 const contextPreviewQuery = ref('')
 const contextPreviewMaxChars = ref(4000)
@@ -1362,20 +1361,6 @@ async function retryChatMessage(message) {
   }
 }
 
-async function deleteEvaluationCase(item) {
-  if (!item?.id || loading.value) return
-  loading.value = true
-  try {
-    await api.deleteEvaluationCase(item.id)
-    savedEvaluationCases.value = savedEvaluationCases.value.filter((value) => value.id !== item.id)
-    noticeMessage.value = '已删除回归用例'
-  } catch (error) {
-    errorMessage.value = errorText(error)
-  } finally {
-    loading.value = false
-  }
-}
-
 function formatFileSize(size) {
   const value = Number(size || 0)
   if (value < 1024) return `${value} B`
@@ -2307,14 +2292,13 @@ async function refreshActiveConversation() {
 async function loadDashboard() {
   clearMessages()
   try {
-    const [, toolData, summaryData, documentData, memoryData, retrievalEvaluationData, evaluationCaseData, contextConfigurationData] = await Promise.all([
+    const [, toolData, summaryData, documentData, memoryData, retrievalEvaluationData, contextConfigurationData] = await Promise.all([
       loadRunsPage(),
       api.listTools(),
       api.dashboardSummary(),
       api.listDocuments(),
       api.listMemories(),
       api.listRetrievalEvaluations(),
-      api.listEvaluationCases(),
       api.contextConfiguration(),
     ])
     tools.value = toolData
@@ -2324,7 +2308,6 @@ async function loadDashboard() {
     // 刷新文档/记忆列表后移除已经不存在的勾选项，避免提交失效来源。
     selectedRetrievalSources.value = selectedRetrievalSources.value.filter((source) => retrievalSourceValues.value.has(source))
     retrievalEvaluations.value = retrievalEvaluationData
-    savedEvaluationCases.value = evaluationCaseData
     contextConfiguration.value = contextConfigurationData
     if (selectedRun.value) {
       await selectRun(selectedRun.value.run.id, false)
@@ -4519,17 +4502,6 @@ onBeforeUnmount(() => {
             </div>
             <div v-else class="context-preview-empty">还没有当前用户的长期记忆。</div>
           </form>
-          <section class="governance-card governance-fixed-card evaluation-cases-card">
-            <div class="context-workbench-heading"><div><p class="eyebrow">REGRESSION DATASET</p><h3>已保存回归用例</h3></div><span class="context-mode-chip">{{ savedEvaluationCases.length }} 条</span></div>
-            <p class="context-workbench-help">已保存的用例会作为本次回归集执行，可在这里查看和删除。</p>
-            <div v-if="savedEvaluationCases.length" class="evaluation-case-library">
-              <article v-for="item in savedEvaluationCases.slice(0, 8)" :key="item.id" class="evaluation-case-library-row">
-                <div><strong>{{ item.name }}</strong><small>{{ scenarioLabel(item.scenario) }} · {{ item.input }}</small></div>
-                <button class="text-button" type="button" :disabled="loading" @click="deleteEvaluationCase(item)">删除</button>
-              </article>
-            </div>
-            <div v-else class="context-preview-empty">暂无已保存的回归用例。</div>
-          </section>
           <form class="governance-card governance-fixed-card retrieval-evaluation-card" @submit.prevent="runRetrievalEvaluation">
             <div class="context-workbench-heading">
               <div>

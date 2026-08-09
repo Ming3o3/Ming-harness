@@ -281,12 +281,6 @@ export const api = {
   listMemories: () => request('/context/memories'),
   createMemory: (payload) => request('/context/memories', { method: 'POST', body: JSON.stringify(payload) }),
   deleteMemory: (memoryId) => request(`/context/memories/${encodeURIComponent(memoryId)}`, { method: 'DELETE' }),
-  listEvaluationCases: () => request('/evaluations/cases'),
-  saveEvaluationCaseFromRun: (payload) => request('/evaluations/cases/from-run', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  }),
-  deleteEvaluationCase: (caseId) => request(`/evaluations/cases/${encodeURIComponent(caseId)}`, { method: 'DELETE' }),
   listRetrievalEvaluations: () => request('/evaluations/retrieval'),
   runRetrievalEvaluation: (payload) => request('/evaluations/retrieval', { method: 'POST', body: JSON.stringify(payload) }),
   getTenantPolicy: (tenantId) => request(`/admin/tenants/${encodeURIComponent(tenantId)}/policy`),

@@ -14,14 +14,12 @@ public record RetentionCleanupResult(
         int tenantPolicyAuditsDeleted,
         int apiKeyAuditsDeleted,
         int embeddingCacheEntriesDeleted,
-        int runFeedbackDeleted,
-        int evaluationCasesDeleted
+        int runFeedbackDeleted
 ) {
     public int totalDeleted() {
         return runsDeleted + auditEventsDeleted + stepsDeleted + memoriesDeleted
                 + documentsDeleted + chunksDeleted + parentWindowsDeleted + retrievalEvaluationReportsDeleted
                 + outboxEventsDeleted + tenantPolicyAuditsDeleted
-                + apiKeyAuditsDeleted + embeddingCacheEntriesDeleted + runFeedbackDeleted
-                + evaluationCasesDeleted;
+                + apiKeyAuditsDeleted + embeddingCacheEntriesDeleted + runFeedbackDeleted;
     }
 }
