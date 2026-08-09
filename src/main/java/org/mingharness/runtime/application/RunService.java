@@ -1349,6 +1349,14 @@ public class RunService {
     }
 
     /** 将已完成的 Agent 轮次转换为供应商理解的 assistant/tool 消息，并限制历史上下文总量。 */
+    /** 兼容旧版组件测试和本地扩展调用方；通用 Agent 不携带教育配置。 */
+    private List<ModelMessage> agentMessages(String runInput, String currentInput,
+                                             List<AgentHistoryStep> history, int maximumChars) {
+        return agentMessages(runInput, currentInput, history, maximumChars,
+                EducationRunConfiguration.disabled());
+    }
+
+    /** 将已完成的 Agent 轮次转换为供应商理解的 assistant/tool 消息，并限制历史上下文总量。 */
     private List<ModelMessage> agentMessages(String runInput, String currentInput,
                                              List<AgentHistoryStep> history, int maximumChars,
                                              EducationRunConfiguration educationConfiguration) {
