@@ -3,6 +3,7 @@ package org.mingharness.education;
 import jakarta.validation.Valid;
 import org.mingharness.education.api.EducationSourceRequest;
 import org.mingharness.education.api.EducationSourceView;
+import org.mingharness.education.api.AssessmentAttemptView;
 import org.mingharness.education.api.LearnerMasteryView;
 import org.mingharness.education.api.LearnerProfileRequest;
 import org.mingharness.education.api.LearnerProfileView;
@@ -32,13 +33,16 @@ public class EducationController {
     private final EducationKnowledgeService knowledgeService;
     private final EducationLearnerService learnerService;
     private final LearningGoalService learningGoalService;
+    private final EducationAssessmentService assessmentService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
-                                LearningGoalService learningGoalService) {
+                                LearningGoalService learningGoalService,
+                                EducationAssessmentService assessmentService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
+        this.assessmentService = assessmentService;
     }
 
     @PostMapping("/sources")
@@ -123,6 +127,13 @@ public class EducationController {
         HarnessIdentity identity = identity();
         return LearningGoalView.from(learningGoalService.changeStatus(identity.tenantId(), identity.userId(),
                 goalId, request.status()));
+    }
+
+    @GetMapping("/goals/{goalId}/assessments")
+    public List<AssessmentAttemptView> listAssessments(@PathVariable String goalId) {
+        HarnessIdentity identity = identity();
+        return assessmentService.listByGoal(identity.tenantId(), identity.userId(), goalId).stream()
+                .map(AssessmentAttemptView::from).toList();
     }
 
     private HarnessIdentity identity() {

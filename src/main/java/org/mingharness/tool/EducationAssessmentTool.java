@@ -1,8 +1,7 @@
 package org.mingharness.tool;
 
-import org.mingharness.education.EducationLearnerService;
-import org.mingharness.education.api.LearnerMasteryView;
-import org.mingharness.education.api.MasteryUpdateRequest;
+import org.mingharness.education.EducationAssessmentService;
+import org.mingharness.education.AssessmentAttempt;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -21,11 +20,11 @@ import java.util.Set;
 @Component
 public class EducationAssessmentTool implements HarnessTool {
 
-    private final EducationLearnerService learnerService;
+    private final EducationAssessmentService assessmentService;
     private final ObjectMapper objectMapper;
 
-    public EducationAssessmentTool(EducationLearnerService learnerService, ObjectMapper objectMapper) {
-        this.learnerService = learnerService;
+    public EducationAssessmentTool(EducationAssessmentService assessmentService, ObjectMapper objectMapper) {
+        this.assessmentService = assessmentService;
         this.objectMapper = objectMapper;
     }
 
@@ -57,8 +56,11 @@ public class EducationAssessmentTool implements HarnessTool {
                         "required", List.of("ok", "conceptKey", "masteryScore"),
                         "properties", Map.of(
                                 "ok", Map.of("type", "boolean"),
+                                "attemptId", Map.of("type", "string"),
                                 "conceptKey", Map.of("type", "string"),
-                                "masteryScore", Map.of("type", "number", "minimum", 0, "maximum", 1)
+                                "masteryBefore", Map.of("type", "number", "minimum", 0, "maximum", 1),
+                                "masteryScore", Map.of("type", "number", "minimum", 0, "maximum", 1),
+                                "feedback", Map.of("type", "string", "maxLength", 1000)
                         )
                 )
         );
@@ -85,15 +87,17 @@ public class EducationAssessmentTool implements HarnessTool {
             boolean correct = request.get("correct").asBoolean();
             double observedMastery = request.get("observedMastery") == null
                     ? (correct ? 1.0 : 0.0) : request.get("observedMastery").asDouble();
-            LearnerMasteryView mastery = LearnerMasteryView.from(learnerService.updateMastery(
-                    context.tenantId(), context.userId(), context.educationLearnerProfileId(),
-                    new MasteryUpdateRequest(conceptKey, observedMastery, correct, null, null)));
+            AssessmentAttempt attempt = assessmentService.record(
+                    context.tenantId(), context.userId(), context.runId(), context.stepId(),
+                    context.educationLearnerProfileId(), conceptKey, correct, observedMastery,
+                    request.get("feedback") == null ? null : request.get("feedback").asText(""));
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("ok", true);
-            result.put("conceptKey", mastery.conceptKey());
-            result.put("masteryScore", mastery.masteryScore());
-            result.put("attempts", mastery.attempts());
-            result.put("correctAttempts", mastery.correctAttempts());
+            result.put("attemptId", attempt.getId());
+            result.put("conceptKey", attempt.getConceptKey());
+            result.put("masteryBefore", attempt.getMasteryBefore());
+            result.put("masteryScore", attempt.getMasteryAfter());
+            result.put("feedback", attempt.getFeedback());
             return objectMapper.writeValueAsString(result);
         } catch (JacksonException exception) {
             throw new IllegalArgumentException("形成性评价输入不是有效 JSON", exception);
