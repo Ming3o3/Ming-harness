@@ -808,6 +808,17 @@ h3 { margin: 0; font-size: 13px; }
 .chat-run-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 13px 0; }
 .chat-run-actions button { padding: 7px 9px; font-size: 9px; }
 .chat-change-review { margin: 1px 0 15px; border: 1px solid rgba(141,124,255,.24); border-radius: 9px; background: rgba(141,124,255,.045); padding: 11px; }
+.manual-assessment-panel { display: grid; gap: 9px; margin: 1px 0 15px; border: 1px solid rgba(76,226,213,.24); border-radius: 9px; background: rgba(76,226,213,.045); padding: 11px; }
+.manual-assessment-help { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.manual-assessment-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.manual-assessment-form label { display: grid; gap: 4px; color: var(--muted); font: 8px "DM Mono", monospace; }
+.manual-assessment-form label span { color: var(--muted); }
+.manual-assessment-form input, .manual-assessment-form select, .manual-assessment-form textarea { width: 100%; border: 1px solid var(--line); border-radius: 6px; outline: 0; background: var(--input-bg); color: var(--text); padding: 7px 8px; font: 9px "DM Mono", monospace; }
+.manual-assessment-form textarea { min-height: 62px; resize: vertical; line-height: 1.45; }
+.manual-assessment-form input:focus, .manual-assessment-form select:focus, .manual-assessment-form textarea:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(76,226,213,.1); }
+.manual-assessment-wide { grid-column: 1 / -1; }
+.manual-assessment-form .manual-assessment-error { grid-column: 1 / -1; margin: 0; }
+.manual-assessment-form > button { justify-self: start; }
 .chat-change-review-heading, .chat-change-card-meta { display: flex; align-items: center; justify-content: space-between; gap: 7px; }
 .chat-change-review-heading { margin-bottom: 10px; }
 .chat-change-review-heading span { display: block; color: var(--accent-light); font: 8px "DM Mono", monospace; letter-spacing: .1em; }

@@ -14,6 +14,7 @@ import org.mingharness.education.api.LearningGoalRequest;
 import org.mingharness.education.api.LearningGoalStatusRequest;
 import org.mingharness.education.api.LearningGoalView;
 import org.mingharness.education.api.LearningRecommendationView;
+import org.mingharness.education.api.ManualAssessmentSubmissionRequest;
 import org.mingharness.education.api.MasteryUpdateRequest;
 import org.mingharness.security.HarnessIdentity;
 import org.mingharness.security.HarnessIdentityContext;
@@ -144,6 +145,19 @@ public class EducationController {
         HarnessIdentity identity = identity();
         return assessmentService.listByGoal(identity.tenantId(), identity.userId(), goalId).stream()
                 .map(AssessmentAttemptView::from).toList();
+    }
+
+    @PostMapping("/goals/{goalId}/assessments")
+    @ResponseStatus(HttpStatus.CREATED)
+    public AssessmentAttemptView submitAssessment(@PathVariable String goalId,
+                                                   @Valid @RequestBody ManualAssessmentSubmissionRequest request) {
+        HarnessIdentity identity = identity();
+        LearningGoal goal = learningGoalService.get(identity.tenantId(), identity.userId(), goalId);
+        AssessmentAttempt attempt = assessmentService.recordForGoal(identity.tenantId(), identity.userId(),
+                goalId, request.runId(), request.stepId(), goal.getLearnerProfileId(), request.conceptKey(),
+                Boolean.TRUE.equals(request.correct()), request.effectiveObservedMastery(),
+                "MANUAL_REVIEW", request.evidenceText(), request.feedback());
+        return AssessmentAttemptView.from(attempt);
     }
 
     @GetMapping("/goals/{goalId}/recommendation")

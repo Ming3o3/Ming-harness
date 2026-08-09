@@ -37,6 +37,10 @@ public class AssessmentAttempt {
     private double masteryBefore;
     @Column(nullable = false)
     private double masteryAfter;
+    @Column(name = "evidence_source", nullable = false, length = 32)
+    private String evidenceSource;
+    @Column(name = "evidence_text", length = 4000)
+    private String evidenceText;
     @Column(length = 1000)
     private String feedback;
     @Column(nullable = false)
@@ -49,6 +53,16 @@ public class AssessmentAttempt {
                              String learningGoalId, String learnerProfileId, String conceptKey,
                              boolean correct, double observedMastery, double masteryBefore,
                              double masteryAfter, String feedback) {
+        this(tenantId, userId, runId, stepId, learningGoalId, learnerProfileId, conceptKey,
+                correct, observedMastery, masteryBefore, masteryAfter,
+                "MODEL_TOOL", null, feedback);
+    }
+
+    public AssessmentAttempt(String tenantId, String userId, String runId, String stepId,
+                             String learningGoalId, String learnerProfileId, String conceptKey,
+                             boolean correct, double observedMastery, double masteryBefore,
+                             double masteryAfter, String evidenceSource, String evidenceText,
+                             String feedback) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = required(tenantId, "tenantId");
         this.userId = required(userId, "userId");
@@ -61,6 +75,8 @@ public class AssessmentAttempt {
         this.observedMastery = clamp(observedMastery);
         this.masteryBefore = clamp(masteryBefore);
         this.masteryAfter = clamp(masteryAfter);
+        this.evidenceSource = required(evidenceSource, "evidenceSource");
+        this.evidenceText = evidenceText == null || evidenceText.isBlank() ? null : evidenceText.trim();
         this.feedback = feedback == null || feedback.isBlank() ? null : feedback.trim();
         this.createdAt = Instant.now();
     }
@@ -88,6 +104,8 @@ public class AssessmentAttempt {
     public double getObservedMastery() { return observedMastery; }
     public double getMasteryBefore() { return masteryBefore; }
     public double getMasteryAfter() { return masteryAfter; }
+    public String getEvidenceSource() { return evidenceSource; }
+    public String getEvidenceText() { return evidenceText; }
     public String getFeedback() { return feedback; }
     public Instant getCreatedAt() { return createdAt; }
 }

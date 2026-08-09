@@ -4,6 +4,8 @@ import org.junit.jupiter.api.Test;
 import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.education.api.EducationRunOptions;
 import org.mingharness.runtime.domain.Run;
+import org.mingharness.runtime.domain.Step;
+import org.mingharness.runtime.domain.StepType;
 import org.mingharness.runtime.repository.RunRepository;
 
 import java.math.BigDecimal;
@@ -55,5 +57,46 @@ class EducationAssessmentServiceTests {
         assertEquals(0.2, result.getMasteryBefore());
         assertEquals(0.65, result.getMasteryAfter());
         assertEquals(LearningGoalStatus.COMPLETED, goal.getStatus());
+    }
+
+    @Test
+    void shouldPersistManualReviewEvidenceOnlyForFinishedRunStep() {
+        AssessmentAttemptRepository attempts = mock(AssessmentAttemptRepository.class);
+        RunRepository runs = mock(RunRepository.class);
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        EducationLearnerService learnerService = mock(EducationLearnerService.class);
+        Run run = new Run("tenant-a", "student-1", "函数复核", "请复核函数",
+                BigDecimal.ONE, "demo-model", "prompt-v1", "policy-v1");
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", "profile-1",
+                "掌握函数", "函数", 0.2, 0.9);
+        run.attachEducationConfiguration(new EducationRunConfiguration(true, "profile-1", goal.getId(),
+                goal.getTitle(), 0.2, 0.9, "数学", "高中一年级", "人教A版", "函数",
+                null, null, "PRACTICE", "函数=0.20"));
+        Step step = new Step(1, StepType.MODEL, "模型复核", "题目");
+        run.addStep(step);
+        run.start();
+        step.start();
+        step.succeed("已完成");
+        run.succeed("已完成");
+        LearnerMastery previous = new LearnerMastery("tenant-a", "profile-1", "函数", 0.2, 1, 0);
+        LearnerMastery updated = new LearnerMastery("tenant-a", "profile-1", "函数", 0.5, 2, 1);
+
+        when(runs.findById(run.getId())).thenReturn(Optional.of(run));
+        when(goals.findByIdAndTenantIdAndUserId(goal.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(goal));
+        when(mastery.findByTenantIdAndLearnerProfileIdAndConceptKey("tenant-a", "profile-1", "函数"))
+                .thenReturn(Optional.of(previous));
+        when(learnerService.updateMastery(any(), any(), any(), any())).thenReturn(updated);
+        when(attempts.save(any(AssessmentAttempt.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        EducationAssessmentService service = new EducationAssessmentService(attempts, runs, goals, mastery,
+                learnerService, new SensitiveDataSanitizer());
+        AssessmentAttempt result = service.record("tenant-a", "student-1", run.getId(), step.getId(),
+                "profile-1", "函数", true, 1.0, "MANUAL_REVIEW", "学生写出了定义域判定依据", "复核通过");
+
+        assertEquals("MANUAL_REVIEW", result.getEvidenceSource());
+        assertEquals("学生写出了定义域判定依据", result.getEvidenceText());
+        assertEquals("复核通过", result.getFeedback());
     }
 }

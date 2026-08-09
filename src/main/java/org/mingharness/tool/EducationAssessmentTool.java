@@ -60,6 +60,7 @@ public class EducationAssessmentTool implements HarnessTool {
                                 "conceptKey", Map.of("type", "string"),
                                 "masteryBefore", Map.of("type", "number", "minimum", 0, "maximum", 1),
                                 "masteryScore", Map.of("type", "number", "minimum", 0, "maximum", 1),
+                                "evidenceSource", Map.of("type", "string"),
                                 "feedback", Map.of("type", "string", "maxLength", 1000)
                         )
                 )
@@ -97,6 +98,7 @@ public class EducationAssessmentTool implements HarnessTool {
             result.put("conceptKey", attempt.getConceptKey());
             result.put("masteryBefore", attempt.getMasteryBefore());
             result.put("masteryScore", attempt.getMasteryAfter());
+            result.put("evidenceSource", attempt.getEvidenceSource());
             result.put("feedback", attempt.getFeedback());
             return objectMapper.writeValueAsString(result);
         } catch (JacksonException exception) {

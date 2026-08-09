@@ -310,6 +310,10 @@ export const api = {
     body: JSON.stringify({ status }),
   }),
   listGoalAssessments: (goalId) => request(`/education/goals/${encodeURIComponent(goalId)}/assessments`),
+  submitGoalAssessment: (goalId, payload) => request(`/education/goals/${encodeURIComponent(goalId)}/assessments`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
   getGoalRecommendation: (goalId) => request(`/education/goals/${encodeURIComponent(goalId)}/recommendation`),
   executeLearningGoalNextAction: (goalId, payload = {}, idempotencyKey) => request(
     `/education/goals/${encodeURIComponent(goalId)}/next-action`, {

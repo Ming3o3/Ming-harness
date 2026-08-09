@@ -4,6 +4,7 @@ import org.mingharness.common.BusinessException;
 import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.education.api.MasteryUpdateRequest;
 import org.mingharness.runtime.domain.Run;
+import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.runtime.repository.RunRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -40,12 +41,61 @@ public class EducationAssessmentService {
     public AssessmentAttempt record(String tenantId, String userId, String runId, String stepId,
                                     String profileId, String conceptKey, boolean correct,
                                     double observedMastery, String feedback) {
+        return recordInternal(tenantId, userId, runId, stepId, null, profileId, conceptKey,
+                correct, observedMastery, "MODEL_TOOL", null, feedback);
+    }
+
+    @Transactional
+    public AssessmentAttempt record(String tenantId, String userId, String runId, String stepId,
+                                    String profileId, String conceptKey, boolean correct,
+                                    double observedMastery, String evidenceSource,
+                                    String evidenceText, String feedback) {
+        return recordInternal(tenantId, userId, runId, stepId, null, profileId, conceptKey,
+                correct, observedMastery, evidenceSource, evidenceText, feedback);
+    }
+
+    /** 由路径绑定的目标提交复核，防止请求体里的 Run 与 URL 目标交叉写入。 */
+    @Transactional
+    public AssessmentAttempt recordForGoal(String tenantId, String userId, String expectedGoalId,
+                                           String runId, String stepId, String profileId,
+                                           String conceptKey, boolean correct, double observedMastery,
+                                           String evidenceSource, String evidenceText, String feedback) {
+        return recordInternal(tenantId, userId, runId, stepId, expectedGoalId, profileId, conceptKey,
+                correct, observedMastery, evidenceSource, evidenceText, feedback);
+    }
+
+    private AssessmentAttempt recordInternal(String tenantId, String userId, String runId, String stepId,
+                                             String expectedGoalId, String profileId, String conceptKey,
+                                             boolean correct, double observedMastery, String evidenceSource,
+                                             String evidenceText, String feedback) {
         Run run = runRepository.findById(runId)
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
                         "RUN_NOT_FOUND", "测评所属 Run 不存在"));
         if (!tenantId.equals(run.getTenantId()) || !userId.equals(run.getUserId())) {
             throw new BusinessException(HttpStatus.FORBIDDEN, "ASSESSMENT_ACCESS_DENIED",
                     "无权记录其他用户 Run 的测评");
+        }
+        String normalizedEvidenceSource = clean(evidenceSource).toUpperCase(java.util.Locale.ROOT);
+        if (!"MODEL_TOOL".equals(normalizedEvidenceSource)
+                && !"MANUAL_REVIEW".equals(normalizedEvidenceSource)) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "ASSESSMENT_EVIDENCE_SOURCE_INVALID",
+                    "测评证据来源只支持 MODEL_TOOL 或 MANUAL_REVIEW");
+        }
+        if ("MANUAL_REVIEW".equals(normalizedEvidenceSource)) {
+            if (cleanEvidence(evidenceText) == null) {
+                throw new BusinessException(HttpStatus.BAD_REQUEST, "ASSESSMENT_EVIDENCE_REQUIRED",
+                        "人工复核必须提供作答或评分依据");
+            }
+            if (run.getStatus() != RunStatus.SUCCEEDED) {
+                throw new BusinessException(HttpStatus.CONFLICT, "ASSESSMENT_RUN_NOT_FINISHED",
+                        "人工复核只能提交已完成的教育 Run");
+            }
+            boolean stepExists = run.getSteps().stream()
+                    .anyMatch(step -> java.util.Objects.equals(stepId, step.getId()));
+            if (!stepExists) {
+                throw new BusinessException(HttpStatus.BAD_REQUEST, "ASSESSMENT_STEP_NOT_FOUND",
+                        "人工复核步骤不属于指定 Run");
+            }
         }
         if (!run.isEducationMode() || run.getEducationLearningGoalId() == null) {
             throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_GOAL_REQUIRED",
@@ -60,6 +110,10 @@ public class EducationAssessmentService {
                         run.getEducationLearningGoalId(), tenantId, userId)
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
                         "LEARNING_GOAL_NOT_FOUND", "测评绑定的学习目标不存在"));
+        if (expectedGoalId != null && !expectedGoalId.equals(goal.getId())) {
+            throw new BusinessException(HttpStatus.CONFLICT, "ASSESSMENT_GOAL_MISMATCH",
+                    "测评 Run 与请求路径中的学习目标不一致");
+        }
         if (goal.getStatus() != LearningGoalStatus.ACTIVE) {
             throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_GOAL_NOT_ACTIVE",
                     "只有进行中的学习目标可以记录测评");
@@ -80,7 +134,8 @@ public class EducationAssessmentService {
                 new MasteryUpdateRequest(normalizedConcept, boundedObserved, correct, null, null));
         AssessmentAttempt attempt = new AssessmentAttempt(tenantId, userId, runId, stepId,
                 goal.getId(), profileId, normalizedConcept, correct, boundedObserved, before,
-                updated.getMasteryScore(), cleanFeedback(feedback));
+                updated.getMasteryScore(), normalizedEvidenceSource, cleanEvidence(evidenceText),
+                cleanFeedback(feedback));
         AssessmentAttempt saved = attemptRepository.save(attempt);
         if (updated.getMasteryScore() >= goal.getTargetMastery()) {
             goal.changeStatus(LearningGoalStatus.COMPLETED);
@@ -103,6 +158,11 @@ public class EducationAssessmentService {
     }
 
     private String cleanFeedback(String value) {
+        String cleaned = clean(value);
+        return cleaned.isBlank() ? null : cleaned;
+    }
+
+    private String cleanEvidence(String value) {
         String cleaned = clean(value);
         return cleaned.isBlank() ? null : cleaned;
     }

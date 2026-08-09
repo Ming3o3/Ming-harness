@@ -48,6 +48,15 @@ const activeLearningGoal = ref(null)
 const learningGoalAssessments = ref([])
 const learningRecommendation = ref(null)
 const learningGoalRecommendationMap = ref({})
+const manualAssessmentForm = reactive({
+  stepId: '',
+  correct: '',
+  observedMastery: '',
+  evidenceText: '',
+  feedback: '',
+})
+const manualAssessmentSaving = ref(false)
+const manualAssessmentError = ref('')
 const educationLoading = ref(false)
 const educationError = ref('')
 const contextPreviewQuery = ref('')
@@ -580,6 +589,19 @@ const stats = computed(() => ({
 }))
 
 const selectedStatus = computed(() => selectedRun.value?.run?.status || 'NONE')
+const manualAssessmentSteps = computed(() => (selectedRun.value?.steps || [])
+  .filter((step) => step.status === 'SUCCEEDED'))
+const manualAssessmentGoal = computed(() => {
+  const goalId = selectedRun.value?.run?.educationLearningGoalId
+  return goalId ? learningGoals.value.find((goal) => goal.id === goalId) : null
+})
+const manualAssessmentAvailable = computed(() => Boolean(
+  selectedRun.value?.run?.educationMode
+  && selectedRun.value?.run?.educationLearningGoalId
+  && selectedStatus.value === 'SUCCEEDED'
+  && manualAssessmentGoal.value?.status === 'ACTIVE'
+  && manualAssessmentSteps.value.length,
+))
 const canStart = computed(() => selectedStatus.value === 'QUEUED')
 const canCancel = computed(() => ['QUEUED', 'RUNNING', 'WAITING_APPROVAL'].includes(selectedStatus.value))
 const canApprove = computed(() => selectedStatus.value === 'WAITING_APPROVAL')
@@ -1099,6 +1121,15 @@ watch(noticeMessage, (message) => {
 
 watch(chatEducation, persistChatEducation, { deep: true })
 
+watch(() => selectedRun.value?.run?.id, () => {
+  manualAssessmentForm.stepId = manualAssessmentSteps.value.at(-1)?.id || ''
+  manualAssessmentForm.correct = ''
+  manualAssessmentForm.observedMastery = ''
+  manualAssessmentForm.evidenceText = ''
+  manualAssessmentForm.feedback = ''
+  manualAssessmentError.value = ''
+})
+
 function activeConversationStorageScope() {
   return `${form.tenantId}:${form.userId}`
 }
@@ -1520,6 +1551,50 @@ async function recordRunFeedback(message, rating) {
     errorMessage.value = errorText(error)
   } finally {
     feedbackSavingRunId.value = ''
+  }
+}
+
+async function submitManualAssessment() {
+  if (!manualAssessmentAvailable.value || manualAssessmentSaving.value) return
+  if (!manualAssessmentForm.stepId || manualAssessmentForm.correct === '') {
+    manualAssessmentError.value = '请选择复核步骤和测评结果。'
+    return
+  }
+  if (!manualAssessmentForm.evidenceText.trim()) {
+    manualAssessmentError.value = '请填写作答或评分依据，系统不会接受无证据的人工复核。'
+    return
+  }
+  manualAssessmentSaving.value = true
+  manualAssessmentError.value = ''
+  try {
+    const run = selectedRun.value.run
+    const attempt = await api.submitGoalAssessment(run.educationLearningGoalId, {
+      runId: run.id,
+      stepId: manualAssessmentForm.stepId,
+      conceptKey: run.educationConceptKey || activeLearningGoal.value?.conceptKey || '',
+      correct: manualAssessmentForm.correct === 'true',
+      observedMastery: manualAssessmentForm.observedMastery === ''
+        ? null : Number(manualAssessmentForm.observedMastery),
+      evidenceText: manualAssessmentForm.evidenceText.trim(),
+      feedback: manualAssessmentForm.feedback.trim() || null,
+    })
+    learningGoalAssessments.value = [...learningGoalAssessments.value.filter((item) => item.id !== attempt.id), attempt]
+      .sort((left, right) => new Date(left.createdAt) - new Date(right.createdAt))
+    const recommendation = await api.getGoalRecommendation(run.educationLearningGoalId)
+    learningRecommendation.value = recommendation
+    learningGoalRecommendationMap.value = {
+      ...learningGoalRecommendationMap.value,
+      [run.educationLearningGoalId]: recommendation,
+    }
+    manualAssessmentForm.correct = ''
+    manualAssessmentForm.observedMastery = ''
+    manualAssessmentForm.evidenceText = ''
+    manualAssessmentForm.feedback = ''
+    noticeMessage.value = '人工复核已记录，学习目标进度和下一步动作已更新。'
+  } catch (error) {
+    manualAssessmentError.value = errorText(error)
+  } finally {
+    manualAssessmentSaving.value = false
   }
 }
 
@@ -4293,6 +4368,19 @@ onBeforeUnmount(() => {
               <button v-if="canRetry" class="secondary-button" type="button" :disabled="loading" @click="retrySelectedRun">重试</button>
               <button v-if="canCancel" class="danger-button" type="button" :disabled="loading" @click="cancelSelectedRun">{{ cancelActionLabel }}</button>
             </div>
+            <section v-if="manualAssessmentAvailable" class="manual-assessment-panel" aria-label="人工或学习者测评复核">
+              <div class="chat-change-review-heading"><div><span>ASSESSMENT EVIDENCE</span><strong>人工 / 学习者复核</strong></div><em>必须提供依据</em></div>
+              <p class="manual-assessment-help">本次复核会绑定当前教育 Run、目标知识点和具体步骤，并与 Agent 自动观察区分保存。</p>
+              <form class="manual-assessment-form" @submit.prevent="submitManualAssessment">
+                <label><span>复核步骤</span><select v-model="manualAssessmentForm.stepId" required><option v-for="step in manualAssessmentSteps" :key="step.id" :value="step.id">#{{ step.sequence }} · {{ step.name }}</option></select></label>
+                <label><span>结果</span><select v-model="manualAssessmentForm.correct" required><option value="">请选择</option><option value="true">正确</option><option value="false">错误</option></select></label>
+                <label><span>观察掌握度（可选）</span><input v-model="manualAssessmentForm.observedMastery" type="number" min="0" max="1" step="0.05" placeholder="按结果自动估计" /></label>
+                <label class="manual-assessment-wide"><span>作答 / 评分依据</span><textarea v-model="manualAssessmentForm.evidenceText" rows="3" maxlength="4000" placeholder="填写学生作答、推理过程或教师评分依据" required></textarea></label>
+                <label class="manual-assessment-wide"><span>复核反馈（可选）</span><input v-model="manualAssessmentForm.feedback" maxlength="1000" placeholder="例如：定义域判定正确，但理由不完整" /></label>
+                <p v-if="manualAssessmentError" class="policy-error manual-assessment-error">{{ manualAssessmentError }}</p>
+                <button class="secondary-button" type="submit" :disabled="manualAssessmentSaving">{{ manualAssessmentSaving ? '记录中…' : '记录复核结果' }}</button>
+              </form>
+            </section>
             <section v-if="workspaceChangePreviews.length" class="chat-change-review" aria-label="代码变更预览">
               <div class="chat-change-review-heading">
                 <div><span>CHANGE REVIEW</span><strong>{{ pendingWorkspaceChangePreviews.length ? '请先检查待审批变更' : '本轮代码变更' }}</strong></div>
@@ -5015,7 +5103,7 @@ onBeforeUnmount(() => {
                 <div class="learning-recommendation-heading"><div><span>下一步学习动作</span><strong>{{ learningRecommendation.nextActionTitle }}</strong></div><button class="secondary-button" type="button" @click="useLearningRecommendation">带着建议开始</button></div>
                 <p>{{ learningRecommendation.rationale }}</p>
                 <small>掌握度 {{ Math.round(learningRecommendation.currentMastery * 100) }}% / 目标 {{ Math.round(learningRecommendation.targetMastery * 100) }}% · 测评 {{ learningRecommendation.attemptCount }} 次 · 正确 {{ learningRecommendation.correctAttemptCount }} 次</small>
-                <details v-if="learningGoalAssessments.length" class="learning-assessment-history"><summary>查看测评历史（{{ learningGoalAssessments.length }}）</summary><div v-for="attempt in learningGoalAssessments.slice().reverse().slice(0, 5)" :key="attempt.id"><span :class="attempt.correct ? 'assessment-correct' : 'assessment-wrong'">{{ attempt.correct ? '正确' : '错误' }}</span><span>{{ Math.round(attempt.masteryBefore * 100) }}% → {{ Math.round(attempt.masteryAfter * 100) }}%</span><small>{{ formatDate(attempt.createdAt) }}</small></div></details>
+                <details v-if="learningGoalAssessments.length" class="learning-assessment-history"><summary>查看测评历史（{{ learningGoalAssessments.length }}）</summary><div v-for="attempt in learningGoalAssessments.slice().reverse().slice(0, 5)" :key="attempt.id"><span :class="attempt.correct ? 'assessment-correct' : 'assessment-wrong'">{{ attempt.correct ? '正确' : '错误' }}</span><span>{{ Math.round(attempt.masteryBefore * 100) }}% → {{ Math.round(attempt.masteryAfter * 100) }}%</span><small>{{ attempt.evidenceSource === 'MANUAL_REVIEW' ? '人工复核' : 'Agent观察' }} · {{ formatDate(attempt.createdAt) }}</small></div></details>
               </div>
             </div>
             <div class="education-source-editor">
