@@ -7,11 +7,18 @@ public record ToolExecutionContext(
         String tenantId,
         String userId,
         String workspaceId,
-        String idempotencyKey
+        String idempotencyKey,
+        String educationLearnerProfileId
 ) {
 
     /** 兼容工作区多选之前的工具实现，未绑定时仍使用服务端配置的默认工作区。 */
     public ToolExecutionContext(String runId, String stepId, String tenantId, String idempotencyKey) {
-        this(runId, stepId, tenantId, null, null, idempotencyKey);
+        this(runId, stepId, tenantId, null, null, idempotencyKey, null);
+    }
+
+    /** 兼容已有工作区工具构造方式；未启用教育 Agent 时画像为空。 */
+    public ToolExecutionContext(String runId, String stepId, String tenantId, String userId,
+                                String workspaceId, String idempotencyKey) {
+        this(runId, stepId, tenantId, userId, workspaceId, idempotencyKey, null);
     }
 }

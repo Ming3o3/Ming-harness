@@ -690,7 +690,8 @@ public class RunService {
         ToolDefinition definition = tool.definition();
         ToolExecutionContext executionContext = new ToolExecutionContext(
                 run.id(), step.id(), run.tenantId(), run.userId(), run.workspaceId(),
-                run.id() + ":" + step.id() + ":" + step.name());
+                run.id() + ":" + step.id() + ":" + step.name(),
+                run.educationConfiguration().learnerProfileId());
         // 有副作用的工具禁止自动重试；只读工具也必须显式声明瞬态错误才会重试。
         int maxAttempts = definition.readOnly()
                 ? Math.min(definition.maxAttempts(), runtimeLimits.maxToolAttempts()) : 1;
@@ -1311,7 +1312,7 @@ public class RunService {
                                            String modelInput, String workerId, boolean streamToChat) {
         String safeInput = sanitizer.sanitize(modelInput);
         List<ModelToolDefinition> tools = run.agentMode()
-                ? availableModelTools(run.tenantId(), run.permissions()) : List.of();
+                ? availableModelTools(run.tenantId(), run.permissions(), run.educationConfiguration()) : List.of();
         List<ModelMessage> messages = run.agentMode()
                 ? agentMessages(run.input(), safeInput, run.history(), runtimeLimits.maxContextChars(),
                 run.educationConfiguration()) : List.of();
@@ -1679,11 +1680,14 @@ public class RunService {
     }
 
     /** 只把当前组织和当前执行身份都可使用的工具契约发给模型，避免模型反复请求必然被拒绝的工具。 */
-    private List<ModelToolDefinition> availableModelTools(String tenantId, Set<String> grantedPermissions) {
+    private List<ModelToolDefinition> availableModelTools(String tenantId, Set<String> grantedPermissions,
+                                                          EducationRunConfiguration educationConfiguration) {
         TenantPolicyLimits limits = tenantPolicyService.limitsFor(tenantId);
         Set<String> permissions = grantedPermissions == null ? Set.of() : grantedPermissions;
         return toolRegistry.definitions().stream()
                 .filter(definition -> limits.allowsTool(definition.name()))
+                .filter(definition -> !definition.name().startsWith("education.")
+                        || (educationConfiguration != null && educationConfiguration.enabled()))
                 .filter(definition -> definition.requiredPermissions().stream().allMatch(permissions::contains))
                 .filter(definition -> toolRegistry.get(definition.name()).available())
                 .map(definition -> new ModelToolDefinition(
@@ -1700,6 +1704,11 @@ public class RunService {
         for (ModelToolCall call : calls) {
             HarnessTool tool = toolRegistry.get(call.name());
             ToolDefinition definition = tool.definition();
+            if (call.name().startsWith("education.")
+                    && (run.educationConfiguration() == null || !run.educationConfiguration().enabled())) {
+                throw new BusinessException(HttpStatus.FORBIDDEN, "EDUCATION_TOOL_OUTSIDE_MODE",
+                        "教育工具只能在教育 Agent 模式下调用");
+            }
             if (!limits.allowsTool(call.name())) {
                 throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_TOOL_NOT_ALLOWED",
                         "当前组织策略不允许使用工具: " + call.name());
