@@ -1900,8 +1900,6 @@ button svg {
 
   .governance-grid { grid-template-columns: minmax(0, 1fr); }
   .governance-fixed-card { height: auto; min-height: 0; overflow: visible; }
-  .api-key-create-grid { grid-template-columns: minmax(0, 1fr); }
-  .api-key-permissions-field { grid-column: auto; }
   .context-preview-form { grid-template-columns: minmax(0, 1fr); }
   .context-index-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .context-index-form > .field:first-child { grid-column: 1 / -1; }
@@ -2064,7 +2062,7 @@ button svg {
 }
 
 .stats-grid {
-  gap: 14px;
+  gap: 12px;
 }
 
 .stat-card::after {
@@ -2081,9 +2079,6 @@ button svg {
 
 .stat-card {
   border-radius: 12px;
-  min-width: 0;
-  min-height: 132px;
-  padding: 18px 20px 17px;
 }
 
 .stat-card strong {
@@ -2092,6 +2087,7 @@ button svg {
 
 .stat-total,
 .stat-running,
+.stat-success,
 .stat-failed {
   color: var(--muted);
 }
@@ -2109,14 +2105,6 @@ button svg {
 .create-panel,
 .panel {
   border-radius: 12px;
-}
-
-.create-panel {
-  padding: 24px 26px 23px;
-}
-
-.section-heading {
-  gap: 18px;
 }
 
 .field input,
