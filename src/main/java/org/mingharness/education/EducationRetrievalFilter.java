@@ -1,6 +1,9 @@
 package org.mingharness.education;
 
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -16,8 +19,15 @@ public record EducationRetrievalFilter(
         String curriculumVersion,
         String conceptKey,
         Integer minDifficulty,
-        Integer maxDifficulty
+        Integer maxDifficulty,
+        Map<String, Double> masteryScores
 ) {
+
+    /** 保持旧调用方的六参数构造方式；学习者状态默认为空。 */
+    public EducationRetrievalFilter(String subject, String gradeLevel, String curriculumVersion,
+                                    String conceptKey, Integer minDifficulty, Integer maxDifficulty) {
+        this(subject, gradeLevel, curriculumVersion, conceptKey, minDifficulty, maxDifficulty, Map.of());
+    }
 
     public EducationRetrievalFilter {
         subject = normalize(subject);
@@ -31,6 +41,7 @@ public record EducationRetrievalFilter(
             minDifficulty = maxDifficulty;
             maxDifficulty = temporary;
         }
+        masteryScores = normalizeMasteryScores(masteryScores);
     }
 
     public boolean active() {
@@ -59,6 +70,15 @@ public record EducationRetrievalFilter(
     public Integer minDifficultyOrNull() { return minDifficulty; }
     public Integer maxDifficultyOrNull() { return maxDifficulty; }
 
+    /** 返回不可变的知识点掌握度快照，分数已限制在 [0,1]。 */
+    public Map<String, Double> masteryScores() { return masteryScores; }
+
+    /** 供教育重排使用：没有观测过的知识点按中性掌握度处理。 */
+    public double masteryFor(String concept) {
+        if (concept == null || concept.isBlank()) return 0.5;
+        return masteryScores.getOrDefault(normalize(concept), 0.5);
+    }
+
     private static boolean equalsOrUnconstrained(String expected, String actual) {
         return expected == null || expected.equalsIgnoreCase(actual);
     }
@@ -80,5 +100,17 @@ public record EducationRetrievalFilter(
 
     private static Integer boundDifficulty(Integer value) {
         return value == null ? null : Math.max(1, Math.min(5, value));
+    }
+
+    private static Map<String, Double> normalizeMasteryScores(Map<String, Double> values) {
+        if (values == null || values.isEmpty()) return Map.of();
+        Map<String, Double> normalized = new LinkedHashMap<>();
+        values.forEach((key, value) -> {
+            String concept = normalize(key);
+            if (concept == null || value == null || !Double.isFinite(value)) return;
+            normalized.put(concept, Math.max(0.0, Math.min(1.0, value)));
+        });
+        return normalized.isEmpty()
+                ? Map.of() : Collections.unmodifiableMap(normalized);
     }
 }

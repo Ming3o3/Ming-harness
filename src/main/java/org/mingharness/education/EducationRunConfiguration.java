@@ -1,5 +1,8 @@
 package org.mingharness.education;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 /**
  * 在 Run 创建时冻结的教育执行配置。
  *
@@ -26,7 +29,30 @@ public record EducationRunConfiguration(
 
     public EducationRetrievalFilter retrievalFilter() {
         return enabled ? new EducationRetrievalFilter(subject, gradeLevel, curriculumVersion,
-                conceptKey, minDifficulty, maxDifficulty) : null;
+                conceptKey, minDifficulty, maxDifficulty, masteryScores()) : null;
+    }
+
+    /** 从随 Run 冻结的摘要恢复轻量掌握度快照，保证重启 Worker 后重排结果稳定。 */
+    public Map<String, Double> masteryScores() {
+        if (learnerStateSummary == null || learnerStateSummary.isBlank()
+                || learnerStateSummary.contains("暂无掌握度记录")) {
+            return Map.of();
+        }
+        Map<String, Double> result = new LinkedHashMap<>();
+        for (String item : learnerStateSummary.split(",")) {
+            int separator = item.lastIndexOf('=');
+            if (separator <= 0 || separator >= item.length() - 1) continue;
+            String concept = item.substring(0, separator).trim();
+            try {
+                double score = Double.parseDouble(item.substring(separator + 1).trim());
+                if (!concept.isBlank() && Double.isFinite(score)) {
+                    result.put(concept, Math.max(0.0, Math.min(1.0, score)));
+                }
+            } catch (NumberFormatException ignored) {
+                // 摘要是诊断信息；单个损坏项不应让整个教育 Run 无法执行。
+            }
+        }
+        return Map.copyOf(result);
     }
 
     public String promptSummary() {

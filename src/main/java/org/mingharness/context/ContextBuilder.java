@@ -4,6 +4,7 @@ import org.mingharness.config.ContextRetrievalProperties;
 import org.mingharness.context.api.ContextEvidence;
 import org.mingharness.context.api.ContextResult;
 import org.mingharness.education.EducationKnowledgeSourceRepository;
+import org.mingharness.education.EducationKnowledgeSource;
 import org.mingharness.education.EducationRetrievalFilter;
 import org.mingharness.observability.HarnessMetrics;
 import org.springframework.dao.DataAccessException;
@@ -89,6 +90,10 @@ public class ContextBuilder {
             // embedding 服务或 pgvector 暂时不可用时保持旧的确定性关键词召回能力。
         }
         ContextResult keywordResult = buildKeyword(tenantId, userId, query, maxChars, educationFilter);
+        if (educationFilter != null && educationFilter.active()) {
+            vectorResult = rerankEducation(vectorResult, tenantId, educationFilter, maxChars);
+            keywordResult = rerankEducation(keywordResult, tenantId, educationFilter, maxChars);
+        }
         if (vectorResult.isEmpty()) {
             if (!keywordResult.isEmpty()) metrics.contextFallback();
             return keywordResult;
@@ -133,7 +138,8 @@ public class ContextBuilder {
             }
         }
 
-        candidates.sort(Comparator.comparingInt(ScoredContext::score).reversed()
+        candidates.sort(Comparator.comparingDouble(ScoredContext::rankingScore).reversed()
+                .thenComparing(Comparator.comparingInt(ScoredContext::score).reversed())
                 .thenComparing(ScoredContext::createdAt, Comparator.reverseOrder()));
 
         List<ContextEvidence> evidences = new ArrayList<>();
@@ -150,6 +156,76 @@ public class ContextBuilder {
                     candidate.citation(), excerpt));
         }
         return new ContextResult(context.toString(), List.copyOf(evidences));
+    }
+
+    /**
+     * 教育候选的二次排序：硬约束已经在召回阶段执行，这里把目标知识点、前置知识缺口
+     * 和学习者掌握度转成可解释的软分数，避免高相似度但难度不合适的材料占据上下文。
+     */
+    private ContextResult rerankEducation(ContextResult result, String tenantId,
+                                          EducationRetrievalFilter filter, int maxChars) {
+        if (result == null || result.isEmpty() || educationSourceRepository == null) return result;
+        List<RankedEducationEvidence> ranked = result.evidences().stream()
+                .map(evidence -> new RankedEducationEvidence(evidence,
+                        educationScore(tenantId, evidence, filter)))
+                .sorted(Comparator.comparingDouble(RankedEducationEvidence::score).reversed())
+                .toList();
+        List<ContextEvidence> evidences = new ArrayList<>();
+        StringBuilder text = new StringBuilder();
+        for (RankedEducationEvidence rankedEvidence : ranked) {
+            ContextEvidence evidence = rankedEvidence.evidence();
+            String block = contextBlock(evidence.title(), evidence.excerpt());
+            if (text.length() + block.length() > maxChars) continue;
+            text.append(block);
+            evidences.add(evidence);
+        }
+        return new ContextResult(text.toString(), List.copyOf(evidences));
+    }
+
+    private double educationScore(String tenantId, ContextEvidence evidence,
+                                  EducationRetrievalFilter filter) {
+        if (evidence == null || evidence.citation() == null
+                || !evidence.citation().startsWith("document:")) return 0.0;
+        String documentId = evidence.documentId();
+        if (documentId == null || documentId.isBlank()) return 0.0;
+        EducationKnowledgeSource source = educationSourceRepository
+                .findByTenantIdAndDocumentIdAndDeletedAtIsNull(tenantId, documentId)
+                .orElse(null);
+        if (source == null) return 0.0;
+
+        double score = 0.0;
+        if (filter.conceptKeyOrNull() != null
+                && containsConcept(source.getConceptTags(), filter.conceptKeyOrNull())) {
+            score += 0.45;
+        }
+        String[] prerequisites = splitConcepts(source.getPrerequisiteConcepts());
+        if (prerequisites.length > 0) {
+            double prerequisiteGap = 0.0;
+            for (String prerequisite : prerequisites) {
+                prerequisiteGap += 1.0 - filter.masteryFor(prerequisite);
+            }
+            prerequisiteGap /= prerequisites.length;
+            score += 0.25 * prerequisiteGap;
+        }
+        double targetMastery = filter.masteryFor(filter.conceptKeyOrNull());
+        double preferredDifficulty = targetMastery < 0.35 ? 2.0
+                : targetMastery < 0.70 ? 3.0 : 4.0;
+        score += 0.30 * (1.0 - Math.min(1.0,
+                Math.abs(source.getDifficultyLevel() - preferredDifficulty) / 4.0));
+        return score;
+    }
+
+    private boolean containsConcept(String values, String expected) {
+        if (values == null || values.isBlank() || expected == null || expected.isBlank()) return false;
+        for (String value : splitConcepts(values)) {
+            if (value.equalsIgnoreCase(expected.trim())) return true;
+        }
+        return false;
+    }
+
+    private String[] splitConcepts(String values) {
+        if (values == null || values.isBlank()) return new String[0];
+        return values.split(",");
     }
 
     private boolean matchesEducationFilter(String tenantId, KnowledgeDocument document,
@@ -313,6 +389,10 @@ public class ContextBuilder {
     private record ScoredContext(String id, String title, String citation,
                                  String content, int score, Instant createdAt) {
 
+        private double rankingScore() {
+            return score;
+        }
+
         private static ScoredContext document(KnowledgeDocument document, int score) {
             return new ScoredContext(document.getId(), document.getTitle(),
                     "document:" + document.getId(), document.getContent(), score, document.getCreatedAt());
@@ -327,5 +407,8 @@ public class ContextBuilder {
 
     private record RankedEvidence(ContextEvidence evidence, double score,
                                   int vectorRank, int sourceRank, int order) {
+    }
+
+    private record RankedEducationEvidence(ContextEvidence evidence, double score) {
     }
 }

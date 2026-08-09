@@ -11,6 +11,7 @@ import org.mingharness.education.EducationRetrievalFilter;
 import org.mingharness.observability.HarnessMetrics;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -126,5 +127,48 @@ class ContextBuilderTests {
 
         assertEquals(1, result.evidences().size());
         assertEquals(math.getId(), result.evidences().get(0).documentId());
+    }
+
+    @Test
+    void shouldRerankEducationEvidenceByLearnerMasteryAndPrerequisiteGap() {
+        KnowledgeDocumentRepository documentRepository = mock(KnowledgeDocumentRepository.class);
+        MemoryEntryRepository memoryRepository = mock(MemoryEntryRepository.class);
+        VectorContextRetriever vectorRetriever = mock(VectorContextRetriever.class);
+        EducationKnowledgeSourceRepository sourceRepository = mock(EducationKnowledgeSourceRepository.class);
+        HarnessMetrics metrics = new HarnessMetrics(new SimpleMeterRegistry());
+        ContextBuilder builder = new ContextBuilder(documentRepository, memoryRepository, vectorRetriever,
+                metrics, new ContextRetrievalProperties(20, 5, 1, 0.2), sourceRepository);
+
+        KnowledgeDocument hard = new KnowledgeDocument("tenant-a", "teacher", "函数综合提升",
+                "函数综合题", "INTERNAL", "student");
+        KnowledgeDocument easy = new KnowledgeDocument("tenant-a", "teacher", "函数基础讲解",
+                "函数基础", "INTERNAL", "student");
+        EducationKnowledgeSource hardSource = new EducationKnowledgeSource("tenant-a", hard.getId(),
+                "数学", "高中一年级", "人教A版", "函数", "掌握函数综合应用",
+                "函数", "集合,定义域", 5, "TEXTBOOK");
+        EducationKnowledgeSource easySource = new EducationKnowledgeSource("tenant-a", easy.getId(),
+                "数学", "高中一年级", "人教A版", "函数", "掌握函数基础",
+                "函数", "集合", 2, "TEXTBOOK");
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "数学", "高中一年级", "人教A版", "函数", null, null,
+                Map.of("函数", 0.20, "集合", 0.10, "定义域", 0.05));
+        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 4_000, filter))
+                .thenReturn(new ContextResult("vector-context", List.of(
+                        new ContextEvidence(hard.getId(), "函数综合提升", "document:" + hard.getId(), "综合"),
+                        new ContextEvidence(easy.getId(), "函数基础讲解", "document:" + easy.getId(), "基础"))));
+        when(documentRepository.findTop100ByTenantIdAndDeletedAtIsNullOrderByCreatedAtDesc("tenant-a"))
+                .thenReturn(List.of());
+        when(memoryRepository.findTop100ByTenantIdAndUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(
+                "tenant-a", "student")).thenReturn(List.of());
+        when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", hard.getId()))
+                .thenReturn(java.util.Optional.of(hardSource));
+        when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", easy.getId()))
+                .thenReturn(java.util.Optional.of(easySource));
+
+        ContextResult result = builder.build("tenant-a", "student", "函数", 4_000, filter);
+
+        assertEquals(2, result.evidences().size());
+        assertEquals(easy.getId(), result.evidences().get(0).documentId());
+        assertEquals(hard.getId(), result.evidences().get(1).documentId());
     }
 }

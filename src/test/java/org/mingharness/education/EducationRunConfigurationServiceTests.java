@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -42,5 +43,26 @@ class EducationRunConfigurationServiceTests {
         assertTrue(configuration.retrievalFilter().matches(new EducationKnowledgeSource(
                 "tenant-a", "doc-1", "数学", "高中一年级", "人教A版", "第一章",
                 "理解函数", "函数", "集合", 3, "TEXTBOOK")));
+        assertEquals(0.35, configuration.retrievalFilter().masteryFor("函数"));
+    }
+
+    @Test
+    void shouldRejectUnknownPedagogicalMode() {
+        LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        LearnerProfile profile = new LearnerProfile("tenant-a", "student-1", "数学",
+                "高中一年级", "人教A版", null, "zh-CN");
+        when(profiles.findByIdAndTenantIdAndUserId(profile.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(profile));
+        when(mastery.findByTenantIdAndLearnerProfileIdOrderByConceptKeyAsc("tenant-a", profile.getId()))
+                .thenReturn(List.of());
+
+        EducationRunConfigurationService service = new EducationRunConfigurationService(
+                profiles, mastery, new SensitiveDataSanitizer());
+
+        var exception = assertThrows(org.mingharness.common.BusinessException.class, () -> service.resolve(
+                "tenant-a", "student-1", new EducationRunOptions(true, profile.getId(),
+                        null, null, null, "函数", null, null, "FREE_CHAT")));
+        assertEquals("EDUCATION_PEDAGOGICAL_MODE_INVALID", exception.getCode());
     }
 }
