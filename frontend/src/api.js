@@ -311,6 +311,18 @@ export const api = {
   }),
   listGoalAssessments: (goalId) => request(`/education/goals/${encodeURIComponent(goalId)}/assessments`),
   getGoalRecommendation: (goalId) => request(`/education/goals/${encodeURIComponent(goalId)}/recommendation`),
+  executeLearningGoalNextAction: (goalId, payload = {}, idempotencyKey) => request(
+    `/education/goals/${encodeURIComponent(goalId)}/next-action`, {
+      method: 'POST',
+      headers: {
+        ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
+        ...(configuredApiKey ? {} : {
+          'X-Permissions': localStorage.getItem('harnessChatPermissions') || defaultChatPermissions,
+        }),
+      },
+      body: JSON.stringify(payload),
+    },
+  ),
   getTenantPolicy: (tenantId) => request(`/admin/tenants/${encodeURIComponent(tenantId)}/policy`),
   updateTenantPolicy: (tenantId, payload) => request(`/admin/tenants/${encodeURIComponent(tenantId)}/policy`, {
     method: 'PUT',

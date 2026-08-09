@@ -231,7 +231,7 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
         if (path.matches("/api/education/profiles(?:/[^/]+)?(?:/mastery)?")) {
             return "GET".equalsIgnoreCase(method) ? "education.read" : "education.write";
         }
-        if (path.matches("/api/education/goals(?:/[^/]+)?(?:/(status|assessments|recommendation))?")) {
+        if (path.matches("/api/education/goals(?:/[^/]+)?(?:/(status|assessments|recommendation|next-action))?")) {
             return "GET".equalsIgnoreCase(method) ? "education.read" : "education.write";
         }
         if ("GET".equalsIgnoreCase(method)

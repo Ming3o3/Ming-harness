@@ -1,9 +1,12 @@
 package org.mingharness.education;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.mingharness.conversation.api.ConversationDetail;
 import org.mingharness.education.api.EducationSourceRequest;
 import org.mingharness.education.api.EducationSourceView;
 import org.mingharness.education.api.AssessmentAttemptView;
+import org.mingharness.education.api.ExecuteLearningActionRequest;
 import org.mingharness.education.api.LearnerMasteryView;
 import org.mingharness.education.api.LearnerProfileRequest;
 import org.mingharness.education.api.LearnerProfileView;
@@ -36,17 +39,20 @@ public class EducationController {
     private final LearningGoalService learningGoalService;
     private final EducationAssessmentService assessmentService;
     private final LearningRecommendationService recommendationService;
+    private final EducationActionService actionService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
-                                LearningGoalService learningGoalService,
-                                EducationAssessmentService assessmentService,
-                                LearningRecommendationService recommendationService) {
+                               LearningGoalService learningGoalService,
+                               EducationAssessmentService assessmentService,
+                               LearningRecommendationService recommendationService,
+                               EducationActionService actionService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
         this.assessmentService = assessmentService;
         this.recommendationService = recommendationService;
+        this.actionService = actionService;
     }
 
     @PostMapping("/sources")
@@ -144,6 +150,18 @@ public class EducationController {
     public LearningRecommendationView recommendation(@PathVariable String goalId) {
         HarnessIdentity identity = identity();
         return recommendationService.recommend(identity.tenantId(), identity.userId(), goalId);
+    }
+
+    @PostMapping("/goals/{goalId}/next-action")
+    public ConversationDetail executeNextAction(@PathVariable String goalId,
+                                                 @Valid @RequestBody(required = false)
+                                                 ExecuteLearningActionRequest request,
+                                                 HttpServletRequest httpRequest) {
+        HarnessIdentity identity = identity();
+        String permissions = identity.usesTrustedPermissions()
+                ? identity.permissionsCsv() : httpRequest.getHeader("X-Permissions");
+        return actionService.execute(identity.tenantId(), identity.userId(), goalId, request,
+                permissions, httpRequest.getHeader("Idempotency-Key"));
     }
 
     private HarnessIdentity identity() {

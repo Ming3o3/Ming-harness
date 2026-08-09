@@ -2642,14 +2642,27 @@ async function useLearningRecommendation() {
     chatInputRef.value?.focus()
     return
   }
-  if (!activeConversationId.value) {
-    noticeMessage.value = '已准备下一步学习动作；请先打开或创建一个对话。'
+  clearMessages()
+  try {
+    const detail = await api.executeLearningGoalNextAction(recommendation.learningGoalId, {
+      conversationId: activeConversationId.value || null,
+      maxTurns: chatMaxTurns.value,
+    }, `learning-action-${crypto.randomUUID?.() || Date.now()}`)
+    activeConversation.value = detail
+    conversations.value = [detail.conversation, ...conversations.value
+      .filter((item) => item.id !== detail.conversation.id)]
+    rememberConversation(detail.conversation.id)
+    setChatInput('')
+    const runId = latestConversationRun(detail)
+    if (runId) void selectRun(runId, false, false)
+    void loadConversations(detail.conversation.id)
+    noticeMessage.value = `已开始下一步：${recommendation.nextActionTitle}`
+  } catch (error) {
+    chatInput.value = recommendation.nextActionPrompt
+    saveChatDraft(activeConversationId.value, recommendation.nextActionPrompt)
+    errorMessage.value = errorText(error)
     chatInputRef.value?.focus()
-    return
   }
-  // 推荐动作现在直接进入下一轮对话，仍复用现有幂等、权限和 Run 创建链路。
-  await sendChatMessage()
-  if (!errorMessage.value) noticeMessage.value = `已开始下一步：${recommendation.nextActionTitle}`
 }
 
 function selectChatLearnerProfile() {
