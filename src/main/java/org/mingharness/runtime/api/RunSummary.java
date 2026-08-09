@@ -1,7 +1,6 @@
 package org.mingharness.runtime.api;
 
 import org.mingharness.runtime.domain.RunStatus;
-import org.mingharness.runtime.domain.RunScenario;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -28,8 +27,7 @@ public record RunSummary(
         BigDecimal totalCost,
         boolean agentMode,
         int maxTurns,
-        String workspaceId,
-        RunScenario scenario
+        String workspaceId
 ) {
 
     /** 兼容早期只返回幂等键的调用方。 */
@@ -39,7 +37,7 @@ public record RunSummary(
                       Instant updatedAt, int stepCount, String idempotencyKey) {
         this(id, tenantId, userId, title, modelName, promptVersion, policyVersion, input, output,
                 error, status, budget, createdAt, updatedAt, stepCount, idempotencyKey,
-                null, 0, BigDecimal.ZERO, false, 1, null, RunScenario.UNCLASSIFIED);
+                null, 0, BigDecimal.ZERO, false, 1, null);
     }
 
     /** 兼容上一版已经携带追踪、耗时和成本字段的调用方。 */
@@ -50,10 +48,6 @@ public record RunSummary(
                       long durationMs, BigDecimal totalCost) {
         this(id, tenantId, userId, title, modelName, promptVersion, policyVersion, input, output,
                 error, status, budget, createdAt, updatedAt, stepCount, idempotencyKey,
-                traceId, durationMs, totalCost, false, 1, null, RunScenario.UNCLASSIFIED);
-    }
-
-    public RunScenario effectiveScenario() {
-        return scenario == null ? RunScenario.UNCLASSIFIED : scenario;
+                traceId, durationMs, totalCost, false, 1, null);
     }
 }

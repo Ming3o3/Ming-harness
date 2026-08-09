@@ -40,9 +40,6 @@ public class Run {
     /** Run 创建时冻结工作区，防止用户后来切换项目而让旧 Worker 写入新目录。 */
     @Column(name = "workspace_id", length = 128)
     private String workspaceId;
-    @Enumerated(EnumType.STRING)
-    @Column(name = "scenario", nullable = false, length = 32)
-    private RunScenario scenario;
     /** 创建 Run 时固化的用户模型供应商快照；为空表示沿用环境默认模型或旧数据兼容路径。 */
     @Column(name = "model_config_snapshot_id", length = 128)
     private String modelConfigSnapshotId;
@@ -125,15 +122,6 @@ public class Run {
                String modelName, String promptVersion, String policyVersion, String idempotencyKey,
                String permissionsSnapshot, boolean agentMode, int maxTurns, String conversationId,
                String workspaceId) {
-        this(tenantId, userId, title, input, budget, modelName, promptVersion, policyVersion,
-                idempotencyKey, permissionsSnapshot, agentMode, maxTurns, conversationId, workspaceId,
-                RunScenario.UNCLASSIFIED);
-    }
-
-    public Run(String tenantId, String userId, String title, String input, BigDecimal budget,
-               String modelName, String promptVersion, String policyVersion, String idempotencyKey,
-               String permissionsSnapshot, boolean agentMode, int maxTurns, String conversationId,
-               String workspaceId, RunScenario scenario) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = tenantId;
         this.userId = userId;
@@ -147,7 +135,6 @@ public class Run {
         this.permissionsSnapshot = permissionsSnapshot;
         this.conversationId = conversationId;
         this.workspaceId = workspaceId;
-        this.scenario = scenario == null ? RunScenario.UNCLASSIFIED : scenario;
         this.agentMode = agentMode;
         this.maxTurns = Math.max(1, maxTurns);
         this.traceId = UUID.randomUUID().toString();
@@ -299,11 +286,6 @@ public class Run {
     public String getPolicyVersion() { return policyVersion; }
     public String getConversationId() { return conversationId; }
     public String getWorkspaceId() { return workspaceId; }
-    public RunScenario getScenario() { return scenario == null ? RunScenario.UNCLASSIFIED : scenario; }
-
-    public void assignScenario(RunScenario value) {
-        this.scenario = value == null ? RunScenario.UNCLASSIFIED : value;
-    }
     public String getModelConfigSnapshotId() { return modelConfigSnapshotId; }
     public String getIdempotencyKey() { return idempotencyKey; }
     public String getPermissionsSnapshot() { return permissionsSnapshot; }

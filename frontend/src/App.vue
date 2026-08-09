@@ -176,7 +176,6 @@ const rejectReason = ref('')
 const rejectReasonInputRef = ref(null)
 const showChatAgentSettings = ref(false)
 const chatMaxTurns = ref(readChatMaxTurns())
-const chatScenario = ref('KNOWLEDGE_QA')
 const showCommandPalette = ref(false)
 const commandQuery = ref('')
 const commandSelectedIndex = ref(0)
@@ -370,7 +369,6 @@ const form = reactive({
   permissions: '',
   agentMode: false,
   maxTurns: 1000,
-  scenario: 'UNCLASSIFIED',
 })
 
 const documentForm = reactive({
@@ -777,17 +775,7 @@ function decodeAgentStep(step) {
 }
 
 function runModeLabel(run) {
-  const scenario = scenarioLabel(run?.scenario)
-  return run?.agentMode ? `${scenario} · 最多 ${run.maxTurns || '—'} 轮` : `${scenario} · 单轮执行`
-}
-
-function scenarioLabel(scenario) {
-  return {
-    KNOWLEDGE_QA: '知识问答',
-    CODE_AGENT: '项目 Agent',
-    PROCESS_AUTOMATION: '流程自动化',
-    UNCLASSIFIED: '未分类',
-  }[scenario] || '未分类'
+  return run?.agentMode ? `最多 ${run.maxTurns || '—'} 轮` : '单轮执行'
 }
 
 function decodeWorkspaceExec(step) {
@@ -2171,7 +2159,6 @@ async function sendChatMessage() {
     const detail = await api.sendConversationMessage(conversationId, {
       content,
       maxTurns: chatMaxTurns.value,
-      scenario: chatScenario.value,
       attachmentIds: uploadedAttachments.map((attachment) => attachment.id),
     }, `chat-${crypto.randomUUID?.() || Date.now()}`)
     messageSubmitted = true
@@ -3619,7 +3606,6 @@ onBeforeUnmount(() => {
             <div v-if="showChatAgentSettings && activeConversationId" class="chat-agent-settings" aria-label="Agent 设置">
               <div class="chat-agent-settings-heading"><div><strong>Agent 执行深度</strong><small>限制本轮最多执行的模型轮数，工具结果会继续计入同一 Run。</small></div><button type="button" aria-label="关闭 Agent 设置" @click="showChatAgentSettings = false"><X :size="14" /></button></div>
               <div class="chat-agent-settings-controls">
-                <label><span>业务场景</span><select v-model="chatScenario" :disabled="chatSending || chatUploading"><option value="KNOWLEDGE_QA">知识问答 / 客服</option><option value="CODE_AGENT">代码 / 项目 Agent</option><option value="PROCESS_AUTOMATION">运营 / 流程自动化</option></select></label>
                 <label><span>模型轮数上限</span><input v-model.number="chatMaxTurns" type="number" min="1" max="1000" step="1" :disabled="chatSending || chatUploading" @change="persistChatMaxTurns" /></label>
                 <div class="chat-agent-presets" aria-label="Agent 深度预设">
                   <button v-for="preset in [8, 24, 100, 1000]" :key="preset" type="button" :class="{ active: chatMaxTurns === preset }" :disabled="chatSending || chatUploading" @click="setChatMaxTurns(preset)">{{ preset === 1000 ? '平台上限' : `${preset} 轮` }}</button>
@@ -3642,7 +3628,7 @@ onBeforeUnmount(() => {
                 <span class="chat-composer-hint-context">{{ desktopWorkspaceDropping ? '正在授权拖入的本地项目…' : workspaceConnected ? 'Agent 可直接操作本会话绑定的本地项目' : '文件夹导入后保留层级' }}</span>
               </span>
               <div class="chat-composer-actions">
-                <button class="secondary-button chat-agent-settings-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="showChatAgentSettings = !showChatAgentSettings"><Settings2 :size="14" /><span>{{ scenarioLabel(chatScenario) }} · {{ chatMaxTurns }} 轮</span></button>
+                <button class="secondary-button chat-agent-settings-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="showChatAgentSettings = !showChatAgentSettings"><Settings2 :size="14" /><span>Agent · {{ chatMaxTurns }} 轮</span></button>
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatAttachmentPicker"><Paperclip :size="14" /><span>附件</span></button>
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatFolderPicker"><FolderOpen :size="14" /><span>文件夹</span></button>
                 <button v-if="canCancelChat" class="secondary-button chat-stop-button" type="button" :disabled="chatCancellingRunId === pendingChatMessage?.runId" @click="cancelChatRun"><Square :size="14" /><span>{{ chatCancellingRunId === pendingChatMessage?.runId ? '处理中…' : (chatRunStatus === 'WAITING_APPROVAL' ? '撤回审批' : '停止') }}</span></button>
@@ -4035,15 +4021,6 @@ onBeforeUnmount(() => {
             <span>权限快照（可选）</span>
             <input v-model="form.permissions" maxlength="1000" placeholder="例如：orders.read,orders.write" />
           </label>
-          <label class="field">
-            <span>业务场景</span>
-            <select v-model="form.scenario">
-              <option value="UNCLASSIFIED">自动识别</option>
-              <option value="KNOWLEDGE_QA">知识问答 / 客服</option>
-              <option value="CODE_AGENT">代码 / 项目 Agent</option>
-              <option value="PROCESS_AUTOMATION">运营 / 流程自动化</option>
-            </select>
-          </label>
           <div class="field field-wide agent-mode-field">
             <span>运行模式</span>
             <div class="agent-mode-controls">
@@ -4144,7 +4121,6 @@ onBeforeUnmount(() => {
               <div><span>组织 / 用户</span><strong>{{ selectedRun.run.tenantId }} / {{ selectedRun.run.userId }}</strong></div>
               <div><span>模型</span><strong>{{ selectedRun.run.modelName }}</strong></div>
               <div><span>Prompt / 策略</span><strong>{{ selectedRun.run.promptVersion }} · {{ selectedRun.run.policyVersion }}</strong></div>
-              <div><span>业务场景</span><strong>{{ scenarioLabel(selectedRun.run.scenario) }}</strong></div>
               <div><span>模式 / 轮数</span><strong>{{ runModeLabel(selectedRun.run) }}</strong></div>
               <div><span>Trace / 耗时</span><strong>{{ selectedRun.run.traceId?.slice(0, 12) || '—' }} · {{ selectedRun.run.durationMs || 0 }} ms</strong></div>
             </div>

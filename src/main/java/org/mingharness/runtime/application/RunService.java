@@ -11,7 +11,6 @@ import org.mingharness.runtime.api.RunSummary;
 import org.mingharness.runtime.api.StepView;
 import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.domain.RunStatus;
-import org.mingharness.runtime.domain.RunScenario;
 import org.mingharness.runtime.domain.Step;
 import org.mingharness.runtime.domain.StepStatus;
 import org.mingharness.runtime.domain.StepType;
@@ -254,8 +253,7 @@ public class RunService {
                     effectiveAgentMode,
                     request.effectiveMaxTurns(),
                     request.conversationId(),
-                    workspaceId,
-                    resolveScenario(request, workspaceId, effectiveAgentMode, effectiveToolName)
+                    workspaceId
             );
             run.attachModelConfigSnapshot(capturedModel.snapshotId());
             run.addStep(new Step(1, StepType.MODEL, "model.complete", sanitizedInput));
@@ -1574,20 +1572,8 @@ public class RunService {
                 run.getUpdatedAt(), run.getSteps().size(), run.getIdempotencyKey(), run.getTraceId(),
                 run.getDurationMs(), run.getSteps().stream().map(Step::getCost)
                         .reduce(BigDecimal.ZERO, BigDecimal::add), run.isAgentMode(), run.getMaxTurns(),
-                run.getWorkspaceId(), run.getScenario()
+                run.getWorkspaceId()
         );
-    }
-
-    private RunScenario resolveScenario(CreateRunRequest request, String workspaceId,
-                                        boolean agentMode, String toolName) {
-        if (request.scenario() != null && request.scenario() != RunScenario.UNCLASSIFIED) {
-            return request.scenario();
-        }
-        if (workspaceId != null) return RunScenario.CODE_AGENT;
-        if (agentMode && toolName != null && !"agent.model".equals(toolName)) {
-            return RunScenario.PROCESS_AUTOMATION;
-        }
-        return request.scenario() == null ? RunScenario.UNCLASSIFIED : request.scenario();
     }
 
     private void validateRuntimeLimits(CreateRunRequest request, TenantPolicyLimits tenantLimits) {

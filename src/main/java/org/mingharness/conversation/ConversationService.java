@@ -262,7 +262,7 @@ public class ConversationService {
                 tenantId, userId, conversation.getTitle(), runInput,
                 null, sanitizer.sanitize(request.modelName()), "prompt-v1", "policy-v1",
                 BigDecimal.ONE, effectiveIdempotencyKey, permissions, true, request.effectiveMaxTurns(),
-                conversation.getId(), conversation.getWorkspaceId()).withScenario(request.scenario());
+                conversation.getId(), conversation.getWorkspaceId());
         RunSummary run = runService.create(runRequest);
 
         ConversationMessage userMessage = messageRepository.findByRunIdAndRole(run.id(), ConversationMessageRole.USER)
@@ -299,7 +299,6 @@ public class ConversationService {
         if (!content.equals(userMessage.getContent())
                 || !run.isAgentMode()
                 || run.getMaxTurns() != request.effectiveMaxTurns()
-                || request.scenario() != null && request.scenario() != run.getScenario()
                 || !sameRequestedModel(run, request.modelName())
                 || !sameAttachmentIds(userMessage.getId(), attachmentIds)
                 || !normalizePermissions(permissions).equals(normalizePermissions(run.getPermissionsSnapshot()))) {
