@@ -281,6 +281,25 @@ export const api = {
   listMemories: () => request('/context/memories'),
   createMemory: (payload) => request('/context/memories', { method: 'POST', body: JSON.stringify(payload) }),
   deleteMemory: (memoryId) => request(`/context/memories/${encodeURIComponent(memoryId)}`, { method: 'DELETE' }),
+  listEducationSources: () => request('/education/sources'),
+  saveEducationSource: (payload) => request('/education/sources', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+  deleteEducationSource: (documentId) => request(`/education/sources/${encodeURIComponent(documentId)}`, {
+    method: 'DELETE',
+  }),
+  listLearnerProfiles: () => request('/education/profiles'),
+  saveLearnerProfile: (payload) => request('/education/profiles', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+  activeLearnerProfile: () => request('/education/profiles/active'),
+  listLearnerMastery: (profileId) => request(`/education/profiles/${encodeURIComponent(profileId)}/mastery`),
+  updateLearnerMastery: (profileId, payload) => request(`/education/profiles/${encodeURIComponent(profileId)}/mastery`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
   getTenantPolicy: (tenantId) => request(`/admin/tenants/${encodeURIComponent(tenantId)}/policy`),
   updateTenantPolicy: (tenantId, payload) => request(`/admin/tenants/${encodeURIComponent(tenantId)}/policy`, {
     method: 'PUT',

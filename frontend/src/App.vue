@@ -40,6 +40,11 @@ const selectedRun = ref(null)
 const auditEvents = ref([])
 const documents = ref([])
 const memories = ref([])
+const educationSources = ref([])
+const learnerProfiles = ref([])
+const activeLearnerProfile = ref(null)
+const educationLoading = ref(false)
+const educationError = ref('')
 const contextPreviewQuery = ref('')
 const contextPreviewMaxChars = ref(4000)
 const contextPreviewResult = ref(null)
@@ -403,6 +408,17 @@ const form = reactive({
   permissions: '',
   agentMode: false,
   maxTurns: 1000,
+  education: {
+    enabled: false,
+    learnerProfileId: '',
+    subject: '',
+    gradeLevel: '',
+    curriculumVersion: '',
+    conceptKey: '',
+    minDifficulty: null,
+    maxDifficulty: null,
+    pedagogicalMode: 'AUTO',
+  },
 })
 
 // 权限选项从工具注册表的 requiredPermissions 聚合而来，避免创建 Run 时手写权限字符串。
@@ -412,6 +428,8 @@ const permissionDescriptions = {
   'workspace.write': { label: '工作区写入', description: '编辑或写入项目文件（仍需审批）' },
   'workspace.exec': { label: '工作区命令执行', description: '运行白名单命令（仍需审批）' },
   'network.external': { label: '外部网络访问', description: '允许工具访问外部网络' },
+  'education.read': { label: '读取教育画像', description: '读取课程元数据和学习者掌握度' },
+  'education.write': { label: '更新教育状态', description: '记录形成性评价并更新学习者画像' },
 }
 
 function permissionList(value) {
@@ -456,6 +474,27 @@ const memoryForm = reactive({
   expiresAt: '',
 })
 const memoryDeletingId = ref('')
+
+const learnerProfileForm = reactive({
+  subject: '数学',
+  gradeLevel: '高中一年级',
+  curriculumVersion: '人教A版',
+  learningGoal: '',
+  language: 'zh-CN',
+})
+
+const educationSourceForm = reactive({
+  documentId: '',
+  subject: '数学',
+  gradeLevel: '高中一年级',
+  curriculumVersion: '人教A版',
+  chapter: '',
+  learningObjectives: '',
+  conceptTags: '',
+  prerequisiteConcepts: '',
+  difficultyLevel: 3,
+  sourceType: 'TEXTBOOK',
+})
 
 
 const tenantPolicyForm = reactive({
@@ -2380,6 +2419,7 @@ async function loadDashboard() {
     documents.value = documentData
     memories.value = memoryData
     contextConfiguration.value = contextConfigurationData
+    await loadEducationData()
     if (selectedRun.value) {
       await selectRun(selectedRun.value.run.id, false)
     } else if (runs.value.length) {
@@ -2388,6 +2428,33 @@ async function loadDashboard() {
   } catch (error) {
     errorMessage.value = errorText(error)
   }
+}
+
+async function loadEducationData() {
+  try {
+    const [sources, profiles] = await Promise.all([
+      api.listEducationSources(),
+      api.listLearnerProfiles(),
+    ])
+    educationSources.value = sources
+    learnerProfiles.value = profiles
+    activeLearnerProfile.value = profiles.find((profile) => profile.active) || profiles[0] || null
+    if (activeLearnerProfile.value) {
+      applyLearnerProfileToEducationRun(activeLearnerProfile.value)
+    }
+    educationError.value = ''
+  } catch (error) {
+    // 教育权限是可选的；不应让没有教育权限的通用 Agent 用户无法打开控制台。
+    educationError.value = errorText(error)
+  }
+}
+
+function applyLearnerProfileToEducationRun(profile) {
+  if (!profile) return
+  form.education.learnerProfileId = profile.id
+  form.education.subject = profile.subject || ''
+  form.education.gradeLevel = profile.gradeLevel || ''
+  form.education.curriculumVersion = profile.curriculumVersion || ''
 }
 
 async function loadContextConfiguration() {
@@ -3027,6 +3094,55 @@ async function deleteDocument(document) {
   }
 }
 
+async function saveLearnerProfile() {
+  if (!learnerProfileForm.subject.trim() || !learnerProfileForm.gradeLevel.trim()
+    || !learnerProfileForm.curriculumVersion.trim() || educationLoading.value) return
+  clearMessages()
+  educationLoading.value = true
+  try {
+    const profile = await api.saveLearnerProfile({
+      subject: learnerProfileForm.subject.trim(),
+      gradeLevel: learnerProfileForm.gradeLevel.trim(),
+      curriculumVersion: learnerProfileForm.curriculumVersion.trim(),
+      learningGoal: learnerProfileForm.learningGoal.trim(),
+      language: learnerProfileForm.language.trim() || 'zh-CN',
+    })
+    learnerProfiles.value = [profile, ...learnerProfiles.value.filter((item) => item.id !== profile.id)]
+    activeLearnerProfile.value = profile
+    applyLearnerProfileToEducationRun(profile)
+    noticeMessage.value = '学习者画像已保存；教育 Agent 会按该画像选择课程内容和教学策略。'
+    educationError.value = ''
+  } catch (error) {
+    educationError.value = errorText(error)
+  } finally {
+    educationLoading.value = false
+  }
+}
+
+async function saveEducationSource() {
+  if (!educationSourceForm.documentId || educationLoading.value) return
+  clearMessages()
+  educationLoading.value = true
+  try {
+    const source = await api.saveEducationSource({
+      ...educationSourceForm,
+      difficultyLevel: Number(educationSourceForm.difficultyLevel) || 3,
+    })
+    educationSources.value = [source, ...educationSources.value.filter((item) => item.documentId !== source.documentId)]
+    noticeMessage.value = '课程元数据已保存；教育 Agent 检索时会执行课程约束过滤。'
+    educationError.value = ''
+  } catch (error) {
+    educationError.value = errorText(error)
+  } finally {
+    educationLoading.value = false
+  }
+}
+
+function selectEducationDocument(document) {
+  if (!document) return
+  educationSourceForm.documentId = document.id
+}
+
 async function createMemory() {
   const content = memoryForm.content.trim()
   if (!content || loading.value) return
@@ -3320,9 +3436,21 @@ async function createAndStartRun() {
   try {
     localStorage.setItem('harnessTenantId', form.tenantId)
     localStorage.setItem('harnessUserId', form.userId)
+    const requestedPermissions = new Set(permissionList(form.permissions))
+    const education = form.education.enabled ? {
+      ...form.education,
+      minDifficulty: form.education.minDifficulty == null ? null : Number(form.education.minDifficulty),
+      maxDifficulty: form.education.maxDifficulty == null ? null : Number(form.education.maxDifficulty),
+    } : null
+    if (education) {
+      requestedPermissions.add('education.read')
+      requestedPermissions.add('education.write')
+    }
     const created = await api.createRun({
       ...form,
       budget: Number(form.budget),
+      permissions: [...requestedPermissions].join(','),
+      education,
     })
     const started = await api.startRun(created.id)
     noticeMessage.value = started.run.status === 'WAITING_APPROVAL'
@@ -4171,6 +4299,34 @@ onBeforeUnmount(() => {
             </div>
             <small class="form-hint">Agent 会根据模型 Tool Call 动态执行工作区工具；工具白名单和审批策略仍由服务端控制。</small>
           </div>
+          <div class="field field-wide agent-mode-field education-run-field">
+            <span>教育知识库 Agent</span>
+            <div class="agent-mode-controls">
+              <label class="check-field">
+                <input v-model="form.education.enabled" type="checkbox" @change="form.education.enabled && (form.agentMode = true)" />
+                <span>启用课程约束与学习者状态感知</span>
+              </label>
+              <label v-if="form.education.enabled" class="turns-field">
+                <span>教学策略</span>
+                <select v-model="form.education.pedagogicalMode">
+                  <option value="AUTO">自动选择</option>
+                  <option value="EXPLAIN">概念讲解</option>
+                  <option value="SOCRATIC">启发式引导</option>
+                  <option value="PRACTICE">练习优先</option>
+                  <option value="DIAGNOSE">错误诊断</option>
+                </select>
+              </label>
+            </div>
+            <div v-if="form.education.enabled" class="education-run-grid">
+              <label class="field"><span>学习者画像</span><select v-model="form.education.learnerProfileId"><option value="">请选择画像</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>
+              <label class="field"><span>学科</span><input v-model="form.education.subject" required /></label>
+              <label class="field"><span>年级</span><input v-model="form.education.gradeLevel" required /></label>
+              <label class="field"><span>课程版本</span><input v-model="form.education.curriculumVersion" required /></label>
+              <label class="field"><span>目标知识点（可选）</span><input v-model="form.education.conceptKey" placeholder="例如：函数定义域" /></label>
+              <label class="field"><span>难度范围（可选）</span><div class="education-difficulty-range"><input v-model.number="form.education.minDifficulty" type="number" min="1" max="5" placeholder="1" /><span>—</span><input v-model.number="form.education.maxDifficulty" type="number" min="1" max="5" placeholder="5" /></div></label>
+            </div>
+            <small class="form-hint">教育模式必须绑定学习者画像；模型会按课程版本过滤来源，并可调用形成性评价工具更新知识点掌握度。</small>
+          </div>
           <div class="form-actions field-wide">
             <span class="form-hint">{{ form.agentMode ? '创建后会按模型决策循环执行，并持久化每一轮模型与工具步骤。' : '创建后会依次执行模型步骤和工具步骤，并记录完整审计链。' }}</span>
             <button class="primary-button" type="submit" :disabled="loading">{{ loading ? '执行中…' : '创建并执行' }}</button>
@@ -4537,6 +4693,47 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </form>
+          <section class="governance-card governance-fixed-card education-governance-card">
+            <div class="context-workbench-heading">
+              <div><p class="eyebrow">EDUCATION AGENT</p><h3>课程与学习者配置</h3></div>
+              <span class="context-mode-chip">{{ learnerProfiles.length }} 个画像</span>
+            </div>
+            <p class="context-workbench-help">课程元数据决定检索范围；学习者画像和知识点掌握度决定讲解难度与教学策略。原始知识正文仍由知识文档权限控制。</p>
+            <p v-if="educationError" class="policy-error">{{ educationError }}</p>
+            <form class="education-profile-form" @submit.prevent="saveLearnerProfile">
+              <label class="field"><span>学科</span><input v-model="learnerProfileForm.subject" required maxlength="128" /></label>
+              <label class="field"><span>年级</span><input v-model="learnerProfileForm.gradeLevel" required maxlength="128" /></label>
+              <label class="field"><span>课程版本</span><input v-model="learnerProfileForm.curriculumVersion" required maxlength="128" /></label>
+              <label class="field"><span>学习目标</span><input v-model="learnerProfileForm.learningGoal" maxlength="512" placeholder="例如：掌握函数基础并能独立完成练习" /></label>
+              <button class="secondary-button" type="submit" :disabled="educationLoading">{{ educationLoading ? '保存中…' : '保存学习者画像' }}</button>
+            </form>
+            <div v-if="learnerProfiles.length" class="education-profile-list">
+              <button v-for="profile in learnerProfiles" :key="profile.id" type="button" class="education-profile-chip" :class="{ active: profile.id === activeLearnerProfile?.id }" @click="activeLearnerProfile = profile; applyLearnerProfileToEducationRun(profile)">
+                <strong>{{ profile.subject }} · {{ profile.gradeLevel }}</strong><small>{{ profile.curriculumVersion }} · {{ profile.learningGoal || '未设置学习目标' }}</small>
+              </button>
+            </div>
+            <div class="education-source-editor">
+              <div class="subsection-title"><h4>绑定知识文档课程元数据</h4><span>{{ educationSources.length }} 个课程来源</span></div>
+              <form class="education-source-form" @submit.prevent="saveEducationSource">
+                <label class="field field-wide"><span>知识文档</span><select v-model="educationSourceForm.documentId" required><option value="">选择已上传文档</option><option v-for="document in documents" :key="document.id" :value="document.id">{{ document.title }}</option></select></label>
+                <label class="field"><span>学科</span><input v-model="educationSourceForm.subject" required /></label>
+                <label class="field"><span>年级</span><input v-model="educationSourceForm.gradeLevel" required /></label>
+                <label class="field"><span>课程版本</span><input v-model="educationSourceForm.curriculumVersion" required /></label>
+                <label class="field"><span>章节</span><input v-model="educationSourceForm.chapter" /></label>
+                <label class="field"><span>难度（1-5）</span><input v-model.number="educationSourceForm.difficultyLevel" type="number" min="1" max="5" required /></label>
+                <label class="field field-wide"><span>知识点标签（逗号分隔）</span><input v-model="educationSourceForm.conceptTags" placeholder="例如：函数,定义域,值域" /></label>
+                <label class="field field-wide"><span>前置知识（逗号分隔）</span><input v-model="educationSourceForm.prerequisiteConcepts" placeholder="例如：集合,不等式" /></label>
+                <label class="field field-wide"><span>学习目标</span><textarea v-model="educationSourceForm.learningObjectives" rows="2" maxlength="4000"></textarea></label>
+                <button class="secondary-button" type="submit" :disabled="educationLoading || !educationSourceForm.documentId">保存课程元数据</button>
+              </form>
+              <div v-if="educationSources.length" class="education-source-list">
+                <div v-for="source in educationSources" :key="source.id" class="education-source-row">
+                  <div><strong>{{ documents.find((document) => document.id === source.documentId)?.title || source.documentId }}</strong><small>{{ source.subject }} · {{ source.gradeLevel }} · {{ source.curriculumVersion }} · 难度 {{ source.difficultyLevel }}</small></div>
+                  <button class="text-button" type="button" @click="educationSourceForm.documentId = source.documentId; educationSourceForm.subject = source.subject; educationSourceForm.gradeLevel = source.gradeLevel; educationSourceForm.curriculumVersion = source.curriculumVersion; educationSourceForm.chapter = source.chapter || ''; educationSourceForm.conceptTags = source.conceptTags || ''; educationSourceForm.prerequisiteConcepts = source.prerequisiteConcepts || ''; educationSourceForm.learningObjectives = source.learningObjectives || ''; educationSourceForm.difficultyLevel = source.difficultyLevel">编辑</button>
+                </div>
+              </div>
+            </div>
+          </section>
           <form class="governance-card governance-fixed-card memory-card" @submit.prevent="createMemory">
             <div class="context-workbench-heading">
               <div>

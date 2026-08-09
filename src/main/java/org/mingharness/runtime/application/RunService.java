@@ -1611,7 +1611,9 @@ public class RunService {
                 run.getUpdatedAt(), run.getSteps().size(), run.getIdempotencyKey(), run.getTraceId(),
                 run.getDurationMs(), run.getSteps().stream().map(Step::getCost)
                         .reduce(BigDecimal.ZERO, BigDecimal::add), run.isAgentMode(), run.getMaxTurns(),
-                run.getWorkspaceId()
+                run.getWorkspaceId(), run.isEducationMode(), run.getEducationSubject(),
+                run.getEducationGradeLevel(), run.getEducationCurriculumVersion(),
+                run.getEducationLearnerProfileId(), run.getEducationPedagogicalMode()
         );
     }
 

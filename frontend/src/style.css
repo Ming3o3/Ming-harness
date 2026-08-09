@@ -433,6 +433,30 @@ h3 { margin: 0; font-size: 13px; }
 .memory-row-heading strong { overflow: hidden; color: var(--soft); font: 10px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .memory-row-heading span { color: var(--muted); font: 8px "DM Mono", monospace; white-space: nowrap; }
 .memory-row p { display: -webkit-box; overflow: hidden; margin: 6px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+.education-governance-card { grid-column: 1 / -1; height: auto; min-height: 480px; }
+.education-profile-form, .education-source-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; align-items: end; }
+.education-profile-form .field-wide, .education-source-form .field-wide { grid-column: span 2; }
+.education-profile-form > button, .education-source-form > button { justify-self: start; }
+.education-profile-list { display: flex; flex-wrap: wrap; gap: 7px; border-top: 1px solid var(--line); padding-top: 11px; }
+.education-profile-chip { display: grid; gap: 3px; min-width: 150px; border: 1px solid var(--line); border-radius: 7px; background: var(--input-bg); color: var(--muted); padding: 8px 10px; text-align: left; cursor: pointer; }
+.education-profile-chip strong { color: var(--soft); font-size: 10px; }
+.education-profile-chip small { overflow: hidden; font: 8px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.education-profile-chip.active { border-color: rgba(76,226,213,.42); background: rgba(76,226,213,.07); }
+.education-profile-chip.active strong { color: var(--cyan); }
+.education-source-editor { display: grid; gap: 11px; border-top: 1px solid var(--line); padding-top: 13px; }
+.education-source-list { display: grid; gap: 5px; max-height: 180px; overflow-y: auto; border-top: 1px solid var(--line); padding-top: 10px; }
+.education-source-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; border-bottom: 1px solid rgba(153,174,218,.08); padding: 8px 0; }
+.education-source-row strong, .education-source-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.education-source-row strong { color: var(--soft); font-size: 10px; }
+.education-source-row small { margin-top: 4px; color: var(--muted); font: 8px "DM Mono", monospace; }
+.education-run-field { border: 1px solid rgba(76,226,213,.18); border-radius: 8px; background: rgba(76,226,213,.035); padding: 11px; }
+.education-run-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 4px; }
+.education-difficulty-range { display: flex; align-items: center; gap: 6px; }
+.education-difficulty-range input { min-width: 0; width: 100%; }
+@media (max-width: 850px) {
+  .education-profile-form, .education-source-form, .education-run-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .education-profile-form .field-wide, .education-source-form .field-wide { grid-column: span 2; }
+}
 .footer { padding: 28px 0 0; color: #4d5b75; font: 9px "DM Mono", monospace; letter-spacing: .04em; }
 
 /* 白天模式覆盖色板，保留状态色和品牌紫色的识别度。 */
