@@ -212,6 +212,8 @@ const chatCancellingRunId = ref('')
 const chatFollowOutput = ref(true)
 const copyingMessageId = ref('')
 const retryingMessageId = ref('')
+const chatFeedbackByRun = ref({})
+const feedbackSavingRunId = ref('')
 // 文件仅在点击发送时才上传，切换会话不会在后端留下未绑定的附件。
 const chatAttachments = ref([])
 const chatUploading = ref(false)
@@ -1475,6 +1477,52 @@ function messageNavigationLabel(message) {
   return attachmentLabel(message?.attachments?.[0])
 }
 
+async function loadConversationFeedback(detail) {
+  const runIds = [...new Set((detail?.messages || [])
+    .filter((message) => message.role === 'ASSISTANT' && message.runId)
+    .map((message) => message.runId))].slice(-20)
+  if (!runIds.length) return
+  const entries = await Promise.all(runIds.map(async (runId) => {
+    try {
+      return [runId, await api.getRunFeedback(runId)]
+    } catch {
+      return [runId, null]
+    }
+  }))
+  if (activeConversationId.value !== detail?.conversation?.id) return
+  chatFeedbackByRun.value = {
+    ...chatFeedbackByRun.value,
+    ...Object.fromEntries(entries),
+  }
+}
+
+async function recordRunFeedback(message, rating) {
+  if (!message?.runId || message.status !== 'COMPLETED' || feedbackSavingRunId.value) return
+  feedbackSavingRunId.value = message.runId
+  try {
+    const feedback = await api.saveRunFeedback(message.runId, {
+      rating,
+      reasonCode: chatEducation.enabled ? 'EDUCATION' : 'GENERAL',
+      messageId: message.id,
+    })
+    chatFeedbackByRun.value = { ...chatFeedbackByRun.value, [message.runId]: feedback }
+    const linkedAttempt = learningGoalAssessments.value.find((attempt) => attempt.runId === message.runId)
+    if (linkedAttempt && activeLearningGoal.value) {
+      const recommendation = await api.getGoalRecommendation(activeLearningGoal.value.id)
+      learningRecommendation.value = recommendation
+      learningGoalRecommendationMap.value = {
+        ...learningGoalRecommendationMap.value,
+        [activeLearningGoal.value.id]: recommendation,
+      }
+    }
+    noticeMessage.value = rating === 'POSITIVE' ? '已记录“有帮助”反馈。' : '已记录反馈，下一步会调整教学方式。'
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    feedbackSavingRunId.value = ''
+  }
+}
+
 async function copyChatMessage(message) {
   if (!message?.content || copyingMessageId.value) return
   copyingMessageId.value = message.id
@@ -2259,6 +2307,7 @@ async function selectConversation(conversationId, announce = true) {
     const detail = await api.getConversation(conversationId)
     if (selectionToken !== conversationSelectionToken) return
     activeConversation.value = detail
+    void loadConversationFeedback(detail)
     rememberConversation(conversationId)
     setChatInput(loadChatDraft(conversationId))
     const runId = latestConversationRun(detail)
@@ -2371,6 +2420,7 @@ async function sendChatMessage() {
     }, `chat-${crypto.randomUUID?.() || Date.now()}`)
     messageSubmitted = true
     activeConversation.value = detail
+    void loadConversationFeedback(detail)
     const runId = latestConversationRun(detail)
     if (runId) void selectRun(runId, false, false)
     void loadConversations(conversationId)
@@ -2436,6 +2486,7 @@ async function pollConversation() {
     const detail = await api.getConversation(conversationId)
     if (selectionToken !== conversationSelectionToken || activeConversationId.value !== conversationId) return
     activeConversation.value = detail
+    void loadConversationFeedback(detail)
     const runId = latestConversationRun(detail)
     if (runId && selectedRun.value?.run?.id !== runId) {
       await selectRun(runId, false, false)
@@ -2460,6 +2511,7 @@ async function refreshActiveConversation() {
   const detail = await api.getConversation(conversationId)
   if (selectionToken !== conversationSelectionToken || activeConversationId.value !== conversationId) return
   activeConversation.value = detail
+  void loadConversationFeedback(detail)
   const runId = latestConversationRun(detail)
   if (runId && selectedRun.value?.run?.id !== runId) {
     await selectRun(runId, false, false)
@@ -4030,6 +4082,10 @@ onBeforeUnmount(() => {
                 <div v-if="message.role === 'ASSISTANT' && (message.content || canRetryChatMessage(message))" class="chat-message-actions">
                   <button v-if="message.content" type="button" :disabled="copyingMessageId === message.id" @click="copyChatMessage(message)">{{ copyingMessageId === message.id ? '复制中…' : '复制回复' }}</button>
                   <button v-if="canRetryChatMessage(message)" type="button" :disabled="retryingMessageId === message.id" @click="retryChatMessage(message)">{{ retryingMessageId === message.id ? '重试中…' : '重试本轮' }}</button>
+                  <template v-if="message.content && message.runId && message.status === 'COMPLETED'">
+                    <button type="button" :disabled="feedbackSavingRunId === message.runId" @click="recordRunFeedback(message, 'POSITIVE')">{{ chatFeedbackByRun[message.runId]?.rating === 'POSITIVE' ? '已标记有帮助' : '有帮助' }}</button>
+                    <button type="button" :disabled="feedbackSavingRunId === message.runId" @click="recordRunFeedback(message, 'NEGATIVE')">{{ chatFeedbackByRun[message.runId]?.rating === 'NEGATIVE' ? '已标记需调整' : '需要调整' }}</button>
+                  </template>
                 </div>
                 <div v-if="message.runId && message.role === 'ASSISTANT'" class="message-run-reference">
                   <span class="message-run-status" :class="messageStatusClass(message.status)"><i></i>{{ messageStatusLabel(message.status) }}</span>

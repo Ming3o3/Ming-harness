@@ -2,6 +2,8 @@ package org.mingharness.education;
 
 import org.mingharness.common.BusinessException;
 import org.mingharness.education.api.LearningRecommendationView;
+import org.mingharness.feedback.RunFeedback;
+import org.mingharness.feedback.RunFeedbackRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,13 +17,24 @@ public class LearningRecommendationService {
     private final LearningGoalRepository goalRepository;
     private final AssessmentAttemptRepository attemptRepository;
     private final LearnerMasteryRepository masteryRepository;
+    private final RunFeedbackRepository feedbackRepository;
 
+    /** 兼容只使用教育状态的组件测试和旧扩展调用方。 */
     public LearningRecommendationService(LearningGoalRepository goalRepository,
                                          AssessmentAttemptRepository attemptRepository,
                                          LearnerMasteryRepository masteryRepository) {
+        this(goalRepository, attemptRepository, masteryRepository, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public LearningRecommendationService(LearningGoalRepository goalRepository,
+                                         AssessmentAttemptRepository attemptRepository,
+                                         LearnerMasteryRepository masteryRepository,
+                                         RunFeedbackRepository feedbackRepository) {
         this.goalRepository = goalRepository;
         this.attemptRepository = attemptRepository;
         this.masteryRepository = masteryRepository;
+        this.feedbackRepository = feedbackRepository;
     }
 
     @Transactional(readOnly = true)
@@ -41,6 +54,11 @@ public class LearningRecommendationService {
         double denominator = Math.max(0.0001, goal.getTargetMastery() - goal.getBaselineMastery());
         double progress = clamp((current - goal.getBaselineMastery()) / denominator);
         long correct = attempts.stream().filter(AssessmentAttempt::isCorrect).count();
+        boolean latestNegativeFeedback = latest != null && feedbackRepository != null
+                && feedbackRepository.findByRunIdAndUserId(latest.getRunId(), userId)
+                .map(RunFeedback::getRating)
+                .map("NEGATIVE"::equalsIgnoreCase)
+                .orElse(false);
 
         String actionType;
         String actionTitle;
@@ -56,6 +74,12 @@ public class LearningRecommendationService {
             actionTitle = "先做一次基线诊断";
             prompt = "请先围绕“" + goal.getConceptKey() + "”给我安排一组短小的基线诊断题，不要直接给出答案，并根据作答定位薄弱点。";
             rationale = "目标还没有形成测评记录，先建立可比较的基线才能选择合适教学策略。";
+        } else if (latestNegativeFeedback) {
+            actionType = "EXPLAIN";
+            actionTitle = "根据反馈调整教学方式";
+            prompt = "我对上一轮“" + goal.getConceptKey()
+                    + "”学习结果反馈为需要调整。请换一种讲解方式，先确认我卡住的原因，再安排一道低难度检查题。";
+            rationale = "上一轮学习结果收到负向反馈，下一步先调整表达和节奏，再重新检查理解。";
         } else if (latest != null && !latest.isCorrect()) {
             actionType = "EXPLAIN";
             actionTitle = "针对最近错误重新讲解";
