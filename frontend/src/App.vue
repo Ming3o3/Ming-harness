@@ -361,7 +361,6 @@ const form = reactive({
   title: '订单状态分析',
   input: '请分析这条任务并返回可追溯结果',
   toolName: 'demo.echo',
-  modelName: '',
   promptVersion: 'prompt-v1',
   policyVersion: 'policy-v1',
   budget: 1,
@@ -384,12 +383,6 @@ const memoryForm = reactive({
 })
 const memoryDeletingId = ref('')
 
-
-const contextPreviewPresets = [
-  '如何回滚发布',
-  '订单状态变更需要哪些审核？',
-  '查找与当前任务相关的操作规则',
-]
 
 const tenantPolicyForm = reactive({
   maxActiveRuns: 20,
@@ -2967,11 +2960,6 @@ async function previewContext() {
   }
 }
 
-function useContextPreviewPreset(query) {
-  contextPreviewQuery.value = query
-  nextTick(() => previewContext())
-}
-
 async function rebuildContextIndex() {
   if (contextReindexLoading.value) return
   contextReindexLoading.value = true
@@ -3187,7 +3175,6 @@ async function createAndStartRun() {
     const created = await api.createRun({
       ...form,
       budget: Number(form.budget),
-      modelName: form.modelName || null,
     })
     const started = await api.startRun(created.id)
     noticeMessage.value = started.run.status === 'WAITING_APPROVAL'
@@ -4001,10 +3988,6 @@ onBeforeUnmount(() => {
               <option v-for="tool in tools" :key="tool.name" :value="tool.name">{{ tool.name }}</option>
             </select>
           </label>
-          <label class="field run-input-field">
-            <span>模型（可选）</span>
-            <input v-model="form.modelName" placeholder="默认演示模型" />
-          </label>
           <label class="field">
             <span>Prompt 版本</span>
             <input v-model="form.promptVersion" required />
@@ -4260,7 +4243,7 @@ onBeforeUnmount(() => {
             <form class="context-preview-form" @submit.prevent="previewContext">
               <label class="field context-query-field">
                 <span>查询内容</span>
-                <textarea v-model="contextPreviewQuery" rows="3" required placeholder="例如：如何回滚发布？"></textarea>
+                <textarea v-model="contextPreviewQuery" rows="3" required placeholder="请输入要检索的问题"></textarea>
               </label>
               <div class="context-preview-controls">
                 <label class="field">
@@ -4277,10 +4260,6 @@ onBeforeUnmount(() => {
                 </button>
               </div>
             </form>
-            <div class="context-preview-presets" aria-label="检索示例">
-              <span>试试</span>
-              <button v-for="preset in contextPreviewPresets" :key="preset" type="button" @click="useContextPreviewPreset(preset)">{{ preset }}</button>
-            </div>
             <p v-if="contextPreviewError" class="policy-error">{{ contextPreviewError }}</p>
             <div v-if="contextPreviewResult" class="context-preview-result">
               <div class="subsection-title">

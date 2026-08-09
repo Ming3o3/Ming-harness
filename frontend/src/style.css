@@ -277,9 +277,6 @@ h3 { margin: 0; font-size: 13px; }
 .context-query-field textarea { min-height: 86px; resize: vertical; }
 .context-preview-controls { display: grid; gap: 10px; }
 .context-preview-button { width: 100%; padding: 10px 12px; }
-.context-preview-presets { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: var(--muted); font: 9px "DM Mono", monospace; }
-.context-preview-presets button { border: 1px solid var(--line); border-radius: 13px; background: var(--hover-bg); color: var(--soft); padding: 5px 8px; font: inherit; transition: .16s ease; }
-.context-preview-presets button:hover { border-color: var(--accent); color: var(--accent-light); }
 .context-preview-result { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 14px; }
 .context-preview-result .subsection-title { margin-bottom: 0; }
 .context-preview-result .subsection-title > div { display: flex; align-items: baseline; gap: 9px; }
@@ -798,7 +795,7 @@ h3 { margin: 0; font-size: 13px; }
 .reject-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
 .model-settings-overlay { position: fixed; z-index: 40; inset: 0; display: grid; place-items: center; background: rgba(5,9,18,.72); padding: 20px; backdrop-filter: blur(8px); }
 .model-settings-dialog { display: grid; width: min(540px, calc(100vw - 32px)); max-height: min(720px, calc(100vh - 40px)); gap: 14px; overflow: auto; border: 1px solid rgba(153,174,218,.2); border-radius: 14px; background: var(--panel); box-shadow: 0 28px 90px rgba(0,0,0,.42); padding: 20px; }
-.embedding-settings-dialog { height: min(780px, calc(100vh - 32px)); max-height: none; }
+.embedding-settings-dialog { height: min(840px, calc(100vh - 32px)); max-height: none; }
 .model-settings-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--line); padding-bottom: 13px; }
 .model-settings-heading h2 { margin: 0 0 5px; color: var(--heading); font-size: 17px; }
 .model-settings-heading span { color: var(--muted); font: 9px "DM Mono", monospace; }
