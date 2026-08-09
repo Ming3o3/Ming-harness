@@ -10,6 +10,7 @@ import org.mingharness.education.api.LearnerProfileView;
 import org.mingharness.education.api.LearningGoalRequest;
 import org.mingharness.education.api.LearningGoalStatusRequest;
 import org.mingharness.education.api.LearningGoalView;
+import org.mingharness.education.api.LearningRecommendationView;
 import org.mingharness.education.api.MasteryUpdateRequest;
 import org.mingharness.security.HarnessIdentity;
 import org.mingharness.security.HarnessIdentityContext;
@@ -34,15 +35,18 @@ public class EducationController {
     private final EducationLearnerService learnerService;
     private final LearningGoalService learningGoalService;
     private final EducationAssessmentService assessmentService;
+    private final LearningRecommendationService recommendationService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
                                 LearningGoalService learningGoalService,
-                                EducationAssessmentService assessmentService) {
+                                EducationAssessmentService assessmentService,
+                                LearningRecommendationService recommendationService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
         this.assessmentService = assessmentService;
+        this.recommendationService = recommendationService;
     }
 
     @PostMapping("/sources")
@@ -134,6 +138,12 @@ public class EducationController {
         HarnessIdentity identity = identity();
         return assessmentService.listByGoal(identity.tenantId(), identity.userId(), goalId).stream()
                 .map(AssessmentAttemptView::from).toList();
+    }
+
+    @GetMapping("/goals/{goalId}/recommendation")
+    public LearningRecommendationView recommendation(@PathVariable String goalId) {
+        HarnessIdentity identity = identity();
+        return recommendationService.recommend(identity.tenantId(), identity.userId(), goalId);
     }
 
     private HarnessIdentity identity() {

@@ -43,6 +43,11 @@ const memories = ref([])
 const educationSources = ref([])
 const learnerProfiles = ref([])
 const activeLearnerProfile = ref(null)
+const learningGoals = ref([])
+const activeLearningGoal = ref(null)
+const learningGoalAssessments = ref([])
+const learningRecommendation = ref(null)
+const learningGoalRecommendationMap = ref({})
 const educationLoading = ref(false)
 const educationError = ref('')
 const contextPreviewQuery = ref('')
@@ -415,6 +420,7 @@ const form = reactive({
   education: {
     enabled: false,
     learnerProfileId: '',
+    learningGoalId: '',
     subject: '',
     gradeLevel: '',
     curriculumVersion: '',
@@ -485,6 +491,13 @@ const learnerProfileForm = reactive({
   curriculumVersion: '人教A版',
   learningGoal: '',
   language: 'zh-CN',
+})
+
+const learningGoalForm = reactive({
+  learnerProfileId: '',
+  title: '',
+  conceptKey: '',
+  targetMastery: 0.8,
 })
 
 const educationSourceForm = reactive({
@@ -1148,6 +1161,7 @@ function defaultChatEducation() {
   return {
     enabled: false,
     learnerProfileId: '',
+    learningGoalId: '',
     subject: '',
     gradeLevel: '',
     curriculumVersion: '',
@@ -2485,16 +2499,31 @@ async function loadDashboard() {
 
 async function loadEducationData() {
   try {
-    const [sources, profiles] = await Promise.all([
+    const [sources, profiles, goals] = await Promise.all([
       api.listEducationSources(),
       api.listLearnerProfiles(),
+      api.listLearningGoals(),
     ])
     educationSources.value = sources
     learnerProfiles.value = profiles
+    learningGoals.value = goals
+    const recommendationEntries = await Promise.all(goals.map(async (goal) => {
+      try {
+        return [goal.id, await api.getGoalRecommendation(goal.id)]
+      } catch {
+        return [goal.id, null]
+      }
+    }))
+    learningGoalRecommendationMap.value = Object.fromEntries(recommendationEntries.filter(([, value]) => value))
     activeLearnerProfile.value = profiles.find((profile) => profile.active) || profiles[0] || null
     if (activeLearnerProfile.value) {
       applyLearnerProfileToEducationRun(activeLearnerProfile.value)
     }
+    const rememberedGoalId = form.education.learningGoalId || chatEducation.learningGoalId
+    const nextGoal = goals.find((goal) => goal.id === rememberedGoalId)
+      || goals.find((goal) => goal.status === 'ACTIVE')
+      || goals[0]
+    if (nextGoal) await selectLearningGoal(nextGoal, false)
     educationError.value = ''
   } catch (error) {
     // 教育权限是可选的；不应让没有教育权限的通用 Agent 用户无法打开控制台。
@@ -2504,7 +2533,16 @@ async function loadEducationData() {
 
 function applyLearnerProfileToEducationRun(profile) {
   if (!profile) return
+  if (activeLearningGoal.value && activeLearningGoal.value.learnerProfileId !== profile.id) {
+    activeLearningGoal.value = null
+    learningGoalAssessments.value = []
+    learningRecommendation.value = null
+    form.education.learningGoalId = ''
+    chatEducation.learningGoalId = ''
+    chatEducation.conceptKey = ''
+  }
   form.education.learnerProfileId = profile.id
+  learningGoalForm.learnerProfileId = profile.id
   form.education.subject = profile.subject || ''
   form.education.gradeLevel = profile.gradeLevel || ''
   form.education.curriculumVersion = profile.curriculumVersion || ''
@@ -2517,6 +2555,81 @@ function applyLearnerProfileToChat(profile) {
   chatEducation.subject = profile.subject || ''
   chatEducation.gradeLevel = profile.gradeLevel || ''
   chatEducation.curriculumVersion = profile.curriculumVersion || ''
+}
+
+async function selectLearningGoal(goal, notify = true) {
+  if (!goal) return
+  activeLearningGoal.value = goal
+  form.education.learningGoalId = goal.id
+  form.education.learnerProfileId = goal.learnerProfileId
+  form.education.conceptKey = goal.conceptKey
+  chatEducation.learningGoalId = goal.id
+  chatEducation.learnerProfileId = goal.learnerProfileId
+  chatEducation.conceptKey = goal.conceptKey
+  const profile = learnerProfiles.value.find((item) => item.id === goal.learnerProfileId)
+  if (profile) {
+    activeLearnerProfile.value = profile
+    form.education.subject = profile.subject || ''
+    form.education.gradeLevel = profile.gradeLevel || ''
+    form.education.curriculumVersion = profile.curriculumVersion || ''
+    applyLearnerProfileToChat(profile)
+    chatEducation.learningGoalId = goal.id
+    chatEducation.conceptKey = goal.conceptKey
+  }
+  try {
+    const [assessments, recommendation] = await Promise.all([
+      api.listGoalAssessments(goal.id),
+      api.getGoalRecommendation(goal.id),
+    ])
+    if (activeLearningGoal.value?.id === goal.id) {
+      learningGoalAssessments.value = assessments
+      learningRecommendation.value = recommendation
+      learningGoalRecommendationMap.value = {
+        ...learningGoalRecommendationMap.value,
+        [goal.id]: recommendation,
+      }
+    }
+  } catch (error) {
+    educationError.value = errorText(error)
+  }
+  if (notify) noticeMessage.value = `已选择学习目标：${goal.title}`
+}
+
+async function createLearningGoal() {
+  if (educationLoading.value || !learningGoalForm.title.trim() || !learningGoalForm.conceptKey.trim()) return
+  clearMessages()
+  educationLoading.value = true
+  try {
+    const goal = await api.createLearningGoal({
+      learnerProfileId: learningGoalForm.learnerProfileId || activeLearnerProfile.value?.id || null,
+      title: learningGoalForm.title.trim(),
+      conceptKey: learningGoalForm.conceptKey.trim(),
+      targetMastery: Number(learningGoalForm.targetMastery) || 0.8,
+    })
+    learningGoals.value = [goal, ...learningGoals.value.filter((item) => item.id !== goal.id)]
+    learningGoalForm.title = ''
+    learningGoalForm.conceptKey = ''
+    await selectLearningGoal(goal, false)
+    noticeMessage.value = '学习目标已创建；后续教育 Run 会围绕该目标累计进度并触发下一步建议。'
+    educationError.value = ''
+  } catch (error) {
+    educationError.value = errorText(error)
+  } finally {
+    educationLoading.value = false
+  }
+}
+
+function useLearningRecommendation() {
+  const recommendation = learningRecommendation.value
+  if (!recommendation) return
+  chatEducation.enabled = true
+  chatEducation.learningGoalId = recommendation.learningGoalId
+  chatEducation.conceptKey = recommendation.conceptKey
+  const goal = learningGoals.value.find((item) => item.id === recommendation.learningGoalId)
+  if (goal) void selectLearningGoal(goal, false)
+  chatInput.value = recommendation.nextActionPrompt
+  nextTick(() => chatInputRef.value?.focus())
+  noticeMessage.value = `已准备下一步：${recommendation.nextActionTitle}`
 }
 
 function selectChatLearnerProfile() {
@@ -3948,6 +4061,7 @@ onBeforeUnmount(() => {
                 </label>
                 <div v-if="chatEducation.enabled" class="chat-education-grid">
                   <label><span>学习者画像</span><select v-model="chatEducation.learnerProfileId" :disabled="chatSending || chatUploading" @change="selectChatLearnerProfile"><option value="">请选择画像</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>
+                  <label><span>学习目标</span><select v-model="chatEducation.learningGoalId" :disabled="chatSending || chatUploading" @change="selectLearningGoal(learningGoals.find((goal) => goal.id === chatEducation.learningGoalId), false)"><option value="">不绑定目标</option><option v-for="goal in learningGoals.filter((item) => item.status === 'ACTIVE')" :key="goal.id" :value="goal.id">{{ goal.title }} · {{ goal.conceptKey }}</option></select></label>
                   <label><span>教学策略</span><select v-model="chatEducation.pedagogicalMode" :disabled="chatSending || chatUploading"><option value="AUTO">自动选择</option><option value="EXPLAIN">概念讲解</option><option value="SOCRATIC">启发式引导</option><option value="PRACTICE">练习优先</option><option value="DIAGNOSE">错误诊断</option></select></label>
                   <label><span>目标知识点</span><input v-model="chatEducation.conceptKey" maxlength="255" placeholder="例如：函数定义域" :disabled="chatSending || chatUploading" /></label>
                   <label><span>难度范围</span><div class="chat-education-difficulty"><input v-model.number="chatEducation.minDifficulty" type="number" min="1" max="5" placeholder="1" :disabled="chatSending || chatUploading" /><span>—</span><input v-model.number="chatEducation.maxDifficulty" type="number" min="1" max="5" placeholder="5" :disabled="chatSending || chatUploading" /></div></label>
@@ -4399,13 +4513,14 @@ onBeforeUnmount(() => {
             </div>
             <div v-if="form.education.enabled" class="education-run-grid">
               <label class="field"><span>学习者画像</span><select v-model="form.education.learnerProfileId"><option value="">请选择画像</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>
+              <label class="field"><span>学习目标</span><select v-model="form.education.learningGoalId" @change="selectLearningGoal(learningGoals.find((goal) => goal.id === form.education.learningGoalId), false)"><option value="">不绑定目标</option><option v-for="goal in learningGoals.filter((item) => item.status === 'ACTIVE')" :key="goal.id" :value="goal.id">{{ goal.title }} · {{ goal.conceptKey }}</option></select></label>
               <label class="field"><span>学科</span><input v-model="form.education.subject" required /></label>
               <label class="field"><span>年级</span><input v-model="form.education.gradeLevel" required /></label>
               <label class="field"><span>课程版本</span><input v-model="form.education.curriculumVersion" required /></label>
               <label class="field"><span>目标知识点（可选）</span><input v-model="form.education.conceptKey" placeholder="例如：函数定义域" /></label>
               <label class="field"><span>难度范围（可选）</span><div class="education-difficulty-range"><input v-model.number="form.education.minDifficulty" type="number" min="1" max="5" placeholder="1" /><span>—</span><input v-model.number="form.education.maxDifficulty" type="number" min="1" max="5" placeholder="5" /></div></label>
             </div>
-            <small class="form-hint">教育模式必须绑定学习者画像；模型会按课程版本过滤来源，并可调用形成性评价工具更新知识点掌握度。</small>
+            <small class="form-hint">教育模式必须绑定学习者画像；绑定学习目标后，测评会累计目标进度，并给出下一步学习动作。</small>
           </div>
           <div class="form-actions field-wide">
             <span class="form-hint">{{ form.agentMode ? '创建后会按模型决策循环执行，并持久化每一轮模型与工具步骤。' : '创建后会依次执行模型步骤和工具步骤，并记录完整审计链。' }}</span>
@@ -4791,6 +4906,28 @@ onBeforeUnmount(() => {
               <button v-for="profile in learnerProfiles" :key="profile.id" type="button" class="education-profile-chip" :class="{ active: profile.id === activeLearnerProfile?.id }" @click="activeLearnerProfile = profile; applyLearnerProfileToEducationRun(profile)">
                 <strong>{{ profile.subject }} · {{ profile.gradeLevel }}</strong><small>{{ profile.curriculumVersion }} · {{ profile.learningGoal || '未设置学习目标' }}</small>
               </button>
+            </div>
+            <div class="learning-goal-workbench">
+              <div class="subsection-title"><h4>结构化学习目标</h4><span>{{ learningGoals.length }} 个目标</span></div>
+              <form class="learning-goal-form" @submit.prevent="createLearningGoal">
+                <label class="field"><span>画像</span><select v-model="learningGoalForm.learnerProfileId" required><option value="">请选择画像</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>
+                <label class="field"><span>目标名称</span><input v-model="learningGoalForm.title" required maxlength="255" placeholder="例如：掌握函数定义域" /></label>
+                <label class="field"><span>知识点</span><input v-model="learningGoalForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
+                <label class="field"><span>目标掌握度</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required /></label>
+                <button class="secondary-button" type="submit" :disabled="educationLoading || !learnerProfiles.length">创建目标</button>
+              </form>
+              <div v-if="learningGoals.length" class="learning-goal-list">
+                <button v-for="goal in learningGoals" :key="goal.id" type="button" class="learning-goal-row" :class="{ active: goal.id === activeLearningGoal?.id }" @click="selectLearningGoal(goal)">
+                  <span class="learning-goal-row-main"><strong>{{ goal.title }}</strong><small>{{ goal.conceptKey }} · {{ goal.status === 'COMPLETED' ? '已完成' : '进行中' }}</small></span>
+                  <span class="learning-goal-row-progress"><span>{{ Math.round((learningGoalRecommendationMap[goal.id]?.progressRatio || 0) * 100) }}%</span><i><b :style="{ width: `${(learningGoalRecommendationMap[goal.id]?.progressRatio || 0) * 100}%` }"></b></i></span>
+                </button>
+              </div>
+              <div v-if="activeLearningGoal && learningRecommendation" class="learning-recommendation">
+                <div class="learning-recommendation-heading"><div><span>下一步学习动作</span><strong>{{ learningRecommendation.nextActionTitle }}</strong></div><button class="secondary-button" type="button" @click="useLearningRecommendation">带着建议开始</button></div>
+                <p>{{ learningRecommendation.rationale }}</p>
+                <small>掌握度 {{ Math.round(learningRecommendation.currentMastery * 100) }}% / 目标 {{ Math.round(learningRecommendation.targetMastery * 100) }}% · 测评 {{ learningRecommendation.attemptCount }} 次 · 正确 {{ learningRecommendation.correctAttemptCount }} 次</small>
+                <details v-if="learningGoalAssessments.length" class="learning-assessment-history"><summary>查看测评历史（{{ learningGoalAssessments.length }}）</summary><div v-for="attempt in learningGoalAssessments.slice().reverse().slice(0, 5)" :key="attempt.id"><span :class="attempt.correct ? 'assessment-correct' : 'assessment-wrong'">{{ attempt.correct ? '正确' : '错误' }}</span><span>{{ Math.round(attempt.masteryBefore * 100) }}% → {{ Math.round(attempt.masteryAfter * 100) }}%</span><small>{{ formatDate(attempt.createdAt) }}</small></div></details>
+              </div>
             </div>
             <div class="education-source-editor">
               <div class="subsection-title"><h4>绑定知识文档课程元数据</h4><span>{{ educationSources.length }} 个课程来源</span></div>

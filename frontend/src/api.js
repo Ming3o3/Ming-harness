@@ -300,6 +300,17 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(payload),
   }),
+  listLearningGoals: () => request('/education/goals'),
+  createLearningGoal: (payload) => request('/education/goals', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+  updateLearningGoalStatus: (goalId, status) => request(`/education/goals/${encodeURIComponent(goalId)}/status`, {
+    method: 'POST',
+    body: JSON.stringify({ status }),
+  }),
+  listGoalAssessments: (goalId) => request(`/education/goals/${encodeURIComponent(goalId)}/assessments`),
+  getGoalRecommendation: (goalId) => request(`/education/goals/${encodeURIComponent(goalId)}/recommendation`),
   getTenantPolicy: (tenantId) => request(`/admin/tenants/${encodeURIComponent(tenantId)}/policy`),
   updateTenantPolicy: (tenantId, payload) => request(`/admin/tenants/${encodeURIComponent(tenantId)}/policy`, {
     method: 'PUT',
