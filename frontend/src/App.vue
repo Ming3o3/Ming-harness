@@ -21,6 +21,7 @@ import {
   Settings2,
   RefreshCw,
   Send,
+  ShieldCheck,
   Square,
   Sparkles,
   Sun,
@@ -120,6 +121,40 @@ const embeddingProviderPresets = [
   { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', modelName: 'text-embedding-3-small', dimension: 1536 },
   { id: 'qwen', label: '通义千问（兼容模式）', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', modelName: 'text-embedding-v4', dimension: 1536 },
   { id: 'custom', label: '自定义 OpenAI 兼容服务', baseUrl: '', modelName: '', dimension: 1536 },
+]
+// API Key 权限使用固定目录，避免手动输入时出现拼写错误；提交协议仍保持为字符串数组。
+const apiKeyPermissionOptions = [
+  { value: 'run.read', label: '查看 Run' },
+  { value: 'run.create', label: '创建 Run' },
+  { value: 'run.execute', label: '执行 / 重试 Run' },
+  { value: 'run.approve', label: '审批 Run' },
+  { value: 'run.cancel', label: '取消 Run' },
+  { value: 'audit.read', label: '查看审计记录' },
+  { value: 'context.read', label: '读取上下文' },
+  { value: 'context.write', label: '写入上下文' },
+  { value: 'context.configure', label: '配置向量模型' },
+  { value: 'context.reindex', label: '重建上下文索引' },
+  { value: 'tool.read', label: '查看工具列表' },
+  { value: 'workspace.read', label: '读取工作区' },
+  { value: 'workspace.write', label: '写入工作区' },
+  { value: 'workspace.exec', label: '执行工作区命令' },
+  { value: 'workspace.manage', label: '管理工作区' },
+  { value: 'ops.read', label: '查看基础设施状态' },
+  { value: 'model.configure', label: '配置模型连接' },
+  { value: 'tenant.policy.read', label: '读取组织策略' },
+  { value: 'tenant.policy.write', label: '修改组织策略' },
+  { value: 'tenant.policy.cross-tenant', label: '跨组织管理策略' },
+  { value: 'auth.key.read', label: '查看 API Key' },
+  { value: 'auth.key.manage', label: '创建 / 撤销 API Key' },
+  { value: 'auth.key.cross-tenant', label: '跨组织管理 API Key' },
+  { value: 'network.external', label: '访问外部网络工具' },
+]
+const defaultApiKeyPermissions = [
+  'run.read', 'run.create', 'run.execute', 'run.approve', 'run.cancel',
+  'audit.read', 'context.read', 'context.write', 'context.configure',
+  'tool.read', 'workspace.read', 'workspace.manage', 'ops.read',
+  'model.configure', 'tenant.policy.read', 'tenant.policy.write',
+  'auth.key.read', 'auth.key.manage',
 ]
 // 工作区状态用于告知用户 Agent 是否直接连接到本地项目；接口不会返回绝对路径。
 const workspace = ref(null)
@@ -370,6 +405,45 @@ const form = reactive({
   maxTurns: 1000,
 })
 
+// 权限选项从工具注册表的 requiredPermissions 聚合而来，避免创建 Run 时手写权限字符串。
+// 权限快照仍以逗号分隔字符串保存在 form 中，兼容现有 API 和审计格式。
+const permissionDescriptions = {
+  'workspace.read': { label: '工作区读取', description: '浏览、搜索和读取项目文件' },
+  'workspace.write': { label: '工作区写入', description: '编辑或写入项目文件（仍需审批）' },
+  'workspace.exec': { label: '工作区命令执行', description: '运行白名单命令（仍需审批）' },
+  'network.external': { label: '外部网络访问', description: '允许工具访问外部网络' },
+}
+
+function permissionList(value) {
+  return [...new Set(String(value || '').split(',').map((item) => item.trim()).filter(Boolean))]
+}
+
+const selectedPermissions = computed({
+  get: () => permissionList(form.permissions),
+  set: (values) => {
+    form.permissions = [...new Set(values || [])].join(',')
+  },
+})
+
+const permissionOptions = computed(() => {
+  const values = new Set()
+  tools.value.forEach((tool) => {
+    const requiredPermissions = tool.requiredPermissions || []
+    requiredPermissions.forEach((permission) => values.add(permission))
+    if (String(tool.networkPolicy || '').toUpperCase() === 'ALLOW_EXTERNAL') values.add('network.external')
+  })
+  return [...values].sort().map((value) => ({
+    value,
+    label: permissionDescriptions[value]?.label || value,
+    description: permissionDescriptions[value]?.description || '允许调用声明该权限的工具',
+  }))
+})
+
+const selectedPermissionSummary = computed(() => {
+  const count = selectedPermissions.value.length
+  return count ? `已选择 ${count} 项：${selectedPermissions.value.join('、')}` : '未选择额外工具权限'
+})
+
 const documentForm = reactive({
   title: '订单处理规则',
   sensitivity: 'INTERNAL',
@@ -393,11 +467,48 @@ const tenantPolicyForm = reactive({
   allowedTools: '',
 })
 
+// 组织策略沿用后端的逗号分隔协议，界面改为从工具注册表中勾选，避免手输工具名。
+const allowedToolOptions = computed(() => tools.value
+  .map((tool) => ({
+    value: tool.name,
+    label: tool.name,
+    description: tool.description || '已注册工具',
+    riskLevel: tool.riskLevel || 'UNKNOWN',
+  }))
+  .filter((tool) => tool.value)
+  .sort((left, right) => left.value.localeCompare(right.value)))
+
+const selectedAllowedTools = computed({
+  get: () => permissionList(tenantPolicyForm.allowedTools),
+  set: (values) => {
+    tenantPolicyForm.allowedTools = [...new Set(values || [])].join(', ')
+  },
+})
+
+const allAllowedToolsSelected = computed(() => {
+  const options = allowedToolOptions.value
+  return options.length > 0 && options.every((tool) => selectedAllowedTools.value.includes(tool.value))
+})
+
+const selectedAllowedToolsSummary = computed(() => {
+  const selected = selectedAllowedTools.value
+  if (!selected.length) return '留空：允许全部已注册工具'
+  return selected.length === 1
+    ? `已选择：${selected[0]}`
+    : `已选择 ${selected.length} 项：${selected.join('、')}`
+})
+
+function toggleAllAllowedTools() {
+  selectedAllowedTools.value = allAllowedToolsSelected.value
+    ? []
+    : allowedToolOptions.value.map((tool) => tool.value)
+}
+
 // 创建表单只保存过期时间和权限，生成的明文密钥不会写入浏览器存储。
 const apiKeyForm = reactive({
   tenantId: form.tenantId,
   userId: form.userId,
-  permissions: 'run.read, run.create, run.execute, run.approve, run.cancel, audit.read, context.read, context.write, context.configure, tool.read, workspace.read, workspace.manage, ops.read, model.configure, tenant.policy.read, tenant.policy.write, auth.key.read, auth.key.manage',
+  permissions: [...defaultApiKeyPermissions],
   expiresAt: '',
 })
 
@@ -408,8 +519,6 @@ const stats = computed(() => ({
   succeeded: summary.value?.succeeded ?? runs.value.filter((run) => run.status === 'SUCCEEDED').length,
   failed: summary.value?.failed ?? runs.value.filter((run) => run.status === 'FAILED').length,
   waitingApproval: summary.value?.waitingApproval ?? runs.value.filter((run) => run.status === 'WAITING_APPROVAL').length,
-  totalCost: summary.value?.totalCost ?? runs.value.reduce((total, run) => total + Number(run.totalCost || 0), 0),
-  averageDuration: summary.value?.total ? Math.round(Number(summary.value.totalDurationMs || 0) / summary.value.total) : 0,
 }))
 
 const selectedStatus = computed(() => selectedRun.value?.run?.status || 'NONE')
@@ -2732,10 +2841,22 @@ async function loadApiKeys() {
 }
 
 function parseApiKeyPermissions() {
-  return String(apiKeyForm.permissions || '')
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
+  const values = Array.isArray(apiKeyForm.permissions)
+    ? apiKeyForm.permissions
+    : String(apiKeyForm.permissions || '').split(',')
+  return [...new Set(values.map((item) => String(item).trim()).filter(Boolean))]
+}
+
+const apiKeyPermissionCount = computed(() => parseApiKeyPermissions().length)
+const allApiKeyPermissionsSelected = computed(() => {
+  const selected = parseApiKeyPermissions()
+  return apiKeyPermissionOptions.every(({ value }) => selected.includes(value))
+})
+
+function toggleAllApiKeyPermissions() {
+  apiKeyForm.permissions = allApiKeyPermissionsSelected.value
+    ? []
+    : apiKeyPermissionOptions.map(({ value }) => value)
 }
 
 async function createManagedApiKey() {
@@ -3975,11 +4096,6 @@ onBeforeUnmount(() => {
           <strong>{{ stats.failed }}</strong>
           <small>成功率 {{ stats.total ? Math.round((stats.succeeded / stats.total) * 100) : 0 }}%</small>
         </div>
-        <div class="stat-card stat-success">
-          <div class="stat-top"><span>今日成本</span><span class="stat-icon"><Coins :size="16" /></span></div>
-          <strong>{{ Number(stats.totalCost || 0).toFixed(2) }}</strong>
-          <small>平均耗时 {{ stats.averageDuration }} ms · 最近 {{ stats.total }} 条</small>
-        </div>
       </section>
 
       <section class="create-panel" :class="{ 'create-panel-collapsed': !showCreateForm }">
@@ -4019,18 +4135,28 @@ onBeforeUnmount(() => {
             <span>Prompt 版本</span>
             <input v-model="form.promptVersion" required />
           </label>
-          <label class="field">
+          <label class="field run-secondary-field">
             <span>策略版本</span>
             <input v-model="form.policyVersion" required />
           </label>
-          <label class="field">
+          <label class="field run-secondary-field">
             <span>幂等键（可选）</span>
             <input v-model="form.idempotencyKey" maxlength="128" placeholder="例如：order-123" />
           </label>
-          <label class="field">
+          <div class="field run-secondary-field permission-field">
             <span>权限快照（可选）</span>
-            <input v-model="form.permissions" maxlength="1000" placeholder="例如：orders.read,orders.write" />
-          </label>
+            <div class="permission-picker" role="group" aria-label="选择本次 Run 的工具权限">
+              <label v-for="permission in permissionOptions" :key="permission.value" class="permission-option" :title="permission.description">
+                <input v-model="selectedPermissions" type="checkbox" :value="permission.value" />
+                <span class="permission-option-copy">
+                  <strong>{{ permission.label }}</strong>
+                  <code>{{ permission.value }}</code>
+                </span>
+              </label>
+              <small v-if="!permissionOptions.length" class="permission-empty">当前注册工具没有额外权限要求</small>
+            </div>
+            <small class="form-hint">{{ selectedPermissionSummary }}；选项来自已注册工具的权限声明。</small>
+          </div>
           <div class="field field-wide agent-mode-field">
             <span>运行模式</span>
             <div class="agent-mode-controls">
@@ -4443,7 +4569,31 @@ onBeforeUnmount(() => {
             <label class="field"><span>最大输入字符数</span><input v-model.number="tenantPolicyForm.maxInputLength" type="number" min="1" required /></label>
             <label class="field"><span>单次最大预算</span><input v-model.number="tenantPolicyForm.maxBudget" type="number" min="0.000001" step="0.000001" required /></label>
             <label class="field"><span>每分钟创建 Run 数</span><input v-model.number="tenantPolicyForm.maxCreatesPerMinute" type="number" min="1" required /></label>
-            <label class="field"><span>工具白名单（逗号分隔，留空表示全部）</span><input v-model="tenantPolicyForm.allowedTools" placeholder="例如：demo.echo" /></label>
+            <div class="field tenant-policy-tools-field">
+              <span>工具白名单（可多选，留空表示全部）</span>
+              <details class="tenant-policy-tool-picker">
+                <summary>
+                  <span>{{ selectedAllowedTools.length ? `已选择 ${selectedAllowedTools.length} 项` : '允许全部已注册工具' }}</span>
+                  <small>展开选择</small>
+                </summary>
+                <div class="tenant-policy-tool-menu">
+                  <div class="tenant-policy-tool-menu-actions">
+                    <span>只允许勾选的工具参与组织 Run</span>
+                    <button class="text-button" type="button" :disabled="!allowedToolOptions.length" @click="toggleAllAllowedTools">{{ allAllowedToolsSelected ? '清空' : '全选' }}</button>
+                  </div>
+                  <label v-for="tool in allowedToolOptions" :key="tool.value" class="tenant-policy-tool-option" :title="tool.description">
+                    <input v-model="selectedAllowedTools" type="checkbox" :value="tool.value" />
+                    <span class="tenant-policy-tool-copy">
+                      <strong>{{ tool.label }}</strong>
+                      <small>{{ tool.description }}</small>
+                    </span>
+                    <code>{{ tool.riskLevel }}</code>
+                  </label>
+                  <small v-if="!allowedToolOptions.length" class="tenant-policy-tool-empty">暂未读取到已注册工具，请先刷新页面或检查 tool.read 权限。</small>
+                </div>
+              </details>
+              <small class="form-hint">{{ selectedAllowedToolsSummary }}</small>
+            </div>
             <div class="policy-actions"><button class="secondary-button" type="button" :disabled="loading" @click="loadTenantPolicy">读取策略</button><button class="secondary-button" type="submit" :disabled="loading">保存策略</button><button class="danger-button" type="button" :disabled="loading" @click="resetTenantPolicy">恢复默认</button></div>
             <small class="form-hint">策略只能收紧平台硬上限；最近 {{ tenantPolicyAudits.length }} 条变更已留痕。</small>
           </form>
@@ -4457,7 +4607,27 @@ onBeforeUnmount(() => {
               <label class="field"><span>组织 ID</span><input v-model="apiKeyForm.tenantId" required maxlength="128" /></label>
               <label class="field"><span>用户 ID</span><input v-model="apiKeyForm.userId" required maxlength="128" /></label>
               <label class="field api-key-expiry-field"><span>过期时间（可选）</span><input v-model="apiKeyForm.expiresAt" type="datetime-local" /></label>
-              <label class="field api-key-permissions-field"><span>权限（逗号分隔）</span><input v-model="apiKeyForm.permissions" maxlength="2000" placeholder="例如：run.read, run.create" /></label>
+              <div class="field api-key-permissions-field">
+                <span>权限（可多选）</span>
+                <details class="api-key-permission-picker">
+                  <summary>
+                    <span>{{ apiKeyPermissionCount ? `已选择 ${apiKeyPermissionCount} 项` : '请选择权限' }}</span>
+                    <small>展开选择</small>
+                  </summary>
+                  <div class="api-key-permission-menu">
+                    <div class="api-key-permission-menu-actions">
+                      <span>勾选后会随 API Key 一起授予</span>
+                      <button class="text-button" type="button" @click="toggleAllApiKeyPermissions">{{ allApiKeyPermissionsSelected ? '清空' : '全选' }}</button>
+                    </div>
+                    <label v-for="permission in apiKeyPermissionOptions" :key="permission.value" class="api-key-permission-option">
+                      <input v-model="apiKeyForm.permissions" type="checkbox" :value="permission.value" />
+                      <span>{{ permission.label }}</span>
+                      <code>{{ permission.value }}</code>
+                    </label>
+                  </div>
+                </details>
+                <small class="form-hint">{{ apiKeyPermissionCount ? parseApiKeyPermissions().join('、') : '未授予接口权限' }}</small>
+              </div>
             </div>
             <div class="policy-actions">
               <button class="secondary-button" type="submit" :disabled="loading">{{ loading ? '生成中…' : '生成数据库 API Key' }}</button>
