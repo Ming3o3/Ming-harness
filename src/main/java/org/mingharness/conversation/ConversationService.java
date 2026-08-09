@@ -8,6 +8,8 @@ import org.mingharness.conversation.api.ConversationMessageView;
 import org.mingharness.conversation.api.ConversationSummary;
 import org.mingharness.conversation.api.CreateConversationRequest;
 import org.mingharness.conversation.api.SendConversationMessageRequest;
+import org.mingharness.education.EducationRunConfiguration;
+import org.mingharness.education.EducationRunConfigurationService;
 import org.mingharness.runtime.api.CreateRunRequest;
 import org.mingharness.runtime.api.RunSummary;
 import org.mingharness.runtime.application.RunService;
@@ -68,6 +70,7 @@ public class ConversationService {
     private final SensitiveDataSanitizer sanitizer;
     private final WorkspaceToolSupport workspace;
     private final WorkspaceDirectoryService workspaceDirectoryService;
+    private final EducationRunConfigurationService educationRunConfigurationService;
 
     public ConversationService(ConversationRepository conversationRepository,
                                ConversationMessageRepository messageRepository,
@@ -78,7 +81,8 @@ public class ConversationService {
                                TenantPolicyService tenantPolicyService,
                                SensitiveDataSanitizer sanitizer,
                                WorkspaceToolSupport workspace,
-                               WorkspaceDirectoryService workspaceDirectoryService) {
+                               WorkspaceDirectoryService workspaceDirectoryService,
+                               EducationRunConfigurationService educationRunConfigurationService) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.contextRepository = contextRepository;
@@ -89,6 +93,7 @@ public class ConversationService {
         this.sanitizer = sanitizer;
         this.workspace = workspace;
         this.workspaceDirectoryService = workspaceDirectoryService;
+        this.educationRunConfigurationService = educationRunConfigurationService;
     }
 
     @Transactional
@@ -241,6 +246,9 @@ public class ConversationService {
         Conversation conversation = loadForMessage(conversationId, tenantId, userId);
         String content = sanitizer.sanitize(request.content().trim());
         conversation.autoTitleFromFirstMessage(content);
+        EducationRunConfiguration educationConfiguration = educationRunConfigurationService.resolve(
+                tenantId, userId, request.education());
+        requireEducationPermissions(educationConfiguration, permissions);
         List<String> attachmentIds = request.effectiveAttachmentIds();
         String effectiveIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
         if (sanitizer.containsSensitiveData(effectiveIdempotencyKey)) {
@@ -252,7 +260,8 @@ public class ConversationService {
                 ? Optional.empty()
                 : runRepository.findByTenantIdAndIdempotencyKey(tenantId, effectiveIdempotencyKey);
         if (existing.isPresent()) {
-            return replayExistingMessage(conversation, existing.get(), content, request, attachmentIds, permissions);
+            return replayExistingMessage(conversation, existing.get(), content, request, attachmentIds,
+                    permissions, educationConfiguration);
         }
 
         List<ConversationAttachment> attachments = loadPendingAttachments(
@@ -262,7 +271,7 @@ public class ConversationService {
                 tenantId, userId, conversation.getTitle(), runInput,
                 null, sanitizer.sanitize(request.modelName()), "prompt-v1", "policy-v1",
                 BigDecimal.ONE, effectiveIdempotencyKey, permissions, true, request.effectiveMaxTurns(),
-                conversation.getId(), conversation.getWorkspaceId());
+                conversation.getId(), conversation.getWorkspaceId(), request.education());
         RunSummary run = runService.create(runRequest);
 
         ConversationMessage userMessage = messageRepository.findByRunIdAndRole(run.id(), ConversationMessageRole.USER)
@@ -288,7 +297,8 @@ public class ConversationService {
      */
     private ConversationDetail replayExistingMessage(Conversation conversation, Run run, String content,
                                                      SendConversationMessageRequest request,
-                                                     List<String> attachmentIds, String permissions) {
+                                                     List<String> attachmentIds, String permissions,
+                                                     EducationRunConfiguration educationConfiguration) {
         if (!conversation.getId().equals(run.getConversationId())
                 || !conversation.getUserId().equals(run.getUserId())) {
             throw idempotencyConflict();
@@ -301,13 +311,30 @@ public class ConversationService {
                 || run.getMaxTurns() != request.effectiveMaxTurns()
                 || !sameRequestedModel(run, request.modelName())
                 || !sameAttachmentIds(userMessage.getId(), attachmentIds)
-                || !normalizePermissions(permissions).equals(normalizePermissions(run.getPermissionsSnapshot()))) {
+                || !normalizePermissions(permissions).equals(normalizePermissions(run.getPermissionsSnapshot()))
+                || !java.util.Objects.equals(run.educationConfiguration(), educationConfiguration)) {
             throw idempotencyConflict();
         }
         if (run.getStatus() == RunStatus.QUEUED) {
             runService.start(run.getId(), conversation.getTenantId());
         }
         return detail(conversation);
+    }
+
+    private void requireEducationPermissions(EducationRunConfiguration educationConfiguration,
+                                             String permissions) {
+        if (educationConfiguration == null || !educationConfiguration.enabled()) return;
+        Set<String> granted = Set.of(normalizePermissions(permissions).split(",")).stream()
+                .filter(value -> !value.isBlank())
+                .collect(java.util.stream.Collectors.toSet());
+        boolean read = granted.contains("*") || granted.contains("education.read")
+                || granted.contains("education.*");
+        boolean write = granted.contains("*") || granted.contains("education.write")
+                || granted.contains("education.*");
+        if (!read || !write) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "EDUCATION_PERMISSION_REQUIRED",
+                    "教育 Agent 需要 education.read 和 education.write 权限");
+        }
     }
 
     private boolean sameRequestedModel(Run run, String requestedModel) {

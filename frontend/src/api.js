@@ -4,7 +4,7 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || desktopBridge?.apiBaseUr
 const configuredApiKey = import.meta.env.VITE_HARNESS_API_KEY || ''
 // 本地聊天工作台默认开放工作区读写权限；写入和命令执行仍由后端策略要求人工审批。
 const defaultChatPermissions = import.meta.env.VITE_HARNESS_CHAT_PERMISSIONS
-  || 'workspace.read,workspace.write,workspace.exec,workspace.manage'
+  || 'workspace.read,workspace.write,workspace.exec,workspace.manage,education.read,education.write'
 
 /** API Key/OIDC 与本地请求头共用同一身份组装逻辑，SSE fetch 也能安全携带认证信息。 */
 function identityHeaders(requestHeaders = {}) {

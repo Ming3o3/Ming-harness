@@ -7,6 +7,10 @@ import org.mingharness.audit.AuditEventRepository;
 import org.mingharness.conversation.api.ConversationDetail;
 import org.mingharness.conversation.api.CreateConversationRequest;
 import org.mingharness.conversation.api.SendConversationMessageRequest;
+import org.mingharness.education.LearnerMasteryRepository;
+import org.mingharness.education.LearnerProfile;
+import org.mingharness.education.LearnerProfileRepository;
+import org.mingharness.education.api.EducationRunOptions;
 import org.mingharness.runtime.repository.RunRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -46,6 +50,10 @@ class ConversationServiceTests {
     private RunRepository runRepository;
     @Autowired
     private AuditEventRepository auditEventRepository;
+    @Autowired
+    private LearnerMasteryRepository learnerMasteryRepository;
+    @Autowired
+    private LearnerProfileRepository learnerProfileRepository;
 
     @DynamicPropertySource
     static void configureWorkspace(DynamicPropertyRegistry registry) {
@@ -60,6 +68,8 @@ class ConversationServiceTests {
         messageRepository.deleteAll();
         auditEventRepository.deleteAll();
         runRepository.deleteAll();
+        learnerMasteryRepository.deleteAll();
+        learnerProfileRepository.deleteAll();
         conversationRepository.deleteAll();
     }
 
@@ -137,6 +147,48 @@ class ConversationServiceTests {
                 created.conversation().id(), "tenant-chat", "operator",
                 new SendConversationMessageRequest("使用同一个幂等键发送另一条消息", null, 2),
                 "chat-round-2", "run.create,run.execute"));
+    }
+
+    @Test
+    void shouldSnapshotEducationConfigurationForConversationRun() {
+        LearnerProfile profile = learnerProfileRepository.save(new LearnerProfile(
+                "tenant-chat", "operator", "数学", "高中一年级", "人教A版", "掌握函数基础", "zh-CN"));
+        ConversationDetail created = conversationService.create(
+                "tenant-chat", "operator", new CreateConversationRequest("教育对话"));
+
+        EducationRunOptions education = new EducationRunOptions(
+                true, profile.getId(), null, null, null, "函数", 2, 4, "SOCRATIC");
+        ConversationDetail detail = conversationService.send(
+                created.conversation().id(), "tenant-chat", "operator",
+                new SendConversationMessageRequest("请用提问方式帮助我理解函数", null, 4, List.of(), education),
+                "chat-education-1", "run.create,run.execute,education.read,education.write");
+
+        var run = runRepository.findById(detail.messages().get(0).runId()).orElseThrow();
+        assertTrue(run.isEducationMode());
+        assertEquals(profile.getId(), run.getEducationLearnerProfileId());
+        assertEquals("数学", run.getEducationSubject());
+        assertEquals("高中一年级", run.getEducationGradeLevel());
+        assertEquals("人教A版", run.getEducationCurriculumVersion());
+        assertEquals("SOCRATIC", run.getEducationPedagogicalMode());
+        assertEquals("函数", run.getEducationConceptKey());
+        assertEquals(2, run.getEducationMinDifficulty());
+        assertEquals(4, run.getEducationMaxDifficulty());
+    }
+
+    @Test
+    void shouldRejectEducationConversationWithoutEducationPermissions() {
+        LearnerProfile profile = learnerProfileRepository.save(new LearnerProfile(
+                "tenant-chat", "operator", "数学", "高中一年级", "人教A版", null, "zh-CN"));
+        ConversationDetail created = conversationService.create(
+                "tenant-chat", "operator", new CreateConversationRequest("教育权限"));
+        EducationRunOptions education = new EducationRunOptions(
+                true, profile.getId(), null, null, null, "函数", null, null, "AUTO");
+
+        BusinessException error = assertThrows(BusinessException.class, () -> conversationService.send(
+                created.conversation().id(), "tenant-chat", "operator",
+                new SendConversationMessageRequest("请讲解函数", null, 2, List.of(), education),
+                "chat-education-permission", "run.create,run.execute"));
+        assertEquals("EDUCATION_PERMISSION_REQUIRED", error.getCode());
     }
 
     @Test

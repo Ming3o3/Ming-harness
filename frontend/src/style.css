@@ -453,9 +453,23 @@ h3 { margin: 0; font-size: 13px; }
 .education-run-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 4px; }
 .education-difficulty-range { display: flex; align-items: center; gap: 6px; }
 .education-difficulty-range input { min-width: 0; width: 100%; }
+.chat-education-settings { display: grid; gap: 9px; margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+.chat-education-toggle { display: flex; align-items: flex-start; gap: 8px; color: var(--soft); cursor: pointer; }
+.chat-education-toggle input { margin-top: 2px; accent-color: var(--cyan); }
+.chat-education-toggle span { display: grid; gap: 3px; }
+.chat-education-toggle strong { font-size: 10px; }
+.chat-education-toggle small, .chat-education-context { color: var(--muted); font: 8px "DM Mono", monospace; }
+.chat-education-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.chat-education-grid label { display: grid; gap: 4px; color: var(--muted); font-size: 9px; }
+.chat-education-grid select, .chat-education-grid input { min-width: 0; width: 100%; }
+.chat-education-difficulty { display: flex; align-items: center; gap: 5px; }
+.chat-education-difficulty input { min-width: 0; }
+.chat-education-context { grid-column: 1 / -1; }
 @media (max-width: 850px) {
   .education-profile-form, .education-source-form, .education-run-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .education-profile-form .field-wide, .education-source-form .field-wide { grid-column: span 2; }
+  .chat-education-grid { grid-template-columns: 1fr; }
+  .chat-education-context { grid-column: auto; }
 }
 .footer { padding: 28px 0 0; color: #4d5b75; font: 9px "DM Mono", monospace; letter-spacing: .04em; }
 

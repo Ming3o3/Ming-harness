@@ -9,11 +9,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /** 将创建请求解析为可审计、可复现的教育执行快照。 */
 @Service
 public class EducationRunConfigurationService {
+
+    private static final Set<String> SUPPORTED_PEDAGOGICAL_MODES = Set.of(
+            "AUTO", "EXPLAIN", "SOCRATIC", "PRACTICE", "DIAGNOSE");
 
     private final LearnerProfileRepository profileRepository;
     private final LearnerMasteryRepository masteryRepository;
@@ -47,9 +51,14 @@ public class EducationRunConfigurationService {
             minDifficulty = maxDifficulty;
             maxDifficulty = temporary;
         }
+        String pedagogicalMode = options.effectivePedagogicalMode();
+        if (!SUPPORTED_PEDAGOGICAL_MODES.contains(pedagogicalMode)) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "EDUCATION_PEDAGOGICAL_MODE_INVALID",
+                    "不支持的教学策略: " + pedagogicalMode);
+        }
         return new EducationRunConfiguration(true, profile.getId(), clean(subject), clean(gradeLevel),
                 clean(curriculumVersion), clean(options.conceptKey()), minDifficulty, maxDifficulty,
-                options.effectivePedagogicalMode(), masterySummary(tenantId, profile.getId()));
+                pedagogicalMode, masterySummary(tenantId, profile.getId()));
     }
 
     private LearnerProfile resolveProfile(String tenantId, String userId, String profileId) {

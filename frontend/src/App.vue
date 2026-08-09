@@ -153,6 +153,8 @@ const apiKeyPermissionOptions = [
   { value: 'auth.key.manage', label: '创建 / 撤销 API Key' },
   { value: 'auth.key.cross-tenant', label: '跨组织管理 API Key' },
   { value: 'network.external', label: '访问外部网络工具' },
+  { value: 'education.read', label: '读取教育知识与画像' },
+  { value: 'education.write', label: '记录形成性评价' },
 ]
 const defaultApiKeyPermissions = [
   'run.read', 'run.create', 'run.execute', 'run.approve', 'run.cancel',
@@ -160,6 +162,7 @@ const defaultApiKeyPermissions = [
   'tool.read', 'workspace.read', 'workspace.manage', 'ops.read',
   'model.configure', 'tenant.policy.read', 'tenant.policy.write',
   'auth.key.read', 'auth.key.manage',
+  'education.read', 'education.write',
 ]
 // 工作区状态用于告知用户 Agent 是否直接连接到本地项目；接口不会返回绝对路径。
 const workspace = ref(null)
@@ -216,6 +219,7 @@ const rejectReason = ref('')
 const rejectReasonInputRef = ref(null)
 const showChatAgentSettings = ref(false)
 const chatMaxTurns = ref(readChatMaxTurns())
+const chatEducation = reactive(readChatEducation())
 const showCommandPalette = ref(false)
 const commandQuery = ref('')
 const commandSelectedIndex = ref(0)
@@ -1078,6 +1082,8 @@ watch(noticeMessage, (message) => {
   }, 10000)
 })
 
+watch(chatEducation, persistChatEducation, { deep: true })
+
 function activeConversationStorageScope() {
   return `${form.tenantId}:${form.userId}`
 }
@@ -1136,6 +1142,47 @@ function loadChatDraft(conversationId) {
 function readChatMaxTurns() {
   const value = Number(readStoredValue('harnessChatMaxTurns', '24'))
   return Number.isInteger(value) && value >= 1 && value <= 1000 ? value : 24
+}
+
+function defaultChatEducation() {
+  return {
+    enabled: false,
+    learnerProfileId: '',
+    subject: '',
+    gradeLevel: '',
+    curriculumVersion: '',
+    conceptKey: '',
+    minDifficulty: null,
+    maxDifficulty: null,
+    pedagogicalMode: 'AUTO',
+  }
+}
+
+function readChatEducation() {
+  const fallback = defaultChatEducation()
+  if (typeof window === 'undefined') return fallback
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem('harnessChatEducation') || 'null')
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return fallback
+    return {
+      ...fallback,
+      ...parsed,
+      enabled: Boolean(parsed.enabled),
+      minDifficulty: parsed.minDifficulty == null ? null : Number(parsed.minDifficulty),
+      maxDifficulty: parsed.maxDifficulty == null ? null : Number(parsed.maxDifficulty),
+    }
+  } catch {
+    return fallback
+  }
+}
+
+function persistChatEducation() {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem('harnessChatEducation', JSON.stringify({ ...chatEducation }))
+  } catch {
+    // 浏览器禁用本地存储时仍保留当前页面内的教育 Agent 设置。
+  }
 }
 
 function persistChatMaxTurns() {
@@ -2297,10 +2344,16 @@ async function sendChatMessage() {
       uploadedAttachments = await api.uploadConversationAttachments(conversationId, files)
       chatUploading.value = false
     }
+    const education = chatEducation.enabled ? {
+      ...chatEducation,
+      minDifficulty: chatEducation.minDifficulty == null ? null : Number(chatEducation.minDifficulty),
+      maxDifficulty: chatEducation.maxDifficulty == null ? null : Number(chatEducation.maxDifficulty),
+    } : null
     const detail = await api.sendConversationMessage(conversationId, {
       content,
       maxTurns: chatMaxTurns.value,
       attachmentIds: uploadedAttachments.map((attachment) => attachment.id),
+      education,
     }, `chat-${crypto.randomUUID?.() || Date.now()}`)
     messageSubmitted = true
     activeConversation.value = detail
@@ -2455,6 +2508,20 @@ function applyLearnerProfileToEducationRun(profile) {
   form.education.subject = profile.subject || ''
   form.education.gradeLevel = profile.gradeLevel || ''
   form.education.curriculumVersion = profile.curriculumVersion || ''
+  applyLearnerProfileToChat(profile)
+}
+
+function applyLearnerProfileToChat(profile) {
+  if (!profile) return
+  chatEducation.learnerProfileId = profile.id
+  chatEducation.subject = profile.subject || ''
+  chatEducation.gradeLevel = profile.gradeLevel || ''
+  chatEducation.curriculumVersion = profile.curriculumVersion || ''
+}
+
+function selectChatLearnerProfile() {
+  const profile = learnerProfiles.value.find((item) => item.id === chatEducation.learnerProfileId)
+  if (profile) applyLearnerProfileToChat(profile)
 }
 
 async function loadContextConfiguration() {
@@ -3872,6 +3939,19 @@ onBeforeUnmount(() => {
                 <label><span>模型轮数上限</span><input v-model.number="chatMaxTurns" type="number" min="1" max="1000" step="1" :disabled="chatSending || chatUploading" @change="persistChatMaxTurns" /></label>
                 <div class="chat-agent-presets" aria-label="Agent 深度预设">
                   <button v-for="preset in [8, 24, 100, 1000]" :key="preset" type="button" :class="{ active: chatMaxTurns === preset }" :disabled="chatSending || chatUploading" @click="setChatMaxTurns(preset)">{{ preset === 1000 ? '平台上限' : `${preset} 轮` }}</button>
+                </div>
+              </div>
+              <div class="chat-education-settings">
+                <label class="chat-education-toggle">
+                  <input v-model="chatEducation.enabled" type="checkbox" :disabled="chatSending || chatUploading" />
+                  <span><strong>教育知识库 Agent</strong><small>按课程版本、前置知识和学习者掌握度组织本轮回答</small></span>
+                </label>
+                <div v-if="chatEducation.enabled" class="chat-education-grid">
+                  <label><span>学习者画像</span><select v-model="chatEducation.learnerProfileId" :disabled="chatSending || chatUploading" @change="selectChatLearnerProfile"><option value="">请选择画像</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>
+                  <label><span>教学策略</span><select v-model="chatEducation.pedagogicalMode" :disabled="chatSending || chatUploading"><option value="AUTO">自动选择</option><option value="EXPLAIN">概念讲解</option><option value="SOCRATIC">启发式引导</option><option value="PRACTICE">练习优先</option><option value="DIAGNOSE">错误诊断</option></select></label>
+                  <label><span>目标知识点</span><input v-model="chatEducation.conceptKey" maxlength="255" placeholder="例如：函数定义域" :disabled="chatSending || chatUploading" /></label>
+                  <label><span>难度范围</span><div class="chat-education-difficulty"><input v-model.number="chatEducation.minDifficulty" type="number" min="1" max="5" placeholder="1" :disabled="chatSending || chatUploading" /><span>—</span><input v-model.number="chatEducation.maxDifficulty" type="number" min="1" max="5" placeholder="5" :disabled="chatSending || chatUploading" /></div></label>
+                  <small class="chat-education-context">{{ chatEducation.subject || '未选择学科' }} · {{ chatEducation.gradeLevel || '未选择年级' }} · {{ chatEducation.curriculumVersion || '未选择课程版本' }}</small>
                 </div>
               </div>
             </div>

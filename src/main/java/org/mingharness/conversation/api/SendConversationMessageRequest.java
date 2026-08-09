@@ -4,6 +4,8 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import jakarta.validation.Valid;
+import org.mingharness.education.api.EducationRunOptions;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -14,12 +16,19 @@ public record SendConversationMessageRequest(
         @Min(value = 1, message = "Agent 最大轮数必须至少为 1")
         @Max(value = 1000, message = "Agent 最大轮数不能超过 1000") Integer maxTurns,
         @Size(max = 8, message = "每条消息最多可携带 8 个附件")
-        List<@Size(max = 128, message = "附件 ID 长度不能超过 128 个字符") String> attachmentIds
+        List<@Size(max = 128, message = "附件 ID 长度不能超过 128 个字符") String> attachmentIds,
+        @Valid EducationRunOptions education
 ) {
 
     /** 兼容尚未上传聊天附件的调用方。 */
     public SendConversationMessageRequest(String content, String modelName, Integer maxTurns) {
-        this(content, modelName, maxTurns, List.of());
+        this(content, modelName, maxTurns, List.of(), null);
+    }
+
+    /** 兼容已经支持附件但尚未配置教育模式的调用方。 */
+    public SendConversationMessageRequest(String content, String modelName, Integer maxTurns,
+                                         List<String> attachmentIds) {
+        this(content, modelName, maxTurns, attachmentIds, null);
     }
 
     public int effectiveMaxTurns() {
