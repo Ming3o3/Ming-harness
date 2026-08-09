@@ -65,4 +65,34 @@ class EducationRunConfigurationServiceTests {
                         null, null, null, "函数", null, null, "FREE_CHAT")));
         assertEquals("EDUCATION_PEDAGOGICAL_MODE_INVALID", exception.getCode());
     }
+
+    @Test
+    void shouldBindActiveLearningGoalAndFreezeItIntoRunConfiguration() {
+        LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        LearnerProfile profile = new LearnerProfile("tenant-a", "student-1", "数学",
+                "高中一年级", "人教A版", null, "zh-CN");
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", profile.getId(),
+                "掌握函数基础", "函数", 0.35, 0.8);
+        when(profiles.findByIdAndTenantIdAndUserId(profile.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(profile));
+        when(goals.findByIdAndTenantIdAndUserId(goal.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(goal));
+        when(mastery.findByTenantIdAndLearnerProfileIdOrderByConceptKeyAsc("tenant-a", profile.getId()))
+                .thenReturn(List.of());
+
+        EducationRunConfigurationService service = new EducationRunConfigurationService(
+                profiles, mastery, goals, new SensitiveDataSanitizer());
+        EducationRunConfiguration configuration = service.resolve("tenant-a", "student-1",
+                new EducationRunOptions(true, profile.getId(), goal.getId(), null, null,
+                        null, null, null, null, "PRACTICE"));
+
+        assertEquals(goal.getId(), configuration.learningGoalId());
+        assertEquals("掌握函数基础", configuration.learningGoalTitle());
+        assertEquals("函数", configuration.conceptKey());
+        assertEquals(0.35, configuration.learningGoalBaselineMastery());
+        assertEquals(0.8, configuration.learningGoalTargetMastery());
+        assertTrue(configuration.promptSummary().contains("学习目标=掌握函数基础"));
+    }
 }

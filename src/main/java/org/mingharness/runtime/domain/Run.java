@@ -46,6 +46,14 @@ public class Run {
     private Boolean educationMode;
     @Column(name = "education_learner_profile_id", length = 128)
     private String educationLearnerProfileId;
+    @Column(name = "education_learning_goal_id", length = 128)
+    private String educationLearningGoalId;
+    @Column(name = "education_learning_goal_title", length = 255)
+    private String educationLearningGoalTitle;
+    @Column(name = "education_learning_goal_baseline")
+    private Double educationLearningGoalBaseline;
+    @Column(name = "education_learning_goal_target")
+    private Double educationLearningGoalTarget;
     @Column(name = "education_subject", length = 128)
     private String educationSubject;
     @Column(name = "education_grade_level", length = 128)
@@ -183,6 +191,10 @@ public class Run {
                 ? EducationRunConfiguration.disabled() : configuration;
         this.educationMode = value.enabled();
         this.educationLearnerProfileId = value.learnerProfileId();
+        this.educationLearningGoalId = value.learningGoalId();
+        this.educationLearningGoalTitle = value.learningGoalTitle();
+        this.educationLearningGoalBaseline = value.learningGoalBaselineMastery();
+        this.educationLearningGoalTarget = value.learningGoalTargetMastery();
         this.educationSubject = value.subject();
         this.educationGradeLevel = value.gradeLevel();
         this.educationCurriculumVersion = value.curriculumVersion();
@@ -195,6 +207,9 @@ public class Run {
 
     public EducationRunConfiguration educationConfiguration() {
         return new EducationRunConfiguration(isEducationMode(), educationLearnerProfileId,
+                educationLearningGoalId, educationLearningGoalTitle,
+                educationLearningGoalBaseline == null ? 0.0 : educationLearningGoalBaseline,
+                educationLearningGoalTarget == null ? 0.0 : educationLearningGoalTarget,
                 educationSubject, educationGradeLevel, educationCurriculumVersion, educationConceptKey,
                 educationMinDifficulty, educationMaxDifficulty,
                 educationPedagogicalMode == null ? "AUTO" : educationPedagogicalMode,
@@ -334,6 +349,10 @@ public class Run {
     public String getWorkspaceId() { return workspaceId; }
     public boolean isEducationMode() { return Boolean.TRUE.equals(educationMode); }
     public String getEducationLearnerProfileId() { return educationLearnerProfileId; }
+    public String getEducationLearningGoalId() { return educationLearningGoalId; }
+    public String getEducationLearningGoalTitle() { return educationLearningGoalTitle; }
+    public Double getEducationLearningGoalBaseline() { return educationLearningGoalBaseline; }
+    public Double getEducationLearningGoalTarget() { return educationLearningGoalTarget; }
     public String getEducationSubject() { return educationSubject; }
     public String getEducationGradeLevel() { return educationGradeLevel; }
     public String getEducationCurriculumVersion() { return educationCurriculumVersion; }

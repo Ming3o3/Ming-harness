@@ -11,6 +11,7 @@ import jakarta.validation.constraints.Size;
 public record EducationRunOptions(
         Boolean enabled,
         @Size(max = 128, message = "学习者画像 ID 不能超过 128 个字符") String learnerProfileId,
+        @Size(max = 128, message = "学习目标 ID 不能超过 128 个字符") String learningGoalId,
         @Size(max = 128, message = "学科长度不能超过 128 个字符") String subject,
         @Size(max = 128, message = "年级长度不能超过 128 个字符") String gradeLevel,
         @Size(max = 128, message = "课程版本长度不能超过 128 个字符") String curriculumVersion,
@@ -21,6 +22,14 @@ public record EducationRunOptions(
         @Max(value = 5, message = "最高难度必须在 1 到 5 之间") Integer maxDifficulty,
         @Size(max = 64, message = "教学策略长度不能超过 64 个字符") String pedagogicalMode
 ) {
+
+    /** 兼容既有调用方；未绑定结构化学习目标。 */
+    public EducationRunOptions(Boolean enabled, String learnerProfileId, String subject,
+                               String gradeLevel, String curriculumVersion, String conceptKey,
+                               Integer minDifficulty, Integer maxDifficulty, String pedagogicalMode) {
+        this(enabled, learnerProfileId, null, subject, gradeLevel, curriculumVersion, conceptKey,
+                minDifficulty, maxDifficulty, pedagogicalMode);
+    }
 
     public boolean isEnabled() {
         return Boolean.TRUE.equals(enabled);

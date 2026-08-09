@@ -12,6 +12,10 @@ import java.util.Map;
 public record EducationRunConfiguration(
         boolean enabled,
         String learnerProfileId,
+        String learningGoalId,
+        String learningGoalTitle,
+        double learningGoalBaselineMastery,
+        double learningGoalTargetMastery,
         String subject,
         String gradeLevel,
         String curriculumVersion,
@@ -23,8 +27,8 @@ public record EducationRunConfiguration(
 ) {
 
     public static EducationRunConfiguration disabled() {
-        return new EducationRunConfiguration(false, null, null, null, null, null,
-                null, null, "AUTO", "");
+        return new EducationRunConfiguration(false, null, null, null, 0.0, 0.0,
+                null, null, null, null, null, null, "AUTO", "");
     }
 
     public EducationRetrievalFilter retrievalFilter() {
@@ -62,6 +66,11 @@ public record EducationRunConfiguration(
                 .append("；年级=").append(gradeLevel)
                 .append("；课程版本=").append(curriculumVersion)
                 .append("；教学策略=").append(pedagogicalMode);
+        if (learningGoalId != null && !learningGoalId.isBlank()) {
+            summary.append("；学习目标=").append(learningGoalTitle)
+                    .append("；目标掌握度=").append(String.format(java.util.Locale.ROOT, "%.2f",
+                            learningGoalTargetMastery));
+        }
         if (conceptKey != null && !conceptKey.isBlank()) {
             summary.append("；目标知识点=").append(conceptKey);
         }

@@ -6,6 +6,9 @@ import org.mingharness.education.api.EducationSourceView;
 import org.mingharness.education.api.LearnerMasteryView;
 import org.mingharness.education.api.LearnerProfileRequest;
 import org.mingharness.education.api.LearnerProfileView;
+import org.mingharness.education.api.LearningGoalRequest;
+import org.mingharness.education.api.LearningGoalStatusRequest;
+import org.mingharness.education.api.LearningGoalView;
 import org.mingharness.education.api.MasteryUpdateRequest;
 import org.mingharness.security.HarnessIdentity;
 import org.mingharness.security.HarnessIdentityContext;
@@ -28,11 +31,14 @@ public class EducationController {
 
     private final EducationKnowledgeService knowledgeService;
     private final EducationLearnerService learnerService;
+    private final LearningGoalService learningGoalService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
-                                EducationLearnerService learnerService) {
+                                EducationLearnerService learnerService,
+                                LearningGoalService learningGoalService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
+        this.learningGoalService = learningGoalService;
     }
 
     @PostMapping("/sources")
@@ -89,6 +95,34 @@ public class EducationController {
         HarnessIdentity identity = identity();
         return learnerService.listMastery(identity.tenantId(), identity.userId(), profileId).stream()
                 .map(LearnerMasteryView::from).toList();
+    }
+
+    @PostMapping("/goals")
+    @ResponseStatus(HttpStatus.CREATED)
+    public LearningGoalView createGoal(@Valid @RequestBody LearningGoalRequest request) {
+        HarnessIdentity identity = identity();
+        return LearningGoalView.from(learningGoalService.create(identity.tenantId(), identity.userId(), request));
+    }
+
+    @GetMapping("/goals")
+    public List<LearningGoalView> listGoals() {
+        HarnessIdentity identity = identity();
+        return learningGoalService.list(identity.tenantId(), identity.userId()).stream()
+                .map(LearningGoalView::from).toList();
+    }
+
+    @GetMapping("/goals/{goalId}")
+    public LearningGoalView getGoal(@PathVariable String goalId) {
+        HarnessIdentity identity = identity();
+        return LearningGoalView.from(learningGoalService.get(identity.tenantId(), identity.userId(), goalId));
+    }
+
+    @PostMapping("/goals/{goalId}/status")
+    public LearningGoalView changeGoalStatus(@PathVariable String goalId,
+                                             @Valid @RequestBody LearningGoalStatusRequest request) {
+        HarnessIdentity identity = identity();
+        return LearningGoalView.from(learningGoalService.changeStatus(identity.tenantId(), identity.userId(),
+                goalId, request.status()));
     }
 
     private HarnessIdentity identity() {
