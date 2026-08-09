@@ -2,7 +2,7 @@
 
 Ming Harness 是一个面向企业 Agent 开发与治理的平台：后端使用 Spring Boot 4，前端使用 Vue 3 + Vite。主界面收敛为聊天工作台和运行控制台，治理能力通过消息卡片、Run 详情和管理员/开发者可见的高级设置进入。
 
-平台围绕一条可追溯的业务闭环运行：用户目标 → 上下文与权限检查 → Agent 执行 → 人工审批/干预 → 业务结果 → 用户反馈 → 评测回归 → 版本发布。Run 按 `KNOWLEDGE_QA`、`CODE_AGENT`、`PROCESS_AUTOMATION` 或 `UNCLASSIFIED` 标记场景，知识问答、代码修改和流程自动化都沿用同一套审批、安全、审计、成本和质量门禁。
+平台围绕一条可追溯的业务闭环运行：用户目标 → 上下文与权限检查 → Agent 执行 → 人工审批/干预 → 业务结果 → 用户反馈。Run 按 `KNOWLEDGE_QA`、`CODE_AGENT`、`PROCESS_AUTOMATION` 或 `UNCLASSIFIED` 标记场景，知识问答、代码修改和流程自动化都沿用同一套审批、安全、审计和成本边界。
 
 ## 技术栈
 
@@ -50,7 +50,7 @@ Ming Harness 是一个面向企业 Agent 开发与治理的平台：后端使用
 - 敏感数据治理：Run、Step、审计、模型、工具和上下文边界统一凭证脱敏，长期记忆拒绝写入疑似凭证
 - 数据保留策略：终态 Run 与审计链原子清理，过期记忆/文档/评测和已完成 Outbox 定时删除，待投递消息不自动删除
 - 离线评测：固定用例回放并保存模型/Prompt/策略版本报告
-- 业务闭环沉淀：每次 Run 持久化实际上下文证据，助手消息支持有用/需改进反馈和一键保存回归用例；评测报告支持基线对比、最低通过率和发布质量门禁
+- 业务闭环沉淀：每次 Run 持久化实际上下文证据，助手消息支持有用/需改进反馈
 - 本地基础设施 Profile：PostgreSQL + Flyway、Redis 共享治理、RabbitMQ Outbox Worker
 - 健康检查与运行指标：公开存活探针、受 `ops.read` 保护的 `/api/health` 和 Actuator 指标
 - 请求关联追踪：自动生成并回传 `X-Request-Id`、`X-Trace-Id`，错误响应包含 `traceId`
@@ -166,8 +166,6 @@ npm run dev
 | `RETENTION_BATCH_SIZE` | `100` | 每轮最多清理的终态 Run 数量 |
 | `SPRING_PROFILES_ACTIVE` | `local` | `local`、`local-infra`，可组合 `oidc` |
 | `HARNESS_EXECUTION_MODE` | `sync` | `sync` 或 `rabbit` |
-| `EVALUATION_WAIT_TIMEOUT_MS` | `120000` | Rabbit 异步评测等待单个 Run 到终态的最长时间；超时记录当前状态并继续后续用例 |
-| `EVALUATION_POLL_INTERVAL_MS` | `250` | Rabbit 异步评测查询 Run 状态的间隔，不能小于 1 毫秒 |
 | `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | Redis 连接参数 |
 | `REDIS_LOCK_TTL_MS` | `30000` | Redis 执行锁和组织配额锁基础租约；Worker 执行锁会自动取不小于 `RECOVERY_TIMEOUT_MS` 的时长，不能低于 1000 毫秒 |
 | `REDIS_QUOTA_LOCK_WAIT_MS` | `1000` | 活动 Run 配额锁等待时长；Redis 不可用时快速失败 |
@@ -464,7 +462,6 @@ curl -X POST http://localhost:8080/api/runs \
 - `POST /api/context/embedding-config/test`：使用未保存配置测试一次 OpenAI 兼容 `/embeddings` 连接
 - `POST /api/context/reindex`：按租户有界重建上下文 chunk 和 embedding，需要 `context.reindex` 权限；`rechunk=true` 时按当前语义分块配置重新切块
 - `POST/GET /api/evaluations/retrieval`：运行或查询上下文检索离线评测，需要 `evaluation.run` / `evaluation.read` 权限；用例的 `relevantSources` 使用 `document:<id>` 或 `memory:<id>`，`expectedContains` 可选，用于计算上下文命中率
-- `POST/GET /api/evaluations`：运行固定回归用例并查询评测报告；请求可带 `baselineReportId` 和 `minimumSuccessRate`，报告返回 `baselineSuccessRate`、`successRateDelta` 和 `gatePassed`；`rabbit` 模式下接口会等待每个 Run 到终态，等待审批的用例不会自动审批，单个用例超时会记录当前状态并继续后续用例
 - `GET /api/evaluations/cases`、`POST /api/evaluations/cases/from-run`、`DELETE /api/evaluations/cases/{caseId}`：查询、从真实 Run 一键保存或删除回归用例；用例保留来源 Run、业务场景和工具信息，并受组织/用户权限隔离
 - `POST/GET /api/runs/{runId}/feedback`：对自己的 Run 记录 `POSITIVE`/`NEGATIVE` 反馈、原因和备注；重复提交会覆盖同一用户对该 Run 的反馈，并写入审计事件
 - `GET /api/runs/{runId}` 的 Step 详情包含 `contextEvidence`：模型步骤实际注入的授权来源、标题、citation 和摘要，可从聊天消息追溯到 Run 详情

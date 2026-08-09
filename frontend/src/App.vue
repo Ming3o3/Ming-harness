@@ -39,7 +39,6 @@ const selectedRun = ref(null)
 const auditEvents = ref([])
 const documents = ref([])
 const memories = ref([])
-const evaluations = ref([])
 const savedEvaluationCases = ref([])
 const retrievalEvaluations = ref([])
 const contextPreviewQuery = ref('')
@@ -57,9 +56,6 @@ const contextReindexResult = ref(null)
 const contextReindexLoading = ref(false)
 const contextReindexError = ref('')
 const contextConfiguration = ref(null)
-const selectedEvaluationReport = ref(null)
-const evaluationReportLoadingRunId = ref('')
-const selectedEvaluationCases = computed(() => evaluationCases(selectedEvaluationReport.value))
 const tenantPolicy = ref(null)
 const tenantPolicyAudits = ref([])
 const tenantPolicyError = ref('')
@@ -427,14 +423,6 @@ const contextPreviewPresets = [
   '订单状态变更需要哪些审核？',
   '查找与当前任务相关的操作规则',
 ]
-
-const evaluationForm = reactive({
-  name: '控制台快速回归',
-  input: '请分析订单状态',
-  expectedContains: '请分析订单状态',
-  baselineReportId: '',
-  minimumSuccessRate: '',
-})
 
 const tenantPolicyForm = reactive({
   maxActiveRuns: 20,
@@ -971,75 +959,6 @@ function formatDate(value) {
   }).format(new Date(value))
 }
 
-function evaluationRateLabel(report) {
-  if (!report || report.totalCases <= 0) return '—'
-  return `${Math.round(Number(report.successRate || 0) * 100)}%`
-}
-
-function evaluationCases(report) {
-  if (!report?.details) return []
-  return report.details.split('\n').filter(Boolean).map((line, index) => {
-    const separatorIndex = line.indexOf('=')
-    const name = separatorIndex >= 0 ? line.slice(0, separatorIndex) : `用例 ${index + 1}`
-    const tokens = (separatorIndex >= 0 ? line.slice(separatorIndex + 1) : line).split(':')
-    const outcome = tokens.shift() || 'UNKNOWN'
-    const fields = Object.fromEntries(tokens.map((token) => {
-      const fieldSeparator = token.indexOf('=')
-      return fieldSeparator >= 0
-        ? [token.slice(0, fieldSeparator), token.slice(fieldSeparator + 1)]
-        : [token, '']
-    }))
-    return {
-      id: `${report.id}-${index}`,
-      name,
-      outcome,
-      runId: fields.run || '',
-      status: fields.status || '—',
-      message: Object.prototype.hasOwnProperty.call(fields, '等待超时')
-        ? '等待异步 Run 超时，记录的是当时状态'
-        : '',
-    }
-  })
-}
-
-function evaluationOutcomeLabel(outcome) {
-  return {
-    PASSED: '通过',
-    FAILED: '失败',
-    TIMEOUT: '超时',
-  }[outcome] || '未知'
-}
-
-function evaluationOutcomeClass(outcome) {
-  return outcome === 'PASSED' ? 'evaluation-case-passed'
-    : outcome === 'TIMEOUT' ? 'evaluation-case-timeout'
-      : 'evaluation-case-failed'
-}
-
-function openEvaluationReport(report) {
-  selectedEvaluationReport.value = report
-}
-
-function closeEvaluationReport() {
-  if (evaluationReportLoadingRunId.value) return
-  selectedEvaluationReport.value = null
-}
-
-async function openEvaluationRun(runId) {
-  if (!runId || evaluationReportLoadingRunId.value) return
-  evaluationReportLoadingRunId.value = runId
-  try {
-    await selectRun(runId, false)
-    selectedEvaluationReport.value = null
-    activeConsoleSection.value = 'runtime'
-    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
-  } catch (error) {
-    errorMessage.value = errorText(error)
-  } finally {
-    evaluationReportLoadingRunId.value = ''
-  }
-}
-
 function clearMessages() {
   errorMessage.value = ''
   noticeMessage.value = ''
@@ -1231,13 +1150,6 @@ function handleChatGlobalKeydown(event) {
     } else if (event.key === 'Enter') {
       event.preventDefault()
       executeSelectedCommand()
-    }
-    return
-  }
-  if (selectedEvaluationReport.value) {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      closeEvaluationReport()
     }
     return
   }
@@ -2395,13 +2307,12 @@ async function refreshActiveConversation() {
 async function loadDashboard() {
   clearMessages()
   try {
-    const [, toolData, summaryData, documentData, memoryData, evaluationData, retrievalEvaluationData, evaluationCaseData, contextConfigurationData] = await Promise.all([
+    const [, toolData, summaryData, documentData, memoryData, retrievalEvaluationData, evaluationCaseData, contextConfigurationData] = await Promise.all([
       loadRunsPage(),
       api.listTools(),
       api.dashboardSummary(),
       api.listDocuments(),
       api.listMemories(),
-      api.listEvaluations(),
       api.listRetrievalEvaluations(),
       api.listEvaluationCases(),
       api.contextConfiguration(),
@@ -2412,7 +2323,6 @@ async function loadDashboard() {
     memories.value = memoryData
     // 刷新文档/记忆列表后移除已经不存在的勾选项，避免提交失效来源。
     selectedRetrievalSources.value = selectedRetrievalSources.value.filter((source) => retrievalSourceValues.value.has(source))
-    evaluations.value = evaluationData
     retrievalEvaluations.value = retrievalEvaluationData
     savedEvaluationCases.value = evaluationCaseData
     contextConfiguration.value = contextConfigurationData
@@ -3130,43 +3040,6 @@ async function rebuildContextIndex() {
     contextReindexError.value = errorText(error)
   } finally {
     contextReindexLoading.value = false
-  }
-}
-
-async function runQuickEvaluation() {
-  clearMessages()
-  loading.value = true
-  try {
-    const savedCases = savedEvaluationCases.value.map((item) => ({
-      name: item.name,
-      input: item.input,
-      toolName: item.toolName || 'demo.echo',
-      expectedContains: item.expectedContains || '',
-      budget: Number(item.budget || 1),
-    }))
-    await api.runEvaluation({
-      name: evaluationForm.name,
-      modelName: form.modelName || null,
-      promptVersion: form.promptVersion,
-      policyVersion: form.policyVersion,
-      baselineReportId: evaluationForm.baselineReportId || null,
-      minimumSuccessRate: evaluationForm.minimumSuccessRate === '' ? null : Number(evaluationForm.minimumSuccessRate),
-      cases: savedCases.length ? savedCases : [{
-        name: '控制台冒烟用例',
-        input: evaluationForm.input,
-        toolName: 'demo.echo',
-        expectedContains: evaluationForm.expectedContains,
-        budget: 1,
-      }],
-    })
-    noticeMessage.value = savedCases.length
-      ? `已运行 ${savedCases.length} 条回归用例，报告已记录`
-      : '已运行冒烟用例，报告已记录'
-    await loadDashboard()
-  } catch (error) {
-    errorMessage.value = errorText(error)
-  } finally {
-    loading.value = false
   }
 }
 
@@ -4646,19 +4519,6 @@ onBeforeUnmount(() => {
             </div>
             <div v-else class="context-preview-empty">还没有当前用户的长期记忆。</div>
           </form>
-          <form class="governance-card governance-fixed-card" @submit.prevent="runQuickEvaluation">
-            <div class="context-workbench-heading"><div><p class="eyebrow">QUALITY GATE</p><h3>运行回归评测</h3></div><span class="context-mode-chip">{{ savedEvaluationCases.length ? `${savedEvaluationCases.length} 条用例` : '冒烟模式' }}</span></div>
-            <label class="field"><span>报告名称</span><input v-model="evaluationForm.name" required /></label>
-            <template v-if="!savedEvaluationCases.length">
-              <label class="field"><span>测试输入</span><textarea v-model="evaluationForm.input" required rows="2"></textarea></label>
-              <label class="field"><span>期望包含</span><input v-model="evaluationForm.expectedContains" /></label>
-            </template>
-            <label class="field"><span>基线报告（可选）</span><select v-model="evaluationForm.baselineReportId"><option value="">不比较基线</option><option v-for="report in evaluations" :key="report.id" :value="report.id">{{ report.name }} · {{ evaluationRateLabel(report) }}</option></select></label>
-            <label class="field"><span>最低通过率（可选）</span><input v-model="evaluationForm.minimumSuccessRate" type="number" min="0" max="1" step="0.01" placeholder="例如 0.8" /></label>
-            <p v-if="savedEvaluationCases.length" class="form-hint">已保存用例会作为本次回归集执行，可在下方查看和删除。</p>
-            <button class="secondary-button" type="submit" :disabled="loading">执行评测</button>
-            <small class="form-hint">历史报告 {{ evaluations.length }} 份；基线下降或低于最低通过率时会标记为不通过。</small>
-          </form>
           <section class="governance-card governance-fixed-card evaluation-cases-card">
             <div class="context-workbench-heading"><div><p class="eyebrow">REGRESSION DATASET</p><h3>已保存回归用例</h3></div><span class="context-mode-chip">{{ savedEvaluationCases.length }} 条</span></div>
             <p class="context-workbench-help">已保存的用例会作为本次回归集执行，可在这里查看和删除。</p>
@@ -4796,16 +4656,6 @@ onBeforeUnmount(() => {
             </div>
           </form>
         </div>
-        <div v-if="showGovernance && evaluations.length" class="evaluation-list" aria-label="历史评测报告">
-          <button v-for="report in evaluations.slice(0, 5)" :key="report.id" class="evaluation-row" type="button" @click="openEvaluationReport(report)">
-            <span class="evaluation-row-main">
-              <strong>{{ report.name }}</strong>
-              <small>{{ report.modelName || '未指定模型' }} · Prompt {{ report.promptVersion || '—' }} · 策略 {{ report.policyVersion || '—' }}</small>
-            </span>
-            <span class="evaluation-row-result" :class="report.passedCases === report.totalCases ? 'evaluation-case-passed' : 'evaluation-case-failed'">{{ report.passedCases }}/{{ report.totalCases }} 通过</span>
-            <span class="evaluation-row-meta"><small>{{ formatDate(report.createdAt) }}</small><em>查看详情 →</em></span>
-          </button>
-        </div>
       </section>
 
       <footer class="footer">Ming Harness · 每次执行都可恢复、可解释、可审计、可限制</footer>
@@ -4813,55 +4663,6 @@ onBeforeUnmount(() => {
   </div>
   </div>
   </template>
-  <div
-    v-if="selectedEvaluationReport"
-    class="evaluation-report-overlay"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="evaluation-report-title"
-    @click.self="closeEvaluationReport"
-  >
-    <section class="evaluation-report-dialog">
-      <header class="evaluation-report-heading">
-        <div>
-          <p class="eyebrow">EVALUATION REPORT</p>
-          <h2 id="evaluation-report-title">{{ selectedEvaluationReport.name }}</h2>
-          <span>{{ formatDate(selectedEvaluationReport.createdAt) }} · {{ selectedEvaluationReport.id.slice(0, 12) }}</span>
-        </div>
-        <button class="icon-button" type="button" aria-label="关闭评测报告" :disabled="Boolean(evaluationReportLoadingRunId)" @click="closeEvaluationReport">×</button>
-      </header>
-      <div class="evaluation-report-body">
-        <div class="evaluation-report-overview">
-          <div class="evaluation-report-score" :class="selectedEvaluationReport.passedCases === selectedEvaluationReport.totalCases ? 'evaluation-case-passed' : 'evaluation-case-failed'">
-            <strong>{{ selectedEvaluationReport.passedCases }}/{{ selectedEvaluationReport.totalCases }}</strong>
-            <span>用例通过</span>
-          </div>
-          <div class="evaluation-report-rate"><strong>{{ evaluationRateLabel(selectedEvaluationReport) }}</strong><span>成功率</span></div>
-          <div class="evaluation-report-binding"><span>模型</span><strong>{{ selectedEvaluationReport.modelName || '未指定' }}</strong></div>
-          <div class="evaluation-report-binding"><span>Prompt</span><strong>{{ selectedEvaluationReport.promptVersion || '—' }}</strong></div>
-          <div class="evaluation-report-binding"><span>策略</span><strong>{{ selectedEvaluationReport.policyVersion || '—' }}</strong></div>
-          <div class="evaluation-report-binding" :class="selectedEvaluationReport.gatePassed === false ? 'evaluation-gate-failed' : 'evaluation-gate-passed'"><span>质量门禁</span><strong>{{ selectedEvaluationReport.gatePassed === false ? '未通过' : '通过' }}</strong><small v-if="selectedEvaluationReport.successRateDelta != null">{{ selectedEvaluationReport.successRateDelta >= 0 ? '+' : '' }}{{ selectedEvaluationReport.successRateDelta }} vs 基线</small></div>
-        </div>
-        <div class="evaluation-report-section">
-          <div class="subsection-title"><h3>用例结果</h3><span>{{ selectedEvaluationCases.length }} cases</span></div>
-          <div v-if="selectedEvaluationCases.length" class="evaluation-case-list">
-            <article v-for="item in selectedEvaluationCases" :key="item.id" class="evaluation-case-row">
-              <div class="evaluation-case-copy">
-                <div><strong>{{ item.name }}</strong><span class="evaluation-case-status" :class="evaluationOutcomeClass(item.outcome)">{{ evaluationOutcomeLabel(item.outcome) }}</span></div>
-                <small>{{ item.status }}<span v-if="item.message"> · {{ item.message }}</span></small>
-              </div>
-              <button v-if="item.runId" class="secondary-button evaluation-run-button" type="button" :disabled="Boolean(evaluationReportLoadingRunId)" @click="openEvaluationRun(item.runId)">{{ evaluationReportLoadingRunId === item.runId ? '打开中…' : '打开 Run 详情' }}</button>
-            </article>
-          </div>
-          <p v-else class="evaluation-report-empty">该报告没有可展开的用例明细。</p>
-        </div>
-        <details v-if="selectedEvaluationReport.details" class="evaluation-report-raw">
-          <summary>查看技术记录</summary>
-          <pre>{{ selectedEvaluationReport.details }}</pre>
-        </details>
-      </div>
-    </section>
-  </div>
   <div
     v-if="showRejectDialog"
     class="reject-dialog-overlay"

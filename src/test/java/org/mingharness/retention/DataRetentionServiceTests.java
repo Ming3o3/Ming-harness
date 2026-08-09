@@ -15,8 +15,6 @@ import org.mingharness.context.MemoryEntry;
 import org.mingharness.context.MemoryEntryRepository;
 import org.mingharness.evaluation.ContextRetrievalEvaluationReport;
 import org.mingharness.evaluation.ContextRetrievalEvaluationReportRepository;
-import org.mingharness.evaluation.EvaluationReport;
-import org.mingharness.evaluation.EvaluationReportRepository;
 import org.mingharness.messaging.OutboxEvent;
 import org.mingharness.messaging.OutboxEventRepository;
 import org.mingharness.runtime.domain.Run;
@@ -60,8 +58,6 @@ class DataRetentionServiceTests {
     @Autowired
     private ContextParentWindowRepository contextParentWindowRepository;
     @Autowired
-    private EvaluationReportRepository evaluationReportRepository;
-    @Autowired
     private ContextRetrievalEvaluationReportRepository retrievalEvaluationReportRepository;
     @Autowired
     private TenantPolicyAuditRepository tenantPolicyAuditRepository;
@@ -79,7 +75,6 @@ class DataRetentionServiceTests {
         documentRepository.deleteAll();
         contextChunkRepository.deleteAll();
         contextParentWindowRepository.deleteAll();
-        evaluationReportRepository.deleteAll();
         retrievalEvaluationReportRepository.deleteAll();
         tenantPolicyAuditRepository.deleteAll();
         apiKeyAuditRepository.deleteAll();
@@ -123,12 +118,6 @@ class DataRetentionServiceTests {
         contextParentWindowRepository.save(staleWindow);
         jdbcTemplate.update("UPDATE harness_context_parent_windows SET deleted_at = ? WHERE id = ?",
                 Timestamp.from(old), staleWindow.getId());
-
-        EvaluationReport report = evaluationReportRepository.save(new EvaluationReport(
-                "tenant-retention", "旧评测", "demo-model", "prompt-v1", "policy-v1",
-                1, 1, 0, BigDecimal.ONE, "旧评测详情"));
-        jdbcTemplate.update("UPDATE harness_evaluation_reports SET created_at = ? WHERE id = ?",
-                Timestamp.from(old), report.getId());
 
         ContextRetrievalEvaluationReport retrievalReport = retrievalEvaluationReportRepository.save(
                 new ContextRetrievalEvaluationReport("tenant-retention", "旧检索评测", 5, 1, 1,
@@ -184,7 +173,6 @@ class DataRetentionServiceTests {
         assertEquals(1, result.documentsDeleted());
         assertEquals(2, result.chunksDeleted());
         assertEquals(3, result.parentWindowsDeleted());
-        assertEquals(1, result.evaluationReportsDeleted());
         assertEquals(1, result.retrievalEvaluationReportsDeleted());
         assertEquals(1, result.outboxEventsDeleted());
         assertEquals(1, result.tenantPolicyAuditsDeleted());

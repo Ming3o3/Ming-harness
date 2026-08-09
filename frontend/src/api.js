@@ -281,8 +281,6 @@ export const api = {
   listMemories: () => request('/context/memories'),
   createMemory: (payload) => request('/context/memories', { method: 'POST', body: JSON.stringify(payload) }),
   deleteMemory: (memoryId) => request(`/context/memories/${encodeURIComponent(memoryId)}`, { method: 'DELETE' }),
-  listEvaluations: () => request('/evaluations'),
-  runEvaluation: (payload) => request('/evaluations', { method: 'POST', body: JSON.stringify(payload) }),
   listEvaluationCases: () => request('/evaluations/cases'),
   saveEvaluationCaseFromRun: (payload) => request('/evaluations/cases/from-run', {
     method: 'POST',
