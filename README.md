@@ -1,6 +1,8 @@
 # Ming Harness
 
-Ming Harness 是一个面向企业 Agent 的可运行 Harness：后端使用 Spring Boot 4，前端使用 Vue 3 + Vite。当前实现覆盖单 Agent Runtime、安全策略、上下文治理、离线评测和运行观测基线。
+Ming Harness 是一个面向企业 Agent 开发与治理的平台：后端使用 Spring Boot 4，前端使用 Vue 3 + Vite。主界面收敛为聊天工作台和运行控制台，治理能力通过消息卡片、Run 详情和管理员/开发者可见的高级设置进入。
+
+平台围绕一条可追溯的业务闭环运行：用户目标 → 上下文与权限检查 → Agent 执行 → 人工审批/干预 → 业务结果 → 用户反馈 → 评测回归 → 版本发布。Run 按 `KNOWLEDGE_QA`、`CODE_AGENT`、`PROCESS_AUTOMATION` 或 `UNCLASSIFIED` 标记场景，知识问答、代码修改和流程自动化都沿用同一套审批、安全、审计、成本和质量门禁。
 
 ## 技术栈
 
@@ -48,6 +50,7 @@ Ming Harness 是一个面向企业 Agent 的可运行 Harness：后端使用 Spr
 - 敏感数据治理：Run、Step、审计、模型、工具和上下文边界统一凭证脱敏，长期记忆拒绝写入疑似凭证
 - 数据保留策略：终态 Run 与审计链原子清理，过期记忆/文档/评测和已完成 Outbox 定时删除，待投递消息不自动删除
 - 离线评测：固定用例回放并保存模型/Prompt/策略版本报告
+- 业务闭环沉淀：每次 Run 持久化实际上下文证据，助手消息支持有用/需改进反馈和一键保存回归用例；评测报告支持基线对比、最低通过率和发布质量门禁
 - 本地基础设施 Profile：PostgreSQL + Flyway、Redis 共享治理、RabbitMQ Outbox Worker
 - 健康检查与运行指标：公开存活探针、受 `ops.read` 保护的 `/api/health` 和 Actuator 指标
 - 请求关联追踪：自动生成并回传 `X-Request-Id`、`X-Trace-Id`，错误响应包含 `traceId`
@@ -203,9 +206,9 @@ npm run dist:win:green
 
 ### 控制台模型设置
 
-聊天工作台和运行控制台都提供“模型设置”入口。用户可以输入 OpenAI 兼容 API 地址、模型名称和 API Key；保存后只影响当前组织/用户创建的新 Run，用户覆盖配置会在 Run 创建时固化供应商快照，因此正在排队、审批或执行的 Run 不会被中途切换。后端通过 `GET/PUT/DELETE /api/model-config` 管理设置，API Key 使用 AES-GCM 加密保存，读取接口只返回掩码，不写入浏览器 localStorage。使用 api-key/OIDC 认证时，当前身份需要 `model.configure` 权限。
+大语言模型和向量模型配置从运行控制台顶部直接进入；知识源、索引、组织策略、评测和凭证仍收纳在“高级治理设置”中。用户可以输入 OpenAI 兼容 API 地址、模型名称和 API Key；保存后只影响当前组织/用户创建的新 Run，用户覆盖配置会在 Run 创建时固化供应商快照，因此正在排队、审批或执行的 Run 不会被中途切换。后端通过 `GET/PUT/DELETE /api/model-config` 管理设置，API Key 使用 AES-GCM 加密保存，读取接口只返回掩码，不写入浏览器 localStorage。使用 api-key/OIDC 认证时，当前身份需要 `model.configure` 权限。
 
-运行控制台和治理面板还提供“向量设置”入口。Embedding 配置按组织保存（知识库向量是组织共享索引），支持 OpenAI 兼容的 `/embeddings` 地址、模型、模型版本、API Key 和当前固定的 1536 维向量。保存后会清空该组织旧 chunk 向量，必须在“向量索引”中重新建立索引；API Key 使用独立 AES-GCM 密钥标签加密，读取接口只返回掩码。后端通过 `GET/PUT/DELETE /api/context/embedding-config` 和 `POST /api/context/embedding-config/test` 管理配置；使用 api-key/OIDC 认证时需要 `context.configure` 权限。
+Embedding 配置按组织保存（知识库向量是组织共享索引），从运行控制台顶部的“向量模型”入口维护。它支持 OpenAI 兼容的 `/embeddings` 地址、模型、模型版本、API Key 和当前固定的 1536 维向量。保存后会清空该组织旧 chunk 向量，必须在“高级治理设置”的“向量索引”中重新建立索引；API Key 使用独立 AES-GCM 密钥标签加密，读取接口只返回掩码。后端通过 `GET/PUT/DELETE /api/context/embedding-config` 和 `POST /api/context/embedding-config/test` 管理配置；使用 api-key/OIDC 认证时需要 `context.configure` 权限。
 
 治理面板的“添加授权知识文档”支持直接拖入或选择 PDF/DOCX。Runtime 只保留解析后的纯文本，不保存原始二进制；解析完成后会复用知识文档的权限过滤、确定性/语义分块、父窗口物化和异步 embedding 索引流程。当前只提取有文本层的 PDF，扫描图片 PDF 需要先做 OCR；加密、损坏、格式签名不匹配或正文为空的文件会被拒绝。上传接口需要 `context.write` 权限，默认单文件上限为 25 MB、解析正文上限为 100000 字符。
 
@@ -461,7 +464,10 @@ curl -X POST http://localhost:8080/api/runs \
 - `POST /api/context/embedding-config/test`：使用未保存配置测试一次 OpenAI 兼容 `/embeddings` 连接
 - `POST /api/context/reindex`：按租户有界重建上下文 chunk 和 embedding，需要 `context.reindex` 权限；`rechunk=true` 时按当前语义分块配置重新切块
 - `POST/GET /api/evaluations/retrieval`：运行或查询上下文检索离线评测，需要 `evaluation.run` / `evaluation.read` 权限；用例的 `relevantSources` 使用 `document:<id>` 或 `memory:<id>`，`expectedContains` 可选，用于计算上下文命中率
-- `POST/GET /api/evaluations`：运行固定回归用例并查询评测报告；`rabbit` 模式下接口会等待每个 Run 到终态，等待审批的用例不会自动审批，单个用例超时会记录当前状态并继续后续用例
+- `POST/GET /api/evaluations`：运行固定回归用例并查询评测报告；请求可带 `baselineReportId` 和 `minimumSuccessRate`，报告返回 `baselineSuccessRate`、`successRateDelta` 和 `gatePassed`；`rabbit` 模式下接口会等待每个 Run 到终态，等待审批的用例不会自动审批，单个用例超时会记录当前状态并继续后续用例
+- `GET /api/evaluations/cases`、`POST /api/evaluations/cases/from-run`、`DELETE /api/evaluations/cases/{caseId}`：查询、从真实 Run 一键保存或删除回归用例；用例保留来源 Run、业务场景和工具信息，并受组织/用户权限隔离
+- `POST/GET /api/runs/{runId}/feedback`：对自己的 Run 记录 `POSITIVE`/`NEGATIVE` 反馈、原因和备注；重复提交会覆盖同一用户对该 Run 的反馈，并写入审计事件
+- `GET /api/runs/{runId}` 的 Step 详情包含 `contextEvidence`：模型步骤实际注入的授权来源、标题、citation 和摘要，可从聊天消息追溯到 Run 详情
 
 ## 设计约束
 

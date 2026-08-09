@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Size;
 
 import java.util.ArrayList;
 import java.util.List;
+import org.mingharness.runtime.domain.RunScenario;
 
 public record SendConversationMessageRequest(
         @NotBlank(message = "消息内容不能为空")
@@ -15,12 +16,18 @@ public record SendConversationMessageRequest(
         @Min(value = 1, message = "Agent 最大轮数必须至少为 1")
         @Max(value = 1000, message = "Agent 最大轮数不能超过 1000") Integer maxTurns,
         @Size(max = 8, message = "每条消息最多可携带 8 个附件")
-        List<@Size(max = 128, message = "附件 ID 长度不能超过 128 个字符") String> attachmentIds
+        List<@Size(max = 128, message = "附件 ID 长度不能超过 128 个字符") String> attachmentIds,
+        RunScenario scenario
 ) {
 
     /** 兼容尚未上传聊天附件的调用方。 */
     public SendConversationMessageRequest(String content, String modelName, Integer maxTurns) {
-        this(content, modelName, maxTurns, List.of());
+        this(content, modelName, maxTurns, List.of(), null);
+    }
+
+    public SendConversationMessageRequest(String content, String modelName, Integer maxTurns,
+                                          List<String> attachmentIds) {
+        this(content, modelName, maxTurns, attachmentIds, null);
     }
 
     public int effectiveMaxTurns() {

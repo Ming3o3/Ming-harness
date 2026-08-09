@@ -128,12 +128,19 @@ public class RunExecutionStateService {
     @Transactional
     public void recordContextRetrieved(String runId, String tenantId, String workerId,
                                        String stepId, int evidenceCount) {
+        recordContextRetrieved(runId, tenantId, workerId, stepId, evidenceCount, "[]");
+    }
+
+    @Transactional
+    public void recordContextRetrieved(String runId, String tenantId, String workerId,
+                                       String stepId, int evidenceCount, String evidenceJson) {
         Run run = loadForUpdate(runId);
         assertTenant(run, tenantId);
         if (!ownsRunningRun(run, workerId)) {
             return;
         }
         Step step = findStep(run, stepId);
+        step.setContextEvidenceJson(evidenceJson);
         append(run, step, "CONTEXT_RETRIEVED", "检索到 " + Math.max(0, evidenceCount) + " 条授权来源");
         runRepository.save(run);
     }

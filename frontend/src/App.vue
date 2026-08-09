@@ -24,7 +24,6 @@ import {
   Square,
   Sparkles,
   Sun,
-  Wrench,
   X,
 } from '@lucide/vue'
 import { api } from './api'
@@ -41,6 +40,7 @@ const auditEvents = ref([])
 const documents = ref([])
 const memories = ref([])
 const evaluations = ref([])
+const savedEvaluationCases = ref([])
 const retrievalEvaluations = ref([])
 const contextPreviewQuery = ref('')
 const contextPreviewMaxChars = ref(4000)
@@ -181,6 +181,7 @@ const rejectReason = ref('')
 const rejectReasonInputRef = ref(null)
 const showChatAgentSettings = ref(false)
 const chatMaxTurns = ref(readChatMaxTurns())
+const chatScenario = ref('KNOWLEDGE_QA')
 const showCommandPalette = ref(false)
 const commandQuery = ref('')
 const commandSelectedIndex = ref(0)
@@ -310,6 +311,10 @@ function setActiveConsoleSection(section) {
 function scrollToConsoleSection(section, behavior = 'smooth') {
   if (typeof document === 'undefined') return
   window.requestAnimationFrame(() => {
+    // Hash navigation can scroll the document root when the nested console
+    // surface is already scrolled away from the target. Keep the app chrome
+    // anchored to the viewport and let only .main-content handle scrolling.
+    if (window.scrollY) window.scrollTo({ top: 0, behavior: 'auto' })
     const container = document.querySelector('.console-layout .main-content')
     if (!container) return
     const target = section === 'runtime' ? container : document.getElementById(section)
@@ -327,13 +332,19 @@ function scrollToConsoleSection(section, behavior = 'smooth') {
 
 function navigateConsoleSection(section) {
   setActiveConsoleSection(section)
-  if (window.location.hash !== `#${section}`) window.location.hash = section
+  if (window.location.hash !== `#${section}`) {
+    // Updating location.hash invokes the browser's native anchor scrolling in
+    // addition to our nested-container scroll, which can move the whole app
+    // up by the topbar height after governance is expanded. pushState keeps
+    // the URL shareable without triggering that competing scroll operation.
+    window.history.pushState({ consoleSection: section }, '', `#${section}`)
+  }
   scrollToConsoleSection(section)
 }
 
 function syncActiveConsoleSectionFromHash() {
   const section = window.location.hash.slice(1)
-  const nextSection = ['runtime', 'tools', 'audit'].includes(section) ? section : 'runtime'
+  const nextSection = ['runtime', 'audit'].includes(section) ? section : 'runtime'
   activeConsoleSection.value = nextSection
   scrollToConsoleSection(nextSection, 'auto')
 }
@@ -364,6 +375,7 @@ const form = reactive({
   permissions: '',
   agentMode: false,
   maxTurns: 1000,
+  scenario: 'UNCLASSIFIED',
 })
 
 const documentForm = reactive({
@@ -420,6 +432,8 @@ const evaluationForm = reactive({
   name: '控制台快速回归',
   input: '请分析订单状态',
   expectedContains: '请分析订单状态',
+  baselineReportId: '',
+  minimumSuccessRate: '',
 })
 
 const tenantPolicyForm = reactive({
@@ -445,6 +459,9 @@ const stats = computed(() => ({
   running: summary.value?.running ?? runs.value.filter((run) => run.status === 'RUNNING').length,
   succeeded: summary.value?.succeeded ?? runs.value.filter((run) => run.status === 'SUCCEEDED').length,
   failed: summary.value?.failed ?? runs.value.filter((run) => run.status === 'FAILED').length,
+  waitingApproval: summary.value?.waitingApproval ?? runs.value.filter((run) => run.status === 'WAITING_APPROVAL').length,
+  totalCost: summary.value?.totalCost ?? runs.value.reduce((total, run) => total + Number(run.totalCost || 0), 0),
+  averageDuration: summary.value?.total ? Math.round(Number(summary.value.totalDurationMs || 0) / summary.value.total) : 0,
 }))
 
 const selectedStatus = computed(() => selectedRun.value?.run?.status || 'NONE')
@@ -656,20 +673,20 @@ const commandPaletteItems = computed(() => [
   {
     id: 'model-settings',
     label: '打开模型设置',
-    description: '配置当前用户的新 Run 使用的模型连接',
+    description: '从顶部配置新 Run 使用的大语言模型连接',
     keywords: 'model provider api key settings 模型 供应商 设置 密钥',
     icon: '◈',
     shortcut: '⌘ ,',
-    action: () => { showModelSettings.value = true },
+    action: () => { chatMode.value = false; showGovernance.value = true; showModelSettings.value = true },
     disabled: modelConfigLoading.value,
   },
   {
     id: 'embedding-settings',
     label: '打开向量连接设置',
-    description: '配置当前组织知识库使用的 Embedding 服务和向量模型',
+    description: '从顶部配置知识库检索使用的向量模型连接',
     keywords: 'embedding vector retrieval provider api key 向量 检索 嵌入 设置',
     icon: '◎',
-    action: () => { showEmbeddingSettings.value = true },
+    action: () => { chatMode.value = false; showGovernance.value = true; showEmbeddingSettings.value = true },
     disabled: embeddingConfigLoading.value,
   },
   {
@@ -803,7 +820,17 @@ function decodeAgentStep(step) {
 }
 
 function runModeLabel(run) {
-  return run?.agentMode ? `代码 Agent · 最多 ${run.maxTurns || '—'} 轮` : '单轮执行'
+  const scenario = scenarioLabel(run?.scenario)
+  return run?.agentMode ? `${scenario} · 最多 ${run.maxTurns || '—'} 轮` : `${scenario} · 单轮执行`
+}
+
+function scenarioLabel(scenario) {
+  return {
+    KNOWLEDGE_QA: '知识问答',
+    CODE_AGENT: '项目 Agent',
+    PROCESS_AUTOMATION: '流程自动化',
+    UNCLASSIFIED: '未分类',
+  }[scenario] || '未分类'
 }
 
 function decodeWorkspaceExec(step) {
@@ -1420,6 +1447,20 @@ async function retryChatMessage(message) {
     errorMessage.value = errorText(error)
   } finally {
     retryingMessageId.value = ''
+  }
+}
+
+async function deleteEvaluationCase(item) {
+  if (!item?.id || loading.value) return
+  loading.value = true
+  try {
+    await api.deleteEvaluationCase(item.id)
+    savedEvaluationCases.value = savedEvaluationCases.value.filter((value) => value.id !== item.id)
+    noticeMessage.value = '已删除回归用例'
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    loading.value = false
   }
 }
 
@@ -2247,6 +2288,7 @@ async function sendChatMessage() {
     const detail = await api.sendConversationMessage(conversationId, {
       content,
       maxTurns: chatMaxTurns.value,
+      scenario: chatScenario.value,
       attachmentIds: uploadedAttachments.map((attachment) => attachment.id),
     }, `chat-${crypto.randomUUID?.() || Date.now()}`)
     messageSubmitted = true
@@ -2353,7 +2395,7 @@ async function refreshActiveConversation() {
 async function loadDashboard() {
   clearMessages()
   try {
-    const [, toolData, summaryData, documentData, memoryData, evaluationData, retrievalEvaluationData, contextConfigurationData] = await Promise.all([
+    const [, toolData, summaryData, documentData, memoryData, evaluationData, retrievalEvaluationData, evaluationCaseData, contextConfigurationData] = await Promise.all([
       loadRunsPage(),
       api.listTools(),
       api.dashboardSummary(),
@@ -2361,6 +2403,7 @@ async function loadDashboard() {
       api.listMemories(),
       api.listEvaluations(),
       api.listRetrievalEvaluations(),
+      api.listEvaluationCases(),
       api.contextConfiguration(),
     ])
     tools.value = toolData
@@ -2371,6 +2414,7 @@ async function loadDashboard() {
     selectedRetrievalSources.value = selectedRetrievalSources.value.filter((source) => retrievalSourceValues.value.has(source))
     evaluations.value = evaluationData
     retrievalEvaluations.value = retrievalEvaluationData
+    savedEvaluationCases.value = evaluationCaseData
     contextConfiguration.value = contextConfigurationData
     if (selectedRun.value) {
       await selectRun(selectedRun.value.run.id, false)
@@ -3093,20 +3137,31 @@ async function runQuickEvaluation() {
   clearMessages()
   loading.value = true
   try {
+    const savedCases = savedEvaluationCases.value.map((item) => ({
+      name: item.name,
+      input: item.input,
+      toolName: item.toolName || 'demo.echo',
+      expectedContains: item.expectedContains || '',
+      budget: Number(item.budget || 1),
+    }))
     await api.runEvaluation({
       name: evaluationForm.name,
       modelName: form.modelName || null,
       promptVersion: form.promptVersion,
       policyVersion: form.policyVersion,
-      cases: [{
-        name: '控制台用例',
+      baselineReportId: evaluationForm.baselineReportId || null,
+      minimumSuccessRate: evaluationForm.minimumSuccessRate === '' ? null : Number(evaluationForm.minimumSuccessRate),
+      cases: savedCases.length ? savedCases : [{
+        name: '控制台冒烟用例',
         input: evaluationForm.input,
         toolName: 'demo.echo',
         expectedContains: evaluationForm.expectedContains,
         budget: 1,
       }],
     })
-    noticeMessage.value = '评测完成，报告已记录'
+    noticeMessage.value = savedCases.length
+      ? `已运行 ${savedCases.length} 条回归用例，报告已记录`
+      : '已运行冒烟用例，报告已记录'
     await loadDashboard()
   } catch (error) {
     errorMessage.value = errorText(error)
@@ -3476,6 +3531,7 @@ onMounted(async () => {
   window.addEventListener('online', handleNetworkOnline)
   syncActiveConsoleSectionFromHash()
   window.addEventListener('hashchange', syncActiveConsoleSectionFromHash)
+  window.addEventListener('popstate', syncActiveConsoleSectionFromHash)
   if (desktopWorkspaceAvailable.value) {
     api.configureDesktopWorkspaceDrop()
     api.onDesktopWorkspaceDropped((result) => {
@@ -3495,6 +3551,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('offline', handleNetworkOffline)
   window.removeEventListener('online', handleNetworkOnline)
   window.removeEventListener('hashchange', syncActiveConsoleSectionFromHash)
+  window.removeEventListener('popstate', syncActiveConsoleSectionFromHash)
   stopRunEventStream()
   api.clearDesktopWorkspaceDropListener()
   window.clearInterval(runPollTimer)
@@ -3521,8 +3578,8 @@ onBeforeUnmount(() => {
           <button class="theme-toggle" type="button" :aria-label="theme === 'dark' ? '切换到白天模式' : '切换到黑夜模式'" @click="toggleTheme">
             <Sun v-if="theme === 'dark'" :size="15" aria-hidden="true" /><Moon v-else :size="15" aria-hidden="true" />{{ theme === 'dark' ? '白天' : '黑夜' }}
           </button>
-          <button class="secondary-button chat-console-button" type="button" title="打开模型设置" @click="showModelSettings = true"><Settings2 :size="15" />模型设置</button>
-          <button class="secondary-button chat-console-button" type="button" title="打开向量连接设置" @click="showEmbeddingSettings = true">◎ 向量设置</button>
+          <button class="secondary-button chat-console-button top-config-button" type="button" title="配置大语言模型" @click="showModelSettings = true"><Settings2 :size="15" />大语言模型</button>
+          <button class="secondary-button chat-console-button top-config-button" type="button" title="配置向量模型" @click="showEmbeddingSettings = true"><Settings2 :size="15" />向量模型</button>
           <button class="secondary-button chat-console-button" type="button" title="打开运行控制台" @click="chatMode = false"><PanelRight :size="15" />运行控制台</button>
         </div>
       </header>
@@ -3538,9 +3595,6 @@ onBeforeUnmount(() => {
             </button>
             <button class="chat-primary-nav-item" type="button" @click="chatMode = false; navigateConsoleSection('runtime')">
               <CircleDot :size="15" /><span>运行中心</span>
-            </button>
-            <button class="chat-primary-nav-item" type="button" @click="chatMode = false; navigateConsoleSection('tools')">
-              <Wrench :size="15" /><span>工具注册</span>
             </button>
             <button class="chat-primary-nav-item" type="button" @click="chatMode = false; navigateConsoleSection('audit')">
               <Check :size="15" /><span>审计追踪</span>
@@ -3707,7 +3761,9 @@ onBeforeUnmount(() => {
                   <button v-if="message.content" type="button" :disabled="copyingMessageId === message.id" @click="copyChatMessage(message)">{{ copyingMessageId === message.id ? '复制中…' : '复制回复' }}</button>
                   <button v-if="canRetryChatMessage(message)" type="button" :disabled="retryingMessageId === message.id" @click="retryChatMessage(message)">{{ retryingMessageId === message.id ? '重试中…' : '重试本轮' }}</button>
                 </div>
-                <button v-if="message.runId && message.role === 'ASSISTANT'" class="message-run-link" type="button" @click="openRunPanel(message.runId)">查看执行步骤 · {{ message.runId.slice(0, 8) }}</button>
+                <div v-if="message.runId && message.role === 'ASSISTANT'" class="message-run-reference">
+                  <span class="message-run-status" :class="messageStatusClass(message.status)"><i></i>{{ messageStatusLabel(message.status) }}</span>
+                </div>
               </div>
             </article>
             <button
@@ -3756,6 +3812,7 @@ onBeforeUnmount(() => {
             <div v-if="showChatAgentSettings && activeConversationId" class="chat-agent-settings" aria-label="Agent 设置">
               <div class="chat-agent-settings-heading"><div><strong>Agent 执行深度</strong><small>限制本轮最多执行的模型轮数，工具结果会继续计入同一 Run。</small></div><button type="button" aria-label="关闭 Agent 设置" @click="showChatAgentSettings = false"><X :size="14" /></button></div>
               <div class="chat-agent-settings-controls">
+                <label><span>业务场景</span><select v-model="chatScenario" :disabled="chatSending || chatUploading"><option value="KNOWLEDGE_QA">知识问答 / 客服</option><option value="CODE_AGENT">代码 / 项目 Agent</option><option value="PROCESS_AUTOMATION">运营 / 流程自动化</option></select></label>
                 <label><span>模型轮数上限</span><input v-model.number="chatMaxTurns" type="number" min="1" max="1000" step="1" :disabled="chatSending || chatUploading" @change="persistChatMaxTurns" /></label>
                 <div class="chat-agent-presets" aria-label="Agent 深度预设">
                   <button v-for="preset in [8, 24, 100, 1000]" :key="preset" type="button" :class="{ active: chatMaxTurns === preset }" :disabled="chatSending || chatUploading" @click="setChatMaxTurns(preset)">{{ preset === 1000 ? '平台上限' : `${preset} 轮` }}</button>
@@ -3767,7 +3824,7 @@ onBeforeUnmount(() => {
               v-model="chatInput"
               rows="3"
               :disabled="chatSending || chatUploading || !activeConversationId"
-              placeholder="描述代码任务；桌面版可拖入项目文件夹，浏览器会导入文本副本…"
+              placeholder="描述你的业务目标；可提问、分析项目或发起受控流程…"
               aria-label="输入消息"
               @input="handleChatInput"
               @keydown="handleChatKeydown"
@@ -3778,7 +3835,7 @@ onBeforeUnmount(() => {
                 <span class="chat-composer-hint-context">{{ desktopWorkspaceDropping ? '正在授权拖入的本地项目…' : workspaceConnected ? 'Agent 可直接操作本会话绑定的本地项目' : '文件夹导入后保留层级' }}</span>
               </span>
               <div class="chat-composer-actions">
-                <button class="secondary-button chat-agent-settings-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="showChatAgentSettings = !showChatAgentSettings"><Settings2 :size="14" /><span>Agent · {{ chatMaxTurns }} 轮</span></button>
+                <button class="secondary-button chat-agent-settings-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="showChatAgentSettings = !showChatAgentSettings"><Settings2 :size="14" /><span>{{ scenarioLabel(chatScenario) }} · {{ chatMaxTurns }} 轮</span></button>
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatAttachmentPicker"><Paperclip :size="14" /><span>附件</span></button>
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatFolderPicker"><FolderOpen :size="14" /><span>文件夹</span></button>
                 <button v-if="canCancelChat" class="secondary-button chat-stop-button" type="button" :disabled="chatCancellingRunId === pendingChatMessage?.runId" @click="cancelChatRun"><Square :size="14" /><span>{{ chatCancellingRunId === pendingChatMessage?.runId ? '处理中…' : (chatRunStatus === 'WAITING_APPROVAL' ? '撤回审批' : '停止') }}</span></button>
@@ -4053,8 +4110,8 @@ onBeforeUnmount(() => {
             <Sun v-if="theme === 'dark'" :size="15" aria-hidden="true" /><Moon v-else :size="15" aria-hidden="true" />
             {{ theme === 'dark' ? '白天' : '黑夜' }}
           </button>
-          <button class="secondary-button" type="button" title="打开模型设置" @click="showModelSettings = true"><Settings2 :size="15" />模型设置</button>
-          <button class="secondary-button" type="button" title="打开向量连接设置" @click="showEmbeddingSettings = true">◎ 向量设置</button>
+          <button class="secondary-button top-config-button" type="button" title="配置大语言模型" @click="showModelSettings = true"><Settings2 :size="15" />大语言模型</button>
+          <button class="secondary-button top-config-button" type="button" title="配置向量模型" @click="showEmbeddingSettings = true"><Settings2 :size="15" />向量模型</button>
           <button class="secondary-button" type="button" title="打开聊天工作台" @click="chatMode = true"><MessageSquarePlus :size="15" />聊天工作台</button>
         </div>
       </div>
@@ -4064,7 +4121,6 @@ onBeforeUnmount(() => {
       <aside class="sidebar">
       <nav class="side-nav" aria-label="主导航">
         <a class="nav-item" :class="{ active: activeConsoleSection === 'runtime' }" href="#runtime" :aria-current="activeConsoleSection === 'runtime' ? 'page' : undefined" @click.prevent="navigateConsoleSection('runtime')"><span class="nav-icon"><CircleDot :size="16" /></span>运行中心</a>
-        <a class="nav-item" :class="{ active: activeConsoleSection === 'tools' }" href="#tools" :aria-current="activeConsoleSection === 'tools' ? 'page' : undefined" @click.prevent="navigateConsoleSection('tools')"><span class="nav-icon"><Wrench :size="16" /></span>工具注册</a>
         <a class="nav-item" :class="{ active: activeConsoleSection === 'audit' }" href="#audit" :aria-current="activeConsoleSection === 'audit' ? 'page' : undefined" @click.prevent="navigateConsoleSection('audit')"><span class="nav-icon"><Check :size="16" /></span>审计追踪</a>
       </nav>
 
@@ -4097,25 +4153,25 @@ onBeforeUnmount(() => {
       </section>
 
       <section class="stats-grid" aria-label="运行统计">
-        <div class="stat-card stat-total">
-          <div class="stat-top"><span>全部 Run</span><span class="stat-icon"><ListChecks :size="16" /></span></div>
-          <strong>{{ stats.total }}</strong>
-          <small>最近 50 条执行记录</small>
-        </div>
         <div class="stat-card stat-running">
-          <div class="stat-top"><span>执行中</span><span class="stat-icon"><Activity :size="16" /></span></div>
-          <strong>{{ stats.running }}</strong>
-          <small>{{ stats.queued }} 条排队等待</small>
+          <div class="stat-top"><span>活动 Run</span><span class="stat-icon"><Activity :size="16" /></span></div>
+          <strong>{{ stats.running + stats.queued }}</strong>
+          <small>{{ stats.running }} 执行中 · {{ stats.queued }} 排队</small>
         </div>
-        <div class="stat-card stat-success">
-          <div class="stat-top"><span>成功率</span><span class="stat-icon"><Check :size="16" /></span></div>
-          <strong>{{ stats.total ? Math.round((stats.succeeded / stats.total) * 100) : 0 }}<em>%</em></strong>
-          <small>{{ stats.succeeded }} 条任务已完成</small>
+        <div class="stat-card stat-total">
+          <div class="stat-top"><span>待审批</span><span class="stat-icon"><ShieldCheck :size="16" /></span></div>
+          <strong>{{ stats.waitingApproval }}</strong>
+          <small>需要人工确认的高风险操作</small>
         </div>
         <div class="stat-card stat-failed">
-          <div class="stat-top"><span>需关注</span><span class="stat-icon"><CircleAlert :size="16" /></span></div>
+          <div class="stat-top"><span>失败 Run</span><span class="stat-icon"><CircleAlert :size="16" /></span></div>
           <strong>{{ stats.failed }}</strong>
-          <small>失败或需要人工处理</small>
+          <small>成功率 {{ stats.total ? Math.round((stats.succeeded / stats.total) * 100) : 0 }}%</small>
+        </div>
+        <div class="stat-card stat-success">
+          <div class="stat-top"><span>今日成本</span><span class="stat-icon"><Coins :size="16" /></span></div>
+          <strong>{{ Number(stats.totalCost || 0).toFixed(2) }}</strong>
+          <small>平均耗时 {{ stats.averageDuration }} ms · 最近 {{ stats.total }} 条</small>
         </div>
       </section>
 
@@ -4171,6 +4227,15 @@ onBeforeUnmount(() => {
           <label class="field">
             <span>权限快照（可选）</span>
             <input v-model="form.permissions" maxlength="1000" placeholder="例如：orders.read,orders.write" />
+          </label>
+          <label class="field">
+            <span>业务场景</span>
+            <select v-model="form.scenario">
+              <option value="UNCLASSIFIED">自动识别</option>
+              <option value="KNOWLEDGE_QA">知识问答 / 客服</option>
+              <option value="CODE_AGENT">代码 / 项目 Agent</option>
+              <option value="PROCESS_AUTOMATION">运营 / 流程自动化</option>
+            </select>
           </label>
           <div class="field field-wide agent-mode-field">
             <span>运行模式</span>
@@ -4272,6 +4337,7 @@ onBeforeUnmount(() => {
               <div><span>组织 / 用户</span><strong>{{ selectedRun.run.tenantId }} / {{ selectedRun.run.userId }}</strong></div>
               <div><span>模型</span><strong>{{ selectedRun.run.modelName }}</strong></div>
               <div><span>Prompt / 策略</span><strong>{{ selectedRun.run.promptVersion }} · {{ selectedRun.run.policyVersion }}</strong></div>
+              <div><span>业务场景</span><strong>{{ scenarioLabel(selectedRun.run.scenario) }}</strong></div>
               <div><span>模式 / 轮数</span><strong>{{ runModeLabel(selectedRun.run) }}</strong></div>
               <div><span>Trace / 耗时</span><strong>{{ selectedRun.run.traceId?.slice(0, 12) || '—' }} · {{ selectedRun.run.durationMs || 0 }} ms</strong></div>
             </div>
@@ -4290,6 +4356,13 @@ onBeforeUnmount(() => {
                       <span class="tool-call-heading">Tool Call</span>
                       <code v-for="call in decodeAgentStep(step).toolCalls" :key="call.id">{{ call.name }} · {{ call.id }}</code>
                     </div>
+                    <details v-if="step.contextEvidence?.length" class="run-evidence-details" open>
+                      <summary>上下文证据 · {{ step.contextEvidence.length }} 个已授权来源</summary>
+                      <article v-for="evidence in step.contextEvidence" :key="`${step.id}-${evidence.citation}`" class="run-evidence-row">
+                        <div><strong>{{ evidence.title || '未命名来源' }}</strong><code>{{ evidence.citation }}</code></div>
+                        <p>{{ evidence.excerpt }}</p>
+                      </article>
+                    </details>
                     <template v-if="decodeWorkspaceExec(step)">
                       <p class="command-line"><span>$</span> {{ decodeWorkspaceExec(step).command }} {{ (decodeWorkspaceExec(step).args || []).join(' ') }}</p>
                       <div class="command-summary">
@@ -4373,7 +4446,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section class="tool-section panel" id="tools">
+      <section v-if="showGovernance" class="tool-section panel" id="tools">
         <div class="panel-heading"><div><p class="eyebrow">TOOL REGISTRY</p><h2>已注册工具</h2></div><span class="registry-count">{{ tools.length }} tools</span></div>
         <div class="tool-grid">
           <div v-for="tool in tools" :key="tool.name" class="tool-card">
@@ -4388,8 +4461,8 @@ onBeforeUnmount(() => {
 
       <section class="governance-section panel" id="governance">
         <div class="panel-heading">
-          <div><p class="eyebrow">CONTEXT / EVALUATION</p><h2>上下文与评测治理</h2></div>
-          <button class="secondary-button" type="button" @click="showGovernance = !showGovernance">{{ showGovernance ? '收起' : '展开治理面板' }}</button>
+          <div><p class="eyebrow">ADVANCED GOVERNANCE</p><h2>高级治理设置</h2><p class="panel-heading-help">知识源、索引、评测、组织策略和凭证设置只在这里维护。</p></div>
+          <button class="secondary-button" type="button" @click="showGovernance = !showGovernance">{{ showGovernance ? '收起高级设置' : '展开高级设置' }}</button>
         </div>
         <div v-if="showGovernance" class="governance-grid">
           <section class="governance-card context-workbench-card">
@@ -4574,13 +4647,29 @@ onBeforeUnmount(() => {
             <div v-else class="context-preview-empty">还没有当前用户的长期记忆。</div>
           </form>
           <form class="governance-card governance-fixed-card" @submit.prevent="runQuickEvaluation">
-            <h3>运行快速回归评测</h3>
+            <div class="context-workbench-heading"><div><p class="eyebrow">QUALITY GATE</p><h3>运行回归评测</h3></div><span class="context-mode-chip">{{ savedEvaluationCases.length ? `${savedEvaluationCases.length} 条用例` : '冒烟模式' }}</span></div>
             <label class="field"><span>报告名称</span><input v-model="evaluationForm.name" required /></label>
-            <label class="field"><span>测试输入</span><textarea v-model="evaluationForm.input" required rows="2"></textarea></label>
-            <label class="field"><span>期望包含</span><input v-model="evaluationForm.expectedContains" /></label>
+            <template v-if="!savedEvaluationCases.length">
+              <label class="field"><span>测试输入</span><textarea v-model="evaluationForm.input" required rows="2"></textarea></label>
+              <label class="field"><span>期望包含</span><input v-model="evaluationForm.expectedContains" /></label>
+            </template>
+            <label class="field"><span>基线报告（可选）</span><select v-model="evaluationForm.baselineReportId"><option value="">不比较基线</option><option v-for="report in evaluations" :key="report.id" :value="report.id">{{ report.name }} · {{ evaluationRateLabel(report) }}</option></select></label>
+            <label class="field"><span>最低通过率（可选）</span><input v-model="evaluationForm.minimumSuccessRate" type="number" min="0" max="1" step="0.01" placeholder="例如 0.8" /></label>
+            <p v-if="savedEvaluationCases.length" class="form-hint">已保存用例会作为本次回归集执行，可在下方查看和删除。</p>
             <button class="secondary-button" type="submit" :disabled="loading">执行评测</button>
-            <small class="form-hint">历史报告 {{ evaluations.length }} 份；执行完成后点击下方记录查看用例结果、Run 状态和版本绑定。</small>
+            <small class="form-hint">历史报告 {{ evaluations.length }} 份；基线下降或低于最低通过率时会标记为不通过。</small>
           </form>
+          <section class="governance-card governance-fixed-card evaluation-cases-card">
+            <div class="context-workbench-heading"><div><p class="eyebrow">REGRESSION DATASET</p><h3>已保存回归用例</h3></div><span class="context-mode-chip">{{ savedEvaluationCases.length }} 条</span></div>
+            <p class="context-workbench-help">已保存的用例会作为本次回归集执行，可在这里查看和删除。</p>
+            <div v-if="savedEvaluationCases.length" class="evaluation-case-library">
+              <article v-for="item in savedEvaluationCases.slice(0, 8)" :key="item.id" class="evaluation-case-library-row">
+                <div><strong>{{ item.name }}</strong><small>{{ scenarioLabel(item.scenario) }} · {{ item.input }}</small></div>
+                <button class="text-button" type="button" :disabled="loading" @click="deleteEvaluationCase(item)">删除</button>
+              </article>
+            </div>
+            <div v-else class="context-preview-empty">暂无已保存的回归用例。</div>
+          </section>
           <form class="governance-card governance-fixed-card retrieval-evaluation-card" @submit.prevent="runRetrievalEvaluation">
             <div class="context-workbench-heading">
               <div>
@@ -4751,6 +4840,7 @@ onBeforeUnmount(() => {
           <div class="evaluation-report-binding"><span>模型</span><strong>{{ selectedEvaluationReport.modelName || '未指定' }}</strong></div>
           <div class="evaluation-report-binding"><span>Prompt</span><strong>{{ selectedEvaluationReport.promptVersion || '—' }}</strong></div>
           <div class="evaluation-report-binding"><span>策略</span><strong>{{ selectedEvaluationReport.policyVersion || '—' }}</strong></div>
+          <div class="evaluation-report-binding" :class="selectedEvaluationReport.gatePassed === false ? 'evaluation-gate-failed' : 'evaluation-gate-passed'"><span>质量门禁</span><strong>{{ selectedEvaluationReport.gatePassed === false ? '未通过' : '通过' }}</strong><small v-if="selectedEvaluationReport.successRateDelta != null">{{ selectedEvaluationReport.successRateDelta >= 0 ? '+' : '' }}{{ selectedEvaluationReport.successRateDelta }} vs 基线</small></div>
         </div>
         <div class="evaluation-report-section">
           <div class="subsection-title"><h3>用例结果</h3><span>{{ selectedEvaluationCases.length }} cases</span></div>

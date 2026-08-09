@@ -9,6 +9,8 @@ import org.mingharness.context.ContextEmbeddingCache;
 import org.mingharness.context.ContextParentWindowRepository;
 import org.mingharness.evaluation.EvaluationReportRepository;
 import org.mingharness.evaluation.ContextRetrievalEvaluationReportRepository;
+import org.mingharness.evaluation.EvaluationCaseRepository;
+import org.mingharness.feedback.RunFeedbackRepository;
 import org.mingharness.messaging.OutboxEventRepository;
 import org.mingharness.messaging.OutboxStatus;
 import org.mingharness.observability.HarnessMetrics;
@@ -48,6 +50,8 @@ public class DataRetentionService {
     private final ContextParentWindowRepository contextParentWindowRepository;
     private final EvaluationReportRepository evaluationReportRepository;
     private final ContextRetrievalEvaluationReportRepository retrievalEvaluationReportRepository;
+    private final EvaluationCaseRepository evaluationCaseRepository;
+    private final RunFeedbackRepository runFeedbackRepository;
     private final TenantPolicyAuditRepository tenantPolicyAuditRepository;
     private final ApiKeyAuditRepository apiKeyAuditRepository;
     private final ContextEmbeddingCache contextEmbeddingCache;
@@ -63,6 +67,8 @@ public class DataRetentionService {
                                 ContextParentWindowRepository contextParentWindowRepository,
                                 EvaluationReportRepository evaluationReportRepository,
                                 ContextRetrievalEvaluationReportRepository retrievalEvaluationReportRepository,
+                                EvaluationCaseRepository evaluationCaseRepository,
+                                RunFeedbackRepository runFeedbackRepository,
                                 TenantPolicyAuditRepository tenantPolicyAuditRepository,
                                 ApiKeyAuditRepository apiKeyAuditRepository,
                                 ContextEmbeddingCache contextEmbeddingCache,
@@ -77,6 +83,8 @@ public class DataRetentionService {
         this.contextParentWindowRepository = contextParentWindowRepository;
         this.evaluationReportRepository = evaluationReportRepository;
         this.retrievalEvaluationReportRepository = retrievalEvaluationReportRepository;
+        this.evaluationCaseRepository = evaluationCaseRepository;
+        this.runFeedbackRepository = runFeedbackRepository;
         this.tenantPolicyAuditRepository = tenantPolicyAuditRepository;
         this.apiKeyAuditRepository = apiKeyAuditRepository;
         this.contextEmbeddingCache = contextEmbeddingCache;
@@ -111,6 +119,7 @@ public class DataRetentionService {
         int chunksDeleted = 0;
         int parentWindowsDeleted = 0;
         int embeddingCacheEntriesDeleted = 0;
+        int runFeedbackDeleted = 0;
 
         // 每轮只处理有限数量的 Run，避免历史数据很多时长事务阻塞线上写入。
         List<Run> candidates = runRepository.findByStatusInAndFinishedAtBeforeOrderByFinishedAtAsc(
@@ -118,6 +127,8 @@ public class DataRetentionService {
         for (Run run : candidates) {
             auditEventsDeleted += Math.toIntExact(auditEventRepository.deleteByRunId(run.getId()));
             outboxEventsDeleted += Math.toIntExact(outboxEventRepository.deleteByRunId(run.getId()));
+            // 反馈通过外键绑定 Run，必须在删除 Run 前清理，兼容已部署的非级联 V31 约束。
+            runFeedbackDeleted += Math.toIntExact(runFeedbackRepository.deleteByRunId(run.getId()));
             stepsDeleted += run.getSteps().size();
             runRepository.delete(run);
             runsDeleted++;
@@ -138,6 +149,8 @@ public class DataRetentionService {
         parentWindowsDeleted += contextParentWindowRepository.deleteOrphanedParentWindows();
         int evaluationReportsDeleted = Math.toIntExact(evaluationReportRepository.deleteByCreatedAtBefore(
                 now.minus(properties.evaluationDays(), ChronoUnit.DAYS)));
+        int evaluationCasesDeleted = Math.toIntExact(evaluationCaseRepository.deleteByCreatedAtBefore(
+                now.minus(properties.evaluationDays(), ChronoUnit.DAYS)));
         int retrievalEvaluationReportsDeleted = Math.toIntExact(retrievalEvaluationReportRepository
                 .deleteByCreatedAtBefore(now.minus(properties.evaluationDays(), ChronoUnit.DAYS)));
         // 仅清理已经完成投递或已明确失败的历史 Outbox，PENDING 事件永远保留。
@@ -155,7 +168,7 @@ public class DataRetentionService {
                 runsDeleted, auditEventsDeleted, stepsDeleted, memoriesDeleted, documentsDeleted,
                 chunksDeleted, parentWindowsDeleted, evaluationReportsDeleted, retrievalEvaluationReportsDeleted,
                 outboxEventsDeleted, tenantPolicyAuditsDeleted, apiKeyAuditsDeleted,
-                embeddingCacheEntriesDeleted);
+                embeddingCacheEntriesDeleted, runFeedbackDeleted, evaluationCasesDeleted);
         metrics.retentionDeleted(result.totalDeleted());
         return result;
     }

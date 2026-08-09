@@ -11,6 +11,7 @@ import org.mingharness.runtime.api.RunSummary;
 import org.mingharness.runtime.api.StepView;
 import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.domain.RunStatus;
+import org.mingharness.runtime.domain.RunScenario;
 import org.mingharness.runtime.domain.Step;
 import org.mingharness.runtime.domain.StepStatus;
 import org.mingharness.runtime.domain.StepType;
@@ -253,7 +254,8 @@ public class RunService {
                     effectiveAgentMode,
                     request.effectiveMaxTurns(),
                     request.conversationId(),
-                    workspaceId
+                    workspaceId,
+                    resolveScenario(request, workspaceId, effectiveAgentMode, effectiveToolName)
             );
             run.attachModelConfigSnapshot(capturedModel.snapshotId());
             run.addStep(new Step(1, StepType.MODEL, "model.complete", sanitizedInput));
@@ -623,7 +625,7 @@ public class RunService {
                     started.get().input(), runtimeLimits.maxContextChars());
             if (!context.isEmpty()) {
                 executionStateService.recordContextRetrieved(run.id(), run.tenantId(), workerId,
-                        step.id(), context.evidences().size());
+                        step.id(), context.evidences().size(), ContextEvidenceCodec.encode(context.evidences()));
             }
             String modelInput = context.isEmpty()
                     ? started.get().input()
@@ -787,6 +789,7 @@ public class RunService {
                 ContextResult context = contextBuilder.build(run.getTenantId(), run.getUserId(),
                         step.getInput(), runtimeLimits.maxContextChars());
                 if (!context.isEmpty()) {
+                    step.setContextEvidenceJson(ContextEvidenceCodec.encode(context.evidences()));
                     record(run.getId(), step.getId(), "CONTEXT_RETRIEVED",
                             "检索到 " + context.evidences().size() + " 条授权来源");
                 }
@@ -1557,7 +1560,8 @@ public class RunService {
                         step.getInput(), step.getOutput(), step.getError(), step.getAttempt(),
                         step.getInputTokens(), step.getOutputTokens(),
                         step.getStartedAt(), step.getFinishedAt(), step.getSpanId(),
-                        step.getDurationMs(), step.getCost()
+                        step.getDurationMs(), step.getCost(),
+                        ContextEvidenceCodec.decode(step.getContextEvidenceJson())
                 )).toList()
         );
     }
@@ -1570,8 +1574,20 @@ public class RunService {
                 run.getUpdatedAt(), run.getSteps().size(), run.getIdempotencyKey(), run.getTraceId(),
                 run.getDurationMs(), run.getSteps().stream().map(Step::getCost)
                         .reduce(BigDecimal.ZERO, BigDecimal::add), run.isAgentMode(), run.getMaxTurns(),
-                run.getWorkspaceId()
+                run.getWorkspaceId(), run.getScenario()
         );
+    }
+
+    private RunScenario resolveScenario(CreateRunRequest request, String workspaceId,
+                                        boolean agentMode, String toolName) {
+        if (request.scenario() != null && request.scenario() != RunScenario.UNCLASSIFIED) {
+            return request.scenario();
+        }
+        if (workspaceId != null) return RunScenario.CODE_AGENT;
+        if (agentMode && toolName != null && !"agent.model".equals(toolName)) {
+            return RunScenario.PROCESS_AUTOMATION;
+        }
+        return request.scenario() == null ? RunScenario.UNCLASSIFIED : request.scenario();
     }
 
     private void validateRuntimeLimits(CreateRunRequest request, TenantPolicyLimits tenantLimits) {

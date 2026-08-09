@@ -214,6 +214,11 @@ export const api = {
   }),
   retryRun: (runId) => request(`/runs/${runId}/retry`, { method: 'POST' }),
   cancelRun: (runId) => request(`/runs/${runId}`, { method: 'DELETE' }),
+  getRunFeedback: (runId) => request(`/runs/${encodeURIComponent(runId)}/feedback`),
+  saveRunFeedback: (runId, payload) => request(`/runs/${encodeURIComponent(runId)}/feedback`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
   listConversations: () => request('/conversations'),
   createConversation: (payload = {}) => request('/conversations', {
     method: 'POST',
@@ -278,6 +283,12 @@ export const api = {
   deleteMemory: (memoryId) => request(`/context/memories/${encodeURIComponent(memoryId)}`, { method: 'DELETE' }),
   listEvaluations: () => request('/evaluations'),
   runEvaluation: (payload) => request('/evaluations', { method: 'POST', body: JSON.stringify(payload) }),
+  listEvaluationCases: () => request('/evaluations/cases'),
+  saveEvaluationCaseFromRun: (payload) => request('/evaluations/cases/from-run', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+  deleteEvaluationCase: (caseId) => request(`/evaluations/cases/${encodeURIComponent(caseId)}`, { method: 'DELETE' }),
   listRetrievalEvaluations: () => request('/evaluations/retrieval'),
   runRetrievalEvaluation: (payload) => request('/evaluations/retrieval', { method: 'POST', body: JSON.stringify(payload) }),
   getTenantPolicy: (tenantId) => request(`/admin/tenants/${encodeURIComponent(tenantId)}/policy`),

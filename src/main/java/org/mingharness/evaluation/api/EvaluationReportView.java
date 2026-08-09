@@ -17,13 +17,20 @@ public record EvaluationReportView(
         int failedCases,
         BigDecimal successRate,
         String details,
-        Instant createdAt
+        Instant createdAt,
+        String baselineReportId,
+        BigDecimal baselineSuccessRate,
+        BigDecimal successRateDelta,
+        BigDecimal minimumSuccessRate,
+        boolean gatePassed
 ) {
 
     public static EvaluationReportView from(EvaluationReport report) {
         return new EvaluationReportView(report.getId(), report.getTenantId(), report.getName(),
                 report.getModelName(), report.getPromptVersion(), report.getPolicyVersion(),
                 report.getTotalCases(), report.getPassedCases(), report.getFailedCases(),
-                report.getSuccessRate(), report.getDetails(), report.getCreatedAt());
+                report.getSuccessRate(), report.getDetails(), report.getCreatedAt(),
+                report.getBaselineReportId(), report.getBaselineSuccessRate(), report.getSuccessRateDelta(),
+                report.getMinimumSuccessRate(), report.isGatePassed());
     }
 }

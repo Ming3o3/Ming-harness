@@ -1,6 +1,7 @@
 package org.mingharness.evaluation;
 
 import org.mingharness.common.SensitiveDataSanitizer;
+import org.mingharness.common.BusinessException;
 import org.mingharness.evaluation.api.EvaluationCaseRequest;
 import org.mingharness.evaluation.api.EvaluationReportView;
 import org.mingharness.evaluation.api.EvaluationRequest;
@@ -11,6 +12,7 @@ import org.mingharness.runtime.application.RunService;
 import org.mingharness.runtime.domain.RunStatus;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
 
@@ -19,6 +21,7 @@ import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.Optional;
 
 /** 用固定用例回放 Run，形成可比较的模型、Prompt 和策略版本报告。 */
 @Service
@@ -90,12 +93,32 @@ public class EvaluationService {
         int total = request.cases().size();
         BigDecimal successRate = BigDecimal.valueOf(passed)
                 .divide(BigDecimal.valueOf(total), 4, RoundingMode.HALF_UP);
+        EvaluationReport baseline = request.baselineReportId() == null || request.baselineReportId().isBlank()
+                ? null : reportRepository.findById(request.baselineReportId()).orElseThrow(() ->
+                new BusinessException(HttpStatus.NOT_FOUND, "BASELINE_EVALUATION_NOT_FOUND",
+                        "基线评测报告不存在: " + request.baselineReportId()));
+        if (baseline != null && !tenantId.equals(baseline.getTenantId())) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "BASELINE_EVALUATION_ACCESS_DENIED",
+                    "基线评测报告不属于当前组织");
+        }
+        BigDecimal baselineRate = baseline == null ? null : baseline.getSuccessRate();
+        BigDecimal delta = baselineRate == null ? null : successRate.subtract(baselineRate).setScale(4, RoundingMode.HALF_UP);
+        boolean gatePassed = request.minimumSuccessRate() == null || successRate.compareTo(request.minimumSuccessRate()) >= 0;
+        if (baselineRate != null && delta.signum() < 0) {
+            gatePassed = false;
+        }
+        if (!gatePassed) {
+            details.add("QUALITY_GATE=FAILED:successRate=" + successRate
+                    + (baselineRate == null ? "" : ":baseline=" + baselineRate));
+        }
         EvaluationReport report = new EvaluationReport(
                 tenantId, sanitizer.sanitize(request.name()),
                 sanitizer.sanitize(valueOrDefault(request.modelName(), defaultModel)),
                 sanitizer.sanitize(valueOrDefault(request.promptVersion(), defaultPromptVersion)),
                 sanitizer.sanitize(valueOrDefault(request.policyVersion(), defaultPolicyVersion)),
-                total, passed, total - passed, successRate, String.join("\n", details));
+                total, passed, total - passed, successRate, String.join("\n", details),
+                baseline == null ? null : baseline.getId(), baselineRate, delta,
+                request.minimumSuccessRate(), gatePassed);
         return EvaluationReportView.from(reportRepository.save(report));
     }
 
