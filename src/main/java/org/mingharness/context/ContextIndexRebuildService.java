@@ -59,7 +59,8 @@ public class ContextIndexRebuildService {
         int parentsRebuilt = 0;
         int chunksCreated = 0;
         for (ParentRef parent : parents) {
-            if (!effective.shouldRechunk() && chunkWriter.hasActiveChunks(parent.type(), parent.id())) {
+            if (!effective.shouldRechunk()
+                    && chunkWriter.hasActiveChunks(tenantId, parent.type(), parent.id())) {
                 continue;
             }
             chunksCreated += chunkWriter.replace(tenantId, parent.type(), parent.id(), parent.content());
@@ -90,7 +91,7 @@ public class ContextIndexRebuildService {
         long pendingCount = chunkRepository.countByTenantIdAndDeletedAtIsNullAndEmbeddedAtIsNull(tenantId);
         metrics.contextChunksIndexed(chunksIndexed);
         metrics.contextIndexPending(pendingCount);
-        return new ContextReindexResponse(scope, embeddingIndexer.ready(), parents.size(), parentsRebuilt,
+        return new ContextReindexResponse(scope, embeddingIndexer.ready(tenantId), parents.size(), parentsRebuilt,
                 chunksCreated, chunksIndexed, chunksFailed, safeInt(pendingCount));
     }
 

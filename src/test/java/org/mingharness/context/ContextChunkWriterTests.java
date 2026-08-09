@@ -68,7 +68,9 @@ class ContextChunkWriterTests {
         assertEquals(windows.get(0).getId(), chunks.get(1).getParentWindowId());
         assertEquals(windows.get(1).getId(), chunks.get(2).getParentWindowId());
         assertNotNull(chunks.get(0).getContentHash());
-        verify(windowRepository).deleteByParentTypeAndParentId("DOCUMENT", "doc-1");
-        verify(chunkRepository).deleteByParentTypeAndParentId("DOCUMENT", "doc-1");
+        verify(windowRepository).deleteByTenantIdAndParentTypeAndParentId(
+                "tenant-a", "DOCUMENT", "doc-1");
+        verify(chunkRepository).deleteByTenantIdAndParentTypeAndParentId(
+                "tenant-a", "DOCUMENT", "doc-1");
     }
 }

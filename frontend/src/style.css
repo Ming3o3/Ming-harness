@@ -292,6 +292,7 @@ h3 { margin: 0; font-size: 13px; }
 .context-index-status { border: 1px solid var(--line); border-radius: 12px; color: var(--muted); padding: 4px 7px; font: 9px "DM Mono", monospace; }
 .context-index-status.is-ready { border-color: rgba(85,214,138,.25); color: var(--green); }
 .context-index-status.is-warning { border-color: rgba(255,182,95,.28); color: var(--orange); }
+.context-index-status.is-negative { border-color: rgba(255,114,123,.3); color: var(--red); }
 .context-index-form { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(72px, .7fr)); gap: 10px; align-items: end; }
 .context-rechunk-field { min-height: 39px; border: 1px solid var(--line); border-radius: 7px; background: var(--input-bg); padding: 0 9px; }
 .context-index-button { grid-column: 1 / -1; justify-self: start; padding: 9px 12px; }

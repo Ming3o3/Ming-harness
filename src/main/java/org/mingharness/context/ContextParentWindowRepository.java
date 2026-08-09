@@ -17,7 +17,8 @@ public interface ContextParentWindowRepository extends JpaRepository<ContextPare
 
     long deleteByDeletedAtBefore(Instant deletedAt);
 
-    long deleteByParentTypeAndParentId(String parentType, String parentId);
+    long deleteByTenantIdAndParentTypeAndParentId(
+            String tenantId, String parentType, String parentId);
 
     /** 清理父文档已被硬删除且不再被任何子块引用的窗口。 */
     @Modifying(clearAutomatically = true, flushAutomatically = true)

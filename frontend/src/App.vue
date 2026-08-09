@@ -2965,20 +2965,47 @@ async function rebuildContextIndex() {
   contextReindexLoading.value = true
   contextReindexError.value = ''
   try {
-    contextReindexResult.value = await api.reindexContext({
+    const result = await api.reindexContext({
       scope: contextReindexForm.scope,
       parentLimit: Number(contextReindexForm.parentLimit) || 100,
       chunkLimit: Number(contextReindexForm.chunkLimit) || 1000,
       rechunk: Boolean(contextReindexForm.rechunk),
     })
-    noticeMessage.value = contextReindexResult.value.embeddingReady
-      ? `索引任务完成，已写入 ${contextReindexResult.value.chunksIndexed} 个向量`
-      : '索引任务完成，但当前 embedding 或 pgvector 尚未就绪'
+    contextReindexResult.value = result
+    noticeMessage.value = contextReindexNotice(result)
   } catch (error) {
     contextReindexError.value = errorText(error)
   } finally {
     contextReindexLoading.value = false
   }
+}
+
+function contextReindexNotice(result) {
+  const indexed = Number(result?.chunksIndexed) || 0
+  const failed = Number(result?.chunksFailed) || 0
+  const pending = Number(result?.pendingChunks) || 0
+  if (failed > 0) {
+    return `索引任务部分完成，${failed} 个向量处理失败，仍有 ${pending} 个待处理`
+  }
+  if (pending > 0 && !result?.embeddingReady) {
+    return `索引任务完成，但向量服务或 pgvector 未就绪，仍有 ${pending} 个待处理`
+  }
+  if (indexed > 0) return `索引任务完成，已写入 ${indexed} 个向量`
+  return '索引已是最新，当前没有待处理向量'
+}
+
+function contextReindexStatusClass(result) {
+  if (!result) return 'is-unknown'
+  if (Number(result.chunksFailed) > 0) return 'is-negative'
+  if (Number(result.pendingChunks) > 0) return 'is-warning'
+  return result.embeddingReady ? 'is-ready' : 'is-warning'
+}
+
+function contextReindexStatusLabel(result) {
+  if (!result) return '未检查'
+  if (Number(result.chunksFailed) > 0) return 'ERROR'
+  if (Number(result.pendingChunks) > 0) return 'PENDING'
+  return result.embeddingReady ? 'READY' : 'CHECK'
 }
 
 async function selectRun(runId, announce = true, showLoading = true) {
@@ -4286,8 +4313,8 @@ onBeforeUnmount(() => {
                 <p class="eyebrow">INDEX OPERATIONS</p>
                 <h3>向量索引</h3>
               </div>
-              <span class="context-index-status" :class="contextReindexResult?.embeddingReady ? 'is-ready' : contextReindexResult ? 'is-warning' : 'is-unknown'">
-                {{ contextReindexResult?.embeddingReady ? 'READY' : contextReindexResult ? 'CHECK' : '未检查' }}
+              <span class="context-index-status" :class="contextReindexStatusClass(contextReindexResult)">
+                {{ contextReindexStatusLabel(contextReindexResult) }}
               </span>
             </div>
             <p class="context-workbench-help">按租户有界重建 chunk 和 embedding，不会把整租户数据一次性发送给供应商。</p>

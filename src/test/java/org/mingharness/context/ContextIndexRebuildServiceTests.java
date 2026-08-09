@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -39,15 +40,16 @@ class ContextIndexRebuildServiceTests {
                 .thenReturn(List.of(document));
         when(memoryRepository.findByTenantIdAndDeletedAtIsNullOrderByCreatedAtAsc("tenant-a", page))
                 .thenReturn(List.of(activeMemory, expiredMemory));
-        when(chunkWriter.hasActiveChunks("DOCUMENT", document.getId())).thenReturn(false);
-        when(chunkWriter.hasActiveChunks("MEMORY", activeMemory.getId())).thenReturn(false);
+        when(chunkWriter.hasActiveChunks("tenant-a", "DOCUMENT", document.getId())).thenReturn(false);
+        when(chunkWriter.hasActiveChunks("tenant-a", "MEMORY", activeMemory.getId())).thenReturn(false);
         when(chunkWriter.replace("tenant-a", "DOCUMENT", document.getId(), "规则\n订单需要审核"))
                 .thenReturn(2);
         when(chunkWriter.replace("tenant-a", "MEMORY", activeMemory.getId(), "preference\n偏好中文"))
                 .thenReturn(2);
-        when(chunkRepository.countByParentTypeAndParentIdAndDeletedAtIsNull(
+        when(chunkRepository.countByTenantIdAndParentTypeAndParentIdAndDeletedAtIsNull(
+                ArgumentMatchers.anyString(),
                 ArgumentMatchers.anyString(), ArgumentMatchers.anyString())).thenReturn(2L);
-        when(embeddingIndexer.ready()).thenReturn(false);
+        when(embeddingIndexer.ready("tenant-a")).thenReturn(true);
         when(chunkRepository.findByTenantIdAndDeletedAtIsNullAndEmbeddedAtIsNullOrderByCreatedAtAsc(
                 "tenant-a", PageRequest.of(0, 20))).thenReturn(List.of());
         when(chunkRepository.countByTenantIdAndDeletedAtIsNullAndEmbeddedAtIsNull("tenant-a"))
@@ -65,9 +67,10 @@ class ContextIndexRebuildServiceTests {
         assertEquals(4, result.chunksCreated());
         assertEquals(0, result.chunksIndexed());
         assertEquals(4, result.pendingChunks());
+        assertTrue(result.embeddingReady());
         verify(chunkWriter).replace("tenant-a", "DOCUMENT", document.getId(), "规则\n订单需要审核");
         verify(chunkWriter).replace("tenant-a", "MEMORY", activeMemory.getId(), "preference\n偏好中文");
-        verify(chunkWriter, never()).hasActiveChunks("MEMORY", expiredMemory.getId());
+        verify(chunkWriter, never()).hasActiveChunks("tenant-a", "MEMORY", expiredMemory.getId());
     }
 
     @Test
@@ -83,7 +86,7 @@ class ContextIndexRebuildServiceTests {
                 .thenReturn(List.of(document));
         when(chunkWriter.replace("tenant-a", "DOCUMENT", document.getId(), "规则\n新分块内容"))
                 .thenReturn(3);
-        when(embeddingIndexer.ready()).thenReturn(false);
+        when(embeddingIndexer.ready("tenant-a")).thenReturn(false);
         when(chunkRepository.findByTenantIdAndDeletedAtIsNullAndEmbeddedAtIsNullOrderByCreatedAtAsc(
                 "tenant-a", PageRequest.of(0, 5))).thenReturn(List.of());
         when(chunkRepository.countByTenantIdAndDeletedAtIsNullAndEmbeddedAtIsNull("tenant-a"))
