@@ -52,6 +52,8 @@ public class AssessmentAttempt {
     private String evidenceText;
     @Column(length = 1000)
     private String feedback;
+    @Column(name = "retrieval_evidence_json", columnDefinition = "text")
+    private String retrievalEvidenceJson;
     @Column(nullable = false)
     private Instant createdAt;
 
@@ -94,6 +96,18 @@ public class AssessmentAttempt {
                              double masteryAfter, AssessmentAttemptType assessmentType,
                              String reviewPlanId, String evidenceSource, String evidenceText,
                              String feedback, String learningAssignmentId) {
+        this(tenantId, userId, runId, stepId, learningGoalId, learnerProfileId, conceptKey,
+                correct, observedMastery, masteryBefore, masteryAfter, assessmentType,
+                reviewPlanId, evidenceSource, evidenceText, feedback, learningAssignmentId, null);
+    }
+
+    public AssessmentAttempt(String tenantId, String userId, String runId, String stepId,
+                             String learningGoalId, String learnerProfileId, String conceptKey,
+                             boolean correct, double observedMastery, double masteryBefore,
+                             double masteryAfter, AssessmentAttemptType assessmentType,
+                             String reviewPlanId, String evidenceSource, String evidenceText,
+                             String feedback, String learningAssignmentId,
+                             String retrievalEvidenceJson) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = required(tenantId, "tenantId");
         this.userId = required(userId, "userId");
@@ -113,6 +127,8 @@ public class AssessmentAttempt {
         this.evidenceSource = required(evidenceSource, "evidenceSource");
         this.evidenceText = evidenceText == null || evidenceText.isBlank() ? null : evidenceText.trim();
         this.feedback = feedback == null || feedback.isBlank() ? null : feedback.trim();
+        this.retrievalEvidenceJson = retrievalEvidenceJson == null || retrievalEvidenceJson.isBlank()
+                ? "[]" : retrievalEvidenceJson.trim();
         this.createdAt = Instant.now();
     }
 
@@ -145,5 +161,6 @@ public class AssessmentAttempt {
     public String getEvidenceSource() { return evidenceSource; }
     public String getEvidenceText() { return evidenceText; }
     public String getFeedback() { return feedback; }
+    public String getRetrievalEvidenceJson() { return retrievalEvidenceJson; }
     public Instant getCreatedAt() { return createdAt; }
 }

@@ -75,6 +75,8 @@ class EducationAssessmentServiceTests {
                 null, null, "PRACTICE", "函数=0.20"));
         Step step = new Step(1, StepType.MODEL, "模型复核", "题目");
         run.addStep(step);
+        step.setContextEvidenceJson("[{\"documentId\":\"doc-1\",\"title\":\"函数教材\","
+                + "\"citation\":\"document:doc-1#chunk:0\",\"excerpt\":\"函数定义域\"}]");
         run.start();
         step.start();
         step.succeed("已完成");
@@ -98,6 +100,7 @@ class EducationAssessmentServiceTests {
         assertEquals("MANUAL_REVIEW", result.getEvidenceSource());
         assertEquals("学生写出了定义域判定依据", result.getEvidenceText());
         assertEquals("复核通过", result.getFeedback());
+        assertEquals(1, EducationRetrievalEvidence.decode(result.getRetrievalEvidenceJson()).size());
     }
 
     @Test

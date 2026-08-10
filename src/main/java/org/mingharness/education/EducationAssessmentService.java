@@ -199,7 +199,8 @@ public class EducationAssessmentService {
                 goal.getId(), profileId, normalizedConcept, correct, boundedObserved, before,
                 updated.getMasteryScore(), attemptType, reviewPlanId, normalizedEvidenceSource,
                 cleanEvidence(evidenceText),
-                cleanFeedback(feedback), run.getEducationLearningAssignmentId());
+                cleanFeedback(feedback), run.getEducationLearningAssignmentId(),
+                EducationRetrievalEvidence.snapshot(run));
         AssessmentAttempt saved = attemptRepository.save(attempt);
         if (attemptType == AssessmentAttemptType.FORMATIVE && assignmentCompletionService != null) {
             assignmentCompletionService.resumeAfterEvidenceForGoal(

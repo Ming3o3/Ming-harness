@@ -1,8 +1,10 @@
 package org.mingharness.education.api;
 
 import org.mingharness.education.AssessmentAttempt;
+import org.mingharness.education.EducationRetrievalEvidence;
 
 import java.time.Instant;
+import java.util.List;
 
 public record AssessmentAttemptView(
         String id,
@@ -23,6 +25,7 @@ public record AssessmentAttemptView(
         String evidenceSource,
         String evidenceText,
         String feedback,
+        List<AssessmentEvidenceReference> retrievalEvidence,
         Instant createdAt
 ) {
 
@@ -34,6 +37,8 @@ public record AssessmentAttemptView(
                 attempt.getObservedMastery(), attempt.getMasteryBefore(), attempt.getMasteryAfter(),
                 attempt.getAssessmentType().name(), attempt.getReviewPlanId(),
                 attempt.getEvidenceSource(), attempt.getEvidenceText(),
-                attempt.getFeedback(), attempt.getCreatedAt());
+                attempt.getFeedback(),
+                EducationRetrievalEvidence.decode(attempt.getRetrievalEvidenceJson()),
+                attempt.getCreatedAt());
     }
 }
