@@ -151,6 +151,8 @@ public class EducationRunConfigurationService {
         String conceptKey = goal == null ? requestedConcept : goal.getConceptKey();
         return new EducationRunConfiguration(true, profile.getId(),
                 goal == null ? null : goal.getId(), assignment == null ? null : assignment.getId(),
+                assignment == null ? null : assignment.getTitle(),
+                assignment == null ? null : assignment.getInstructions(),
                 reviewPlan == null ? null : reviewPlan.getId(),
                 goal == null ? null : goal.getTitle(),
                 goal == null ? 0.0 : goal.getBaselineMastery(),

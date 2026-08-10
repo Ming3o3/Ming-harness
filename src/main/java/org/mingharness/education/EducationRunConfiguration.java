@@ -14,6 +14,8 @@ public record EducationRunConfiguration(
         String learnerProfileId,
         String learningGoalId,
         String learningAssignmentId,
+        String learningAssignmentTitle,
+        String learningAssignmentInstructions,
         String reviewPlanId,
         String learningGoalTitle,
         double learningGoalBaselineMastery,
@@ -29,7 +31,7 @@ public record EducationRunConfiguration(
 ) {
 
     public static EducationRunConfiguration disabled() {
-        return new EducationRunConfiguration(false, null, null, null, null, null, 0.0, 0.0,
+        return new EducationRunConfiguration(false, null, null, null, null, null, null, null, 0.0, 0.0,
                 null, null, null, null, null, null, "AUTO", "");
     }
 
@@ -40,7 +42,7 @@ public record EducationRunConfiguration(
                                      String curriculumVersion, String conceptKey, Integer minDifficulty,
                                      Integer maxDifficulty, String pedagogicalMode,
                                      String learnerStateSummary) {
-        this(enabled, learnerProfileId, learningGoalId, null, null, learningGoalTitle,
+        this(enabled, learnerProfileId, learningGoalId, null, null, null, null, learningGoalTitle,
                 learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
                 curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
                 learnerStateSummary);
@@ -53,7 +55,7 @@ public record EducationRunConfiguration(
                                      String subject, String gradeLevel, String curriculumVersion,
                                      String conceptKey, Integer minDifficulty, Integer maxDifficulty,
                                      String pedagogicalMode, String learnerStateSummary) {
-        this(enabled, learnerProfileId, learningGoalId, null, reviewPlanId, learningGoalTitle,
+        this(enabled, learnerProfileId, learningGoalId, null, null, null, reviewPlanId, learningGoalTitle,
                 learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
                 curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
                 learnerStateSummary);
@@ -98,6 +100,14 @@ public record EducationRunConfiguration(
             summary.append("；学习目标=").append(learningGoalTitle)
                     .append("；目标掌握度=").append(String.format(java.util.Locale.ROOT, "%.2f",
                             learningGoalTargetMastery));
+        }
+        if (learningAssignmentId != null && !learningAssignmentId.isBlank()) {
+            if (learningAssignmentTitle != null && !learningAssignmentTitle.isBlank()) {
+                summary.append("；课程作业=").append(learningAssignmentTitle);
+            }
+            if (learningAssignmentInstructions != null && !learningAssignmentInstructions.isBlank()) {
+                summary.append("；作业要求=").append(learningAssignmentInstructions);
+            }
         }
         if (reviewPlanId != null && !reviewPlanId.isBlank()) {
             summary.append("；保持度复习=已绑定");

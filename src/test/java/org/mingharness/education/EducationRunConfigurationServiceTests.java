@@ -159,6 +159,9 @@ class EducationRunConfigurationServiceTests {
 
         assertEquals(assignment.getId(), configuration.learningAssignmentId());
         assertEquals(goal.getId(), configuration.learningGoalId());
+        assertEquals("函数作业", configuration.learningAssignmentTitle());
+        assertEquals("完成练习", configuration.learningAssignmentInstructions());
+        assertTrue(configuration.promptSummary().contains("作业要求=完成练习"));
     }
 
     @Test
