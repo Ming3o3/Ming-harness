@@ -9,6 +9,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+
 /** 将课程作业入口直接连接到第一步教育 Run，避免接受作业后还要绕行通用 Run 页面。 */
 @Service
 public class LearningAssignmentStartService {
@@ -16,19 +18,28 @@ public class LearningAssignmentStartService {
     private final LearningAssignmentService assignmentService;
     private final EducationActionService actionService;
     private final LearningAssignmentFeedbackRepository feedbackRepository;
+    private final LearningAssignmentFeedbackService feedbackService;
 
     public LearningAssignmentStartService(LearningAssignmentService assignmentService,
                                           EducationActionService actionService) {
-        this(assignmentService, actionService, null);
+        this(assignmentService, actionService, null, null);
+    }
+
+    public LearningAssignmentStartService(LearningAssignmentService assignmentService,
+                                          EducationActionService actionService,
+                                          LearningAssignmentFeedbackRepository feedbackRepository) {
+        this(assignmentService, actionService, feedbackRepository, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
     public LearningAssignmentStartService(LearningAssignmentService assignmentService,
                                           EducationActionService actionService,
-                                          LearningAssignmentFeedbackRepository feedbackRepository) {
+                                          LearningAssignmentFeedbackRepository feedbackRepository,
+                                          LearningAssignmentFeedbackService feedbackService) {
         this.assignmentService = assignmentService;
         this.actionService = actionService;
         this.feedbackRepository = feedbackRepository;
+        this.feedbackService = feedbackService;
     }
 
     @Transactional
@@ -69,6 +80,9 @@ public class LearningAssignmentStartService {
                 permissions, idempotencyKey);
         if (assignment.getStatus() == LearningAssignmentStatus.RETRY_REQUIRED) {
             assignment = assignmentService.markRetryStarted(tenantId, learnerUserId, assignment.getId());
+        }
+        if (feedbackService != null) {
+            feedbackService.resolveForRunStart(tenantId, learnerUserId, assignment.getId(), Instant.now());
         }
         return new LearningAssignmentStartView(
                 LearningAssignmentView.from(assignment), assignment.getLearnerProfileId(),

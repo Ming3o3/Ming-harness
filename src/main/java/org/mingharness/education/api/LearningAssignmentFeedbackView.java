@@ -16,6 +16,7 @@ public record LearningAssignmentFeedbackView(
         Instant suggestedDueAt,
         Instant createdAt,
         Instant acknowledgedAt,
+        Instant resolvedAt,
         Instant updatedAt
 ) {
     public static LearningAssignmentFeedbackView from(LearningAssignmentFeedback feedback) {
@@ -23,6 +24,6 @@ public record LearningAssignmentFeedbackView(
                 feedback.getId(), feedback.getLearningAssignmentId(), feedback.getTeacherUserId(),
                 feedback.getLearnerUserId(), feedback.getAction().name(), feedback.getStatus().name(),
                 feedback.getMessage(), feedback.getSuggestedDueAt(), feedback.getCreatedAt(),
-                feedback.getAcknowledgedAt(), feedback.getUpdatedAt());
+                feedback.getAcknowledgedAt(), feedback.getResolvedAt(), feedback.getUpdatedAt());
     }
 }

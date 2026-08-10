@@ -152,6 +152,30 @@ class LearningAssignmentFeedbackServiceTests {
         assertEquals(LearningAssignmentFeedbackStatus.ACKNOWLEDGED, feedback.getStatus());
     }
 
+    @Test
+    void shouldResolveActionableFeedbackAfterLearnerStartsNextRun() {
+        LearningAssignmentFeedbackRepository feedbacks = mock(LearningAssignmentFeedbackRepository.class);
+        LearningAssignmentService assignments = mock(LearningAssignmentService.class);
+        LearningAssignmentFeedback feedback = new LearningAssignmentFeedback(
+                "tenant-a", "assignment-1", "teacher-1", "student-1",
+                LearningAssignmentFeedbackAction.RECOMMEND_RETRY, "请重新完成。", null, Instant.now());
+        when(feedbacks.findByTenantIdAndLearningAssignmentIdOrderByCreatedAtDesc(
+                org.mockito.ArgumentMatchers.eq("tenant-a"),
+                org.mockito.ArgumentMatchers.eq("assignment-1"),
+                org.mockito.ArgumentMatchers.any()))
+                .thenReturn(java.util.List.of(feedback));
+
+        LearningAssignmentFeedbackService service = new LearningAssignmentFeedbackService(
+                feedbacks, assignments, mock(LearningAssignmentRepository.class),
+                mock(LearningAssignmentNotificationService.class), new org.mingharness.common.SensitiveDataSanitizer());
+
+        assertEquals(1, service.resolveForRunStart("tenant-a", "student-1", "assignment-1",
+                Instant.parse("2026-08-10T01:00:00Z")));
+        assertEquals(LearningAssignmentFeedbackStatus.RESOLVED, feedback.getStatus());
+        assertEquals(Instant.parse("2026-08-10T01:00:00Z"), feedback.getResolvedAt());
+        verify(feedbacks).saveAll(java.util.List.of(feedback));
+    }
+
     private LearningAssignment assignment() {
         return new LearningAssignment("tenant-a", "teacher-1", "student-1", "函数作业",
                 "完成练习", "数学", "高中一年级", "人教A版", "函数", 0.8,

@@ -37,6 +37,7 @@ public class LearningAssignmentFeedback {
     @Column(nullable = false)
     private Instant createdAt;
     private Instant acknowledgedAt;
+    private Instant resolvedAt;
     @Column(nullable = false)
     private Instant updatedAt;
 
@@ -61,10 +62,20 @@ public class LearningAssignmentFeedback {
     }
 
     public void acknowledge(Instant acknowledgedAt) {
-        if (status == LearningAssignmentFeedbackStatus.ACKNOWLEDGED) return;
+        if (status == LearningAssignmentFeedbackStatus.ACKNOWLEDGED
+                || status == LearningAssignmentFeedbackStatus.RESOLVED) return;
         Instant at = acknowledgedAt == null ? Instant.now() : acknowledgedAt;
         this.status = LearningAssignmentFeedbackStatus.ACKNOWLEDGED;
         this.acknowledgedAt = at;
+        this.updatedAt = Instant.now();
+    }
+
+    /** 反馈驱动的下一轮教育 Run 已成功创建，旧干预不再污染后续 Run。 */
+    public void resolve(Instant resolvedAt) {
+        if (status == LearningAssignmentFeedbackStatus.RESOLVED) return;
+        Instant at = resolvedAt == null ? Instant.now() : resolvedAt;
+        this.status = LearningAssignmentFeedbackStatus.RESOLVED;
+        this.resolvedAt = at;
         this.updatedAt = Instant.now();
     }
 
@@ -85,5 +96,6 @@ public class LearningAssignmentFeedback {
     public Instant getSuggestedDueAt() { return suggestedDueAt; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getAcknowledgedAt() { return acknowledgedAt; }
+    public Instant getResolvedAt() { return resolvedAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

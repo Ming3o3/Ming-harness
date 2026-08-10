@@ -121,6 +121,24 @@ public class LearningAssignmentFeedbackService {
         return LearningAssignmentFeedbackView.from(saved);
     }
 
+    @Transactional
+    public int resolveForRunStart(String tenantId, String learnerUserId, String assignmentId,
+                                  Instant resolvedAt) {
+        List<LearningAssignmentFeedback> actionable = feedbackRepository
+                .findByTenantIdAndLearningAssignmentIdOrderByCreatedAtDesc(
+                        tenantId, assignmentId, PageRequest.of(0, 100)).stream()
+                .filter(feedback -> learnerUserId.equals(feedback.getLearnerUserId()))
+                .filter(feedback -> feedback.getStatus() == LearningAssignmentFeedbackStatus.OPEN
+                        || feedback.getStatus() == LearningAssignmentFeedbackStatus.ACKNOWLEDGED)
+                .filter(feedback -> feedback.getAction() == LearningAssignmentFeedbackAction.REQUEST_EVIDENCE
+                        || feedback.getAction() == LearningAssignmentFeedbackAction.RECOMMEND_RETRY)
+                .toList();
+        Instant at = resolvedAt == null ? Instant.now() : resolvedAt;
+        actionable.forEach(feedback -> feedback.resolve(at));
+        if (!actionable.isEmpty()) feedbackRepository.saveAll(actionable);
+        return actionable.size();
+    }
+
     private LearningAssignmentFeedbackAction parseAction(String value) {
         try {
             return LearningAssignmentFeedbackAction.valueOf(clean(value).toUpperCase(Locale.ROOT));

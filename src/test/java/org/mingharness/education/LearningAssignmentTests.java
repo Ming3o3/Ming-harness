@@ -67,6 +67,19 @@ class LearningAssignmentTests {
         assertEquals("请补充依据", assignment.getTeacherReviewNote());
     }
 
+    @Test
+    void shouldMoveFeedbackFromAcknowledgedToResolvedWhenActionIsApplied() {
+        LearningAssignmentFeedback feedback = new LearningAssignmentFeedback(
+                "tenant-a", "assignment-1", "teacher-1", "student-1",
+                LearningAssignmentFeedbackAction.REQUEST_EVIDENCE, "请补充证据", null, Instant.now());
+        feedback.acknowledge(Instant.now());
+        Instant resolvedAt = Instant.parse("2026-08-10T01:00:00Z");
+        feedback.resolve(resolvedAt);
+
+        assertEquals(LearningAssignmentFeedbackStatus.RESOLVED, feedback.getStatus());
+        assertEquals(resolvedAt, feedback.getResolvedAt());
+    }
+
     private LearningAssignment assignment() {
         return new LearningAssignment("tenant-a", "teacher-1", "student-1", "函数作业",
                 "完成函数定义域练习", "数学", "高中一年级", "人教A版", "函数定义域",
