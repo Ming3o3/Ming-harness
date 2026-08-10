@@ -1,6 +1,7 @@
 package org.mingharness.education;
 
 import org.mingharness.common.BusinessException;
+import org.mingharness.education.api.EducationCourseLearnerResultView;
 import org.mingharness.education.api.EducationCourseResultView;
 import org.mingharness.education.api.EducationCourseView;
 import org.mingharness.education.api.LearningAssignmentProgressView;
@@ -109,6 +110,58 @@ public class EducationCourseResultService {
             learners = learners.stream().filter(item -> item.getLearnerUserId().equals(userId)).toList();
         }
         return EducationCourseResultView.from(result, course, learners);
+    }
+
+    /**
+     * Export the teacher-visible immutable snapshot as an Excel-compatible CSV.
+     * The export is deliberately owner-only: a learner can read their own result
+     * through the JSON endpoint but must not receive the class roster.
+     */
+    @Transactional(readOnly = true)
+    public String exportCsv(String tenantId, String userId, String courseId) {
+        EducationCourseView course = courseService.getForParticipant(tenantId, userId, courseId);
+        if (!course.ownerUserId().equals(userId)) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "EDUCATION_COURSE_OWNER_ONLY",
+                    "只有课程教师可以导出全班结课结果");
+        }
+        EducationCourseResultView snapshot = get(tenantId, userId, courseId);
+        StringBuilder csv = new StringBuilder("\uFEFF");
+        appendRow(csv, "record_type", "course_id", "course_code", "course_title", "completed_at",
+                "completed_by_user_id", "active_learner_total", "learners_with_assignments",
+                "effective_assignment_total", "assignment_completed", "assignment_verified",
+                "submission_covered", "average_mastery_progress", "average_mastery_gain",
+                "learner_user_id", "learner_effective_assignment_total", "learner_assignment_completed",
+                "learner_assignment_verified", "learner_submission_covered",
+                "learner_average_mastery_progress", "learner_average_mastery_gain", "last_activity_at");
+        appendRow(csv, "COURSE", snapshot.courseId(), snapshot.courseCode(), snapshot.courseTitle(),
+                snapshot.completedAt(), snapshot.completedByUserId(), snapshot.activeLearnerTotal(),
+                snapshot.learnersWithAssignments(), snapshot.effectiveAssignmentTotal(),
+                snapshot.assignmentCompleted(), snapshot.assignmentVerified(), snapshot.submissionCovered(),
+                snapshot.averageMasteryProgress(), snapshot.averageMasteryGain(), null, null, null, null,
+                null, null, null, null);
+        for (EducationCourseLearnerResultView learner : snapshot.learners()) {
+            appendRow(csv, "LEARNER", snapshot.courseId(), snapshot.courseCode(), snapshot.courseTitle(),
+                    snapshot.completedAt(), snapshot.completedByUserId(), null, null, null, null, null,
+                    null, null, null, learner.learnerUserId(), learner.effectiveAssignmentTotal(),
+                    learner.assignmentCompleted(), learner.assignmentVerified(), learner.submissionCovered(),
+                    learner.averageMasteryProgress(), learner.averageMasteryGain(), learner.lastActivityAt());
+        }
+        return csv.toString();
+    }
+
+    private void appendRow(StringBuilder csv, Object... values) {
+        for (int i = 0; i < values.length; i++) {
+            if (i > 0) csv.append(',');
+            Object value = values[i];
+            String text = value == null ? "" : String.valueOf(value);
+            // Prevent spreadsheet formula injection for user-controlled text fields.
+            if (value instanceof String && !text.isEmpty()
+                    && "=+-@".indexOf(text.charAt(0)) >= 0) {
+                text = "'" + text;
+            }
+            csv.append('"').append(text.replace("\"", "\"\"")).append('"');
+        }
+        csv.append("\r\n");
     }
 
     private EducationCourseResultView view(EducationCourseResult result,

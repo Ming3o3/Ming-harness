@@ -2977,6 +2977,29 @@ async function completeEducationCourse(course) {
   }
 }
 
+async function exportEducationCourseResult(course) {
+  if (!course || course.ownerUserId !== form.userId || !educationCourseResult.value
+    || educationCourseActionId.value) return
+  educationCourseActionId.value = course.id
+  clearMessages()
+  try {
+    const download = await api.downloadEducationCourseResult(course.id)
+    const url = URL.createObjectURL(download.blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = download.filename
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 0)
+    noticeMessage.value = `已导出课程“${course.title}”的结课结果报告。`
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    educationCourseActionId.value = ''
+  }
+}
+
 async function assignEducationCourse() {
   const course = activeEducationCourse.value
   if (!course || !activeEducationCourseIsOwner.value || course.status !== 'ACTIVE'
@@ -6027,7 +6050,7 @@ onBeforeUnmount(() => {
                   </div>
                   <div v-else class="context-preview-empty">名单中的学习者还没有作业；布置作业后，这里会显示每人的业务状态。</div>
                   <div v-if="educationCourseResult" class="education-course-progress education-course-result">
-                    <div class="subsection-title"><div><h4>结课结果快照</h4><span>{{ formatDate(educationCourseResult.completedAt) }}</span></div><span class="context-mode-chip">不可被后续复习改写</span></div>
+                    <div class="subsection-title"><div><h4>结课结果快照</h4><span>{{ formatDate(educationCourseResult.completedAt) }}</span></div><div><span class="context-mode-chip">不可被后续复习改写</span><button class="text-button" type="button" :disabled="educationCourseActionId === activeEducationCourse.id" @click="exportEducationCourseResult(activeEducationCourse)">{{ educationCourseActionId === activeEducationCourse.id ? '导出中…' : '导出报告' }}</button></div></div>
                     <div class="education-course-summary-grid">
                       <div><span>有效作业</span><strong>{{ educationCourseResult.assignmentCompleted }} / {{ educationCourseResult.effectiveAssignmentTotal }}</strong><small>教师确认 {{ educationCourseResult.assignmentVerified }}</small></div>
                       <div><span>提交物覆盖</span><strong>{{ formatRate(educationCourseResult.effectiveAssignmentTotal ? educationCourseResult.submissionCovered / educationCourseResult.effectiveAssignmentTotal : 0) }}</strong><small>{{ educationCourseResult.submissionCovered }} 份</small></div>

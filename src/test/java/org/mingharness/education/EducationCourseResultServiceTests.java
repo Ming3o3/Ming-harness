@@ -1,6 +1,7 @@
 package org.mingharness.education;
 
 import org.junit.jupiter.api.Test;
+import org.mingharness.common.BusinessException;
 import org.mingharness.education.api.EducationCourseView;
 import org.mingharness.education.api.LearningAssignmentProgressView;
 
@@ -9,6 +10,8 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -97,6 +100,63 @@ class EducationCourseResultServiceTests {
 
         assertEquals(1, view.learners().size());
         assertEquals("student-1", view.learners().get(0).learnerUserId());
+    }
+
+    @Test
+    void shouldExportTeacherResultAsCsvWithCourseAndLearnerRows() {
+        EducationCourseResultRepository results = mock(EducationCourseResultRepository.class);
+        EducationCourseLearnerResultRepository learnerResults = mock(EducationCourseLearnerResultRepository.class);
+        EducationCourseService courses = mock(EducationCourseService.class);
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        EducationEnrollmentRepository enrollments = mock(EducationEnrollmentRepository.class);
+        LearningAssignmentSubmissionRepository submissions = mock(LearningAssignmentSubmissionRepository.class);
+        LearningAssignmentProgressService progress = mock(LearningAssignmentProgressService.class);
+        EducationCourse course = new EducationCourse("tenant-a", "teacher-1", "math-g1", "=高一数学",
+                "数学", "高中一年级", "人教A版");
+        EducationCourseResult result = new EducationCourseResult("tenant-a", course.getId(), 1, 1,
+                1, 1, 1, 1, 1.0, 0.25, Instant.parse("2026-01-02T03:04:05Z"), "teacher-1");
+        EducationCourseLearnerResult learner = new EducationCourseLearnerResult(
+                "tenant-a", result.getId(), course.getId(), "student-1", 1, 1, 1, 1,
+                1.0, 0.25, Instant.parse("2026-01-01T03:04:05Z"));
+        when(courses.getForParticipant("tenant-a", "teacher-1", course.getId()))
+                .thenReturn(EducationCourseView.from(course, 1));
+        when(results.findByTenantIdAndCourseId("tenant-a", course.getId()))
+                .thenReturn(Optional.of(result));
+        when(learnerResults.findByTenantIdAndCourseResultIdOrderByLearnerUserIdAsc(
+                "tenant-a", result.getId())).thenReturn(List.of(learner));
+
+        var service = new EducationCourseResultService(results, learnerResults, courses, assignments,
+                enrollments, submissions, progress);
+        String csv = service.exportCsv("tenant-a", "teacher-1", course.getId());
+
+        assertTrue(csv.startsWith("\uFEFF\"record_type\""));
+        assertTrue(csv.contains("\"COURSE\""));
+        assertTrue(csv.contains("\"LEARNER\""));
+        assertTrue(csv.contains("\"student-1\""));
+        assertTrue(csv.contains("\"2026-01-02T03:04:05Z\""));
+        assertTrue(csv.contains("\"'=高一数学\""));
+    }
+
+    @Test
+    void shouldRejectLearnerCsvExport() {
+        EducationCourseResultRepository results = mock(EducationCourseResultRepository.class);
+        EducationCourseLearnerResultRepository learnerResults = mock(EducationCourseLearnerResultRepository.class);
+        EducationCourseService courses = mock(EducationCourseService.class);
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        EducationEnrollmentRepository enrollments = mock(EducationEnrollmentRepository.class);
+        LearningAssignmentSubmissionRepository submissions = mock(LearningAssignmentSubmissionRepository.class);
+        LearningAssignmentProgressService progress = mock(LearningAssignmentProgressService.class);
+        EducationCourse course = new EducationCourse("tenant-a", "teacher-1", "math-g1", "高一数学",
+                "数学", "高中一年级", "人教A版");
+        when(courses.getForParticipant("tenant-a", "student-1", course.getId()))
+                .thenReturn(EducationCourseView.from(course, 1));
+
+        var service = new EducationCourseResultService(results, learnerResults, courses, assignments,
+                enrollments, submissions, progress);
+        BusinessException exception = assertThrows(BusinessException.class, () ->
+                service.exportCsv("tenant-a", "student-1", course.getId()));
+
+        assertEquals("EDUCATION_COURSE_OWNER_ONLY", exception.getCode());
     }
 
     private LearningAssignmentProgressView progress(LearningAssignment assignment) {

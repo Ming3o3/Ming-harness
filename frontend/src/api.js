@@ -349,6 +349,22 @@ export const api = {
     }),
   getEducationCourseResult: (courseId) => request(
     `/education/courses/${encodeURIComponent(courseId)}/result`),
+  downloadEducationCourseResult: async (courseId) => {
+    const response = await fetch(`${apiBaseUrl}/education/courses/${encodeURIComponent(courseId)}/result.csv`, {
+      headers: identityHeaders({ Accept: 'text/csv' }),
+    })
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}))
+      const error = new Error(payload.message || `请求失败（${response.status}）`)
+      error.code = payload.code
+      error.traceId = payload.traceId || response.headers.get('X-Trace-Id')
+      throw error
+    }
+    const contentDisposition = response.headers.get('Content-Disposition') || ''
+    const filename = contentDisposition.match(/filename="([^"]+)"/)?.[1]
+      || `course-result-${courseId}.csv`
+    return { blob: await response.blob(), filename }
+  },
   assignEducationCourse: (courseId, payload, idempotencyKey) => request(
     `/education/courses/${encodeURIComponent(courseId)}/assignments`, {
       method: 'POST',

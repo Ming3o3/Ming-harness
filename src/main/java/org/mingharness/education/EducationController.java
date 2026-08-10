@@ -45,6 +45,9 @@ import org.mingharness.education.api.MasteryUpdateRequest;
 import org.mingharness.security.HarnessIdentity;
 import org.mingharness.security.HarnessIdentityContext;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -55,6 +58,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /** 教育知识源和学习者状态接口；正文仍由 /api/context 管理。 */
@@ -321,6 +325,18 @@ public class EducationController {
     public EducationCourseResultView courseResult(@PathVariable String courseId) {
         HarnessIdentity identity = identity();
         return courseResultService.get(identity.tenantId(), identity.userId(), courseId);
+    }
+
+    @GetMapping(value = "/courses/{courseId}/result.csv", produces = "text/csv")
+    public ResponseEntity<byte[]> exportCourseResult(@PathVariable String courseId) {
+        HarnessIdentity identity = identity();
+        String csv = courseResultService.exportCsv(identity.tenantId(), identity.userId(), courseId);
+        String safeCourseId = courseId == null ? "course" : courseId.replaceAll("[^A-Za-z0-9._-]", "_");
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"course-result-" + safeCourseId + ".csv\"")
+                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .body(csv.getBytes(StandardCharsets.UTF_8));
     }
 
     @PostMapping("/courses/{courseId}/assignments")
