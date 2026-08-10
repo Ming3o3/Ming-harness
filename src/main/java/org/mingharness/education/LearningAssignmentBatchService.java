@@ -10,6 +10,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.List;
 
@@ -50,9 +53,18 @@ public class LearningAssignmentBatchService {
             throw new BusinessException(HttpStatus.CONFLICT, "EDUCATION_COURSE_ARCHIVED",
                     "已归档课程不能再布置作业");
         }
+        String requestHash = requestHash(course, request);
         List<LearningAssignment> existing = assignmentRepository
                 .findByTenantIdAndCourseIdAndBatchIdOrderByCreatedAtAsc(tenantId, course.getId(), batchId);
-        if (!existing.isEmpty()) return view(course.getId(), batchId, true, existing);
+        if (!existing.isEmpty()) {
+            String existingHash = existing.get(0).getBatchRequestHash();
+            if (existingHash != null && !existingHash.equals(requestHash)) {
+                throw new BusinessException(HttpStatus.CONFLICT,
+                        "ASSIGNMENT_BATCH_KEY_REUSED_WITH_DIFFERENT_REQUEST",
+                        "同一幂等键已经用于另一份课程作业请求");
+            }
+            return view(course.getId(), batchId, true, existing);
+        }
 
         List<EducationEnrollment> learners = enrollmentRepository.findByTenantIdAndCourseIdAndStatus(
                 tenantId, course.getId(), EducationEnrollmentStatus.ACTIVE);
@@ -66,7 +78,7 @@ public class LearningAssignmentBatchService {
                                 clean(request.title()), clean(request.instructions()), course.getSubject(),
                                 course.getGradeLevel(), course.getCurriculumVersion(), clean(request.conceptKey()),
                                 request.targetMastery(), request.dueAt(), course.getId()),
-                        batchId))
+                        batchId, requestHash))
                 .toList();
         return view(course.getId(), batchId, false, created);
     }
@@ -80,5 +92,22 @@ public class LearningAssignmentBatchService {
 
     private String clean(String value) {
         return sanitizer.sanitize(value == null ? "" : value.trim());
+    }
+
+    private String requestHash(EducationCourse course, EducationCourseAssignmentRequest request) {
+        String canonical = String.join("\n",
+                course.getId(),
+                clean(request.title()),
+                clean(request.instructions()),
+                clean(request.conceptKey()),
+                Double.toString(request.effectiveTargetMastery()),
+                request.dueAt() == null ? "" : request.dueAt().toString());
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(canonical.getBytes(StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("运行环境缺少 SHA-256", exception);
+        }
     }
 }

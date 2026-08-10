@@ -30,6 +30,8 @@ public class LearningAssignment {
     private String courseId;
     @Column(length = 255)
     private String batchId;
+    @Column(length = 64)
+    private String batchRequestHash;
     @Column(nullable = false, length = 255)
     private String title;
     @Column(nullable = false, columnDefinition = "text")
@@ -87,12 +89,23 @@ public class LearningAssignment {
                               String title, String instructions, String subject,
                               String gradeLevel, String curriculumVersion, String conceptKey,
                               double targetMastery, Instant dueAt, String courseId, String batchId) {
+        this(tenantId, teacherUserId, learnerUserId, title, instructions, subject, gradeLevel,
+                curriculumVersion, conceptKey, targetMastery, dueAt, courseId, batchId, null);
+    }
+
+    /** 批量布置额外固化请求指纹，确保同一幂等键不会被另一份作业请求复用。 */
+    public LearningAssignment(String tenantId, String teacherUserId, String learnerUserId,
+                              String title, String instructions, String subject,
+                              String gradeLevel, String curriculumVersion, String conceptKey,
+                              double targetMastery, Instant dueAt, String courseId, String batchId,
+                              String batchRequestHash) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = required(tenantId, "tenantId");
         this.teacherUserId = required(teacherUserId, "teacherUserId");
         this.learnerUserId = required(learnerUserId, "learnerUserId");
         this.courseId = optional(courseId);
         this.batchId = optional(batchId);
+        this.batchRequestHash = optional(batchRequestHash);
         this.title = required(title, "title");
         this.instructions = required(instructions, "instructions");
         this.subject = required(subject, "subject");
@@ -255,6 +268,7 @@ public class LearningAssignment {
     public String getLearnerUserId() { return learnerUserId; }
     public String getCourseId() { return courseId; }
     public String getBatchId() { return batchId; }
+    public String getBatchRequestHash() { return batchRequestHash; }
     public String getTitle() { return title; }
     public String getInstructions() { return instructions; }
     public String getSubject() { return subject; }

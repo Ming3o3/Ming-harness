@@ -75,6 +75,13 @@ public class LearningAssignmentService {
     @Transactional
     public LearningAssignment create(String tenantId, String teacherUserId,
                                      LearningAssignmentRequest request, String batchId) {
+        return create(tenantId, teacherUserId, request, batchId, null);
+    }
+
+    @Transactional
+    public LearningAssignment create(String tenantId, String teacherUserId,
+                                     LearningAssignmentRequest request, String batchId,
+                                     String batchRequestHash) {
         String learnerUserId = clean(request.learnerUserId());
         if (learnerUserId.isBlank()) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "ASSIGNMENT_LEARNER_REQUIRED",
@@ -105,7 +112,7 @@ public class LearningAssignmentService {
                 clean(request.title()), clean(request.instructions()), clean(request.subject()),
                 clean(request.gradeLevel()), clean(request.curriculumVersion()),
                 clean(request.conceptKey()), request.effectiveTargetMastery(), request.dueAt(),
-                course == null ? null : course.getId(), clean(batchId)));
+                course == null ? null : course.getId(), clean(batchId), clean(batchRequestHash)));
         notifyState(saved);
         return saved;
     }
