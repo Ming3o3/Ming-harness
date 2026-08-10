@@ -5,6 +5,7 @@ public enum LearningAssignmentStatus {
     ASSIGNED,
     ACCEPTED,
     AWAITING_EVIDENCE,
+    RETRY_REQUIRED,
     OVERDUE,
     COMPLETED,
     CANCELLED

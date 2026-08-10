@@ -144,7 +144,8 @@ public class LearningAssignment {
         }
         dueAt = nextDueAt;
         if (status == LearningAssignmentStatus.OVERDUE
-                || status == LearningAssignmentStatus.AWAITING_EVIDENCE) {
+                || status == LearningAssignmentStatus.AWAITING_EVIDENCE
+                || status == LearningAssignmentStatus.RETRY_REQUIRED) {
             status = learningGoalId == null
                     ? LearningAssignmentStatus.ASSIGNED : LearningAssignmentStatus.ACCEPTED;
         }
@@ -154,13 +155,31 @@ public class LearningAssignment {
     /** 教育 Run 成功但尚未有测评证据时，作业进入待补证据；证据写入后恢复执行中。 */
     public void awaitEvidence(Instant observedAt) {
         if (status != LearningAssignmentStatus.ACCEPTED
-                && status != LearningAssignmentStatus.OVERDUE) return;
+                && status != LearningAssignmentStatus.OVERDUE
+                && status != LearningAssignmentStatus.RETRY_REQUIRED) return;
         status = LearningAssignmentStatus.AWAITING_EVIDENCE;
         updatedAt = observedAt == null ? Instant.now() : observedAt;
     }
 
+    /** 教育 Run 失败、超时或取消后，保留作业上下文并等待学习者从作业入口重试。 */
+    public void requireRetry(Instant observedAt) {
+        if (status != LearningAssignmentStatus.ACCEPTED
+                && status != LearningAssignmentStatus.OVERDUE
+                && status != LearningAssignmentStatus.RETRY_REQUIRED) return;
+        status = LearningAssignmentStatus.RETRY_REQUIRED;
+        updatedAt = observedAt == null ? Instant.now() : observedAt;
+    }
+
+    /** 学习者已从作业入口发起新一轮 Run，结束上一轮失败状态。 */
+    public void resumeForRetry(Instant startedAt) {
+        if (status != LearningAssignmentStatus.RETRY_REQUIRED) return;
+        status = LearningAssignmentStatus.ACCEPTED;
+        updatedAt = startedAt == null ? Instant.now() : startedAt;
+    }
+
     public void resumeAfterEvidence(Instant resumedAt) {
-        if (status != LearningAssignmentStatus.AWAITING_EVIDENCE) return;
+        if (status != LearningAssignmentStatus.AWAITING_EVIDENCE
+                && status != LearningAssignmentStatus.RETRY_REQUIRED) return;
         status = LearningAssignmentStatus.ACCEPTED;
         updatedAt = resumedAt == null ? Instant.now() : resumedAt;
     }

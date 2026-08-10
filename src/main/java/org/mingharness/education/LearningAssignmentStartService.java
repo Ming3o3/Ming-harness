@@ -67,6 +67,9 @@ public class LearningAssignmentStartService {
         ConversationDetail conversation = actionService.execute(
                 tenantId, learnerUserId, assignment.getLearningGoalId(), effectiveRequest,
                 permissions, idempotencyKey);
+        if (assignment.getStatus() == LearningAssignmentStatus.RETRY_REQUIRED) {
+            assignment = assignmentService.markRetryStarted(tenantId, learnerUserId, assignment.getId());
+        }
         return new LearningAssignmentStartView(
                 LearningAssignmentView.from(assignment), assignment.getLearnerProfileId(),
                 assignment.getLearningGoalId(), conversation);

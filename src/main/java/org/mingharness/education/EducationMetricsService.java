@@ -61,11 +61,15 @@ public class EducationMetricsService {
                 + assignmentRepository.countForParticipantByStatus(
                 tenantId, userId, LearningAssignmentStatus.AWAITING_EVIDENCE)
                 + assignmentRepository.countForParticipantByStatus(
+                tenantId, userId, LearningAssignmentStatus.RETRY_REQUIRED)
+                + assignmentRepository.countForParticipantByStatus(
                 tenantId, userId, LearningAssignmentStatus.OVERDUE)
                 + assignmentRepository.countForParticipantByStatus(
                 tenantId, userId, LearningAssignmentStatus.COMPLETED);
         long assignmentCompleted = assignmentRepository.countForParticipantByStatus(
                 tenantId, userId, LearningAssignmentStatus.COMPLETED);
+        long assignmentRetryRequired = assignmentRepository.countForParticipantByStatus(
+                tenantId, userId, LearningAssignmentStatus.RETRY_REQUIRED);
         long assignmentReviewPending = assignmentRepository.countForParticipantByReviewStatus(
                 tenantId, userId, LearningAssignmentReviewStatus.PENDING);
         long assignmentReviewVerified = assignmentRepository.countForParticipantByReviewStatus(
@@ -135,7 +139,7 @@ public class EducationMetricsService {
                 feedbackTotal, feedbackAcknowledged, ratio(feedbackAcknowledged, feedbackTotal),
                 feedbackAcknowledgementLatencySeconds, retriedTaskTotal, retriedTaskCompleted,
                 ratio(retriedTaskCompleted, retriedTaskTotal), averageMasteryGain,
-                ratio(correctReviewAssessmentTotal, reviewAssessmentTotal));
+                ratio(correctReviewAssessmentTotal, reviewAssessmentTotal), assignmentRetryRequired);
     }
 
     private long averageAcknowledgementLatencySeconds(List<LearningAssignmentFeedback> feedbacks) {

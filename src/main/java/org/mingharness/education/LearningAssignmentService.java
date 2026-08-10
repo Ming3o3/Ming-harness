@@ -165,6 +165,25 @@ public class LearningAssignmentService {
         return saved;
     }
 
+    @Transactional
+    public LearningAssignment markRetryStarted(String tenantId, String learnerUserId,
+                                               String assignmentId) {
+        LearningAssignment assignment = getForParticipant(tenantId, learnerUserId, assignmentId);
+        if (!learnerUserId.equals(assignment.getLearnerUserId())) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "LEARNING_ASSIGNMENT_LEARNER_ONLY",
+                    "只有被布置作业的学习者可以继续重试");
+        }
+        if (assignment.getStatus() != LearningAssignmentStatus.RETRY_REQUIRED) return assignment;
+        assignment.resumeForRetry(Instant.now());
+        LearningAssignment saved = assignmentRepository.save(assignment);
+        notifyState(saved);
+        if (notificationService != null) {
+            notificationService.resolveForAssignmentState(
+                    tenantId, assignmentId, LearningAssignmentNotificationType.RETRY_REQUIRED);
+        }
+        return saved;
+    }
+
     /** 后台和查询入口共同调用，确保作业不会永久停留在已布置/学习中。 */
     @Transactional
     public int expireOverdue(Instant reference, int limit) {

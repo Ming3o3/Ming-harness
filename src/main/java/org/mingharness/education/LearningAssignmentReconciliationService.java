@@ -35,7 +35,8 @@ public class LearningAssignmentReconciliationService {
         Instant now = reference == null ? Instant.now() : reference;
         int boundedLimit = Math.max(1, Math.min(500, limit));
         List<LearningAssignment> candidates = assignmentRepository.findByStatusInOrderByUpdatedAtAsc(
-                List.of(LearningAssignmentStatus.ACCEPTED, LearningAssignmentStatus.OVERDUE),
+                List.of(LearningAssignmentStatus.ACCEPTED, LearningAssignmentStatus.OVERDUE,
+                        LearningAssignmentStatus.RETRY_REQUIRED),
                 PageRequest.of(0, boundedLimit));
         int changed = 0;
         for (LearningAssignment assignment : candidates) {
@@ -43,7 +44,20 @@ public class LearningAssignmentReconciliationService {
                     .findTopByTenantIdAndUserIdAndEducationLearningAssignmentIdOrderByCreatedAtDesc(
                             assignment.getTenantId(), assignment.getLearnerUserId(), assignment.getId())
                     .orElse(null);
-            if (!isBoundToAssignment(run, assignment) || run.getStatus() != RunStatus.SUCCEEDED) continue;
+            if (!isBoundToAssignment(run, assignment)) continue;
+            if (run.getStatus() == RunStatus.FAILED
+                    || run.getStatus() == RunStatus.TIMED_OUT
+                    || run.getStatus() == RunStatus.CANCELLED) {
+                if (assignment.getStatus() == LearningAssignmentStatus.RETRY_REQUIRED) continue;
+                String reason = run.getError();
+                if (reason == null || reason.isBlank()) reason = "Run 状态为 " + run.getStatus();
+                assignment.requireRetry(now);
+                assignmentRepository.save(assignment);
+                notificationService.ensureForRetryRequired(assignment, run.getId(), reason);
+                changed++;
+                continue;
+            }
+            if (run.getStatus() != RunStatus.SUCCEEDED) continue;
             boolean hasFormativeEvidence = assessmentRepository
                     .existsByTenantIdAndUserIdAndRunIdAndAssessmentType(
                             assignment.getTenantId(), assignment.getLearnerUserId(), run.getId(),

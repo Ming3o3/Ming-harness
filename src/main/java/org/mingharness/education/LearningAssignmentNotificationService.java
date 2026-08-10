@@ -101,6 +101,21 @@ public class LearningAssignmentNotificationService {
                         + assignment.getTitle() + "”对应 Run 已完成，但尚未形成测评证据。");
     }
 
+    /** Run 失败、超时或取消后，按 Run 维度通知学习者和教师重新执行。 */
+    @Transactional
+    public void ensureForRetryRequired(LearningAssignment assignment, String runId, String reason) {
+        if (assignment == null || runId == null || runId.isBlank()) return;
+        String eventKey = "RETRY_REQUIRED:" + runId;
+        String detail = reason == null || reason.isBlank() ? "教育 Run 未完成" : reason;
+        saveIfAbsent(assignment, assignment.getLearnerUserId(), eventKey,
+                LearningAssignmentNotificationType.RETRY_REQUIRED,
+                "课程作业需要重试", assignment.getTitle() + "对应的学习 Run 未完成（" + detail + "），可从作业入口重试。 ");
+        saveIfAbsent(assignment, assignment.getTeacherUserId(), eventKey,
+                LearningAssignmentNotificationType.RETRY_REQUIRED,
+                "课程作业执行失败", assignment.getLearnerUserId() + "的作业“" + assignment.getTitle()
+                        + "”对应 Run 未完成（" + detail + "），已回流到可重试状态。");
+    }
+
     @Transactional
     public void resolveForAssignmentEvidenceRequired(String tenantId, String assignmentId) {
         List<LearningAssignmentNotification> notifications = notificationRepository
@@ -190,6 +205,7 @@ public class LearningAssignmentNotificationService {
                     case ASSIGNED -> LearningAssignmentNotificationType.ASSIGNED;
                     case ACCEPTED -> LearningAssignmentNotificationType.ACCEPTED;
                     case AWAITING_EVIDENCE -> LearningAssignmentNotificationType.EVIDENCE_REQUIRED;
+                    case RETRY_REQUIRED -> LearningAssignmentNotificationType.RETRY_REQUIRED;
                     case OVERDUE -> LearningAssignmentNotificationType.OVERDUE;
                     case COMPLETED -> LearningAssignmentNotificationType.COMPLETED;
                     case CANCELLED -> LearningAssignmentNotificationType.CANCELLED;
@@ -208,6 +224,13 @@ public class LearningAssignmentNotificationService {
                 recipients.add(spec(assignment.getTeacherUserId(), type, eventKey,
                         "课程作业缺少测评证据", assignment.getLearnerUserId() + "的作业“"
                                 + assignment.getTitle() + "”需要补充测评证据。"));
+            }
+            case RETRY_REQUIRED -> {
+                recipients.add(spec(assignment.getLearnerUserId(), type, eventKey,
+                        "课程作业需要重试", assignment.getTitle() + "需要重新执行学习 Run。"));
+                recipients.add(spec(assignment.getTeacherUserId(), type, eventKey,
+                        "课程作业执行失败", assignment.getLearnerUserId() + "的作业“"
+                                + assignment.getTitle() + "”已回流到可重试状态。"));
             }
             case OVERDUE -> {
                 recipients.add(spec(assignment.getLearnerUserId(), type, eventKey,

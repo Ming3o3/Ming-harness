@@ -2850,6 +2850,7 @@ function learningAssignmentStatusLabel(status) {
     ASSIGNED: '待接受',
     ACCEPTED: '学习中',
     AWAITING_EVIDENCE: '待补证据',
+    RETRY_REQUIRED: '待重试',
     OVERDUE: '已逾期',
     COMPLETED: '已完成',
     CANCELLED: '已取消',
@@ -2980,7 +2981,9 @@ async function openLearningAssignmentNotification(notification) {
     noticeMessage.value = '通知对应的课程作业已不在当前列表中，请刷新教育状态。'
     return
   }
-  if (notification.notificationType === 'ASSIGNED' && assignment.status === 'ASSIGNED'
+  if (['ASSIGNED', 'RETRY_REQUIRED'].includes(notification.notificationType)
+    && ((notification.notificationType === 'ASSIGNED' && assignment.status === 'ASSIGNED')
+      || (notification.notificationType === 'RETRY_REQUIRED' && assignment.status === 'RETRY_REQUIRED'))
     && assignment.learnerUserId === form.userId) {
     await startLearningAssignment(assignment)
     return
@@ -5554,6 +5557,7 @@ onBeforeUnmount(() => {
               <div><span>教师确认率</span><strong>{{ formatRate(educationMetrics.assignmentReviewVerificationRate) }}</strong><small>{{ educationMetrics.assignmentReviewVerified }} / {{ educationMetrics.assignmentReviewPending + educationMetrics.assignmentReviewVerified }}</small></div>
               <div><span>反馈确认率</span><strong>{{ formatRate(educationMetrics.feedbackAcknowledgementRate) }}</strong><small>{{ educationMetrics.feedbackAcknowledged }} / {{ educationMetrics.feedbackTotal }}</small></div>
               <div><span>重试成功率</span><strong>{{ formatRate(educationMetrics.retrySuccessRate) }}</strong><small>{{ educationMetrics.retriedTaskCompleted }} / {{ educationMetrics.retriedTaskTotal }}</small></div>
+              <div><span>作业待重试</span><strong>{{ educationMetrics.assignmentRetryRequired }}</strong><small>失败/超时/取消后待处理</small></div>
               <div><span>保持度正确率</span><strong>{{ formatRate(educationMetrics.reviewAssessmentAccuracyRate) }}</strong><small>平均掌握度提升 {{ formatRate(educationMetrics.averageMasteryGain) }}</small></div>
             </div>
             <form class="education-profile-form" @submit.prevent="saveLearnerProfile">
@@ -5575,7 +5579,7 @@ onBeforeUnmount(() => {
               <div v-if="learningAssignmentNotifications.length" class="learning-notification-list" aria-label="课程作业通知">
                 <article v-for="notification in learningAssignmentNotifications.slice(0, 5)" :key="notification.id" class="learning-notification-row" :class="{ unread: notification.unread }">
                   <div class="learning-notification-main"><div class="learning-notification-meta"><strong>{{ notification.title }}</strong><small>{{ formatDate(notification.createdAt) }}</small></div><p>{{ notification.body }}</p></div>
-                  <div class="learning-notification-actions"><button class="secondary-button" type="button" @click="openLearningAssignmentNotification(notification)">{{ notification.notificationType === 'ASSIGNED' ? '接受作业' : (['FEEDBACK', 'FEEDBACK_ACKNOWLEDGED'].includes(notification.notificationType) ? '查看反馈' : (notification.assignmentStatus === 'ACCEPTED' ? '查看目标' : '查看作业')) }}</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningAssignmentNotificationRead(notification)">标记已读</button></div>
+                  <div class="learning-notification-actions"><button class="secondary-button" type="button" @click="openLearningAssignmentNotification(notification)">{{ notification.notificationType === 'ASSIGNED' ? '接受作业' : (['FEEDBACK', 'FEEDBACK_ACKNOWLEDGED'].includes(notification.notificationType) ? '查看反馈' : (notification.notificationType === 'RETRY_REQUIRED' ? '重试作业' : (notification.assignmentStatus === 'ACCEPTED' ? '查看目标' : '查看作业'))) }}</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningAssignmentNotificationRead(notification)">标记已读</button></div>
                 </article>
               </div>
               <form class="learning-assignment-form" @submit.prevent="createLearningAssignment">
@@ -5603,10 +5607,10 @@ onBeforeUnmount(() => {
                     <details v-if="learningAssignmentFeedbackMap[assignment.id]?.length" class="learning-assessment-history"><summary>教师反馈（{{ learningAssignmentFeedbackMap[assignment.id].length }}）</summary><div v-for="feedback in learningAssignmentFeedbackMap[assignment.id].slice(0, 5)" :key="feedback.id"><span>{{ learningAssignmentFeedbackActionLabel(feedback.action) }}</span><span>{{ feedback.message }}<small v-if="feedback.suggestedDueAt"> · 截止 {{ formatDate(feedback.suggestedDueAt) }}</small></span><small>{{ feedback.status === 'ACKNOWLEDGED' ? '已确认' : '待确认' }} · {{ formatDate(feedback.createdAt) }}<button v-if="assignment.learnerUserId === form.userId && feedback.status === 'OPEN'" class="text-button" type="button" :disabled="learningAssignmentFeedbackAcknowledgingId === feedback.id" @click="acknowledgeLearningAssignmentFeedback(assignment, feedback)">确认</button></small></div></details>
                   </div>
                   <div class="learning-assignment-actions">
-                    <button v-if="assignment.learnerUserId === form.userId && (assignment.status === 'ASSIGNED' || assignment.status === 'AWAITING_EVIDENCE' || (['ACCEPTED', 'OVERDUE'].includes(assignment.status) && learningAssignmentHasOpenIntervention(assignment)))" class="secondary-button" type="button" :disabled="learningAssignmentAcceptingId === assignment.id" @click="startLearningAssignment(assignment)">{{ learningAssignmentAcceptingId === assignment.id ? '启动中…' : (assignment.status === 'ASSIGNED' ? '接受并开始学习' : (assignment.status === 'AWAITING_EVIDENCE' ? '补充证据并继续' : '按反馈继续学习')) }}</button>
+                    <button v-if="assignment.learnerUserId === form.userId && (assignment.status === 'ASSIGNED' || assignment.status === 'AWAITING_EVIDENCE' || assignment.status === 'RETRY_REQUIRED' || (['ACCEPTED', 'OVERDUE'].includes(assignment.status) && learningAssignmentHasOpenIntervention(assignment)))" class="secondary-button" type="button" :disabled="learningAssignmentAcceptingId === assignment.id" @click="startLearningAssignment(assignment)">{{ learningAssignmentAcceptingId === assignment.id ? '启动中…' : (assignment.status === 'ASSIGNED' ? '接受并开始学习' : (assignment.status === 'AWAITING_EVIDENCE' ? '补充证据并继续' : (assignment.status === 'RETRY_REQUIRED' ? '重试课程作业' : '按反馈继续学习'))) }}</button>
                     <button v-if="assignment.teacherUserId === form.userId && assignment.status === 'COMPLETED' && assignment.reviewStatus === 'PENDING'" class="secondary-button" type="button" :disabled="learningAssignmentReviewSavingId === assignment.id" @click="verifyLearningAssignment(assignment)">{{ learningAssignmentReviewSavingId === assignment.id ? '确认中…' : '确认作业结果' }}</button>
                     <button v-if="assignment.teacherUserId === form.userId && assignment.status !== 'CANCELLED'" class="text-button" type="button" @click="startLearningAssignmentFeedback(assignment)">写教师反馈</button>
-                    <button v-if="assignment.teacherUserId === form.userId && ['ASSIGNED', 'ACCEPTED', 'OVERDUE'].includes(assignment.status)" class="text-button" type="button" @click="cancelLearningAssignment(assignment)">取消作业</button>
+                    <button v-if="assignment.teacherUserId === form.userId && ['ASSIGNED', 'ACCEPTED', 'RETRY_REQUIRED', 'OVERDUE'].includes(assignment.status)" class="text-button" type="button" @click="cancelLearningAssignment(assignment)">取消作业</button>
                   </div>
                 </article>
               </div>

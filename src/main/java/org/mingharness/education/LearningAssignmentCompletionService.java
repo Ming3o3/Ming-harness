@@ -33,7 +33,8 @@ public class LearningAssignmentCompletionService {
             if (!tenantId.equals(assignment.getTenantId())
                     || !userId.equals(assignment.getLearnerUserId())) continue;
             if (assignment.getStatus() == LearningAssignmentStatus.ACCEPTED
-                    || assignment.getStatus() == LearningAssignmentStatus.OVERDUE) {
+                    || assignment.getStatus() == LearningAssignmentStatus.OVERDUE
+                    || assignment.getStatus() == LearningAssignmentStatus.RETRY_REQUIRED) {
                 assignment.complete(completedAt);
                 assignmentRepository.save(assignment);
                 if (notificationService != null) notificationService.ensureForState(assignment);
@@ -57,6 +58,8 @@ public class LearningAssignmentCompletionService {
                 if (notificationService != null) {
                     notificationService.resolveForAssignmentEvidenceRequired(
                             tenantId, assignment.getId());
+                    notificationService.resolveForAssignmentState(
+                            tenantId, assignment.getId(), LearningAssignmentNotificationType.RETRY_REQUIRED);
                     notificationService.ensureForState(assignment);
                 }
                 resumed++;

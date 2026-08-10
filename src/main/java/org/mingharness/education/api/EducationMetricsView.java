@@ -37,6 +37,7 @@ public record EducationMetricsView(
         long retriedTaskCompleted,
         double retrySuccessRate,
         double averageMasteryGain,
-        double reviewAssessmentAccuracyRate
+        double reviewAssessmentAccuracyRate,
+        long assignmentRetryRequired
 ) {
 }
