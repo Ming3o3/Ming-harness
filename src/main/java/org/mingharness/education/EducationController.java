@@ -17,6 +17,7 @@ import org.mingharness.education.api.LearningGoalView;
 import org.mingharness.education.api.LearningRecommendationView;
 import org.mingharness.education.api.LearningReviewPlanView;
 import org.mingharness.education.api.LearningTaskStartView;
+import org.mingharness.education.api.LearningTaskNotificationView;
 import org.mingharness.education.api.LearningTaskView;
 import org.mingharness.education.api.ManualAssessmentSubmissionRequest;
 import org.mingharness.education.api.MasteryUpdateRequest;
@@ -47,6 +48,7 @@ public class EducationController {
     private final LearningRecommendationService recommendationService;
     private final EducationActionService actionService;
     private final LearningTaskService taskService;
+    private final LearningTaskNotificationService notificationService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
@@ -54,7 +56,8 @@ public class EducationController {
                                EducationAssessmentService assessmentService,
                                LearningRecommendationService recommendationService,
                                EducationActionService actionService,
-                               LearningTaskService taskService) {
+                               LearningTaskService taskService,
+                               LearningTaskNotificationService notificationService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
@@ -62,6 +65,7 @@ public class EducationController {
         this.recommendationService = recommendationService;
         this.actionService = actionService;
         this.taskService = taskService;
+        this.notificationService = notificationService;
     }
 
     @PostMapping("/sources")
@@ -208,6 +212,27 @@ public class EducationController {
                                       DeferLearningTaskRequest request) {
         HarnessIdentity identity = identity();
         return LearningTaskView.from(taskService.defer(identity.tenantId(), identity.userId(), taskId, request));
+    }
+
+    @GetMapping("/notifications")
+    public LearningTaskNotificationService.NotificationPage listNotifications(
+            @RequestParam(defaultValue = "false") boolean unreadOnly,
+            @RequestParam(defaultValue = "50") int limit) {
+        HarnessIdentity identity = identity();
+        return notificationService.list(identity.tenantId(), identity.userId(), unreadOnly, limit);
+    }
+
+    @PostMapping("/notifications/{notificationId}/read")
+    public LearningTaskNotificationView markNotificationRead(@PathVariable String notificationId) {
+        HarnessIdentity identity = identity();
+        return notificationService.markRead(identity.tenantId(), identity.userId(), notificationId);
+    }
+
+    @PostMapping("/notifications/read-all")
+    public java.util.Map<String, Long> markAllNotificationsRead() {
+        HarnessIdentity identity = identity();
+        return java.util.Map.of("markedRead", notificationService.markAllRead(
+                identity.tenantId(), identity.userId()));
     }
 
     @PostMapping("/goals/{goalId}/next-action")

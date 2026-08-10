@@ -15,9 +15,17 @@ import java.util.List;
 public class LearningTaskCompletionService {
 
     private final LearningTaskRepository taskRepository;
+    private final LearningTaskNotificationService notificationService;
 
     public LearningTaskCompletionService(LearningTaskRepository taskRepository) {
+        this(taskRepository, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public LearningTaskCompletionService(LearningTaskRepository taskRepository,
+                                         LearningTaskNotificationService notificationService) {
         this.taskRepository = taskRepository;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -26,11 +34,14 @@ public class LearningTaskCompletionService {
         if (runId == null || runId.isBlank()) return;
         taskRepository.findFirstByTenantIdAndUserIdAndRunIdAndStatusIn(
                 tenantId, userId, runId,
-                        List.of(LearningTaskStatus.OPEN, LearningTaskStatus.IN_PROGRESS,
+                List.of(LearningTaskStatus.OPEN, LearningTaskStatus.IN_PROGRESS,
                                 LearningTaskStatus.AWAITING_EVIDENCE))
                 .ifPresent(task -> {
                     task.complete(correct, completedAt);
                     taskRepository.save(task);
+                    if (notificationService != null) {
+                        notificationService.resolveForTask(tenantId, userId, task.getId(), completedAt);
+                    }
                 });
     }
 }

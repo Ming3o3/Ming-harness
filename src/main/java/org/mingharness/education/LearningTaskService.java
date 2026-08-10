@@ -39,7 +39,9 @@ public class LearningTaskService {
     private final LearningRecommendationService recommendationService;
     private final EducationActionService actionService;
     private final ConversationService conversationService;
+    private final LearningTaskNotificationService notificationService;
 
+    /** 保留旧扩展调用方的构造方式；生产 Spring Bean 使用带通知服务的构造器。 */
     public LearningTaskService(LearningTaskRepository taskRepository,
                                LearningReviewPlanRepository reviewPlanRepository,
                                LearningReviewPlanService reviewPlanService,
@@ -47,6 +49,19 @@ public class LearningTaskService {
                                LearningRecommendationService recommendationService,
                                EducationActionService actionService,
                                ConversationService conversationService) {
+        this(taskRepository, reviewPlanRepository, reviewPlanService, goalRepository,
+                recommendationService, actionService, conversationService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public LearningTaskService(LearningTaskRepository taskRepository,
+                               LearningReviewPlanRepository reviewPlanRepository,
+                               LearningReviewPlanService reviewPlanService,
+                               LearningGoalRepository goalRepository,
+                               LearningRecommendationService recommendationService,
+                               EducationActionService actionService,
+                               ConversationService conversationService,
+                               LearningTaskNotificationService notificationService) {
         this.taskRepository = taskRepository;
         this.reviewPlanRepository = reviewPlanRepository;
         this.reviewPlanService = reviewPlanService;
@@ -54,6 +69,7 @@ public class LearningTaskService {
         this.recommendationService = recommendationService;
         this.actionService = actionService;
         this.conversationService = conversationService;
+        this.notificationService = notificationService;
     }
 
     /** 定时器和查询入口都调用此方法，保证刚到期的任务无需等待下一次页面刷新。 */
@@ -81,6 +97,7 @@ public class LearningTaskService {
                         && !existing.getScheduledAt().isAfter(now)) {
                     existing.makeAvailable(now);
                     taskRepository.save(existing);
+                    if (notificationService != null) notificationService.ensureForTaskState(existing);
                 }
                 continue;
             }
@@ -93,6 +110,7 @@ public class LearningTaskService {
                     recommendation.nextActionTitle(), recommendation.nextActionPrompt(),
                     plan.getNextReviewAt());
             taskRepository.save(task);
+            if (notificationService != null) notificationService.ensureForTaskState(task);
             materialized++;
         }
         return materialized;
@@ -156,6 +174,7 @@ public class LearningTaskService {
         if (task.getStatus() == LearningTaskStatus.FAILED) {
             task.retry(now);
             taskRepository.save(task);
+            if (notificationService != null) notificationService.ensureForTaskState(task);
         }
         if (task.getStatus() == LearningTaskStatus.DEFERRED && task.getScheduledAt().isAfter(now)) {
             throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_TASK_NOT_DUE",
@@ -185,6 +204,9 @@ public class LearningTaskService {
         }
         task.start(conversation.conversation().id(), runId, now);
         taskRepository.save(task);
+        if (notificationService != null) {
+            notificationService.resolveForTask(tenantId, userId, task.getId(), now);
+        }
         return new LearningTaskStartView(LearningTaskView.from(task), conversation);
     }
 
@@ -202,7 +224,11 @@ public class LearningTaskService {
         plan.deferUntil(until);
         task.deferUntil(until, deferredAt);
         reviewPlanRepository.save(plan);
-        return taskRepository.save(task);
+        LearningTask saved = taskRepository.save(task);
+        if (notificationService != null) {
+            notificationService.resolveForTask(tenantId, userId, task.getId(), deferredAt);
+        }
+        return saved;
     }
 
 }

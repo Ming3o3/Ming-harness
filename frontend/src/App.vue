@@ -49,6 +49,8 @@ const learningGoalAssessments = ref([])
 const learningRecommendation = ref(null)
 const learningGoalRecommendationMap = ref({})
 const learningTasks = ref([])
+const learningNotifications = ref([])
+const learningNotificationUnreadCount = ref(0)
 const learningTaskLoading = ref(false)
 const learningTaskStartingId = ref('')
 const learningTaskDeferringId = ref('')
@@ -206,6 +208,7 @@ const THEME_STORAGE_KEY = 'harnessTheme'
 const theme = ref(readTheme())
 let runPollTimer
 let healthPollTimer
+let learningNotificationPollTimer
 // 聊天工作台状态：每轮消息对应一个后端 Run，助手气泡由 Run 终态回写。
 const chatMode = ref(true)
 const activeConsoleSection = ref('runtime')
@@ -2641,6 +2644,7 @@ async function loadEducationData() {
     learnerProfiles.value = profiles
     learningGoals.value = goals
     learningTasks.value = tasks
+    await loadLearningNotifications()
     const recommendationEntries = await Promise.all(goals.map(async (goal) => {
       try {
         return [goal.id, await api.getGoalRecommendation(goal.id)]
@@ -2672,6 +2676,62 @@ async function loadLearningTasks() {
     // 任务面板是教育模式的增强能力；权限不足时保留现有目标工作台。
     if (!educationError.value) educationError.value = errorText(error)
   }
+}
+
+async function loadLearningNotifications() {
+  try {
+    const page = await api.listLearningNotifications(false, 50)
+    learningNotifications.value = page?.notifications || []
+    learningNotificationUnreadCount.value = Number(page?.unreadCount || 0)
+  } catch (error) {
+    // 通知是教育任务的增强触达能力；任务列表仍可在迁移尚未完成时正常显示。
+    if (!educationError.value) educationError.value = errorText(error)
+  }
+}
+
+async function markLearningNotificationRead(notification) {
+  if (!notification?.id || !notification.unread) return
+  try {
+    const updated = await api.markLearningNotificationRead(notification.id)
+    learningNotifications.value = learningNotifications.value.map((item) =>
+      item.id === updated.id ? updated : item)
+    learningNotificationUnreadCount.value = Math.max(0, learningNotificationUnreadCount.value - 1)
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  }
+}
+
+async function markAllLearningNotificationsRead() {
+  if (!learningNotificationUnreadCount.value) return
+  try {
+    await api.markAllLearningNotificationsRead()
+    learningNotifications.value = learningNotifications.value.map((item) => ({
+      ...item,
+      status: 'READ',
+      unread: false,
+      readAt: item.readAt || new Date().toISOString(),
+    }))
+    learningNotificationUnreadCount.value = 0
+    noticeMessage.value = '学习任务通知已全部标记为已读。'
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  }
+}
+
+async function openLearningNotification(notification) {
+  if (!notification) return
+  await markLearningNotificationRead(notification)
+  const task = learningTasks.value.find((item) => item.id === notification.learningTaskId)
+  if (!task) {
+    noticeMessage.value = '通知对应的学习任务已不在当前列表中，请刷新教育状态。'
+    return
+  }
+  if (['OPEN', 'IN_PROGRESS', 'AWAITING_EVIDENCE', 'FAILED'].includes(task.status)) {
+    await startLearningTask(task)
+    return
+  }
+  const goal = learningGoals.value.find((item) => item.id === task.learningGoalId)
+  if (goal) await selectLearningGoal(goal, false)
 }
 
 function applyLearnerProfileToEducationRun(profile) {
@@ -2834,6 +2894,7 @@ async function startLearningTask(task) {
     const runId = latestConversationRun(result.conversation)
     if (runId) void selectRun(runId, false, false)
     await loadLearningTasks()
+    await loadLearningNotifications()
     noticeMessage.value = `已开始学习任务：${result.task.title}`
   } catch (error) {
     errorMessage.value = errorText(error)
@@ -2848,6 +2909,7 @@ async function deferLearningTask(task) {
   try {
     await api.deferLearningTask(task.id, 1)
     await loadLearningTasks()
+    await loadLearningNotifications()
     noticeMessage.value = '已延期 1 天；到期后会重新出现在学习任务中。'
   } catch (error) {
     errorMessage.value = errorText(error)
@@ -4003,6 +4065,9 @@ onMounted(async () => {
   runPollTimer = window.setInterval(pollSelectedRun, 1500)
   conversationPollTimer = window.setInterval(pollConversation, 1200)
   healthPollTimer = window.setInterval(loadHealth, 10000)
+  learningNotificationPollTimer = window.setInterval(() => {
+    if (networkOnline.value) void loadLearningNotifications()
+  }, 15000)
 })
 
 onBeforeUnmount(() => {
@@ -4017,6 +4082,7 @@ onBeforeUnmount(() => {
   window.clearInterval(runPollTimer)
   window.clearInterval(conversationPollTimer)
   window.clearInterval(healthPollTimer)
+  window.clearInterval(learningNotificationPollTimer)
   window.clearTimeout(chatHighlightTimer)
   if (noticeDismissTimer) window.clearTimeout(noticeDismissTimer)
   cancelScheduledAuditEventsRefresh()
@@ -5150,8 +5216,14 @@ onBeforeUnmount(() => {
             </div>
             <div class="learning-goal-workbench">
               <div class="learning-task-workbench">
-                <div class="subsection-title"><h4>待处理学习任务</h4><span>{{ learningTasks.filter((task) => ['OPEN', 'IN_PROGRESS', 'AWAITING_EVIDENCE', 'DEFERRED', 'FAILED'].includes(task.status)).length }} 条</span></div>
+                <div class="subsection-title learning-task-heading"><div><h4>待处理学习任务</h4><span>{{ learningTasks.filter((task) => ['OPEN', 'IN_PROGRESS', 'AWAITING_EVIDENCE', 'DEFERRED', 'FAILED'].includes(task.status)).length }} 条</span></div><div class="learning-notification-heading-actions"><span>{{ learningNotificationUnreadCount }} 条未读</span><button v-if="learningNotificationUnreadCount" class="text-button" type="button" @click="markAllLearningNotificationsRead">全部已读</button></div></div>
                 <p class="learning-task-help">复习计划到期后会自动生成任务；Run 失败会进入可重试，Run 成功但没有测评证据会进入待补证据。</p>
+                <div v-if="learningNotifications.length" class="learning-notification-list" aria-label="学习任务通知">
+                  <article v-for="notification in learningNotifications.slice(0, 5)" :key="notification.id" class="learning-notification-row" :class="{ unread: notification.unread }">
+                    <div class="learning-notification-main"><div class="learning-notification-meta"><strong>{{ notification.title }}</strong><small>{{ formatDate(notification.createdAt) }}</small></div><p>{{ notification.body }}</p></div>
+                    <div class="learning-notification-actions"><button class="secondary-button" type="button" @click="openLearningNotification(notification)">{{ notification.notificationType === 'EVIDENCE_REQUIRED' ? '补充证据' : (notification.notificationType === 'FAILED' ? '重试任务' : '打开任务') }}</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningNotificationRead(notification)">标记已读</button></div>
+                  </article>
+                </div>
                 <div v-if="learningTasks.length" class="learning-task-list">
                   <article v-for="task in learningTasks.filter((item) => ['OPEN', 'IN_PROGRESS', 'AWAITING_EVIDENCE', 'DEFERRED', 'FAILED'].includes(item.status)).slice(0, 8)" :key="task.id" class="learning-task-row">
                     <div class="learning-task-main"><strong>{{ task.title }}</strong><small>{{ task.status === 'IN_PROGRESS' ? '进行中' : (task.status === 'AWAITING_EVIDENCE' ? '待补测评证据' : (task.status === 'FAILED' ? `执行失败${task.failureReason ? `：${task.failureReason}` : ''}` : (task.status === 'DEFERRED' ? `延期至 ${formatDate(task.scheduledAt)}` : `到期 ${formatDate(task.scheduledAt)}`))) }} · 第 {{ task.reviewSequence + 1 }} 次复习</small><p>{{ task.prompt }}</p></div>

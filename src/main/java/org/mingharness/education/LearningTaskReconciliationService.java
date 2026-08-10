@@ -17,13 +17,23 @@ public class LearningTaskReconciliationService {
     private final LearningTaskRepository taskRepository;
     private final RunRepository runRepository;
     private final AssessmentAttemptRepository assessmentRepository;
+    private final LearningTaskNotificationService notificationService;
 
     public LearningTaskReconciliationService(LearningTaskRepository taskRepository,
                                              RunRepository runRepository,
                                              AssessmentAttemptRepository assessmentRepository) {
+        this(taskRepository, runRepository, assessmentRepository, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public LearningTaskReconciliationService(LearningTaskRepository taskRepository,
+                                             RunRepository runRepository,
+                                             AssessmentAttemptRepository assessmentRepository,
+                                             LearningTaskNotificationService notificationService) {
         this.taskRepository = taskRepository;
         this.runRepository = runRepository;
         this.assessmentRepository = assessmentRepository;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -43,6 +53,7 @@ public class LearningTaskReconciliationService {
                 if (!hasEvidence) {
                     task.awaitEvidence(now);
                     taskRepository.save(task);
+                    if (notificationService != null) notificationService.ensureForTaskState(task);
                     changed++;
                 }
             } else if (run.getStatus() == RunStatus.FAILED
@@ -52,6 +63,7 @@ public class LearningTaskReconciliationService {
                 if (reason == null || reason.isBlank()) reason = "教育 Run 状态为 " + run.getStatus();
                 task.fail(reason, run.getId(), now);
                 taskRepository.save(task);
+                if (notificationService != null) notificationService.ensureForTaskState(task);
                 changed++;
             }
         }

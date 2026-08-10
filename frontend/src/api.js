@@ -338,6 +338,17 @@ export const api = {
       body: JSON.stringify({ days }),
     },
   ),
+  listLearningNotifications: (unreadOnly = false, limit = 50) => {
+    const params = new URLSearchParams({ unreadOnly: String(Boolean(unreadOnly)), limit: String(limit) })
+    return request(`/education/notifications?${params.toString()}`)
+  },
+  markLearningNotificationRead: (notificationId) => request(
+    `/education/notifications/${encodeURIComponent(notificationId)}/read`, {
+      method: 'POST',
+    }),
+  markAllLearningNotificationsRead: () => request('/education/notifications/read-all', {
+    method: 'POST',
+  }),
   executeLearningGoalNextAction: (goalId, payload = {}, idempotencyKey) => request(
     `/education/goals/${encodeURIComponent(goalId)}/next-action`, {
       method: 'POST',
