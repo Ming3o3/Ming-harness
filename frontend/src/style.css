@@ -309,6 +309,11 @@ h3 { margin: 0; font-size: 13px; }
 .context-workbench-heading .eyebrow { margin-bottom: 6px; }
 .context-mode-chip, .context-result-state { border: 1px solid rgba(76,226,213,.22); border-radius: 12px; color: var(--cyan); padding: 4px 7px; font: 9px "DM Mono", monospace; white-space: nowrap; }
 .context-workbench-help { max-width: 760px; margin: -2px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+.education-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; }
+.education-metrics > div { display: grid; gap: 4px; min-width: 0; border: 1px solid rgba(76,226,213,.16); border-radius: 7px; background: rgba(76,226,213,.035); padding: 8px 9px; }
+.education-metrics span { overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.education-metrics strong { color: var(--soft); font: 17px "DM Mono", monospace; }
+.education-metrics small { overflow: hidden; color: var(--muted); font: 8px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .context-preview-form { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 12px; align-items: end; }
 .context-query-field textarea { min-height: 86px; resize: vertical; }
 .context-preview-controls { display: grid; gap: 10px; }
@@ -523,6 +528,7 @@ h3 { margin: 0; font-size: 13px; }
 .chat-education-context { grid-column: 1 / -1; }
 @media (max-width: 850px) {
   .education-profile-form, .education-source-form, .education-run-grid, .learning-goal-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .education-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .learning-task-row { grid-template-columns: 1fr; }
   .learning-task-actions { grid-auto-flow: column; justify-content: start; justify-items: start; }
   .learning-assignment-form { grid-template-columns: 1fr; }
@@ -533,6 +539,10 @@ h3 { margin: 0; font-size: 13px; }
   .education-profile-form .field-wide, .education-source-form .field-wide { grid-column: span 2; }
   .chat-education-grid { grid-template-columns: 1fr; }
   .chat-education-context { grid-column: auto; }
+}
+
+@media (max-width: 520px) {
+  .education-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 .footer { padding: 28px 0 0; color: #4d5b75; font: 9px "DM Mono", monospace; letter-spacing: .04em; }
 

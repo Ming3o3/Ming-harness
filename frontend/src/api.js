@@ -320,6 +320,7 @@ export const api = {
     const query = status ? `?status=${encodeURIComponent(status)}` : ''
     return request(`/education/tasks${query}`)
   },
+  getEducationMetrics: () => request('/education/metrics'),
   startLearningTask: (taskId, payload = {}, idempotencyKey) => request(
     `/education/tasks/${encodeURIComponent(taskId)}/start`, {
       method: 'POST',

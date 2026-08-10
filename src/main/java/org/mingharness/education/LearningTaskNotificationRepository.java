@@ -28,4 +28,10 @@ public interface LearningTaskNotificationRepository extends JpaRepository<Learni
 
     long countByTenantIdAndUserIdAndStatus(
             String tenantId, String userId, LearningTaskNotificationStatus status);
+
+    long countByTenantIdAndUserId(String tenantId, String userId);
+
+    long countByTenantIdAndUserIdAndSeenAtIsNotNull(String tenantId, String userId);
+
+    long countByTenantIdAndUserIdAndReadAtIsNotNull(String tenantId, String userId);
 }

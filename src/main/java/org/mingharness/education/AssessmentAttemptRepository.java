@@ -18,4 +18,11 @@ public interface AssessmentAttemptRepository extends JpaRepository<AssessmentAtt
 
     boolean existsByTenantIdAndUserIdAndRunIdAndAssessmentType(
             String tenantId, String userId, String runId, AssessmentAttemptType assessmentType);
+
+    long countByTenantIdAndUserId(String tenantId, String userId);
+
+    long countByTenantIdAndUserIdAndAssessmentType(
+            String tenantId, String userId, AssessmentAttemptType assessmentType);
+
+    long countByTenantIdAndUserIdAndCorrectTrue(String tenantId, String userId);
 }

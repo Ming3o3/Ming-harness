@@ -52,6 +52,7 @@ const learningTasks = ref([])
 const learningNotifications = ref([])
 const learningNotificationUnreadCount = ref(0)
 const learningAssignments = ref([])
+const educationMetrics = ref(null)
 const learningTaskLoading = ref(false)
 const learningTaskStartingId = ref('')
 const learningTaskDeferringId = ref('')
@@ -1120,6 +1121,11 @@ function formatDate(value) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value))
+}
+
+function formatRate(value) {
+  const number = Number(value)
+  return `${Math.round((Number.isFinite(number) ? number : 0) * 100)}%`
 }
 
 function clearMessages() {
@@ -2651,18 +2657,20 @@ async function loadDashboard() {
 
 async function loadEducationData() {
   try {
-    const [sources, profiles, goals, tasks, assignments] = await Promise.all([
+    const [sources, profiles, goals, tasks, assignments, metrics] = await Promise.all([
       api.listEducationSources(),
       api.listLearnerProfiles(),
       api.listLearningGoals(),
       api.listLearningTasks(),
       api.listLearningAssignments(),
+      api.getEducationMetrics(),
     ])
     educationSources.value = sources
     learnerProfiles.value = profiles
     learningGoals.value = goals
     learningTasks.value = tasks
     learningAssignments.value = assignments
+    educationMetrics.value = metrics
     await loadLearningNotifications()
     const recommendationEntries = await Promise.all(goals.map(async (goal) => {
       try {
@@ -5283,6 +5291,14 @@ onBeforeUnmount(() => {
             </div>
             <p class="context-workbench-help">课程元数据决定检索范围；学习者画像和知识点掌握度决定讲解难度与教学策略。原始知识正文仍由知识文档权限控制。</p>
             <p v-if="educationError" class="policy-error">{{ educationError }}</p>
+            <div v-if="educationMetrics" class="education-metrics" aria-label="教育业务闭环指标">
+              <div><span>作业完成率</span><strong>{{ formatRate(educationMetrics.assignmentCompletionRate) }}</strong><small>{{ educationMetrics.assignmentCompleted }} / {{ educationMetrics.assignmentTotal }}</small></div>
+              <div><span>任务启动率</span><strong>{{ formatRate(educationMetrics.taskStartRate) }}</strong><small>{{ educationMetrics.taskStarted }} / {{ educationMetrics.taskTotal }}</small></div>
+              <div><span>任务完成率</span><strong>{{ formatRate(educationMetrics.taskCompletionRate) }}</strong><small>{{ educationMetrics.taskCompleted }} / {{ educationMetrics.taskTotal }}</small></div>
+              <div><span>测评证据覆盖</span><strong>{{ formatRate(educationMetrics.taskEvidenceCoverageRate) }}</strong><small>{{ educationMetrics.taskEvidenceCovered }} / {{ educationMetrics.taskStarted }}</small></div>
+              <div><span>通知读取率</span><strong>{{ formatRate(educationMetrics.notificationReadRate) }}</strong><small>{{ educationMetrics.notificationRead }} / {{ educationMetrics.notificationTotal }}</small></div>
+              <div><span>测评正确率</span><strong>{{ formatRate(educationMetrics.assessmentAccuracyRate) }}</strong><small>{{ educationMetrics.correctAssessmentTotal }} / {{ educationMetrics.assessmentTotal }}</small></div>
+            </div>
             <form class="education-profile-form" @submit.prevent="saveLearnerProfile">
               <label class="field"><span>学科</span><input v-model="learnerProfileForm.subject" required maxlength="128" /></label>
               <label class="field"><span>年级</span><input v-model="learnerProfileForm.gradeLevel" required maxlength="128" /></label>

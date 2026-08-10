@@ -1,6 +1,8 @@
 package org.mingharness.education;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -16,4 +18,15 @@ public interface LearningAssignmentRepository extends JpaRepository<LearningAssi
             String tenantId, String learnerUserId);
 
     List<LearningAssignment> findByTenantIdAndLearningGoalId(String tenantId, String learningGoalId);
+
+    @Query("select count(a) from LearningAssignment a where a.tenantId = :tenantId "
+            + "and (a.teacherUserId = :userId or a.learnerUserId = :userId)")
+    long countForParticipant(@Param("tenantId") String tenantId, @Param("userId") String userId);
+
+    @Query("select count(a) from LearningAssignment a where a.tenantId = :tenantId "
+            + "and (a.teacherUserId = :userId or a.learnerUserId = :userId) "
+            + "and a.status = :status")
+    long countForParticipantByStatus(@Param("tenantId") String tenantId,
+                                     @Param("userId") String userId,
+                                     @Param("status") LearningAssignmentStatus status);
 }

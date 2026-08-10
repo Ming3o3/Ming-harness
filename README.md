@@ -462,6 +462,7 @@ curl -X POST http://localhost:8080/api/runs \
 - `GET /api/education/notifications?unreadOnly=false&limit=50`：查询当前用户的学习任务站内通知，并返回未读数量；查询会记录通知已被客户端触达
 - `POST /api/education/notifications/{notificationId}/read`：将一条学习任务通知标记为已读
 - `POST /api/education/notifications/read-all`：将当前用户的学习任务通知全部标记为已读
+- `GET /api/education/metrics`：读取当前租户和用户可见的作业、任务、测评证据和通知触达指标；无事实时各比率返回 `0`
 - `POST/GET /api/education/assignments`：教师/组织以当前身份布置或查询课程作业；作业携带学科、年级、课程版本和目标知识点
 - `GET /api/education/assignments/{assignmentId}`：查询当前用户作为布置者或学习者参与的课程作业
 - `POST /api/education/assignments/{assignmentId}/accept`：学习者接受作业，系统幂等创建对应学习者画像和结构化学习目标

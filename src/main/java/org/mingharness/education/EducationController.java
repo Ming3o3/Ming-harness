@@ -22,6 +22,7 @@ import org.mingharness.education.api.LearningTaskView;
 import org.mingharness.education.api.LearningAssignmentAcceptView;
 import org.mingharness.education.api.LearningAssignmentRequest;
 import org.mingharness.education.api.LearningAssignmentView;
+import org.mingharness.education.api.EducationMetricsView;
 import org.mingharness.education.api.ManualAssessmentSubmissionRequest;
 import org.mingharness.education.api.MasteryUpdateRequest;
 import org.mingharness.security.HarnessIdentity;
@@ -53,6 +54,7 @@ public class EducationController {
     private final LearningTaskService taskService;
     private final LearningTaskNotificationService notificationService;
     private final LearningAssignmentService assignmentService;
+    private final EducationMetricsService metricsService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
@@ -62,7 +64,8 @@ public class EducationController {
                                EducationActionService actionService,
                                LearningTaskService taskService,
                                LearningTaskNotificationService notificationService,
-                               LearningAssignmentService assignmentService) {
+                               LearningAssignmentService assignmentService,
+                               EducationMetricsService metricsService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
@@ -72,6 +75,7 @@ public class EducationController {
         this.taskService = taskService;
         this.notificationService = notificationService;
         this.assignmentService = assignmentService;
+        this.metricsService = metricsService;
     }
 
     @PostMapping("/sources")
@@ -198,6 +202,12 @@ public class EducationController {
         LearningTaskStatus requested = parseTaskStatus(status);
         return taskService.list(identity.tenantId(), identity.userId(), requested).stream()
                 .map(LearningTaskView::from).toList();
+    }
+
+    @GetMapping("/metrics")
+    public EducationMetricsView metrics() {
+        HarnessIdentity identity = identity();
+        return metricsService.summarize(identity.tenantId(), identity.userId());
     }
 
     @PostMapping("/assignments")
