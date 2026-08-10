@@ -94,7 +94,7 @@ public class LearningAssignmentProgressService {
                 : feedbackRepository.findByTenantIdAndLearningAssignmentIdOrderByCreatedAtDesc(
                         tenantId, assignment.getId(), PageRequest.of(0, 100));
         long feedbackAcknowledged = feedbacks.stream()
-                .filter(item -> item.getStatus() == LearningAssignmentFeedbackStatus.ACKNOWLEDGED).count();
+                .filter(item -> item.getAcknowledgedAt() != null).count();
         long feedbackEvidenceRequests = feedbacks.stream()
                 .filter(item -> item.getAction() == LearningAssignmentFeedbackAction.REQUEST_EVIDENCE).count();
         long feedbackRetryRecommendations = feedbacks.stream()

@@ -147,9 +147,10 @@ class LearningAssignmentFeedbackServiceTests {
                 feedbacks, assignments, mock(LearningAssignmentRepository.class),
                 mock(LearningAssignmentNotificationService.class), new org.mingharness.common.SensitiveDataSanitizer());
 
-        assertEquals("ACKNOWLEDGED", service.acknowledge(
+        assertEquals("RESOLVED", service.acknowledge(
                 "tenant-a", "student-1", assignment.getId(), feedback.getId()).status());
-        assertEquals(LearningAssignmentFeedbackStatus.ACKNOWLEDGED, feedback.getStatus());
+        assertEquals(LearningAssignmentFeedbackStatus.RESOLVED, feedback.getStatus());
+        org.junit.jupiter.api.Assertions.assertNotNull(feedback.getResolvedAt());
     }
 
     @Test

@@ -65,9 +65,14 @@ public class LearningAssignmentFeedback {
         if (status == LearningAssignmentFeedbackStatus.ACKNOWLEDGED
                 || status == LearningAssignmentFeedbackStatus.RESOLVED) return;
         Instant at = acknowledgedAt == null ? Instant.now() : acknowledgedAt;
-        this.status = LearningAssignmentFeedbackStatus.ACKNOWLEDGED;
         this.acknowledgedAt = at;
-        this.updatedAt = Instant.now();
+        if (action == LearningAssignmentFeedbackAction.COMMENT
+                || action == LearningAssignmentFeedbackAction.RESCHEDULE) {
+            resolve(at);
+        } else {
+            this.status = LearningAssignmentFeedbackStatus.ACKNOWLEDGED;
+            this.updatedAt = Instant.now();
+        }
     }
 
     /** 反馈驱动的下一轮教育 Run 已成功创建，旧干预不再污染后续 Run。 */

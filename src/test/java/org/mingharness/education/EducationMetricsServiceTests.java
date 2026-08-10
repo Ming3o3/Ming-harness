@@ -133,8 +133,8 @@ class EducationMetricsServiceTests {
         assertEquals(1, metrics.feedbackTotal());
         assertEquals(1, metrics.feedbackAcknowledged());
         assertEquals(1.0, metrics.feedbackAcknowledgementRate());
-        assertEquals(0, metrics.feedbackResolved());
-        assertEquals(0.0, metrics.feedbackResolutionRate());
+        assertEquals(1, metrics.feedbackResolved());
+        assertEquals(1.0, metrics.feedbackResolutionRate());
         assertEquals(90, metrics.feedbackAcknowledgementLatencySeconds());
         assertEquals(2, metrics.retriedTaskTotal());
         assertEquals(1, metrics.retriedTaskCompleted());

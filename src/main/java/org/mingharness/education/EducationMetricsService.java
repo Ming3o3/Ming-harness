@@ -95,7 +95,7 @@ public class EducationMetricsService {
                 ? List.of() : feedbackRepository.findByTenantIdAndParticipantOrderByCreatedAtAsc(tenantId, userId);
         long feedbackTotal = feedbacks.size();
         long feedbackAcknowledged = feedbacks.stream()
-                .filter(item -> item.getStatus() == LearningAssignmentFeedbackStatus.ACKNOWLEDGED).count();
+                .filter(item -> item.getAcknowledgedAt() != null).count();
         long feedbackResolved = feedbacks.stream()
                 .filter(item -> item.getStatus() == LearningAssignmentFeedbackStatus.RESOLVED).count();
         long feedbackAcknowledgementLatencySeconds = averageAcknowledgementLatencySeconds(feedbacks);
