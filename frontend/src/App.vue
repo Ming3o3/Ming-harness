@@ -409,6 +409,7 @@ function scrollToConsoleSection(section, behavior = 'smooth') {
 }
 
 function navigateConsoleSection(section) {
+  if (section === 'education') showGovernance.value = true
   setActiveConsoleSection(section)
   if (window.location.hash !== `#${section}`) {
     // Updating location.hash invokes the browser's native anchor scrolling in
@@ -422,7 +423,8 @@ function navigateConsoleSection(section) {
 
 function syncActiveConsoleSectionFromHash() {
   const section = window.location.hash.slice(1)
-  const nextSection = ['runtime', 'audit'].includes(section) ? section : 'runtime'
+  const nextSection = ['runtime', 'audit', 'education'].includes(section) ? section : 'runtime'
+  if (nextSection === 'education') showGovernance.value = true
   activeConsoleSection.value = nextSection
   scrollToConsoleSection(nextSection, 'auto')
 }
@@ -4767,6 +4769,7 @@ onBeforeUnmount(() => {
       <aside class="sidebar">
       <nav class="side-nav" aria-label="主导航">
         <a class="nav-item" :class="{ active: activeConsoleSection === 'runtime' }" href="#runtime" :aria-current="activeConsoleSection === 'runtime' ? 'page' : undefined" @click.prevent="navigateConsoleSection('runtime')"><span class="nav-icon"><CircleDot :size="16" /></span>运行中心</a>
+        <a class="nav-item" :class="{ active: activeConsoleSection === 'education' }" href="#education" :aria-current="activeConsoleSection === 'education' ? 'page' : undefined" @click.prevent="navigateConsoleSection('education')"><span class="nav-icon"><Sparkles :size="16" /></span>教育工作台</a>
         <a class="nav-item" :class="{ active: activeConsoleSection === 'audit' }" href="#audit" :aria-current="activeConsoleSection === 'audit' ? 'page' : undefined" @click.prevent="navigateConsoleSection('audit')"><span class="nav-icon"><Check :size="16" /></span>审计追踪</a>
       </nav>
 
@@ -5284,7 +5287,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </form>
-          <section class="governance-card governance-fixed-card education-governance-card">
+          <section id="education" class="governance-card governance-fixed-card education-governance-card">
             <div class="context-workbench-heading">
               <div><p class="eyebrow">EDUCATION AGENT</p><h3>课程与学习者配置</h3></div>
               <span class="context-mode-chip">{{ learnerProfiles.length }} 个画像</span>
