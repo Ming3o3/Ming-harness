@@ -25,17 +25,30 @@ public class EducationCourseProgressService {
     private final LearningAssignmentRepository assignmentRepository;
     private final LearningAssignmentProgressService assignmentProgressService;
     private final LearningAssignmentFeedbackRepository feedbackRepository;
+    private final LearningAssignmentSubmissionRepository submissionRepository;
 
     public EducationCourseProgressService(EducationCourseService courseService,
                                           EducationEnrollmentRepository enrollmentRepository,
                                           LearningAssignmentRepository assignmentRepository,
                                           LearningAssignmentProgressService assignmentProgressService,
                                           LearningAssignmentFeedbackRepository feedbackRepository) {
+        this(courseService, enrollmentRepository, assignmentRepository, assignmentProgressService,
+                feedbackRepository, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public EducationCourseProgressService(EducationCourseService courseService,
+                                          EducationEnrollmentRepository enrollmentRepository,
+                                          LearningAssignmentRepository assignmentRepository,
+                                          LearningAssignmentProgressService assignmentProgressService,
+                                          LearningAssignmentFeedbackRepository feedbackRepository,
+                                          LearningAssignmentSubmissionRepository submissionRepository) {
         this.courseService = courseService;
         this.enrollmentRepository = enrollmentRepository;
         this.assignmentRepository = assignmentRepository;
         this.assignmentProgressService = assignmentProgressService;
         this.feedbackRepository = feedbackRepository;
+        this.submissionRepository = submissionRepository;
     }
 
     @Transactional(readOnly = true)
@@ -80,6 +93,11 @@ public class EducationCourseProgressService {
                 .filter(item -> item.getStatus() != LearningAssignmentStatus.COMPLETED
                         || item.getReviewStatus() != LearningAssignmentReviewStatus.VERIFIED)
                 .count();
+        long submissionBlockers = submissionRepository == null ? 0 : allAssignments.stream()
+                .filter(item -> item.getStatus() != LearningAssignmentStatus.CANCELLED)
+                .filter(item -> !submissionRepository.existsByTenantIdAndLearningAssignmentId(
+                        tenantId, item.getId()))
+                .count();
 
         EducationCourseProgressView result = new EducationCourseProgressView(
                 EducationCourseView.from(course,
@@ -90,8 +108,9 @@ public class EducationCourseProgressService {
                 totals.openInterventions, ratio(totals.completed, totals.assignmentTotal),
                 ratio(totals.reviewVerified,
                         totals.reviewPending + totals.reviewVerified + totals.revisionRequired),
-                effectiveAssignments > 0 && completionBlockers == 0,
+                effectiveAssignments > 0 && completionBlockers == 0 && submissionBlockers == 0,
                 completionBlockers,
+                submissionBlockers,
                 byLearner.values().stream().map(LearnerAccumulator::view)
                         .sorted(Comparator.comparing(EducationCourseLearnerProgressView::learnerUserId))
                         .toList(),

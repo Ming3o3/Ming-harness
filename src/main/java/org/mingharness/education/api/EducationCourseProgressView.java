@@ -21,6 +21,7 @@ public record EducationCourseProgressView(
         double teacherVerificationRate,
         boolean readyToComplete,
         long completionBlockerCount,
+        long submissionBlockerCount,
         List<EducationCourseLearnerProgressView> learners,
         boolean truncated
 ) {

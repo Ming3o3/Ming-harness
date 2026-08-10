@@ -24,6 +24,7 @@ class EducationCourseCompletionServiceTests {
     void shouldCompleteCourseOnlyAfterEveryEffectiveAssignmentIsTeacherVerified() {
         EducationCourseRepository courses = mock(EducationCourseRepository.class);
         LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        LearningAssignmentSubmissionRepository submissions = mock(LearningAssignmentSubmissionRepository.class);
         EducationEnrollmentRepository enrollments = mock(EducationEnrollmentRepository.class);
         EducationCourse course = course();
         LearningAssignment completed = completedAssignment(course, "student-1");
@@ -31,11 +32,13 @@ class EducationCourseCompletionServiceTests {
         when(courses.findByTenantIdAndId("tenant-a", course.getId())).thenReturn(Optional.of(course));
         when(assignments.findByTenantIdAndCourseIdOrderByCreatedAtDesc(
                 "tenant-a", course.getId())).thenReturn(List.of(completed));
+        when(submissions.existsByTenantIdAndLearningAssignmentId("tenant-a", completed.getId()))
+                .thenReturn(true);
         when(courses.save(any(EducationCourse.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(enrollments.countByTenantIdAndCourseIdAndStatus(
                 "tenant-a", course.getId(), EducationEnrollmentStatus.ACTIVE)).thenReturn(1L);
 
-        var result = new EducationCourseCompletionService(courses, assignments, enrollments,
+        var result = new EducationCourseCompletionService(courses, assignments, submissions, enrollments,
                 new SensitiveDataSanitizer()).complete("tenant-a", "teacher-1", course.getId(),
                 new EducationCourseCompletionRequest("本期课程完成"));
 
@@ -86,6 +89,28 @@ class EducationCourseCompletionServiceTests {
                         new SensitiveDataSanitizer()).complete("tenant-a", "teacher-1", course.getId(), null));
 
         assertEquals("EDUCATION_COURSE_ASSIGNMENTS_EMPTY", exception.getCode());
+    }
+
+    @Test
+    void shouldRejectCourseCompletionWhenTeacherVerifiedAssignmentHasNoLearnerSubmission() {
+        EducationCourseRepository courses = mock(EducationCourseRepository.class);
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        LearningAssignmentSubmissionRepository submissions = mock(LearningAssignmentSubmissionRepository.class);
+        EducationEnrollmentRepository enrollments = mock(EducationEnrollmentRepository.class);
+        EducationCourse course = course();
+        LearningAssignment completed = completedAssignment(course, "student-1");
+        completed.verifyByTeacher("teacher-1", "已核验", Instant.now());
+        when(courses.findByTenantIdAndId("tenant-a", course.getId())).thenReturn(Optional.of(course));
+        when(assignments.findByTenantIdAndCourseIdOrderByCreatedAtDesc(
+                "tenant-a", course.getId())).thenReturn(List.of(completed));
+        when(submissions.existsByTenantIdAndLearningAssignmentId("tenant-a", completed.getId()))
+                .thenReturn(false);
+
+        BusinessException exception = assertThrows(BusinessException.class, () ->
+                new EducationCourseCompletionService(courses, assignments, submissions, enrollments,
+                        new SensitiveDataSanitizer()).complete("tenant-a", "teacher-1", course.getId(), null));
+
+        assertEquals("EDUCATION_COURSE_SUBMISSIONS_REQUIRED", exception.getCode());
     }
 
     private EducationCourse course() {

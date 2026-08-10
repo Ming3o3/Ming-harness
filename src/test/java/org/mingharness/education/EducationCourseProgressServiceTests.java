@@ -58,6 +58,7 @@ class EducationCourseProgressServiceTests {
         assertEquals(0.5, result.assignmentCompletionRate());
         assertEquals(false, result.readyToComplete());
         assertEquals(2, result.completionBlockerCount());
+        assertEquals(0, result.submissionBlockerCount());
         assertEquals(3, result.learners().size());
         EducationCourseLearnerProgressView emptyLearner = result.learners().stream()
                 .filter(item -> item.learnerUserId().equals("student-3")).findFirst().orElseThrow();

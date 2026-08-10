@@ -17,6 +17,7 @@ public class EducationCourseCompletionService {
 
     private final EducationCourseRepository courseRepository;
     private final LearningAssignmentRepository assignmentRepository;
+    private final LearningAssignmentSubmissionRepository submissionRepository;
     private final EducationEnrollmentRepository enrollmentRepository;
     private final SensitiveDataSanitizer sanitizer;
 
@@ -24,8 +25,18 @@ public class EducationCourseCompletionService {
                                             LearningAssignmentRepository assignmentRepository,
                                             EducationEnrollmentRepository enrollmentRepository,
                                             SensitiveDataSanitizer sanitizer) {
+        this(courseRepository, assignmentRepository, null, enrollmentRepository, sanitizer);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public EducationCourseCompletionService(EducationCourseRepository courseRepository,
+                                            LearningAssignmentRepository assignmentRepository,
+                                            LearningAssignmentSubmissionRepository submissionRepository,
+                                            EducationEnrollmentRepository enrollmentRepository,
+                                            SensitiveDataSanitizer sanitizer) {
         this.courseRepository = courseRepository;
         this.assignmentRepository = assignmentRepository;
+        this.submissionRepository = submissionRepository;
         this.enrollmentRepository = enrollmentRepository;
         this.sanitizer = sanitizer;
     }
@@ -65,6 +76,17 @@ public class EducationCourseCompletionService {
             throw new BusinessException(HttpStatus.CONFLICT,
                     "EDUCATION_COURSE_NOT_READY_TO_COMPLETE",
                     "仍有 " + blocked + " 份作业未完成教师确认，暂不能结课");
+        }
+        if (submissionRepository != null) {
+            long missingSubmissions = effective.stream()
+                    .filter(item -> !submissionRepository.existsByTenantIdAndLearningAssignmentId(
+                            tenantId, item.getId()))
+                    .count();
+            if (missingSubmissions > 0) {
+                throw new BusinessException(HttpStatus.CONFLICT,
+                        "EDUCATION_COURSE_SUBMISSIONS_REQUIRED",
+                        "仍有 " + missingSubmissions + " 份作业没有学习者提交物，暂不能结课");
+            }
         }
         String note = cleanNullable(request == null ? null : request.note());
         course.complete(teacherUserId, note, Instant.now());

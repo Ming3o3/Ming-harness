@@ -65,6 +65,17 @@ public class LearningAssignmentNotificationService {
     }
 
     @Transactional
+    public void ensureForSubmission(LearningAssignmentSubmission submission,
+                                    LearningAssignment assignment) {
+        if (submission == null || assignment == null) return;
+        String eventKey = "SUBMISSION_RECEIVED:" + submission.getId();
+        saveIfAbsent(assignment, assignment.getTeacherUserId(), eventKey,
+                LearningAssignmentNotificationType.SUBMISSION_RECEIVED,
+                "收到学习者作业提交", assignment.getLearnerUserId() + "已提交“"
+                        + assignment.getTitle() + "”，请查看提交内容和测评证据。");
+    }
+
+    @Transactional
     public void ensureForFeedbackAcknowledged(LearningAssignmentFeedback feedback,
                                               LearningAssignment assignment) {
         if (feedback == null || assignment == null) return;
@@ -282,6 +293,9 @@ public class LearningAssignmentNotificationService {
             }
             case FEEDBACK_ACKNOWLEDGED -> {
                 // 回执通知由 ensureForFeedbackAcknowledged 根据反馈 ID 单独创建。
+            }
+            case SUBMISSION_RECEIVED -> {
+                // 学习者提交通知由 ensureForSubmission 按提交事实单独创建。
             }
         }
         return recipients;
