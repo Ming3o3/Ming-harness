@@ -1,6 +1,7 @@
 package org.mingharness.education;
 
 import org.mingharness.education.api.EducationMetricsView;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -11,15 +12,26 @@ public class EducationMetricsService {
     private final LearningAssignmentRepository assignmentRepository;
     private final LearningTaskRepository taskRepository;
     private final LearningTaskNotificationRepository notificationRepository;
+    private final LearningAssignmentNotificationRepository assignmentNotificationRepository;
     private final AssessmentAttemptRepository assessmentRepository;
 
     public EducationMetricsService(LearningAssignmentRepository assignmentRepository,
                                    LearningTaskRepository taskRepository,
                                    LearningTaskNotificationRepository notificationRepository,
                                    AssessmentAttemptRepository assessmentRepository) {
+        this(assignmentRepository, taskRepository, notificationRepository, null, assessmentRepository);
+    }
+
+    @Autowired
+    public EducationMetricsService(LearningAssignmentRepository assignmentRepository,
+                                   LearningTaskRepository taskRepository,
+                                   LearningTaskNotificationRepository notificationRepository,
+                                   LearningAssignmentNotificationRepository assignmentNotificationRepository,
+                                   AssessmentAttemptRepository assessmentRepository) {
         this.assignmentRepository = assignmentRepository;
         this.taskRepository = taskRepository;
         this.notificationRepository = notificationRepository;
+        this.assignmentNotificationRepository = assignmentNotificationRepository;
         this.assessmentRepository = assessmentRepository;
     }
 
@@ -52,6 +64,13 @@ public class EducationMetricsService {
                 tenantId, userId);
         long notificationRead = notificationRepository.countByTenantIdAndUserIdAndReadAtIsNotNull(
                 tenantId, userId);
+        if (assignmentNotificationRepository != null) {
+            notificationTotal += assignmentNotificationRepository.countByTenantIdAndUserId(tenantId, userId);
+            notificationSeen += assignmentNotificationRepository.countByTenantIdAndUserIdAndSeenAtIsNotNull(
+                    tenantId, userId);
+            notificationRead += assignmentNotificationRepository.countByTenantIdAndUserIdAndReadAtIsNotNull(
+                    tenantId, userId);
+        }
 
         long assessmentTotal = assessmentRepository.countByTenantIdAndUserId(tenantId, userId);
         long formativeAssessmentTotal = assessmentRepository.countByTenantIdAndUserIdAndAssessmentType(

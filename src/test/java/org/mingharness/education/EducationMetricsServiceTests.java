@@ -27,6 +27,8 @@ class EducationMetricsServiceTests {
         LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
         LearningTaskRepository tasks = mock(LearningTaskRepository.class);
         LearningTaskNotificationRepository notifications = mock(LearningTaskNotificationRepository.class);
+        LearningAssignmentNotificationRepository assignmentNotifications =
+                mock(LearningAssignmentNotificationRepository.class);
         AssessmentAttemptRepository assessments = mock(AssessmentAttemptRepository.class);
         when(assignments.countForParticipant("tenant-a", "student-1")).thenReturn(4L);
         when(assignments.countForParticipantByStatus("tenant-a", "student-1",
@@ -50,6 +52,12 @@ class EducationMetricsServiceTests {
                 .thenReturn(3L);
         when(notifications.countByTenantIdAndUserIdAndReadAtIsNotNull("tenant-a", "student-1"))
                 .thenReturn(2L);
+        when(assignmentNotifications.countByTenantIdAndUserId("tenant-a", "student-1"))
+                .thenReturn(2L);
+        when(assignmentNotifications.countByTenantIdAndUserIdAndSeenAtIsNotNull("tenant-a", "student-1"))
+                .thenReturn(1L);
+        when(assignmentNotifications.countByTenantIdAndUserIdAndReadAtIsNotNull("tenant-a", "student-1"))
+                .thenReturn(1L);
         when(assessments.countByTenantIdAndUserId("tenant-a", "student-1")).thenReturn(5L);
         when(assessments.countByTenantIdAndUserIdAndAssessmentType("tenant-a", "student-1",
                 AssessmentAttemptType.FORMATIVE)).thenReturn(3L);
@@ -59,7 +67,7 @@ class EducationMetricsServiceTests {
                 .thenReturn(4L);
 
         EducationMetricsView metrics = new EducationMetricsService(
-                assignments, tasks, notifications, assessments)
+                assignments, tasks, notifications, assignmentNotifications, assessments)
                 .summarize("tenant-a", "student-1");
 
         assertEquals(4, metrics.assignmentTotal());
@@ -70,6 +78,8 @@ class EducationMetricsServiceTests {
         assertEquals(0.8, metrics.taskStartRate());
         assertEquals(0.6, metrics.taskCompletionRate());
         assertEquals(0.75, metrics.taskEvidenceCoverageRate());
+        assertEquals(6, metrics.notificationTotal());
+        assertEquals(3, metrics.notificationRead());
         assertEquals(0.5, metrics.notificationReadRate());
         assertEquals(0.8, metrics.assessmentAccuracyRate());
     }
