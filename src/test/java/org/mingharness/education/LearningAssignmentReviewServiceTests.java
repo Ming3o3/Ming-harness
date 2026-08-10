@@ -114,6 +114,26 @@ class LearningAssignmentReviewServiceTests {
         assertEquals("LEARNING_ASSIGNMENT_REVISION_NOTE_REQUIRED", exception.getCode());
     }
 
+    @Test
+    void shouldRequireLearnerSubmissionBeforeTeacherVerification() {
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        LearningAssignmentSubmissionRepository submissions = mock(LearningAssignmentSubmissionRepository.class);
+        LearningAssignmentNotificationService notifications = mock(LearningAssignmentNotificationService.class);
+        LearningAssignment assignment = assignment();
+        when(assignments.findByTenantIdAndId("tenant-a", assignment.getId()))
+                .thenReturn(Optional.of(assignment));
+        when(submissions.existsByTenantIdAndLearningAssignmentId("tenant-a", assignment.getId()))
+                .thenReturn(false);
+
+        LearningAssignmentReviewService service = new LearningAssignmentReviewService(
+                assignments, null, null, notifications, new SensitiveDataSanitizer(), submissions);
+        var exception = assertThrows(org.mingharness.common.BusinessException.class,
+                () -> service.review("tenant-a", "teacher-1", assignment.getId(),
+                        new LearningAssignmentReviewRequest("VERIFY", "已核对作答依据")));
+
+        assertEquals("ASSIGNMENT_SUBMISSION_REQUIRED_FOR_REVIEW", exception.getCode());
+    }
+
     private LearningAssignment assignment() {
         LearningAssignment assignment = new LearningAssignment("tenant-a", "teacher-1", "student-1",
                 "函数作业", "完成练习", "数学", "高中一年级", "人教A版", "函数", 0.8,

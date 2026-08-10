@@ -18,20 +18,29 @@ public class LearningAssignmentReviewService {
     private final LearningAssignmentRepository assignmentRepository;
     private final LearningGoalRepository goalRepository;
     private final LearningTaskRepository taskRepository;
+    private final LearningAssignmentSubmissionRepository submissionRepository;
     private final LearningAssignmentNotificationService notificationService;
     private final SensitiveDataSanitizer sanitizer;
 
     public LearningAssignmentReviewService(LearningAssignmentRepository assignmentRepository,
                                            LearningAssignmentNotificationService notificationService,
                                            SensitiveDataSanitizer sanitizer) {
-        this(assignmentRepository, null, notificationService, sanitizer);
+        this(assignmentRepository, null, null, notificationService, sanitizer, null);
     }
 
     public LearningAssignmentReviewService(LearningAssignmentRepository assignmentRepository,
                                            LearningGoalRepository goalRepository,
                                            LearningAssignmentNotificationService notificationService,
                                            SensitiveDataSanitizer sanitizer) {
-        this(assignmentRepository, goalRepository, null, notificationService, sanitizer);
+        this(assignmentRepository, goalRepository, null, notificationService, sanitizer, null);
+    }
+
+    public LearningAssignmentReviewService(LearningAssignmentRepository assignmentRepository,
+                                           LearningGoalRepository goalRepository,
+                                           LearningTaskRepository taskRepository,
+                                           LearningAssignmentNotificationService notificationService,
+                                           SensitiveDataSanitizer sanitizer) {
+        this(assignmentRepository, goalRepository, taskRepository, notificationService, sanitizer, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -39,10 +48,12 @@ public class LearningAssignmentReviewService {
                                            LearningGoalRepository goalRepository,
                                            LearningTaskRepository taskRepository,
                                            LearningAssignmentNotificationService notificationService,
-                                           SensitiveDataSanitizer sanitizer) {
+                                           SensitiveDataSanitizer sanitizer,
+                                           LearningAssignmentSubmissionRepository submissionRepository) {
         this.assignmentRepository = assignmentRepository;
         this.goalRepository = goalRepository;
         this.taskRepository = taskRepository;
+        this.submissionRepository = submissionRepository;
         this.notificationService = notificationService;
         this.sanitizer = sanitizer;
     }
@@ -76,6 +87,13 @@ public class LearningAssignmentReviewService {
         }
         try {
             if ("VERIFY".equals(decision)) {
+                if (submissionRepository != null
+                        && !submissionRepository.existsByTenantIdAndLearningAssignmentId(
+                        tenantId, assignment.getId())) {
+                    throw new BusinessException(HttpStatus.CONFLICT,
+                            "ASSIGNMENT_SUBMISSION_REQUIRED_FOR_REVIEW",
+                            "教师确认前必须先有学习者提交物");
+                }
                 assignment.verifyByTeacher(teacherUserId, cleanNullable(request.note()), Instant.now());
             } else {
                 if (goalRepository == null) {

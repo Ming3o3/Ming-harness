@@ -52,10 +52,13 @@ public class LearningAssignmentSubmissionService {
                 .findByTenantIdAndLearningAssignmentIdAndRunId(
                         tenantId, assignment.getId(), run.getId()).orElse(null);
         if (existing != null) return LearningAssignmentSubmissionView.from(existing);
+        boolean completedPendingReview = assignment.getStatus() == LearningAssignmentStatus.COMPLETED
+                && assignment.getReviewStatus() == LearningAssignmentReviewStatus.PENDING;
         if (assignment.getStatus() != LearningAssignmentStatus.ACCEPTED
                 && assignment.getStatus() != LearningAssignmentStatus.AWAITING_EVIDENCE
                 && assignment.getStatus() != LearningAssignmentStatus.RETRY_REQUIRED
-                && assignment.getStatus() != LearningAssignmentStatus.OVERDUE) {
+                && assignment.getStatus() != LearningAssignmentStatus.OVERDUE
+                && !completedPendingReview) {
             throw new BusinessException(HttpStatus.CONFLICT, "ASSIGNMENT_SUBMISSION_NOT_OPEN",
                     "当前课程作业不在可提交状态");
         }

@@ -19,13 +19,15 @@ public class EducationMetricsService {
     private final LearningTaskNotificationRepository notificationRepository;
     private final LearningAssignmentNotificationRepository assignmentNotificationRepository;
     private final LearningAssignmentFeedbackRepository feedbackRepository;
+    private final LearningAssignmentSubmissionRepository submissionRepository;
     private final AssessmentAttemptRepository assessmentRepository;
 
     public EducationMetricsService(LearningAssignmentRepository assignmentRepository,
                                    LearningTaskRepository taskRepository,
                                    LearningTaskNotificationRepository notificationRepository,
                                    AssessmentAttemptRepository assessmentRepository) {
-        this(assignmentRepository, taskRepository, notificationRepository, null, null, assessmentRepository);
+        this(assignmentRepository, taskRepository, notificationRepository, null, null, null,
+                assessmentRepository);
     }
 
     /** 兼容已有组件测试和旧扩展调用方。 */
@@ -35,7 +37,17 @@ public class EducationMetricsService {
                                    LearningAssignmentNotificationRepository assignmentNotificationRepository,
                                    AssessmentAttemptRepository assessmentRepository) {
         this(assignmentRepository, taskRepository, notificationRepository,
-                assignmentNotificationRepository, null, assessmentRepository);
+                assignmentNotificationRepository, null, null, assessmentRepository);
+    }
+
+    public EducationMetricsService(LearningAssignmentRepository assignmentRepository,
+                                   LearningTaskRepository taskRepository,
+                                   LearningTaskNotificationRepository notificationRepository,
+                                   LearningAssignmentNotificationRepository assignmentNotificationRepository,
+                                   LearningAssignmentFeedbackRepository feedbackRepository,
+                                   AssessmentAttemptRepository assessmentRepository) {
+        this(assignmentRepository, taskRepository, notificationRepository,
+                assignmentNotificationRepository, feedbackRepository, null, assessmentRepository);
     }
 
     @Autowired
@@ -44,12 +56,14 @@ public class EducationMetricsService {
                                    LearningTaskNotificationRepository notificationRepository,
                                    LearningAssignmentNotificationRepository assignmentNotificationRepository,
                                    LearningAssignmentFeedbackRepository feedbackRepository,
+                                   LearningAssignmentSubmissionRepository submissionRepository,
                                    AssessmentAttemptRepository assessmentRepository) {
         this.assignmentRepository = assignmentRepository;
         this.taskRepository = taskRepository;
         this.notificationRepository = notificationRepository;
         this.assignmentNotificationRepository = assignmentNotificationRepository;
         this.feedbackRepository = feedbackRepository;
+        this.submissionRepository = submissionRepository;
         this.assessmentRepository = assessmentRepository;
     }
 
@@ -70,6 +84,10 @@ public class EducationMetricsService {
                 tenantId, userId, LearningAssignmentStatus.COMPLETED);
         long assignmentRetryRequired = assignmentRepository.countForParticipantByStatus(
                 tenantId, userId, LearningAssignmentStatus.RETRY_REQUIRED);
+        long assignmentSubmissionTotal = submissionRepository == null ? 0
+                : submissionRepository.countForParticipant(tenantId, userId);
+        long assignmentSubmissionCovered = submissionRepository == null ? 0
+                : submissionRepository.countCoveredAssignmentsForParticipant(tenantId, userId);
         long assignmentReviewPending = assignmentRepository.countForParticipantByReviewStatus(
                 tenantId, userId, LearningAssignmentReviewStatus.PENDING);
         long assignmentReviewVerified = assignmentRepository.countForParticipantByReviewStatus(
@@ -130,6 +148,8 @@ public class EducationMetricsService {
 
         return new EducationMetricsView(
                 assignmentTotal, assignmentAccepted, assignmentCompleted,
+                assignmentSubmissionTotal, assignmentSubmissionCovered,
+                ratio(assignmentSubmissionCovered, assignmentTotal),
                 ratio(assignmentAccepted, assignmentTotal), ratio(assignmentCompleted, assignmentTotal),
                 taskTotal, taskStarted, taskCompleted, taskAwaitingEvidence, taskFailed, taskRetryCount,
                 ratio(taskStarted, taskTotal), ratio(taskCompleted, taskTotal), taskEvidenceCovered,

@@ -3173,10 +3173,16 @@ function learningAssignmentHasOpenIntervention(assignment) {
 }
 
 function startLearningAssignmentSubmission(assignment) {
-  if (!assignment?.id || assignment.learnerUserId !== form.userId
-    || !['ACCEPTED', 'AWAITING_EVIDENCE', 'RETRY_REQUIRED', 'OVERDUE'].includes(assignment.status)) return
+  if (!learningAssignmentSubmissionOpen(assignment)) return
   learningAssignmentSubmissionForm.assignmentId = assignment.id
   learningAssignmentSubmissionForm.content = ''
+}
+
+function learningAssignmentSubmissionOpen(assignment) {
+  return Boolean(assignment?.id)
+    && assignment.learnerUserId === form.userId
+    && (['ACCEPTED', 'AWAITING_EVIDENCE', 'RETRY_REQUIRED', 'OVERDUE'].includes(assignment.status)
+      || (assignment.status === 'COMPLETED' && assignment.reviewStatus === 'PENDING'))
 }
 
 function closeLearningAssignmentSubmission() {
@@ -5911,6 +5917,7 @@ onBeforeUnmount(() => {
             <p v-if="educationError" class="policy-error">{{ educationError }}</p>
             <div v-if="educationMetrics" class="education-metrics" aria-label="教育业务闭环指标">
               <div><span>作业完成率</span><strong>{{ formatRate(educationMetrics.assignmentCompletionRate) }}</strong><small>{{ educationMetrics.assignmentCompleted }} / {{ educationMetrics.assignmentTotal }}</small></div>
+              <div><span>提交物覆盖</span><strong>{{ formatRate(educationMetrics.assignmentSubmissionCoverageRate) }}</strong><small>{{ educationMetrics.assignmentSubmissionCovered }} / {{ educationMetrics.assignmentTotal }}</small></div>
               <div><span>任务启动率</span><strong>{{ formatRate(educationMetrics.taskStartRate) }}</strong><small>{{ educationMetrics.taskStarted }} / {{ educationMetrics.taskTotal }}</small></div>
               <div><span>任务完成率</span><strong>{{ formatRate(educationMetrics.taskCompletionRate) }}</strong><small>{{ educationMetrics.taskCompleted }} / {{ educationMetrics.taskTotal }}</small></div>
               <div><span>测评证据覆盖</span><strong>{{ formatRate(educationMetrics.taskEvidenceCoverageRate) }}</strong><small>{{ educationMetrics.taskEvidenceCovered }} / {{ educationMetrics.taskStarted }}</small></div>
@@ -6052,7 +6059,7 @@ onBeforeUnmount(() => {
                   </div>
                   <div class="learning-assignment-actions">
                     <button v-if="assignment.learnerUserId === form.userId && (assignment.status === 'ASSIGNED' || assignment.status === 'AWAITING_EVIDENCE' || assignment.status === 'RETRY_REQUIRED' || (['ACCEPTED', 'OVERDUE'].includes(assignment.status) && learningAssignmentHasOpenIntervention(assignment)))" class="secondary-button" type="button" :disabled="learningAssignmentAcceptingId === assignment.id" @click="startLearningAssignment(assignment)">{{ learningAssignmentAcceptingId === assignment.id ? '启动中…' : (assignment.status === 'ASSIGNED' ? '接受并开始学习' : (assignment.status === 'AWAITING_EVIDENCE' ? '补充证据并继续' : (assignment.status === 'RETRY_REQUIRED' ? '重试课程作业' : '按反馈继续学习'))) }}</button>
-                    <button v-if="assignment.learnerUserId === form.userId && ['ACCEPTED', 'AWAITING_EVIDENCE', 'RETRY_REQUIRED', 'OVERDUE'].includes(assignment.status)" class="secondary-button" type="button" @click="startLearningAssignmentSubmission(assignment)">提交作业内容</button>
+                    <button v-if="learningAssignmentSubmissionOpen(assignment)" class="secondary-button" type="button" @click="startLearningAssignmentSubmission(assignment)">提交作业内容</button>
                     <button v-if="assignment.teacherUserId === form.userId && assignment.status === 'COMPLETED' && assignment.reviewStatus === 'PENDING'" class="secondary-button" type="button" :disabled="learningAssignmentReviewSavingId === assignment.id" @click="verifyLearningAssignment(assignment)">{{ learningAssignmentReviewSavingId === assignment.id ? '确认中…' : '确认作业结果' }}</button>
                     <button v-if="assignment.teacherUserId === form.userId && assignment.status === 'COMPLETED' && assignment.reviewStatus === 'PENDING'" class="text-button" type="button" :disabled="learningAssignmentReviewSavingId === assignment.id" @click="returnLearningAssignmentForRevision(assignment)">{{ learningAssignmentReviewSavingId === assignment.id ? '处理中…' : '退回返工' }}</button>
                     <button v-if="assignment.teacherUserId === form.userId && assignment.status !== 'CANCELLED'" class="text-button" type="button" @click="startLearningAssignmentFeedback(assignment)">写教师反馈</button>

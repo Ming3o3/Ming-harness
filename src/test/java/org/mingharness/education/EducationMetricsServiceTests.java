@@ -29,6 +29,7 @@ class EducationMetricsServiceTests {
         LearningTaskNotificationRepository notifications = mock(LearningTaskNotificationRepository.class);
         LearningAssignmentNotificationRepository assignmentNotifications =
                 mock(LearningAssignmentNotificationRepository.class);
+        LearningAssignmentSubmissionRepository submissions = mock(LearningAssignmentSubmissionRepository.class);
         AssessmentAttemptRepository assessments = mock(AssessmentAttemptRepository.class);
         when(assignments.countForParticipant("tenant-a", "student-1")).thenReturn(4L);
         when(assignments.countForParticipantByStatus("tenant-a", "student-1",
@@ -60,6 +61,9 @@ class EducationMetricsServiceTests {
                 .thenReturn(1L);
         when(assignmentNotifications.countByTenantIdAndUserIdAndReadAtIsNotNull("tenant-a", "student-1"))
                 .thenReturn(1L);
+        when(submissions.countForParticipant("tenant-a", "student-1")).thenReturn(3L);
+        when(submissions.countCoveredAssignmentsForParticipant("tenant-a", "student-1"))
+                .thenReturn(2L);
         when(assessments.countByTenantIdAndUserId("tenant-a", "student-1")).thenReturn(5L);
         when(assessments.countByTenantIdAndUserIdAndAssessmentType("tenant-a", "student-1",
                 AssessmentAttemptType.FORMATIVE)).thenReturn(3L);
@@ -69,12 +73,15 @@ class EducationMetricsServiceTests {
                 .thenReturn(4L);
 
         EducationMetricsView metrics = new EducationMetricsService(
-                assignments, tasks, notifications, assignmentNotifications, assessments)
+                assignments, tasks, notifications, assignmentNotifications, null, submissions, assessments)
                 .summarize("tenant-a", "student-1");
 
         assertEquals(4, metrics.assignmentTotal());
         assertEquals(4, metrics.assignmentAccepted());
         assertEquals(2, metrics.assignmentCompleted());
+        assertEquals(3, metrics.assignmentSubmissionTotal());
+        assertEquals(2, metrics.assignmentSubmissionCovered());
+        assertEquals(0.5, metrics.assignmentSubmissionCoverageRate());
         assertEquals(1.0, metrics.assignmentAcceptanceRate());
         assertEquals(0.5, metrics.assignmentCompletionRate());
         assertEquals(0.8, metrics.taskStartRate());
