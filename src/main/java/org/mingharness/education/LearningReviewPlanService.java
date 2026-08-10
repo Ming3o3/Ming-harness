@@ -23,12 +23,19 @@ public class LearningReviewPlanService {
             throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_REVIEW_GOAL_NOT_COMPLETED",
                     "只有已完成的学习目标才能建立保持度复习计划");
         }
-        return repository.findByTenantIdAndUserIdAndLearningGoalId(
-                        goal.getTenantId(), goal.getUserId(), goal.getId())
-                .orElseGet(() -> repository.save(new LearningReviewPlan(
-                        goal.getTenantId(), goal.getUserId(), goal.getId(), goal.getLearnerProfileId(),
-                        goal.getConceptKey(), goal.getCompletedAt() == null
-                                ? Instant.now() : goal.getCompletedAt())));
+        LearningReviewPlan existing = repository.findByTenantIdAndUserIdAndLearningGoalId(
+                goal.getTenantId(), goal.getUserId(), goal.getId()).orElse(null);
+        if (existing == null) {
+            return repository.save(new LearningReviewPlan(
+                    goal.getTenantId(), goal.getUserId(), goal.getId(), goal.getLearnerProfileId(),
+                    goal.getConceptKey(), goal.getCompletedAt() == null
+                            ? Instant.now() : goal.getCompletedAt()));
+        }
+        if (goal.getRevisionCount() > 0 && existing.getReviewCount() > 0) {
+            existing.restartFromCompletion(goal.getCompletedAt());
+            return repository.save(existing);
+        }
+        return existing;
     }
 
     @Transactional(readOnly = true)

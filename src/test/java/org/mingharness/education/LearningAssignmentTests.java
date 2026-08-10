@@ -55,6 +55,18 @@ class LearningAssignmentTests {
         assertEquals(LearningAssignmentStatus.COMPLETED, assignment.getStatus());
     }
 
+    @Test
+    void shouldMoveReturnedAssignmentBackToRetryableState() {
+        LearningAssignment assignment = assignment();
+        assignment.accept("profile-1", "goal-1", Instant.now());
+        assignment.complete(Instant.now());
+        assignment.returnForRevision("teacher-1", "请补充依据", Instant.now());
+
+        assertEquals(LearningAssignmentStatus.RETRY_REQUIRED, assignment.getStatus());
+        assertEquals(LearningAssignmentReviewStatus.REVISION_REQUIRED, assignment.getReviewStatus());
+        assertEquals("请补充依据", assignment.getTeacherReviewNote());
+    }
+
     private LearningAssignment assignment() {
         return new LearningAssignment("tenant-a", "teacher-1", "student-1", "函数作业",
                 "完成函数定义域练习", "数学", "高中一年级", "人教A版", "函数定义域",

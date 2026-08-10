@@ -38,6 +38,10 @@ public class LearningGoal {
     @Column(nullable = false)
     private Instant updatedAt;
     private Instant completedAt;
+    @Column(nullable = false)
+    private boolean revisionPending;
+    @Column(nullable = false)
+    private int revisionCount;
 
     protected LearningGoal() {
     }
@@ -57,6 +61,8 @@ public class LearningGoal {
             throw new IllegalArgumentException("targetMastery 必须高于当前掌握度");
         }
         this.status = LearningGoalStatus.ACTIVE;
+        this.revisionPending = false;
+        this.revisionCount = 0;
         this.createdAt = Instant.now();
         this.updatedAt = this.createdAt;
     }
@@ -73,8 +79,24 @@ public class LearningGoal {
         }
         status = nextStatus;
         completedAt = nextStatus == LearningGoalStatus.COMPLETED ? Instant.now() : null;
+        if (nextStatus == LearningGoalStatus.COMPLETED) revisionPending = false;
         updatedAt = Instant.now();
     }
+
+    /** 教师退回已达标作业时，目标重新进入形成性学习，并保留返工次数。 */
+    public void requestRevision(Instant requestedAt) {
+        if (status != LearningGoalStatus.COMPLETED) {
+            throw new IllegalStateException("只有已完成的学习目标可以退回返工");
+        }
+        status = LearningGoalStatus.ACTIVE;
+        completedAt = null;
+        revisionPending = true;
+        revisionCount++;
+        updatedAt = requestedAt == null ? Instant.now() : requestedAt;
+    }
+
+    public boolean isRevisionPending() { return revisionPending; }
+    public int getRevisionCount() { return revisionCount; }
 
     private static String required(String value, String name) {
         String normalized = value == null ? "" : value.trim();

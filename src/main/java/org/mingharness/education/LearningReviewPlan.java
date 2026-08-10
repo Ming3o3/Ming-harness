@@ -104,6 +104,19 @@ public class LearningReviewPlan {
         updatedAt = Instant.now();
     }
 
+    /** 目标被教师退回后重新达标，复习周期从本次返工完成时间重新开始。 */
+    public void restartFromCompletion(Instant completedAt) {
+        Instant completed = completedAt == null ? Instant.now() : completedAt;
+        status = LearningReviewPlanStatus.ACTIVE;
+        reviewCount = 0;
+        successfulReviewCount = 0;
+        intervalDays = 0;
+        nextReviewAt = completed;
+        lastReviewedAt = null;
+        lastReviewCorrect = null;
+        updatedAt = Instant.now();
+    }
+
     public void changeStatus(LearningReviewPlanStatus nextStatus) {
         if (nextStatus == null) throw new IllegalArgumentException("复习计划状态不能为空");
         if (status == LearningReviewPlanStatus.ARCHIVED && nextStatus != LearningReviewPlanStatus.ARCHIVED) {

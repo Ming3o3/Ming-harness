@@ -78,7 +78,13 @@ public class LearningRecommendationService {
         String actionTitle;
         String prompt;
         String rationale;
-        if (goal.getStatus() == LearningGoalStatus.COMPLETED || gap <= 0.0001) {
+        if (goal.isRevisionPending()) {
+            actionType = "REVISION";
+            actionTitle = "按教师反馈返工作业";
+            prompt = "教师已将“" + goal.getConceptKey()
+                    + "”退回返工。请先复述本次返工要求，再针对薄弱点重新讲解并安排一道形成性检查题，最后让我给出可核验的作答依据。";
+            rationale = "教师退回后必须先完成返工并重新形成测评证据，不能直接沿用上一轮达标结论。";
+        } else if (goal.getStatus() == LearningGoalStatus.COMPLETED || gap <= 0.0001) {
             if (reviewPlan != null && !reviewPlan.isDue(now)) {
                 actionType = "WAIT";
                 actionTitle = "等待下一次保持度复习";

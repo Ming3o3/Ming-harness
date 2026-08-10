@@ -103,6 +103,9 @@ public class LearningAssignment {
         this.status = LearningAssignmentStatus.COMPLETED;
         this.reviewStatus = LearningAssignmentReviewStatus.PENDING;
         this.completedAt = completedAt == null ? Instant.now() : completedAt;
+        this.teacherReviewedAt = null;
+        this.teacherReviewerUserId = null;
+        this.teacherReviewNote = null;
         this.updatedAt = Instant.now();
     }
 
@@ -117,6 +120,21 @@ public class LearningAssignment {
         this.teacherReviewNote = reviewNote == null || reviewNote.isBlank() ? null : reviewNote.trim();
         this.teacherReviewedAt = reviewedAt == null ? Instant.now() : reviewedAt;
         this.reviewStatus = LearningAssignmentReviewStatus.VERIFIED;
+        this.updatedAt = Instant.now();
+    }
+
+    public void returnForRevision(String reviewerUserId, String reviewNote, Instant reviewedAt) {
+        if (status != LearningAssignmentStatus.COMPLETED) {
+            throw new IllegalStateException("只有已完成的作业可以退回返工");
+        }
+        if (reviewStatus != LearningAssignmentReviewStatus.PENDING) {
+            throw new IllegalStateException("当前作业不在待教师确认状态");
+        }
+        this.teacherReviewerUserId = required(reviewerUserId, "teacherReviewerUserId");
+        this.teacherReviewNote = required(reviewNote, "teacherReviewNote");
+        this.teacherReviewedAt = reviewedAt == null ? Instant.now() : reviewedAt;
+        this.reviewStatus = LearningAssignmentReviewStatus.REVISION_REQUIRED;
+        this.status = LearningAssignmentStatus.RETRY_REQUIRED;
         this.updatedAt = Instant.now();
     }
 

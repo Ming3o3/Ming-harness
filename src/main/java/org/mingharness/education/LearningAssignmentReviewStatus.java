@@ -4,5 +4,6 @@ package org.mingharness.education;
 public enum LearningAssignmentReviewStatus {
     NOT_REQUIRED,
     PENDING,
-    VERIFIED
+    VERIFIED,
+    REVISION_REQUIRED
 }

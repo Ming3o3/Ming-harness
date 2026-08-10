@@ -66,6 +66,54 @@ class LearningAssignmentReviewServiceTests {
         assertEquals("LEARNING_ASSIGNMENT_REVIEW_NOT_PENDING", notPending.getCode());
     }
 
+    @Test
+    void shouldReturnCompletedAssignmentForRevisionAndReactivateGoal() {
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        LearningAssignmentNotificationService notifications = mock(LearningAssignmentNotificationService.class);
+        LearningAssignment assignment = assignment();
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", "profile-1",
+                "函数作业", "函数", 0.2, 0.8);
+        goal.changeStatus(LearningGoalStatus.COMPLETED);
+        when(assignments.findByTenantIdAndId("tenant-a", assignment.getId()))
+                .thenReturn(Optional.of(assignment));
+        when(goals.findByIdAndTenantIdAndUserId(assignment.getLearningGoalId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(goal));
+        when(assignments.save(any(LearningAssignment.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(goals.save(any(LearningGoal.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        LearningAssignmentReviewService service = new LearningAssignmentReviewService(
+                assignments, goals, notifications, new SensitiveDataSanitizer());
+        var result = service.review("tenant-a", "teacher-1", assignment.getId(),
+                new LearningAssignmentReviewRequest("RETURN", "请补充定义域判定依据"));
+
+        assertEquals("RETRY_REQUIRED", result.status());
+        assertEquals("REVISION_REQUIRED", result.reviewStatus());
+        assertEquals(LearningGoalStatus.ACTIVE, goal.getStatus());
+        assertEquals(true, goal.isRevisionPending());
+        assertEquals(1, goal.getRevisionCount());
+        verify(notifications).ensureForTeacherRevisionRequired(assignment);
+    }
+
+    @Test
+    void shouldRequireNoteWhenReturningAssignment() {
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        LearningAssignment assignment = assignment();
+        when(assignments.findByTenantIdAndId("tenant-a", assignment.getId()))
+                .thenReturn(Optional.of(assignment));
+        LearningAssignmentReviewService service = new LearningAssignmentReviewService(
+                assignments, goals, mock(LearningAssignmentNotificationService.class),
+                new SensitiveDataSanitizer());
+
+        var exception = assertThrows(org.mingharness.common.BusinessException.class,
+                () -> service.review("tenant-a", "teacher-1", assignment.getId(),
+                        new LearningAssignmentReviewRequest("RETURN", " ")));
+        assertEquals("LEARNING_ASSIGNMENT_REVISION_NOTE_REQUIRED", exception.getCode());
+    }
+
     private LearningAssignment assignment() {
         LearningAssignment assignment = new LearningAssignment("tenant-a", "teacher-1", "student-1",
                 "函数作业", "完成练习", "数学", "高中一年级", "人教A版", "函数", 0.8,

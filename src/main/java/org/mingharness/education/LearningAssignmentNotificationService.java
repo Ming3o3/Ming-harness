@@ -84,9 +84,26 @@ public class LearningAssignmentNotificationService {
         if (assignment == null) return;
         String note = assignment.getTeacherReviewNote() == null
                 ? "" : "\n教师说明：" + assignment.getTeacherReviewNote();
-        saveIfAbsent(assignment, assignment.getLearnerUserId(), "REVIEW_VERIFIED",
+        saveIfAbsent(assignment, assignment.getLearnerUserId(), reviewEventKey(
+                        LearningAssignmentNotificationType.REVIEW_VERIFIED, assignment),
                 LearningAssignmentNotificationType.REVIEW_VERIFIED,
                 "课程作业已被教师确认", assignment.getTitle() + "的达标结果已被教师确认。" + note);
+    }
+
+    @Transactional
+    public void ensureForTeacherRevisionRequired(LearningAssignment assignment) {
+        if (assignment == null) return;
+        String note = assignment.getTeacherReviewNote() == null
+                ? "请根据教师要求重新完成作业。"
+                : "教师返工说明：" + assignment.getTeacherReviewNote();
+        String eventKey = reviewEventKey(LearningAssignmentNotificationType.REVISION_REQUIRED, assignment);
+        saveIfAbsent(assignment, assignment.getLearnerUserId(), eventKey,
+                LearningAssignmentNotificationType.REVISION_REQUIRED,
+                "课程作业需要返工", assignment.getTitle() + "已被教师退回返工。" + note);
+        saveIfAbsent(assignment, assignment.getTeacherUserId(), eventKey,
+                LearningAssignmentNotificationType.REVISION_REQUIRED,
+                "课程作业已退回返工", assignment.getLearnerUserId() + "的作业“"
+                        + assignment.getTitle() + "”已进入返工状态。" + note);
     }
 
     /** Run 成功但缺少形成性测评时，按 Run 维度幂等通知学习者和教师。 */
@@ -201,6 +218,9 @@ public class LearningAssignmentNotificationService {
         LearningAssignmentNotificationType type = assignment.getStatus() == LearningAssignmentStatus.COMPLETED
                 && assignment.getReviewStatus() == LearningAssignmentReviewStatus.PENDING
                 ? LearningAssignmentNotificationType.REVIEW_REQUIRED
+                : assignment.getStatus() == LearningAssignmentStatus.RETRY_REQUIRED
+                && assignment.getReviewStatus() == LearningAssignmentReviewStatus.REVISION_REQUIRED
+                ? LearningAssignmentNotificationType.REVISION_REQUIRED
                 : switch (assignment.getStatus()) {
                     case ASSIGNED -> LearningAssignmentNotificationType.ASSIGNED;
                     case ACCEPTED -> LearningAssignmentNotificationType.ACCEPTED;
@@ -210,7 +230,7 @@ public class LearningAssignmentNotificationService {
                     case COMPLETED -> LearningAssignmentNotificationType.COMPLETED;
                     case CANCELLED -> LearningAssignmentNotificationType.CANCELLED;
                 };
-        String eventKey = type.name();
+        String eventKey = reviewEventKey(type, assignment);
         List<RecipientSpec> recipients = new ArrayList<>();
         switch (type) {
             case ASSIGNED -> recipients.add(spec(assignment.getLearnerUserId(), type, eventKey,
@@ -248,6 +268,9 @@ public class LearningAssignmentNotificationService {
             case REVIEW_VERIFIED -> {
                 // 教师确认通知由 ensureForTeacherReviewVerified 按作业维度幂等创建。
             }
+            case REVISION_REQUIRED -> {
+                // 教师退回通知由 ensureForTeacherRevisionRequired 按作业维度幂等创建。
+            }
             case CANCELLED -> {
                 recipients.add(spec(assignment.getLearnerUserId(), type, eventKey,
                         "课程作业已取消", assignment.getTitle() + "已被布置者取消。"));
@@ -278,6 +301,19 @@ public class LearningAssignmentNotificationService {
                 assignment.getTenantId(), userId, assignment.getId(),
                 type, eventKey,
                 title, body, Instant.now()));
+    }
+
+    /** 审核可能在同一作业上重复发生，审核事件必须按业务周期幂等而非永久去重。 */
+    private String reviewEventKey(LearningAssignmentNotificationType type,
+                                  LearningAssignment assignment) {
+        if (type != LearningAssignmentNotificationType.REVIEW_REQUIRED
+                && type != LearningAssignmentNotificationType.REVIEW_VERIFIED
+                && type != LearningAssignmentNotificationType.REVISION_REQUIRED) {
+            return type.name();
+        }
+        Instant cycle = type == LearningAssignmentNotificationType.REVIEW_REQUIRED
+                ? assignment.getCompletedAt() : assignment.getTeacherReviewedAt();
+        return type.name() + ":" + (cycle == null ? assignment.getUpdatedAt() : cycle);
     }
 
     private RecipientSpec spec(String userId, LearningAssignmentNotificationType type,

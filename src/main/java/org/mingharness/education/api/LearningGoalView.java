@@ -17,13 +17,16 @@ public record LearningGoalView(
         LearningGoalStatus status,
         Instant createdAt,
         Instant updatedAt,
-        Instant completedAt
+        Instant completedAt,
+        boolean revisionPending,
+        int revisionCount
 ) {
 
     public static LearningGoalView from(LearningGoal goal) {
         return new LearningGoalView(goal.getId(), goal.getTenantId(), goal.getUserId(),
                 goal.getLearnerProfileId(), goal.getTitle(), goal.getConceptKey(),
                 goal.getBaselineMastery(), goal.getTargetMastery(), goal.getStatus(),
-                goal.getCreatedAt(), goal.getUpdatedAt(), goal.getCompletedAt());
+                goal.getCreatedAt(), goal.getUpdatedAt(), goal.getCompletedAt(),
+                goal.isRevisionPending(), goal.getRevisionCount());
     }
 }

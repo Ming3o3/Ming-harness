@@ -5,6 +5,7 @@ import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.education.api.LearningGoalRequest;
 
 import java.util.Optional;
+import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -96,5 +97,17 @@ class LearningGoalServiceTests {
                 () -> service.changeStatus("tenant-a", "student-1", goal.getId(), "COMPLETED"));
 
         assertEquals("LEARNING_GOAL_EVIDENCE_REQUIRED", exception.getCode());
+    }
+
+    @Test
+    void shouldReactivateCompletedGoalForTeacherRevision() {
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", "profile-1",
+                "掌握函数", "函数", 0.2, 0.8);
+        goal.changeStatus(LearningGoalStatus.COMPLETED);
+        goal.requestRevision(Instant.now());
+
+        assertEquals(LearningGoalStatus.ACTIVE, goal.getStatus());
+        assertEquals(true, goal.isRevisionPending());
+        assertEquals(1, goal.getRevisionCount());
     }
 }
