@@ -101,6 +101,8 @@ class EducationMetricsServiceTests {
                 LearningAssignmentReviewStatus.PENDING)).thenReturn(1L);
         when(assignments.countForParticipantByReviewStatus("tenant-a", "student-1",
                 LearningAssignmentReviewStatus.VERIFIED)).thenReturn(1L);
+        when(assignments.countForParticipantByReviewStatus("tenant-a", "student-1",
+                LearningAssignmentReviewStatus.REVISION_REQUIRED)).thenReturn(1L);
         when(tasks.countRetriedTasks("tenant-a", "student-1")).thenReturn(2L);
         when(tasks.countRetriedTasksCompleted("tenant-a", "student-1")).thenReturn(1L);
         LearningAssignmentFeedback feedback = new LearningAssignmentFeedback(
@@ -126,10 +128,13 @@ class EducationMetricsServiceTests {
 
         assertEquals(1, metrics.assignmentReviewPending());
         assertEquals(1, metrics.assignmentReviewVerified());
-        assertEquals(0.5, metrics.assignmentReviewVerificationRate());
+        assertEquals(1, metrics.assignmentReviewRevisionRequired());
+        assertEquals(1.0 / 3.0, metrics.assignmentReviewVerificationRate());
         assertEquals(1, metrics.feedbackTotal());
         assertEquals(1, metrics.feedbackAcknowledged());
         assertEquals(1.0, metrics.feedbackAcknowledgementRate());
+        assertEquals(0, metrics.feedbackResolved());
+        assertEquals(0.0, metrics.feedbackResolutionRate());
         assertEquals(90, metrics.feedbackAcknowledgementLatencySeconds());
         assertEquals(2, metrics.retriedTaskTotal());
         assertEquals(1, metrics.retriedTaskCompleted());

@@ -74,6 +74,8 @@ public class EducationMetricsService {
                 tenantId, userId, LearningAssignmentReviewStatus.PENDING);
         long assignmentReviewVerified = assignmentRepository.countForParticipantByReviewStatus(
                 tenantId, userId, LearningAssignmentReviewStatus.VERIFIED);
+        long assignmentReviewRevisionRequired = assignmentRepository.countForParticipantByReviewStatus(
+                tenantId, userId, LearningAssignmentReviewStatus.REVISION_REQUIRED);
 
         long taskTotal = taskRepository.countByTenantIdAndUserId(tenantId, userId);
         long taskStarted = taskRepository.countByTenantIdAndUserIdAndStartedAtIsNotNull(
@@ -94,6 +96,8 @@ public class EducationMetricsService {
         long feedbackTotal = feedbacks.size();
         long feedbackAcknowledged = feedbacks.stream()
                 .filter(item -> item.getStatus() == LearningAssignmentFeedbackStatus.ACKNOWLEDGED).count();
+        long feedbackResolved = feedbacks.stream()
+                .filter(item -> item.getStatus() == LearningAssignmentFeedbackStatus.RESOLVED).count();
         long feedbackAcknowledgementLatencySeconds = averageAcknowledgementLatencySeconds(feedbacks);
 
         long notificationTotal = notificationRepository.countByTenantIdAndUserId(tenantId, userId);
@@ -134,9 +138,11 @@ public class EducationMetricsService {
                 ratio(notificationRead, notificationTotal),
                 assessmentTotal, formativeAssessmentTotal, reviewAssessmentTotal,
                 correctAssessmentTotal, ratio(correctAssessmentTotal, assessmentTotal),
-                assignmentReviewPending, assignmentReviewVerified,
-                ratio(assignmentReviewVerified, assignmentReviewPending + assignmentReviewVerified),
+                assignmentReviewPending, assignmentReviewVerified, assignmentReviewRevisionRequired,
+                ratio(assignmentReviewVerified,
+                        assignmentReviewPending + assignmentReviewRevisionRequired + assignmentReviewVerified),
                 feedbackTotal, feedbackAcknowledged, ratio(feedbackAcknowledged, feedbackTotal),
+                feedbackResolved, ratio(feedbackResolved, feedbackTotal),
                 feedbackAcknowledgementLatencySeconds, retriedTaskTotal, retriedTaskCompleted,
                 ratio(retriedTaskCompleted, retriedTaskTotal), averageMasteryGain,
                 ratio(correctReviewAssessmentTotal, reviewAssessmentTotal), assignmentRetryRequired);
