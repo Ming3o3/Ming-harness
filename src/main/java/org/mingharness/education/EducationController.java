@@ -28,6 +28,7 @@ import org.mingharness.education.api.LearningAssignmentProgressView;
 import org.mingharness.education.api.LearningAssignmentNotificationView;
 import org.mingharness.education.api.LearningAssignmentFeedbackRequest;
 import org.mingharness.education.api.LearningAssignmentFeedbackView;
+import org.mingharness.education.api.LearningAssignmentEvaluationView;
 import org.mingharness.education.api.LearningAssignmentSubmissionRequest;
 import org.mingharness.education.api.LearningAssignmentSubmissionView;
 import org.mingharness.education.api.EducationMetricsView;
@@ -454,6 +455,12 @@ public class EducationController {
             @Valid @RequestBody LearningAssignmentReviewRequest request) {
         HarnessIdentity identity = identity();
         return assignmentReviewService.review(identity.tenantId(), identity.userId(), assignmentId, request);
+    }
+
+    @GetMapping("/assignments/{assignmentId}/evaluations")
+    public List<LearningAssignmentEvaluationView> assignmentEvaluations(@PathVariable String assignmentId) {
+        HarnessIdentity identity = identity();
+        return assignmentReviewService.evaluations(identity.tenantId(), identity.userId(), assignmentId);
     }
 
     @PostMapping("/assignments/{assignmentId}/cancel")

@@ -10,6 +10,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -29,7 +30,7 @@ class LearningAssignmentReviewServiceTests {
         LearningAssignmentReviewService service = new LearningAssignmentReviewService(
                 assignments, notifications, new SensitiveDataSanitizer());
         var result = service.review("tenant-a", "teacher-1", assignment.getId(),
-                new LearningAssignmentReviewRequest("VERIFY", "已核对作答依据"));
+                rubric("VERIFY", "已核对作答依据"));
 
         assertEquals("VERIFIED", result.reviewStatus());
         assertEquals("teacher-1", result.teacherReviewerUserId());
@@ -37,6 +38,50 @@ class LearningAssignmentReviewServiceTests {
         verify(notifications).resolveForAssignmentState(
                 "tenant-a", assignment.getId(), LearningAssignmentNotificationType.REVIEW_REQUIRED);
         verify(notifications).ensureForTeacherReviewVerified(assignment);
+    }
+
+    @Test
+    void shouldPersistImmutableTeacherRubricEvaluation() {
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        LearningAssignmentNotificationService notifications = mock(LearningAssignmentNotificationService.class);
+        LearningAssignmentEvaluationRepository evaluations = mock(LearningAssignmentEvaluationRepository.class);
+        LearningAssignment assignment = assignment();
+        when(assignments.findByTenantIdAndId("tenant-a", assignment.getId()))
+                .thenReturn(Optional.of(assignment));
+        when(assignments.save(any(LearningAssignment.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(evaluations.save(any(LearningAssignmentEvaluation.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        LearningAssignmentReviewService service = new LearningAssignmentReviewService(
+                assignments, null, null, notifications, new SensitiveDataSanitizer(), null, evaluations);
+        service.review("tenant-a", "teacher-1", assignment.getId(),
+                rubric("VERIFY", "已核对作答依据"));
+
+        var captured = forClass(LearningAssignmentEvaluation.class);
+        verify(evaluations).save(captured.capture());
+        assertEquals(LearningAssignmentEvaluationDecision.VERIFY, captured.getValue().getDecision());
+        assertEquals(5, captured.getValue().getContentCorrectnessScore());
+        assertEquals(4, captured.getValue().getEvidenceQualityScore());
+        assertEquals(3, captured.getValue().getTransferReadinessScore());
+        assertEquals("education-v1", captured.getValue().getRubricVersion());
+    }
+
+    @Test
+    void shouldRejectReviewWithoutTeacherRubric() {
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        LearningAssignmentNotificationService notifications = mock(LearningAssignmentNotificationService.class);
+        LearningAssignment assignment = assignment();
+        when(assignments.findByTenantIdAndId("tenant-a", assignment.getId()))
+                .thenReturn(Optional.of(assignment));
+
+        LearningAssignmentReviewService service = new LearningAssignmentReviewService(
+                assignments, notifications, new SensitiveDataSanitizer());
+        var exception = assertThrows(org.mingharness.common.BusinessException.class, () ->
+                service.review("tenant-a", "teacher-1", assignment.getId(),
+                        new LearningAssignmentReviewRequest("VERIFY", "已核对作答依据")));
+
+        assertEquals("LEARNING_ASSIGNMENT_RUBRIC_REQUIRED", exception.getCode());
     }
 
     @Test
@@ -87,7 +132,7 @@ class LearningAssignmentReviewServiceTests {
         LearningAssignmentReviewService service = new LearningAssignmentReviewService(
                 assignments, goals, notifications, new SensitiveDataSanitizer());
         var result = service.review("tenant-a", "teacher-1", assignment.getId(),
-                new LearningAssignmentReviewRequest("RETURN", "请补充定义域判定依据"));
+                rubric("RETURN", "请补充定义域判定依据"));
 
         assertEquals("RETRY_REQUIRED", result.status());
         assertEquals("REVISION_REQUIRED", result.reviewStatus());
@@ -129,7 +174,7 @@ class LearningAssignmentReviewServiceTests {
                 assignments, null, null, notifications, new SensitiveDataSanitizer(), submissions);
         var exception = assertThrows(org.mingharness.common.BusinessException.class,
                 () -> service.review("tenant-a", "teacher-1", assignment.getId(),
-                        new LearningAssignmentReviewRequest("VERIFY", "已核对作答依据")));
+                        rubric("VERIFY", "已核对作答依据")));
 
         assertEquals("ASSIGNMENT_SUBMISSION_REQUIRED_FOR_REVIEW", exception.getCode());
     }
@@ -141,5 +186,9 @@ class LearningAssignmentReviewServiceTests {
         assignment.accept("profile-1", "goal-1", Instant.now());
         assignment.complete(Instant.now());
         return assignment;
+    }
+
+    private LearningAssignmentReviewRequest rubric(String decision, String note) {
+        return new LearningAssignmentReviewRequest(decision, note, 5, 4, 3);
     }
 }

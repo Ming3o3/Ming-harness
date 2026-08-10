@@ -129,7 +129,7 @@ class EducationBusinessFlowTests {
         LearningAssignmentReviewService reviewService = new LearningAssignmentReviewService(
                 assignments, assignmentNotifications, new SensitiveDataSanitizer());
         var reviewed = reviewService.review("tenant-a", "teacher-1", assignment.getId(),
-                new LearningAssignmentReviewRequest("VERIFY", "已确认作答依据"));
+                new LearningAssignmentReviewRequest("VERIFY", "已确认作答依据", 5, 4, 3));
         assertEquals("VERIFIED", reviewed.reviewStatus());
 
     }

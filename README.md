@@ -463,7 +463,7 @@ curl -X POST http://localhost:8080/api/runs \
 - `GET /api/education/notifications?unreadOnly=false&limit=50`：查询当前用户的学习任务站内通知，并返回未读数量；查询会记录通知已被客户端触达
 - `POST /api/education/notifications/{notificationId}/read`：将一条学习任务通知标记为已读
 - `POST /api/education/notifications/read-all`：将当前用户的学习任务通知全部标记为已读
-- `GET /api/education/metrics`：读取当前租户和用户可见的作业、提交物覆盖、待重试/待返工作业、任务、测评证据、教师确认、反馈确认与执行、反馈确认时延、重试成功率、保持度正确率和平均掌握度提升；无事实时各比率返回 `0`
+- `GET /api/education/metrics`：读取当前租户和用户可见的作业、提交物覆盖、待重试/待返工作业、任务、测评证据、教师确认、教师量规评价覆盖与三维平均分、反馈确认与执行、反馈确认时延、重试成功率、保持度正确率和平均掌握度提升；无事实时各比率返回 `0`
 - `POST/GET /api/education/courses`：教师创建或查询课程实例；课程固定学科、年级和课程版本，课程状态为 `ACTIVE`、`COMPLETED` 或 `ARCHIVED`
 - `POST/GET /api/education/courses/{courseId}/enrollments`：课程负责人加入或查询学习者名单；`POST /api/education/courses/{courseId}/enrollments/{learnerUserId}/remove` 可移除成员，已结课或已归档课程不能再变更名单
 - `POST /api/education/courses/{courseId}/assignments`：向课程活跃名单批量布置统一目标，必须携带 `Idempotency-Key`；同一课程和幂等键会复用原批次，同一键提交不同内容会返回 `409 ASSIGNMENT_BATCH_KEY_REUSED_WITH_DIFFERENT_REQUEST`
@@ -476,9 +476,10 @@ curl -X POST http://localhost:8080/api/runs \
 - `GET /api/education/assignments/{assignmentId}/progress`：查询当前参与者可见的掌握度、测评、Run 证据覆盖、掌握度提升、反馈确认和学习任务进度；教师可据此判断是否需要干预以及干预是否被确认
 - `POST/GET /api/education/assignments/{assignmentId}/submissions`：学习者提交或查询绑定到成功教育 Run 的作业提交物；目标达标后作业虽进入 `COMPLETED`，在教师确认前仍允许补交；同一 Run 重复提交幂等返回原提交，教师可据此查看可审计的原始作答
 - `POST/GET /api/education/assignments/{assignmentId}/feedback`：教师提交普通反馈、补证据、重新学习或重新安排截止时间的干预；学习者可确认反馈，补证据/重新学习干预在下一次教育 Run 成功创建后进入 `RESOLVED`，不再污染后续 Run
+- `GET /api/education/assignments/{assignmentId}/evaluations`：查询该作业不可变的教师量规评价历史；教师和该作业学习者可见，评价记录包含内容正确性、证据质量、迁移准备度（1-5 分）、决定和量规版本
 - `POST /api/education/assignments/{assignmentId}/accept`：学习者接受作业，系统幂等创建对应学习者画像和结构化学习目标
 - `POST /api/education/assignments/{assignmentId}/start`：学习者接受（如尚未接受）并直接启动第一步教育 Run；返回绑定的学习会话，作业要求和未完成的“补证据/重新学习”教师干预会冻结到 Run 上下文；失败、超时或取消的 Run 会从该入口进入下一轮重试
-- `POST /api/education/assignments/{assignmentId}/review`：布置者用 `VERIFY` 确认已达标且已有学习者提交物的作业，或用带说明的 `RETURN` 退回返工；系统把学习者掌握度达标、教师交付确认和返工周期分开记录，重复确认幂等返回
+- `POST /api/education/assignments/{assignmentId}/review`：布置者用 `VERIFY` 确认已达标且已有学习者提交物的作业，或用带说明的 `RETURN` 退回返工；请求必须提供内容正确性、证据质量、迁移准备度三个 1-5 分量规，系统把学习者掌握度达标、教师交付确认、量规评价和返工周期分开记录，重复确认幂等返回
 - `POST /api/education/assignments/{assignmentId}/cancel`：布置者取消尚未完成的课程作业，取消后学习者不能再接受该作业
 - `GET /api/context/preview?query=...`：预览授权来源和引用
 - `GET/PUT/DELETE /api/context/embedding-config`：读取、保存或恢复当前组织的 Embedding 连接配置；密钥只返回掩码

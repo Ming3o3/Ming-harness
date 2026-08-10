@@ -422,6 +422,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  listLearningAssignmentEvaluations: (assignmentId) => request(
+    `/education/assignments/${encodeURIComponent(assignmentId)}/evaluations`),
   cancelLearningAssignment: (assignmentId) => request(
     `/education/assignments/${encodeURIComponent(assignmentId)}/cancel`, {
       method: 'POST',

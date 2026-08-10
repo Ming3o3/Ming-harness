@@ -7,8 +7,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** 汇总作业、任务、测评和触达事实，给业务闭环提供可验证的结果视图。 */
 @Service
@@ -21,13 +23,14 @@ public class EducationMetricsService {
     private final LearningAssignmentFeedbackRepository feedbackRepository;
     private final LearningAssignmentSubmissionRepository submissionRepository;
     private final AssessmentAttemptRepository assessmentRepository;
+    private final LearningAssignmentEvaluationRepository evaluationRepository;
 
     public EducationMetricsService(LearningAssignmentRepository assignmentRepository,
                                    LearningTaskRepository taskRepository,
                                    LearningTaskNotificationRepository notificationRepository,
                                    AssessmentAttemptRepository assessmentRepository) {
         this(assignmentRepository, taskRepository, notificationRepository, null, null, null,
-                assessmentRepository);
+                assessmentRepository, null);
     }
 
     /** 兼容已有组件测试和旧扩展调用方。 */
@@ -37,7 +40,7 @@ public class EducationMetricsService {
                                    LearningAssignmentNotificationRepository assignmentNotificationRepository,
                                    AssessmentAttemptRepository assessmentRepository) {
         this(assignmentRepository, taskRepository, notificationRepository,
-                assignmentNotificationRepository, null, null, assessmentRepository);
+                assignmentNotificationRepository, null, null, assessmentRepository, null);
     }
 
     public EducationMetricsService(LearningAssignmentRepository assignmentRepository,
@@ -47,7 +50,18 @@ public class EducationMetricsService {
                                    LearningAssignmentFeedbackRepository feedbackRepository,
                                    AssessmentAttemptRepository assessmentRepository) {
         this(assignmentRepository, taskRepository, notificationRepository,
-                assignmentNotificationRepository, feedbackRepository, null, assessmentRepository);
+                assignmentNotificationRepository, feedbackRepository, null, assessmentRepository, null);
+    }
+
+    public EducationMetricsService(LearningAssignmentRepository assignmentRepository,
+                                   LearningTaskRepository taskRepository,
+                                   LearningTaskNotificationRepository notificationRepository,
+                                   LearningAssignmentNotificationRepository assignmentNotificationRepository,
+                                   LearningAssignmentFeedbackRepository feedbackRepository,
+                                   LearningAssignmentSubmissionRepository submissionRepository,
+                                   AssessmentAttemptRepository assessmentRepository) {
+        this(assignmentRepository, taskRepository, notificationRepository, assignmentNotificationRepository,
+                feedbackRepository, submissionRepository, assessmentRepository, null);
     }
 
     @Autowired
@@ -57,7 +71,8 @@ public class EducationMetricsService {
                                    LearningAssignmentNotificationRepository assignmentNotificationRepository,
                                    LearningAssignmentFeedbackRepository feedbackRepository,
                                    LearningAssignmentSubmissionRepository submissionRepository,
-                                   AssessmentAttemptRepository assessmentRepository) {
+                                   AssessmentAttemptRepository assessmentRepository,
+                                   LearningAssignmentEvaluationRepository evaluationRepository) {
         this.assignmentRepository = assignmentRepository;
         this.taskRepository = taskRepository;
         this.notificationRepository = notificationRepository;
@@ -65,6 +80,7 @@ public class EducationMetricsService {
         this.feedbackRepository = feedbackRepository;
         this.submissionRepository = submissionRepository;
         this.assessmentRepository = assessmentRepository;
+        this.evaluationRepository = evaluationRepository;
     }
 
     @Transactional(readOnly = true)
@@ -146,6 +162,21 @@ public class EducationMetricsService {
         double averageMasteryGain = averageMasteryGain(
                 participantAssessments == null ? List.of() : participantAssessments);
 
+        List<LearningAssignmentEvaluation> evaluations = evaluationRepository == null
+                ? List.of() : evaluationRepository.findByTenantIdAndParticipantOrderByCreatedAtAsc(
+                tenantId, userId);
+        if (evaluations == null) evaluations = List.of();
+        Set<String> evaluatedAssignmentIds = new HashSet<>();
+        for (LearningAssignmentEvaluation evaluation : evaluations) {
+            evaluatedAssignmentIds.add(evaluation.getLearningAssignmentId());
+        }
+        double averageTeacherContentCorrectnessScore = averageTeacherScore(evaluations,
+                ScoreDimension.CONTENT_CORRECTNESS);
+        double averageTeacherEvidenceQualityScore = averageTeacherScore(evaluations,
+                ScoreDimension.EVIDENCE_QUALITY);
+        double averageTeacherTransferReadinessScore = averageTeacherScore(evaluations,
+                ScoreDimension.TRANSFER_READINESS);
+
         return new EducationMetricsView(
                 assignmentTotal, assignmentAccepted, assignmentCompleted,
                 assignmentSubmissionTotal, assignmentSubmissionCovered,
@@ -165,7 +196,11 @@ public class EducationMetricsService {
                 feedbackResolved, ratio(feedbackResolved, feedbackTotal),
                 feedbackAcknowledgementLatencySeconds, retriedTaskTotal, retriedTaskCompleted,
                 ratio(retriedTaskCompleted, retriedTaskTotal), averageMasteryGain,
-                ratio(correctReviewAssessmentTotal, reviewAssessmentTotal), assignmentRetryRequired);
+                ratio(correctReviewAssessmentTotal, reviewAssessmentTotal), assignmentRetryRequired,
+                evaluations.size(), evaluatedAssignmentIds.size(),
+                ratio(evaluatedAssignmentIds.size(), assignmentTotal),
+                averageTeacherContentCorrectnessScore, averageTeacherEvidenceQualityScore,
+                averageTeacherTransferReadinessScore);
     }
 
     private long averageAcknowledgementLatencySeconds(List<LearningAssignmentFeedback> feedbacks) {
@@ -188,6 +223,21 @@ public class EducationMetricsService {
         return perGoal.values().stream()
                 .mapToDouble(values -> values[1] - values[0])
                 .average().orElse(0.0);
+    }
+
+    private double averageTeacherScore(List<LearningAssignmentEvaluation> evaluations,
+                                       ScoreDimension dimension) {
+        return evaluations.stream().mapToInt(evaluation -> switch (dimension) {
+            case CONTENT_CORRECTNESS -> evaluation.getContentCorrectnessScore();
+            case EVIDENCE_QUALITY -> evaluation.getEvidenceQualityScore();
+            case TRANSFER_READINESS -> evaluation.getTransferReadinessScore();
+        }).average().orElse(0.0);
+    }
+
+    private enum ScoreDimension {
+        CONTENT_CORRECTNESS,
+        EVIDENCE_QUALITY,
+        TRANSFER_READINESS
     }
 
     private double ratio(long numerator, long denominator) {

@@ -44,6 +44,12 @@ public record EducationMetricsView(
         double retrySuccessRate,
         double averageMasteryGain,
         double reviewAssessmentAccuracyRate,
-        long assignmentRetryRequired
+        long assignmentRetryRequired,
+        long teacherEvaluationTotal,
+        long teacherEvaluationCoveredAssignmentTotal,
+        double teacherEvaluationCoverageRate,
+        double averageTeacherContentCorrectnessScore,
+        double averageTeacherEvidenceQualityScore,
+        double averageTeacherTransferReadinessScore
 ) {
 }

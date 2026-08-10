@@ -20,6 +20,7 @@ class EducationMetricsServiceTests {
         assertEquals(0.0, metrics.taskEvidenceCoverageRate());
         assertEquals(0.0, metrics.notificationReadRate());
         assertEquals(0.0, metrics.assessmentAccuracyRate());
+        assertEquals(0.0, metrics.teacherEvaluationCoverageRate());
     }
 
     @Test
@@ -148,6 +149,37 @@ class EducationMetricsServiceTests {
         assertEquals(0.5, metrics.retrySuccessRate());
         assertEquals(0.45, metrics.averageMasteryGain());
         assertEquals(0.5, metrics.reviewAssessmentAccuracyRate());
+    }
+
+    @Test
+    void shouldAggregateTeacherRubricCoverageAndScores() {
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        LearningTaskRepository tasks = mock(LearningTaskRepository.class);
+        LearningTaskNotificationRepository notifications = mock(LearningTaskNotificationRepository.class);
+        AssessmentAttemptRepository assessments = mock(AssessmentAttemptRepository.class);
+        LearningAssignmentEvaluationRepository evaluations = mock(LearningAssignmentEvaluationRepository.class);
+        LearningAssignmentEvaluation first = new LearningAssignmentEvaluation(
+                "tenant-a", "assignment-1", "course-1", "student-1", "teacher-1",
+                LearningAssignmentEvaluationDecision.RETURN, 3, 2, 4, "需要补充证据",
+                java.time.Instant.parse("2026-08-10T00:00:00Z"));
+        LearningAssignmentEvaluation second = new LearningAssignmentEvaluation(
+                "tenant-a", "assignment-1", "course-1", "student-1", "teacher-1",
+                LearningAssignmentEvaluationDecision.VERIFY, 5, 4, 3, "已完成返工",
+                java.time.Instant.parse("2026-08-10T00:05:00Z"));
+        when(assignments.countForParticipant("tenant-a", "student-1")).thenReturn(2L);
+        when(evaluations.findByTenantIdAndParticipantOrderByCreatedAtAsc("tenant-a", "student-1"))
+                .thenReturn(java.util.List.of(first, second));
+
+        EducationMetricsView metrics = new EducationMetricsService(
+                assignments, tasks, notifications, null, null, null, assessments, evaluations)
+                .summarize("tenant-a", "student-1");
+
+        assertEquals(2, metrics.teacherEvaluationTotal());
+        assertEquals(1, metrics.teacherEvaluationCoveredAssignmentTotal());
+        assertEquals(0.5, metrics.teacherEvaluationCoverageRate());
+        assertEquals(4.0, metrics.averageTeacherContentCorrectnessScore());
+        assertEquals(3.0, metrics.averageTeacherEvidenceQualityScore());
+        assertEquals(3.5, metrics.averageTeacherTransferReadinessScore());
     }
 
     private EducationMetricsService service() {

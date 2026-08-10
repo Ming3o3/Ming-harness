@@ -4,11 +4,13 @@ import org.mingharness.common.BusinessException;
 import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.education.api.LearningAssignmentReviewRequest;
 import org.mingharness.education.api.LearningAssignmentView;
+import org.mingharness.education.api.LearningAssignmentEvaluationView;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Locale;
 
 /** 将学习者达标事实转换为教师可确认的业务结果。 */
@@ -21,18 +23,19 @@ public class LearningAssignmentReviewService {
     private final LearningAssignmentSubmissionRepository submissionRepository;
     private final LearningAssignmentNotificationService notificationService;
     private final SensitiveDataSanitizer sanitizer;
+    private final LearningAssignmentEvaluationRepository evaluationRepository;
 
     public LearningAssignmentReviewService(LearningAssignmentRepository assignmentRepository,
                                            LearningAssignmentNotificationService notificationService,
                                            SensitiveDataSanitizer sanitizer) {
-        this(assignmentRepository, null, null, notificationService, sanitizer, null);
+        this(assignmentRepository, null, null, notificationService, sanitizer, null, null);
     }
 
     public LearningAssignmentReviewService(LearningAssignmentRepository assignmentRepository,
                                            LearningGoalRepository goalRepository,
                                            LearningAssignmentNotificationService notificationService,
                                            SensitiveDataSanitizer sanitizer) {
-        this(assignmentRepository, goalRepository, null, notificationService, sanitizer, null);
+        this(assignmentRepository, goalRepository, null, notificationService, sanitizer, null, null);
     }
 
     public LearningAssignmentReviewService(LearningAssignmentRepository assignmentRepository,
@@ -40,7 +43,17 @@ public class LearningAssignmentReviewService {
                                            LearningTaskRepository taskRepository,
                                            LearningAssignmentNotificationService notificationService,
                                            SensitiveDataSanitizer sanitizer) {
-        this(assignmentRepository, goalRepository, taskRepository, notificationService, sanitizer, null);
+        this(assignmentRepository, goalRepository, taskRepository, notificationService, sanitizer, null, null);
+    }
+
+    public LearningAssignmentReviewService(LearningAssignmentRepository assignmentRepository,
+                                           LearningGoalRepository goalRepository,
+                                           LearningTaskRepository taskRepository,
+                                           LearningAssignmentNotificationService notificationService,
+                                           SensitiveDataSanitizer sanitizer,
+                                           LearningAssignmentSubmissionRepository submissionRepository) {
+        this(assignmentRepository, goalRepository, taskRepository, notificationService, sanitizer,
+                submissionRepository, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -49,13 +62,15 @@ public class LearningAssignmentReviewService {
                                            LearningTaskRepository taskRepository,
                                            LearningAssignmentNotificationService notificationService,
                                            SensitiveDataSanitizer sanitizer,
-                                           LearningAssignmentSubmissionRepository submissionRepository) {
+                                           LearningAssignmentSubmissionRepository submissionRepository,
+                                           LearningAssignmentEvaluationRepository evaluationRepository) {
         this.assignmentRepository = assignmentRepository;
         this.goalRepository = goalRepository;
         this.taskRepository = taskRepository;
         this.submissionRepository = submissionRepository;
         this.notificationService = notificationService;
         this.sanitizer = sanitizer;
+        this.evaluationRepository = evaluationRepository;
     }
 
     @Transactional
@@ -85,6 +100,7 @@ public class LearningAssignmentReviewService {
             throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_ASSIGNMENT_REVIEW_NOT_PENDING",
                     "当前作业不在待教师确认状态");
         }
+        RubricScores rubric = rubric(request);
         try {
             if ("VERIFY".equals(decision)) {
                 if (submissionRepository != null
@@ -114,6 +130,15 @@ public class LearningAssignmentReviewService {
                     exception.getMessage());
         }
         LearningAssignment saved = assignmentRepository.save(assignment);
+        if (evaluationRepository != null) {
+            evaluationRepository.save(new LearningAssignmentEvaluation(
+                    tenantId, assignment.getId(), assignment.getCourseId(), assignment.getLearnerUserId(),
+                    teacherUserId,
+                    "VERIFY".equals(decision) ? LearningAssignmentEvaluationDecision.VERIFY
+                            : LearningAssignmentEvaluationDecision.RETURN,
+                    rubric.contentCorrectnessScore(), rubric.evidenceQualityScore(),
+                    rubric.transferReadinessScore(), cleanNullable(request.note()), Instant.now()));
+        }
         notificationService.resolveForAssignmentState(
                 tenantId, assignmentId, LearningAssignmentNotificationType.REVIEW_REQUIRED);
         if ("VERIFY".equals(decision)) {
@@ -123,6 +148,48 @@ public class LearningAssignmentReviewService {
         }
         notificationService.ensureForState(saved);
         return LearningAssignmentView.from(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public List<LearningAssignmentEvaluationView> evaluations(String tenantId, String userId,
+                                                             String assignmentId) {
+        LearningAssignment assignment = assignmentRepository.findByTenantIdAndId(tenantId, assignmentId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
+                        "LEARNING_ASSIGNMENT_NOT_FOUND", "课程作业不存在"));
+        if (!userId.equals(assignment.getTeacherUserId())
+                && !userId.equals(assignment.getLearnerUserId())) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "LEARNING_ASSIGNMENT_ACCESS_DENIED",
+                    "无权查看该课程作业评价");
+        }
+        if (evaluationRepository == null) return List.of();
+        return evaluationRepository.findByTenantIdAndLearningAssignmentIdOrderByCreatedAtDesc(
+                        tenantId, assignmentId).stream()
+                .map(LearningAssignmentEvaluationView::from).toList();
+    }
+
+    private RubricScores rubric(LearningAssignmentReviewRequest request) {
+        if (request == null || request.contentCorrectnessScore() == null
+                || request.evidenceQualityScore() == null
+                || request.transferReadinessScore() == null) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "LEARNING_ASSIGNMENT_RUBRIC_REQUIRED",
+                    "教师审核必须填写内容正确性、证据质量和迁移准备度评分");
+        }
+        RubricScores rubric = new RubricScores(request.contentCorrectnessScore(),
+                request.evidenceQualityScore(), request.transferReadinessScore());
+        if (!rubric.isValid()) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "LEARNING_ASSIGNMENT_RUBRIC_INVALID",
+                    "教师量规评分必须都在 1 到 5 之间");
+        }
+        return rubric;
+    }
+
+    private record RubricScores(int contentCorrectnessScore, int evidenceQualityScore,
+                                int transferReadinessScore) {
+        private boolean isValid() {
+            return contentCorrectnessScore >= 1 && contentCorrectnessScore <= 5
+                    && evidenceQualityScore >= 1 && evidenceQualityScore <= 5
+                    && transferReadinessScore >= 1 && transferReadinessScore <= 5;
+        }
     }
 
     private String clean(String value) {
