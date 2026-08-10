@@ -308,28 +308,28 @@ const commandSelectedIndex = ref(0)
 const commandPaletteInputRef = ref(null)
 const quickStartPrompts = [
   {
-    id: 'understand-project',
-    label: '理解项目结构',
-    description: '先浏览目录，再说明主要模块和入口。',
-    prompt: '请先浏览当前项目结构，说明主要模块、启动入口和关键依赖；先不要修改代码。',
+    id: 'map-lesson',
+    label: '梳理本章知识点',
+    description: '从课程来源提炼概念、前置知识和易错点。',
+    prompt: '请基于当前课程知识库，梳理本章的核心知识点、前置知识和常见误区，并给我一份适合当前学习阶段的学习路径。',
   },
   {
-    id: 'find-symbol',
-    label: '查找一个函数',
-    description: '定位函数或类，并解释它的调用链。',
-    prompt: '请在当前项目中定位这个函数或类并解释它的调用链：',
+    id: 'diagnose-mastery',
+    label: '诊断我的薄弱点',
+    description: '结合掌握度记录，找出下一步最值得补的知识点。',
+    prompt: '请结合我的学习者画像和已有掌握度记录，诊断当前最薄弱的知识点，并给出一个可执行的补强建议。',
   },
   {
-    id: 'review-changes',
-    label: '检查 Git 变更',
-    description: '总结当前改动、风险和待验证项。',
-    prompt: '请检查当前 Git 变更，按文件总结改动、潜在风险和建议验证项；不要修改代码。',
+    id: 'make-review-plan',
+    label: '制定复习计划',
+    description: '按课程约束和目标掌握度安排复习节奏。',
+    prompt: '请围绕当前学习目标制定一份分阶段复习计划，包含每阶段目标、练习方式、检查点和预计完成条件。',
   },
   {
-    id: 'fix-bug',
-    label: '修复一个 Bug',
-    description: '描述现象，Agent 会先定位再给出最小修复。',
-    prompt: '请帮我修复这个问题：\n\n',
+    id: 'start-practice',
+    label: '开始分层练习',
+    description: '从当前掌握度出发，生成一道带提示的练习题。',
+    prompt: '请根据我的当前掌握度和课程版本，出一道难度合适的练习题。先不要直接给答案，按需要提供分层提示，并在我作答后帮我复盘。',
   },
 ]
 const CHAT_DRAFT_STORAGE_KEY = 'mingHarnessChatDrafts'
@@ -1282,7 +1282,8 @@ function readChatMaxTurns() {
 
 function defaultChatEducation() {
   return {
-    enabled: false,
+    // 教育知识库 Agent 是本项目的主路径；没有画像时发送前会提示先完成配置。
+    enabled: true,
     learnerProfileId: '',
     learningGoalId: '',
     subject: '',
@@ -2507,6 +2508,10 @@ function scrollChatToBottom(force = false) {
 
 async function sendChatMessage() {
   if (!canSendChat.value) return
+  if (chatEducation.enabled && !chatEducation.learnerProfileId) {
+    errorMessage.value = '教育 Agent 需要先绑定学习者画像；请打开教育工作台创建或选择画像。'
+    return
+  }
   persistChatMaxTurns()
   clearMessages()
   chatSending.value = true
@@ -4696,7 +4701,7 @@ onBeforeUnmount(() => {
       <header class="chat-topbar">
         <div class="chat-brand">
           <div class="brand-mark" aria-hidden="true"><Sparkles :size="17" :stroke-width="1.8" /></div>
-          <div><strong>Ming Harness</strong><span>CODE AGENT WORKSPACE</span></div>
+          <div><strong>Ming Harness</strong><span>EDUCATION KNOWLEDGE AGENT</span></div>
         </div>
         <div class="chat-topbar-actions">
           <span class="chat-identity">{{ form.tenantId }} / {{ form.userId }}</span>
@@ -4708,7 +4713,7 @@ onBeforeUnmount(() => {
           </button>
           <button class="secondary-button chat-console-button top-config-button" type="button" title="配置大语言模型" @click="showModelSettings = true"><Settings2 :size="15" />大语言模型</button>
           <button class="secondary-button chat-console-button top-config-button" type="button" title="配置向量模型" @click="showEmbeddingSettings = true"><Settings2 :size="15" />向量模型</button>
-          <button class="secondary-button chat-console-button" type="button" title="打开运行控制台" @click="chatMode = false"><PanelRight :size="15" />运行控制台</button>
+          <button class="secondary-button chat-console-button" type="button" title="打开教育 Agent 运行追踪" @click="chatMode = false"><PanelRight :size="15" />运行追踪</button>
         </div>
       </header>
 
@@ -4719,17 +4724,20 @@ onBeforeUnmount(() => {
         <aside class="conversation-sidebar">
           <nav class="chat-primary-nav" aria-label="工作台导航">
             <button class="chat-primary-nav-item chat-primary-nav-item-primary" type="button" :disabled="chatLoading || chatSending || chatUploading" @click="createChatConversation">
-              <MessageSquarePlus :size="15" /><span>新对话</span><kbd>⌘N</kbd>
+              <MessageSquarePlus :size="15" /><span>新建学习对话</span><kbd>⌘N</kbd>
+            </button>
+            <button class="chat-primary-nav-item chat-primary-nav-item-education" type="button" @click="chatMode = false; navigateConsoleSection('education')">
+              <Sparkles :size="15" /><span>教育工作台</span>
             </button>
             <button class="chat-primary-nav-item" type="button" @click="chatMode = false; navigateConsoleSection('runtime')">
-              <CircleDot :size="15" /><span>运行中心</span>
+              <CircleDot :size="15" /><span>运行追踪</span>
             </button>
             <button class="chat-primary-nav-item" type="button" @click="chatMode = false; navigateConsoleSection('audit')">
-              <Check :size="15" /><span>审计追踪</span>
+              <Check :size="15" /><span>证据审计</span>
             </button>
           </nav>
           <div class="conversation-sidebar-heading">
-            <div><p class="eyebrow">RECENT CHATS</p><h2>最近对话</h2></div>
+            <div><p class="eyebrow">RECENT LEARNING</p><h2>最近学习对话</h2></div>
           </div>
           <label class="conversation-search">
             <span class="sr-only">搜索对话</span>
@@ -4752,7 +4760,7 @@ onBeforeUnmount(() => {
               <span class="conversation-row-icon" aria-hidden="true"><Bot :size="15" /></span>
               <span class="conversation-row-body">
                 <strong>{{ conversation.title }}</strong>
-                <small>{{ conversation.lastMessagePreview || '开始一轮新的 Agent 对话' }}</small>
+                <small>{{ conversation.lastMessagePreview || '开始一轮新的学习对话' }}</small>
                 <em>{{ conversation.messageCount }} 条消息 · {{ formatDate(conversation.updatedAt) }}</em>
               </span>
               <span v-if="conversation.activeRunId" class="conversation-running-dot" title="Agent 执行中"></span>
@@ -4783,29 +4791,33 @@ onBeforeUnmount(() => {
         <main class="chat-main">
           <div class="chat-heading">
             <div>
-              <p class="eyebrow">CONTINUOUS AGENT SESSION</p>
+              <p class="eyebrow">EDUCATION KNOWLEDGE SESSION</p>
               <form v-if="showConversationRename" class="conversation-rename-form" @submit.prevent="renameActiveConversation">
                 <input ref="conversationRenameInputRef" v-model="conversationRenameValue" maxlength="255" :disabled="conversationRenaming" aria-label="对话标题" @keydown.esc.prevent="cancelConversationRename" />
                 <button class="secondary-button" type="button" :disabled="conversationRenaming" @click="cancelConversationRename">取消</button>
                 <button class="primary-button" type="submit" :disabled="conversationRenaming">{{ conversationRenaming ? '保存中…' : '保存' }}</button>
               </form>
               <h1 v-else>{{ activeConversation?.conversation?.title || '新的对话' }}</h1>
-              <p class="chat-heading-meta">每一轮输入都会创建可追踪 Run，Agent 会在同一会话中继续理解上下文。</p>
+              <p class="chat-heading-meta">每一轮回答都会结合课程约束、知识库来源和学习者状态，并保留可追溯的形成性证据。</p>
             </div>
             <div class="chat-heading-actions">
+              <button class="chat-education-status-chip" type="button" title="打开教育工作台配置课程与学习者" @click="chatMode = false; navigateConsoleSection('education')">
+                <Sparkles :size="14" />
+                <span><small>当前学习上下文</small><strong>{{ activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` : '待配置学习者画像' }}</strong></span>
+              </button>
               <div class="chat-workspace-chip" :class="workspaceStatusClass" :title="workspaceDetail">
                 <i></i>
-                <span><small>LOCAL WORKSPACE</small><strong>{{ workspaceLabel }}</strong></span>
+                <span><small>KNOWLEDGE SPACE</small><strong>{{ workspaceLabel }}</strong></span>
               </div>
               <div v-if="desktopWorkspaceAvailable" class="chat-workspace-selector" title="该选择只会绑定下一次新建的会话">
                 <select v-model="newConversationWorkspaceId" :disabled="desktopWorkspacePicking || chatSending || chatUploading">
-                  <option value="">默认受控工作区</option>
+                  <option value="">默认知识材料空间</option>
                   <option v-for="item in localWorkspaces" :key="item.id" :value="item.id" :disabled="!item.accessible">
                     {{ item.displayName }}{{ item.accessible ? '' : '（不可访问）' }}
                   </option>
                 </select>
                 <button class="secondary-button chat-project-button" type="button" :disabled="desktopWorkspacePicking || chatSending || chatUploading" @click="chooseDesktopWorkspace">
-                  {{ desktopWorkspacePicking ? '选择中…' : '选择本地项目' }}
+                  {{ desktopWorkspacePicking ? '选择中…' : '导入知识材料' }}
                 </button>
               </div>
               <span
@@ -4819,7 +4831,7 @@ onBeforeUnmount(() => {
               <span v-if="pendingChatMessage" class="chat-run-pill" :class="statusClass(chatRunStatus)"><i></i>{{ statusLabel(chatRunStatus) }}</span>
               <span v-if="pendingChatMessage && chatRunActivity" class="chat-activity-pill" role="status" aria-live="polite">{{ chatRunActivity }}</span>
               <button v-if="activeConversationId && !showConversationRename" class="secondary-button" type="button" :disabled="conversationRenaming" @click="beginConversationRename">重命名</button>
-              <button v-if="workspaceExplorerAvailable" class="secondary-button" type="button" @click="toggleWorkspaceExplorer">{{ showChatWorkspace ? '隐藏文件' : '项目文件' }}</button>
+              <button v-if="workspaceExplorerAvailable" class="secondary-button" type="button" @click="toggleWorkspaceExplorer">{{ showChatWorkspace ? '隐藏材料' : '知识材料' }}</button>
               <button v-if="latestConversationRun(activeConversation)" class="secondary-button" type="button" @click="toggleRunPanel">{{ showChatRun ? '隐藏运行' : '查看运行' }}</button>
             </div>
           </div>
@@ -4828,8 +4840,17 @@ onBeforeUnmount(() => {
             <div v-if="chatLoading && !chatMessages.length" class="chat-empty-state">正在加载会话…</div>
             <div v-else-if="!chatMessages.length" class="chat-empty-state">
               <div class="chat-empty-mark" aria-hidden="true"><Sparkles :size="23" /></div>
-              <strong>从一个问题开始</strong>
-              <span>{{ workspaceConnected ? 'Agent 已连接当前项目，会先理解结构，再按需读取、修改和验证代码。' : '选择本地项目或附加文件后，Agent 会先理解上下文，再按需运行工具。' }}</span>
+              <strong>从一个学习问题开始</strong>
+              <span>{{ activeLearnerProfile ? `当前画像：${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel} · ${activeLearnerProfile.curriculumVersion}。Agent 会按掌握度选择讲解、练习或诊断方式。` : '先在教育工作台创建学习者画像，Agent 才能按课程版本和学习状态给出分层回答。' }}</span>
+              <div class="chat-learning-context-card" aria-label="当前学习上下文">
+                <div class="chat-learning-context-heading"><span>学习上下文</span><button type="button" @click="chatMode = false; navigateConsoleSection('education')">{{ activeLearnerProfile ? '调整画像' : '创建画像' }}</button></div>
+                <div v-if="activeLearnerProfile" class="chat-learning-context-body">
+                  <div class="chat-learning-profile-mark"><Sparkles :size="15" /></div>
+                  <div><strong>{{ activeLearnerProfile.subject }} · {{ activeLearnerProfile.gradeLevel }}</strong><small>{{ activeLearnerProfile.curriculumVersion }}<span v-if="activeLearningGoal"> · 目标：{{ activeLearningGoal.title }}</span></small></div>
+                  <span class="chat-learning-context-state" :class="{ ready: chatEducation.enabled }">{{ chatEducation.enabled ? '教育 Agent 已启用' : '通用模式' }}</span>
+                </div>
+                <div v-else class="chat-learning-context-empty">还没有学习者画像；完成配置后会自动带入学科、年级、课程版本和掌握度。</div>
+              </div>
               <div class="chat-quick-start" aria-label="快速开始">
                 <button
                   v-for="item in quickStartPrompts"
@@ -4845,7 +4866,7 @@ onBeforeUnmount(() => {
                 </button>
               </div>
               <button v-if="desktopWorkspaceAvailable && !workspaceConnected" class="chat-empty-workspace-action" type="button" :disabled="desktopWorkspacePicking || chatSending || chatUploading" @click="chooseDesktopWorkspace">
-                <FolderGit2 :size="14" />{{ desktopWorkspacePicking ? '选择中…' : '选择本地项目' }}
+                <FolderGit2 :size="14" />{{ desktopWorkspacePicking ? '选择中…' : '导入知识材料' }}
               </button>
             </div>
             <article
@@ -4857,7 +4878,7 @@ onBeforeUnmount(() => {
             >
               <div class="chat-avatar">{{ message.role === 'USER' ? '你' : 'MH' }}</div>
               <div class="chat-bubble-wrap">
-                <div class="chat-message-meta"><strong>{{ message.role === 'USER' ? '你' : 'Ming Agent' }}</strong><span>{{ formatDate(message.createdAt) }}</span></div>
+                <div class="chat-message-meta"><strong>{{ message.role === 'USER' ? '你' : 'Ming 教学 Agent' }}</strong><span>{{ formatDate(message.createdAt) }}</span></div>
                 <div class="chat-bubble" :class="messageStatusClass(message.status)">
                   <template v-if="message.role === 'ASSISTANT' && message.status === 'PENDING' && !message.content">
                     <span class="chat-thinking"><i></i><i></i><i></i>{{ chatRunActivity || messageStatusLabel(message.status) }}</span>
@@ -4941,18 +4962,18 @@ onBeforeUnmount(() => {
                 <button type="button" :aria-label="`移除 ${attachment.name}`" :disabled="chatSending || chatUploading" @click="removeChatAttachment(index)"><X :size="13" /></button>
               </span>
             </div>
-            <div v-if="showChatAgentSettings && activeConversationId" class="chat-agent-settings" aria-label="Agent 设置">
-              <div class="chat-agent-settings-heading"><div><strong>Agent 执行深度</strong><small>限制本轮最多执行的模型轮数，工具结果会继续计入同一 Run。</small></div><button type="button" aria-label="关闭 Agent 设置" @click="showChatAgentSettings = false"><X :size="14" /></button></div>
+            <div v-if="showChatAgentSettings && activeConversationId" class="chat-agent-settings" aria-label="教学 Agent 设置">
+              <div class="chat-agent-settings-heading"><div><strong>教学 Agent 设置</strong><small>控制本轮教学推理深度；课程约束、知识库来源和测评证据会继续计入同一 Run。</small></div><button type="button" aria-label="关闭教学 Agent 设置" @click="showChatAgentSettings = false"><X :size="14" /></button></div>
               <div class="chat-agent-settings-controls">
-                <label><span>模型轮数上限</span><input v-model.number="chatMaxTurns" type="number" min="1" max="1000" step="1" :disabled="chatSending || chatUploading" @change="persistChatMaxTurns" /></label>
-                <div class="chat-agent-presets" aria-label="Agent 深度预设">
+                <label><span>推理轮数上限</span><input v-model.number="chatMaxTurns" type="number" min="1" max="1000" step="1" :disabled="chatSending || chatUploading" @change="persistChatMaxTurns" /></label>
+                <div class="chat-agent-presets" aria-label="教学推理深度预设">
                   <button v-for="preset in [8, 24, 100, 1000]" :key="preset" type="button" :class="{ active: chatMaxTurns === preset }" :disabled="chatSending || chatUploading" @click="setChatMaxTurns(preset)">{{ preset === 1000 ? '平台上限' : `${preset} 轮` }}</button>
                 </div>
               </div>
               <div class="chat-education-settings">
                 <label class="chat-education-toggle">
                   <input v-model="chatEducation.enabled" type="checkbox" :disabled="chatSending || chatUploading" />
-                  <span><strong>教育知识库 Agent</strong><small>按课程版本、前置知识和学习者掌握度组织本轮回答</small></span>
+                  <span><strong>启用教育知识库 Agent</strong><small>按课程版本、前置知识和学习者掌握度组织回答，并在结束后形成测评证据</small></span>
                 </label>
                 <div v-if="chatEducation.enabled" class="chat-education-grid">
                   <label><span>学习者画像</span><select v-model="chatEducation.learnerProfileId" :disabled="chatSending || chatUploading" @change="selectChatLearnerProfile"><option value="">请选择画像</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>
@@ -4969,7 +4990,7 @@ onBeforeUnmount(() => {
               v-model="chatInput"
               rows="3"
               :disabled="chatSending || chatUploading || !activeConversationId"
-              placeholder="描述你的业务目标；可提问、分析项目或发起受控流程…"
+              placeholder="输入一道题、一个知识点或你的学习目标…"
               aria-label="输入消息"
               @input="handleChatInput"
               @keydown="handleChatKeydown"
@@ -4977,10 +4998,10 @@ onBeforeUnmount(() => {
             <div class="chat-composer-footer">
               <span class="chat-composer-hint">
                 <span class="chat-composer-hint-primary"><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行<span v-if="canCancelChat"> · <kbd>Esc</kbd> 停止</span></span>
-                <span class="chat-composer-hint-context">{{ desktopWorkspaceDropping ? '正在授权拖入的本地项目…' : workspaceConnected ? 'Agent 可直接操作本会话绑定的本地项目' : '文件夹导入后保留层级' }}</span>
+                <span class="chat-composer-hint-context">{{ desktopWorkspaceDropping ? '正在导入知识材料…' : chatEducation.enabled ? (activeLearnerProfile ? '已应用课程约束与学习者掌握度' : '请先创建学习者画像，再开始教育对话') : '当前为通用问答模式，可在教学设置中启用教育 Agent' }}</span>
               </span>
               <div class="chat-composer-actions">
-                <button class="secondary-button chat-agent-settings-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="showChatAgentSettings = !showChatAgentSettings"><Settings2 :size="14" /><span>Agent · {{ chatMaxTurns }} 轮</span></button>
+                <button class="secondary-button chat-agent-settings-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="showChatAgentSettings = !showChatAgentSettings"><Settings2 :size="14" /><span>教学设置 · {{ activeLearnerProfile ? activeLearnerProfile.subject : '未配置' }}</span></button>
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatAttachmentPicker"><Paperclip :size="14" /><span>附件</span></button>
                 <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="openChatFolderPicker"><FolderOpen :size="14" /><span>文件夹</span></button>
                 <button v-if="canCancelChat" class="secondary-button chat-stop-button" type="button" :disabled="chatCancellingRunId === pendingChatMessage?.runId" @click="cancelChatRun"><Square :size="14" /><span>{{ chatCancellingRunId === pendingChatMessage?.runId ? '处理中…' : (chatRunStatus === 'WAITING_APPROVAL' ? '撤回审批' : '停止') }}</span></button>
@@ -4992,8 +5013,8 @@ onBeforeUnmount(() => {
 
         <aside v-if="showChatWorkspace" class="chat-workspace-panel" :class="{ 'workspace-panel-expanded': workspaceFilePreview || workspaceFilePreviewLoading }">
           <div class="chat-run-panel-heading">
-            <div><p class="eyebrow">PROJECT EXPLORER</p><h2>项目文件</h2></div>
-            <button class="icon-button" type="button" aria-label="关闭项目文件" @click="showChatWorkspace = false"><X :size="15" /></button>
+            <div><p class="eyebrow">KNOWLEDGE MATERIALS</p><h2>知识材料</h2></div>
+            <button class="icon-button" type="button" aria-label="关闭知识材料" @click="showChatWorkspace = false"><X :size="15" /></button>
           </div>
           <div v-if="workspaceExplorerLoading && !workspaceExplorer" class="chat-run-empty">正在读取工作区目录…</div>
           <template v-else-if="workspaceExplorer">
@@ -5252,7 +5273,7 @@ onBeforeUnmount(() => {
         <div class="brand-mark" aria-hidden="true"><Sparkles :size="17" :stroke-width="1.8" /></div>
         <div>
           <strong>Ming Harness</strong>
-          <span>Agent Operations</span>
+          <span>Education Agent Operations</span>
         </div>
       </div>
       <div class="console-topbar-content">
@@ -5270,7 +5291,7 @@ onBeforeUnmount(() => {
           </button>
           <button class="secondary-button top-config-button" type="button" title="配置大语言模型" @click="showModelSettings = true"><Settings2 :size="15" />大语言模型</button>
           <button class="secondary-button top-config-button" type="button" title="配置向量模型" @click="showEmbeddingSettings = true"><Settings2 :size="15" />向量模型</button>
-          <button class="secondary-button" type="button" title="打开聊天工作台" @click="chatMode = true"><MessageSquarePlus :size="15" />聊天工作台</button>
+          <button class="secondary-button" type="button" title="打开学习对话" @click="chatMode = true"><MessageSquarePlus :size="15" />学习对话</button>
         </div>
       </div>
     </header>
@@ -5278,9 +5299,9 @@ onBeforeUnmount(() => {
     <div class="console-layout">
       <aside class="sidebar">
       <nav class="side-nav" aria-label="主导航">
-        <a class="nav-item" :class="{ active: activeConsoleSection === 'runtime' }" href="#runtime" :aria-current="activeConsoleSection === 'runtime' ? 'page' : undefined" @click.prevent="navigateConsoleSection('runtime')"><span class="nav-icon"><CircleDot :size="16" /></span>运行中心</a>
+        <a class="nav-item" :class="{ active: activeConsoleSection === 'runtime' }" href="#runtime" :aria-current="activeConsoleSection === 'runtime' ? 'page' : undefined" @click.prevent="navigateConsoleSection('runtime')"><span class="nav-icon"><CircleDot :size="16" /></span>运行追踪</a>
         <a class="nav-item" :class="{ active: activeConsoleSection === 'education' }" href="#education" :aria-current="activeConsoleSection === 'education' ? 'page' : undefined" @click.prevent="navigateConsoleSection('education')"><span class="nav-icon"><Sparkles :size="16" /></span>教育工作台</a>
-        <a class="nav-item" :class="{ active: activeConsoleSection === 'audit' }" href="#audit" :aria-current="activeConsoleSection === 'audit' ? 'page' : undefined" @click.prevent="navigateConsoleSection('audit')"><span class="nav-icon"><Check :size="16" /></span>审计追踪</a>
+        <a class="nav-item" :class="{ active: activeConsoleSection === 'audit' }" href="#audit" :aria-current="activeConsoleSection === 'audit' ? 'page' : undefined" @click.prevent="navigateConsoleSection('audit')"><span class="nav-icon"><Check :size="16" /></span>证据审计</a>
       </nav>
 
       <div class="sidebar-foot">
@@ -5393,7 +5414,7 @@ onBeforeUnmount(() => {
             <div class="agent-mode-controls">
               <label class="check-field">
                 <input v-model="form.agentMode" type="checkbox" />
-                <span>启用代码 Agent 多轮模式</span>
+                <span>启用多轮教学推理</span>
               </label>
               <label v-if="form.agentMode" class="turns-field">
                 <span>最大轮数</span>

@@ -1110,6 +1110,172 @@ h3 { margin: 0; font-size: 13px; }
 .chat-inline-monaco-diff .monaco-editor-host { width: 100%; min-height: 220px; }
 .chat-inline-monaco-diff small { display: block; margin: 0; border-top: 1px solid var(--line); padding: 6px 8px; color: var(--muted); font: 8px "DM Mono", monospace; }
 
+/* Education-first surface: the learning context stays visible without opening
+   the advanced Agent settings or the operations console. */
+.chat-brand .brand-mark {
+  border-color: var(--line);
+  background: var(--heading);
+  box-shadow: none;
+  color: var(--bg);
+}
+
+.chat-primary-nav-item-education {
+  border-color: rgba(76, 226, 213, .2);
+  background: rgba(76, 226, 213, .06);
+  color: var(--heading);
+}
+
+.chat-primary-nav-item-education svg {
+  color: var(--cyan);
+}
+
+.chat-education-status-chip {
+  display: inline-flex;
+  min-width: 170px;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(76, 226, 213, .25);
+  border-radius: 9px;
+  background: rgba(76, 226, 213, .06);
+  color: var(--cyan);
+  padding: 5px 9px;
+  text-align: left;
+  transition: border-color .16s ease, background .16s ease, transform .16s ease;
+}
+
+.chat-education-status-chip:hover {
+  border-color: rgba(76, 226, 213, .55);
+  background: rgba(76, 226, 213, .1);
+  transform: translateY(-1px);
+}
+
+.chat-education-status-chip > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.chat-education-status-chip small {
+  color: var(--muted);
+  font: 8px "DM Mono", monospace;
+  letter-spacing: .04em;
+}
+
+.chat-education-status-chip strong {
+  overflow: hidden;
+  color: var(--soft);
+  font-size: 9px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-learning-context-card {
+  display: grid;
+  gap: 9px;
+  width: min(100%, 620px);
+  margin-top: 8px;
+  border: 1px solid rgba(76, 226, 213, .2);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(76, 226, 213, .07), var(--panel));
+  padding: 11px 13px;
+  text-align: left;
+}
+
+.chat-learning-context-heading,
+.chat-learning-context-body {
+  display: flex;
+  align-items: center;
+}
+
+.chat-learning-context-heading {
+  justify-content: space-between;
+  color: var(--muted);
+  font: 8px "DM Mono", monospace;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.chat-learning-context-heading button {
+  border: 0;
+  background: transparent;
+  color: var(--cyan);
+  padding: 2px 0;
+  font: 9px "DM Mono", monospace;
+}
+
+.chat-learning-context-heading button:hover {
+  text-decoration: underline;
+}
+
+.chat-learning-context-body {
+  gap: 9px;
+}
+
+.chat-learning-profile-mark {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(76, 226, 213, .28);
+  border-radius: 9px;
+  background: rgba(76, 226, 213, .1);
+  color: var(--cyan);
+}
+
+.chat-learning-context-body > div:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.chat-learning-context-body strong {
+  overflow: hidden;
+  color: var(--heading);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-learning-context-body small {
+  overflow: hidden;
+  color: var(--muted);
+  font: 8px "DM Mono", monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-learning-context-state {
+  margin-left: auto;
+  border: 1px solid rgba(255, 182, 95, .25);
+  border-radius: 10px;
+  color: var(--orange);
+  padding: 4px 7px;
+  font: 8px "DM Mono", monospace;
+  white-space: nowrap;
+}
+
+.chat-learning-context-state.ready {
+  border-color: rgba(85, 214, 138, .28);
+  color: var(--green);
+}
+
+.chat-learning-context-empty {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+@media (max-width: 1080px) {
+  .chat-education-status-chip { min-width: 150px; }
+}
+
+@media (max-width: 720px) {
+  .chat-education-status-chip { width: 100%; }
+  .chat-learning-context-state { display: none; }
+}
+
 :root[data-theme="light"] .chat-bubble { box-shadow: 0 8px 24px rgba(45,62,90,.06); }
 :root[data-theme="light"] .chat-heading-meta { color: #75839b; }
 
