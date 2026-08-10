@@ -4,6 +4,7 @@ import org.mingharness.common.BusinessException;
 import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.education.api.EducationRunOptions;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,6 +25,7 @@ public class EducationRunConfigurationService {
     private final LearnerMasteryRepository masteryRepository;
     private final LearningGoalRepository goalRepository;
     private final LearningAssignmentRepository assignmentRepository;
+    private final LearningAssignmentFeedbackRepository feedbackRepository;
     private final LearningReviewPlanService reviewPlanService;
     private final SensitiveDataSanitizer sanitizer;
 
@@ -31,7 +33,7 @@ public class EducationRunConfigurationService {
     public EducationRunConfigurationService(LearnerProfileRepository profileRepository,
                                             LearnerMasteryRepository masteryRepository,
                                             SensitiveDataSanitizer sanitizer) {
-        this(profileRepository, masteryRepository, null, null, null, sanitizer);
+        this(profileRepository, masteryRepository, null, null, null, null, sanitizer);
     }
 
     /** 兼容已启用学习目标但尚未使用保持度复习的测试和扩展调用方。 */
@@ -39,7 +41,7 @@ public class EducationRunConfigurationService {
                                             LearnerMasteryRepository masteryRepository,
                                             LearningGoalRepository goalRepository,
                                             SensitiveDataSanitizer sanitizer) {
-        this(profileRepository, masteryRepository, goalRepository, null, null, sanitizer);
+        this(profileRepository, masteryRepository, goalRepository, null, null, null, sanitizer);
     }
 
     /** 兼容已接入保持度复习但尚未绑定课程作业的扩展调用方。 */
@@ -48,7 +50,18 @@ public class EducationRunConfigurationService {
                                             LearningGoalRepository goalRepository,
                                             LearningReviewPlanService reviewPlanService,
                                             SensitiveDataSanitizer sanitizer) {
-        this(profileRepository, masteryRepository, goalRepository, reviewPlanService, null, sanitizer);
+        this(profileRepository, masteryRepository, goalRepository, reviewPlanService, null, null, sanitizer);
+    }
+
+    /** 兼容已绑定课程作业但尚未接入教师干预的扩展调用方。 */
+    public EducationRunConfigurationService(LearnerProfileRepository profileRepository,
+                                            LearnerMasteryRepository masteryRepository,
+                                            LearningGoalRepository goalRepository,
+                                            LearningReviewPlanService reviewPlanService,
+                                            LearningAssignmentRepository assignmentRepository,
+                                            SensitiveDataSanitizer sanitizer) {
+        this(profileRepository, masteryRepository, goalRepository, reviewPlanService,
+                assignmentRepository, null, sanitizer);
     }
 
     @Autowired
@@ -57,11 +70,13 @@ public class EducationRunConfigurationService {
                                             LearningGoalRepository goalRepository,
                                             LearningReviewPlanService reviewPlanService,
                                             LearningAssignmentRepository assignmentRepository,
+                                            LearningAssignmentFeedbackRepository feedbackRepository,
                                             SensitiveDataSanitizer sanitizer) {
         this.profileRepository = profileRepository;
         this.masteryRepository = masteryRepository;
         this.goalRepository = goalRepository;
         this.assignmentRepository = assignmentRepository;
+        this.feedbackRepository = feedbackRepository;
         this.reviewPlanService = reviewPlanService;
         this.sanitizer = sanitizer;
     }
@@ -149,16 +164,35 @@ public class EducationRunConfigurationService {
                     "学习目标知识点与本次 Run 的目标知识点不一致");
         }
         String conceptKey = goal == null ? requestedConcept : goal.getConceptKey();
+        String assignmentInstructions = assignment == null ? null : assignment.getInstructions();
+        LearningAssignmentFeedback intervention = latestOpenIntervention(
+                tenantId, userId, assignment);
+        if (intervention != null) {
+            assignmentInstructions = assignmentInstructions + "\n教师当前干预（"
+                    + intervention.getAction().name() + "）：" + intervention.getMessage();
+        }
         return new EducationRunConfiguration(true, profile.getId(),
                 goal == null ? null : goal.getId(), assignment == null ? null : assignment.getId(),
                 assignment == null ? null : assignment.getTitle(),
-                assignment == null ? null : assignment.getInstructions(),
+                assignmentInstructions,
                 reviewPlan == null ? null : reviewPlan.getId(),
                 goal == null ? null : goal.getTitle(),
                 goal == null ? 0.0 : goal.getBaselineMastery(),
                 goal == null ? 0.0 : goal.getTargetMastery(),
                 clean(subject), clean(gradeLevel), clean(curriculumVersion), conceptKey,
                 minDifficulty, maxDifficulty, pedagogicalMode, masterySummary(tenantId, profile.getId()));
+    }
+
+    private LearningAssignmentFeedback latestOpenIntervention(String tenantId, String userId,
+                                                              LearningAssignment assignment) {
+        if (assignment == null || feedbackRepository == null) return null;
+        return feedbackRepository.findByTenantIdAndLearningAssignmentIdOrderByCreatedAtDesc(
+                        tenantId, assignment.getId(), PageRequest.of(0, 100)).stream()
+                .filter(feedback -> userId.equals(feedback.getLearnerUserId()))
+                .filter(feedback -> feedback.getStatus() == LearningAssignmentFeedbackStatus.OPEN)
+                .filter(feedback -> feedback.getAction() == LearningAssignmentFeedbackAction.REQUEST_EVIDENCE
+                        || feedback.getAction() == LearningAssignmentFeedbackAction.RECOMMEND_RETRY)
+                .findFirst().orElse(null);
     }
 
     private LearningAssignment resolveAssignment(String tenantId, String userId,

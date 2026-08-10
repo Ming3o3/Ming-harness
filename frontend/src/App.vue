@@ -2863,6 +2863,13 @@ function learningAssignmentFeedbackActionLabel(action) {
   }[action] || action || '反馈'
 }
 
+function learningAssignmentHasOpenIntervention(assignment) {
+  if (!assignment || assignment.learnerUserId !== form.userId) return false
+  return (learningAssignmentFeedbackMap.value[assignment.id] || [])
+    .some((feedback) => feedback.status === 'OPEN'
+      && ['REQUEST_EVIDENCE', 'RECOMMEND_RETRY'].includes(feedback.action))
+}
+
 function startLearningAssignmentFeedback(assignment) {
   if (!assignment?.id || assignment.teacherUserId !== form.userId) return
   learningAssignmentFeedbackForm.assignmentId = assignment.id
@@ -5560,7 +5567,7 @@ onBeforeUnmount(() => {
                     <details v-if="learningAssignmentFeedbackMap[assignment.id]?.length" class="learning-assessment-history"><summary>教师反馈（{{ learningAssignmentFeedbackMap[assignment.id].length }}）</summary><div v-for="feedback in learningAssignmentFeedbackMap[assignment.id].slice(0, 5)" :key="feedback.id"><span>{{ learningAssignmentFeedbackActionLabel(feedback.action) }}</span><span>{{ feedback.message }}<small v-if="feedback.suggestedDueAt"> · 截止 {{ formatDate(feedback.suggestedDueAt) }}</small></span><small>{{ feedback.status === 'ACKNOWLEDGED' ? '已确认' : '待确认' }} · {{ formatDate(feedback.createdAt) }}<button v-if="assignment.learnerUserId === form.userId && feedback.status === 'OPEN'" class="text-button" type="button" :disabled="learningAssignmentFeedbackAcknowledgingId === feedback.id" @click="acknowledgeLearningAssignmentFeedback(assignment, feedback)">确认</button></small></div></details>
                   </div>
                   <div class="learning-assignment-actions">
-                    <button v-if="assignment.learnerUserId === form.userId && assignment.status === 'ASSIGNED'" class="secondary-button" type="button" :disabled="learningAssignmentAcceptingId === assignment.id" @click="startLearningAssignment(assignment)">{{ learningAssignmentAcceptingId === assignment.id ? '启动中…' : '接受并开始学习' }}</button>
+                    <button v-if="assignment.learnerUserId === form.userId && (assignment.status === 'ASSIGNED' || (['ACCEPTED', 'OVERDUE'].includes(assignment.status) && learningAssignmentHasOpenIntervention(assignment)))" class="secondary-button" type="button" :disabled="learningAssignmentAcceptingId === assignment.id" @click="startLearningAssignment(assignment)">{{ learningAssignmentAcceptingId === assignment.id ? '启动中…' : (assignment.status === 'ASSIGNED' ? '接受并开始学习' : '按反馈继续学习') }}</button>
                     <button v-if="assignment.teacherUserId === form.userId && assignment.status !== 'CANCELLED'" class="text-button" type="button" @click="startLearningAssignmentFeedback(assignment)">写教师反馈</button>
                     <button v-if="assignment.teacherUserId === form.userId && ['ASSIGNED', 'ACCEPTED', 'OVERDUE'].includes(assignment.status)" class="text-button" type="button" @click="cancelLearningAssignment(assignment)">取消作业</button>
                   </div>

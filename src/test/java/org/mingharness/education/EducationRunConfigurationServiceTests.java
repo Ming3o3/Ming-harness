@@ -195,4 +195,46 @@ class EducationRunConfigurationServiceTests {
 
         assertEquals(assignment.getId(), configuration.learningAssignmentId());
     }
+
+    @Test
+    void shouldFreezeOpenTeacherInterventionIntoTheNextAssignmentRun() {
+        LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        LearningAssignmentFeedbackRepository feedbacks = mock(LearningAssignmentFeedbackRepository.class);
+        LearnerProfile profile = new LearnerProfile("tenant-a", "student-1", "数学",
+                "高中一年级", "人教A版", null, "zh-CN");
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", profile.getId(),
+                "掌握函数基础", "函数", 0.35, 0.8);
+        LearningAssignment assignment = new LearningAssignment("tenant-a", "teacher-1", "student-1",
+                "函数作业", "完成练习", "数学", "高中一年级", "人教A版", "函数", 0.8,
+                java.time.Instant.now().plusSeconds(3600));
+        assignment.accept(profile.getId(), goal.getId(), java.time.Instant.now());
+        LearningAssignmentFeedback feedback = new LearningAssignmentFeedback(
+                "tenant-a", assignment.getId(), "teacher-1", "student-1",
+                LearningAssignmentFeedbackAction.REQUEST_EVIDENCE,
+                "请补充函数定义域的判定依据", null, java.time.Instant.now());
+        when(assignments.findByTenantIdAndId("tenant-a", assignment.getId()))
+                .thenReturn(Optional.of(assignment));
+        when(goals.findByIdAndTenantIdAndUserId(goal.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(goal));
+        when(profiles.findByIdAndTenantIdAndUserId(profile.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(profile));
+        when(mastery.findByTenantIdAndLearnerProfileIdOrderByConceptKeyAsc("tenant-a", profile.getId()))
+                .thenReturn(List.of());
+        when(feedbacks.findByTenantIdAndLearningAssignmentIdOrderByCreatedAtDesc(
+                org.mockito.ArgumentMatchers.eq("tenant-a"),
+                org.mockito.ArgumentMatchers.eq(assignment.getId()),
+                org.mockito.ArgumentMatchers.any())).thenReturn(List.of(feedback));
+
+        EducationRunConfigurationService service = new EducationRunConfigurationService(
+                profiles, mastery, goals, null, assignments, feedbacks, new SensitiveDataSanitizer());
+        EducationRunConfiguration configuration = service.resolve("tenant-a", "student-1",
+                new EducationRunOptions(true, profile.getId(), goal.getId(), assignment.getId(), null,
+                        null, null, null, null, null, null, "PRACTICE"));
+
+        assertTrue(configuration.learningAssignmentInstructions().contains("教师当前干预"));
+        assertTrue(configuration.promptSummary().contains("请补充函数定义域的判定依据"));
+    }
 }
