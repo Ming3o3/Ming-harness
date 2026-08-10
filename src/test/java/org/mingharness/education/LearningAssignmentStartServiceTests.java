@@ -43,6 +43,10 @@ class LearningAssignmentStartServiceTests {
         assertEquals("goal-1", result.learningGoalId());
         assertEquals("conversation-1", result.conversation().conversation().id());
         verify(assignments).accept("tenant-a", "student-1", assignment.getId());
+        var requestCaptor = org.mockito.ArgumentCaptor.forClass(ExecuteLearningActionRequest.class);
+        verify(actions).execute(eq("tenant-a"), eq("student-1"), eq("goal-1"), requestCaptor.capture(),
+                eq("education.read,education.write"), eq("assignment-start-1"));
+        assertEquals(accepted.getId(), requestCaptor.getValue().learningAssignmentId());
     }
 
     @Test

@@ -3123,10 +3123,11 @@ async function startLearningAssignment(assignment) {
   learningAssignmentAcceptingId.value = assignment.id
   clearMessages()
   try {
+    const assignmentAttemptKey = `learning-assignment-${assignment.id}-${assignment.updatedAt || assignment.createdAt || assignment.status}`
     const started = await api.startLearningAssignment(
       assignment.id,
       { maxTurns: chatMaxTurns.value },
-      `learning-assignment-${assignment.id}`,
+      assignmentAttemptKey,
     )
     activeConversation.value = started.conversation
     conversations.value = [started.conversation.conversation, ...conversations.value
@@ -3221,7 +3222,8 @@ async function startLearningTask(task) {
   learningTaskStartingId.value = task.id
   clearMessages()
   try {
-    const result = await api.startLearningTask(task.id, { maxTurns: chatMaxTurns.value }, `learning-task-${task.id}`)
+    const taskAttemptKey = `learning-task-${task.id}-${task.updatedAt || task.createdAt || task.status}`
+    const result = await api.startLearningTask(task.id, { maxTurns: chatMaxTurns.value }, taskAttemptKey)
     activeConversation.value = result.conversation
     conversations.value = [result.conversation.conversation, ...conversations.value
       .filter((item) => item.id !== result.conversation.conversation.id)]

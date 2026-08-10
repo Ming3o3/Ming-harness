@@ -22,6 +22,7 @@ class LearningAssignmentFeedbackServiceTests {
         LearningAssignmentRepository assignmentRepository = mock(LearningAssignmentRepository.class);
         LearningAssignmentNotificationService notifications = mock(LearningAssignmentNotificationService.class);
         LearningAssignment assignment = assignment();
+        assignment.accept("profile-1", "goal-1", Instant.now());
         when(assignments.getForParticipant("tenant-a", "teacher-1", assignment.getId()))
                 .thenReturn(assignment);
         when(feedbacks.save(any(LearningAssignmentFeedback.class)))
@@ -34,7 +35,55 @@ class LearningAssignmentFeedbackServiceTests {
 
         assertEquals("REQUEST_EVIDENCE", view.action());
         assertEquals("OPEN", view.status());
+        assertEquals(LearningAssignmentStatus.AWAITING_EVIDENCE, assignment.getStatus());
+        verify(notifications).ensureForState(assignment);
         verify(notifications).ensureForFeedback(any(LearningAssignmentFeedback.class), org.mockito.ArgumentMatchers.eq(assignment));
+    }
+
+    @Test
+    void shouldRejectRetryRecommendationAfterAssignmentCompletion() {
+        LearningAssignmentFeedbackRepository feedbacks = mock(LearningAssignmentFeedbackRepository.class);
+        LearningAssignmentService assignments = mock(LearningAssignmentService.class);
+        LearningAssignmentRepository assignmentRepository = mock(LearningAssignmentRepository.class);
+        LearningAssignmentNotificationService notifications = mock(LearningAssignmentNotificationService.class);
+        LearningAssignment assignment = assignment();
+        assignment.accept("profile-1", "goal-1", Instant.now());
+        assignment.complete(Instant.now());
+        when(assignments.getForParticipant("tenant-a", "teacher-1", assignment.getId()))
+                .thenReturn(assignment);
+
+        LearningAssignmentFeedbackService service = new LearningAssignmentFeedbackService(
+                feedbacks, assignments, assignmentRepository, notifications,
+                new org.mingharness.common.SensitiveDataSanitizer());
+        var exception = assertThrows(org.mingharness.common.BusinessException.class, () -> service.create(
+                "tenant-a", "teacher-1", assignment.getId(),
+                new LearningAssignmentFeedbackRequest("RECOMMEND_RETRY", "请重新学习。", null)));
+
+        assertEquals("ASSIGNMENT_FEEDBACK_ACTION_CONFLICT", exception.getCode());
+    }
+
+    @Test
+    void shouldReopenOverdueAssignmentForTeacherRecommendedRetry() {
+        LearningAssignmentFeedbackRepository feedbacks = mock(LearningAssignmentFeedbackRepository.class);
+        LearningAssignmentService assignments = mock(LearningAssignmentService.class);
+        LearningAssignmentRepository assignmentRepository = mock(LearningAssignmentRepository.class);
+        LearningAssignmentNotificationService notifications = mock(LearningAssignmentNotificationService.class);
+        LearningAssignment assignment = assignment();
+        assignment.accept("profile-1", "goal-1", Instant.now().minusSeconds(100));
+        assignment.markOverdue(Instant.now());
+        when(assignments.getForParticipant("tenant-a", "teacher-1", assignment.getId()))
+                .thenReturn(assignment);
+        when(feedbacks.save(any(LearningAssignmentFeedback.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        LearningAssignmentFeedbackService service = new LearningAssignmentFeedbackService(
+                feedbacks, assignments, assignmentRepository, notifications,
+                new org.mingharness.common.SensitiveDataSanitizer());
+        service.create("tenant-a", "teacher-1", assignment.getId(),
+                new LearningAssignmentFeedbackRequest("RECOMMEND_RETRY", "请重新完成并补充作答依据。", null));
+
+        assertEquals(LearningAssignmentStatus.AWAITING_EVIDENCE, assignment.getStatus());
+        verify(assignmentRepository).save(assignment);
     }
 
     @Test

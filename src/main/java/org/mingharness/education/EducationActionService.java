@@ -83,7 +83,9 @@ public class EducationActionService {
         }
 
         EducationRunOptions education = new EducationRunOptions(
-                true, profile.getId(), goal.getId(), reviewPlan == null ? null : reviewPlan.getId(),
+                true, profile.getId(), goal.getId(),
+                normalize(request == null ? null : request.learningAssignmentId()),
+                reviewPlan == null ? null : reviewPlan.getId(),
                 profile.getSubject(), profile.getGradeLevel(),
                 profile.getCurriculumVersion(), goal.getConceptKey(), null, null,
                 pedagogicalMode(recommendation.nextActionType()));

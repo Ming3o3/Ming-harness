@@ -51,6 +51,19 @@ public class LearningAssignmentFeedbackService {
             throw new BusinessException(HttpStatus.CONFLICT, "ASSIGNMENT_FEEDBACK_ACTION_CONFLICT",
                     "已完成的作业不能要求补充形成性证据，请改用普通反馈或建议保持度复习");
         }
+        if (action == LearningAssignmentFeedbackAction.RECOMMEND_RETRY
+                && assignment.getStatus() == LearningAssignmentStatus.COMPLETED) {
+            throw new BusinessException(HttpStatus.CONFLICT, "ASSIGNMENT_FEEDBACK_ACTION_CONFLICT",
+                    "已完成的作业不能重新启动形成性学习，请改用普通反馈或等待保持度复习");
+        }
+        if ((action == LearningAssignmentFeedbackAction.REQUEST_EVIDENCE
+                || action == LearningAssignmentFeedbackAction.RECOMMEND_RETRY)
+                && (assignment.getStatus() == LearningAssignmentStatus.ACCEPTED
+                || assignment.getStatus() == LearningAssignmentStatus.OVERDUE)) {
+            assignment.awaitEvidence(Instant.now());
+            assignmentRepository.save(assignment);
+            notificationService.ensureForState(assignment);
+        }
         if (action == LearningAssignmentFeedbackAction.RESCHEDULE) {
             if (suggestedDueAt == null) {
                 throw new BusinessException(HttpStatus.BAD_REQUEST, "ASSIGNMENT_FEEDBACK_DUE_REQUIRED",

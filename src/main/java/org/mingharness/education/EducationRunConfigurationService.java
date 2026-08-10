@@ -81,7 +81,7 @@ public class EducationRunConfigurationService {
         this.sanitizer = sanitizer;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public EducationRunConfiguration resolve(String tenantId, String userId, EducationRunOptions options) {
         if (options == null || !options.isEnabled()) {
             return EducationRunConfiguration.disabled();
@@ -110,7 +110,8 @@ public class EducationRunConfigurationService {
             assignment = assignmentRepository
                     .findByTenantIdAndLearnerUserIdAndLearningGoalIdOrderByCreatedAtDesc(
                             tenantId, userId, goal.getId()).stream().findFirst().orElse(null);
-            validateAssignmentState(assignment);
+            assignment = refreshOverdueState(assignment);
+            validateAssignmentState(tenantId, userId, assignment);
         }
         if (assignment != null && goal != null) {
             if (!goal.getId().equals(assignment.getLearningGoalId())
@@ -168,7 +169,8 @@ public class EducationRunConfigurationService {
         LearningAssignmentFeedback intervention = latestOpenIntervention(
                 tenantId, userId, assignment);
         if (intervention != null) {
-            assignmentInstructions = assignmentInstructions + "\n教师当前干预（"
+            assignmentInstructions = (assignmentInstructions == null ? "" : assignmentInstructions)
+                    + "\n教师当前干预（"
                     + intervention.getAction().name() + "）：" + intervention.getMessage();
         }
         return new EducationRunConfiguration(true, profile.getId(),
@@ -189,7 +191,8 @@ public class EducationRunConfigurationService {
         return feedbackRepository.findByTenantIdAndLearningAssignmentIdOrderByCreatedAtDesc(
                         tenantId, assignment.getId(), PageRequest.of(0, 100)).stream()
                 .filter(feedback -> userId.equals(feedback.getLearnerUserId()))
-                .filter(feedback -> feedback.getStatus() == LearningAssignmentFeedbackStatus.OPEN)
+                .filter(feedback -> feedback.getStatus() == LearningAssignmentFeedbackStatus.OPEN
+                        || feedback.getStatus() == LearningAssignmentFeedbackStatus.ACKNOWLEDGED)
                 .filter(feedback -> feedback.getAction() == LearningAssignmentFeedbackAction.REQUEST_EVIDENCE
                         || feedback.getAction() == LearningAssignmentFeedbackAction.RECOMMEND_RETRY)
                 .findFirst().orElse(null);
@@ -210,7 +213,8 @@ public class EducationRunConfigurationService {
             throw new BusinessException(HttpStatus.FORBIDDEN, "LEARNING_ASSIGNMENT_LEARNER_ONLY",
                     "只有作业学习者可以使用该作业创建教育 Run");
         }
-        validateAssignmentState(assignment);
+        assignment = refreshOverdueState(assignment);
+        validateAssignmentState(tenantId, userId, assignment);
         if (requestedGoalId != null && !requestedGoalId.isBlank()
                 && !requestedGoalId.trim().equals(assignment.getLearningGoalId())) {
             throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_ASSIGNMENT_GOAL_MISMATCH",
@@ -223,16 +227,39 @@ public class EducationRunConfigurationService {
         return assignment;
     }
 
-    private void validateAssignmentState(LearningAssignment assignment) {
+    private void validateAssignmentState(String tenantId, String userId, LearningAssignment assignment) {
         if (assignment == null) return;
         if (assignment.getStatus() == LearningAssignmentStatus.ASSIGNED) {
             throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_ASSIGNMENT_NOT_ACCEPTED",
                     "课程作业尚未被学习者接受，不能创建教育 Run");
         }
+        if (assignment.getStatus() == LearningAssignmentStatus.OVERDUE) {
+            if (hasEffectiveIntervention(tenantId, userId, assignment)) return;
+            throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_ASSIGNMENT_OVERDUE",
+                    "课程作业已逾期，必须先由教师重新安排截止时间或发起明确的重试干预");
+        }
         if (assignment.getStatus() == LearningAssignmentStatus.CANCELLED) {
             throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_ASSIGNMENT_CANCELLED",
                     "已取消的课程作业不能创建教育 Run");
         }
+    }
+
+    private LearningAssignment refreshOverdueState(LearningAssignment assignment) {
+        if (assignment == null || !assignment.isOverdue(java.time.Instant.now())) return assignment;
+        assignment.markOverdue(java.time.Instant.now());
+        return assignmentRepository.save(assignment);
+    }
+
+    private boolean hasEffectiveIntervention(String tenantId, String userId,
+                                             LearningAssignment assignment) {
+        if (feedbackRepository == null || assignment == null) return false;
+        return feedbackRepository.findByTenantIdAndLearningAssignmentIdOrderByCreatedAtDesc(
+                        tenantId, assignment.getId(), PageRequest.of(0, 100)).stream()
+                .filter(feedback -> userId.equals(feedback.getLearnerUserId()))
+                .filter(feedback -> feedback.getStatus() == LearningAssignmentFeedbackStatus.OPEN
+                        || feedback.getStatus() == LearningAssignmentFeedbackStatus.ACKNOWLEDGED)
+                .anyMatch(feedback -> feedback.getAction() == LearningAssignmentFeedbackAction.REQUEST_EVIDENCE
+                        || feedback.getAction() == LearningAssignmentFeedbackAction.RECOMMEND_RETRY);
     }
 
     private LearningGoal resolveGoal(String tenantId, String userId, String goalId, boolean allowCompleted) {

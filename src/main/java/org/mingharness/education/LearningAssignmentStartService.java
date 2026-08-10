@@ -15,11 +15,20 @@ public class LearningAssignmentStartService {
 
     private final LearningAssignmentService assignmentService;
     private final EducationActionService actionService;
+    private final LearningAssignmentFeedbackRepository feedbackRepository;
 
     public LearningAssignmentStartService(LearningAssignmentService assignmentService,
                                           EducationActionService actionService) {
+        this(assignmentService, actionService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public LearningAssignmentStartService(LearningAssignmentService assignmentService,
+                                          EducationActionService actionService,
+                                          LearningAssignmentFeedbackRepository feedbackRepository) {
         this.assignmentService = assignmentService;
         this.actionService = actionService;
+        this.feedbackRepository = feedbackRepository;
     }
 
     @Transactional
@@ -38,6 +47,11 @@ public class LearningAssignmentStartService {
             throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_ASSIGNMENT_NOT_STARTABLE",
                     "当前课程作业不能开始新的学习 Run");
         }
+        if (assignment.getStatus() == LearningAssignmentStatus.OVERDUE
+                && !hasOpenRetryIntervention(tenantId, assignment)) {
+            throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_ASSIGNMENT_OVERDUE",
+                    "课程作业已逾期，必须先由教师重新安排截止时间或发起明确的重试干预");
+        }
         if (assignment.getStatus() == LearningAssignmentStatus.ASSIGNED) {
             assignmentService.accept(tenantId, learnerUserId, assignmentId);
             assignment = assignmentService.getForParticipant(tenantId, learnerUserId, assignmentId);
@@ -46,11 +60,26 @@ public class LearningAssignmentStartService {
             throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_ASSIGNMENT_GOAL_REQUIRED",
                     "课程作业尚未建立学习目标");
         }
+        ExecuteLearningActionRequest effectiveRequest = request == null
+                ? new ExecuteLearningActionRequest(null, null, null, assignment.getId())
+                : new ExecuteLearningActionRequest(request.conversationId(), request.modelName(),
+                        request.maxTurns(), assignment.getId());
         ConversationDetail conversation = actionService.execute(
-                tenantId, learnerUserId, assignment.getLearningGoalId(), request,
+                tenantId, learnerUserId, assignment.getLearningGoalId(), effectiveRequest,
                 permissions, idempotencyKey);
         return new LearningAssignmentStartView(
                 LearningAssignmentView.from(assignment), assignment.getLearnerProfileId(),
                 assignment.getLearningGoalId(), conversation);
+    }
+
+    private boolean hasOpenRetryIntervention(String tenantId, LearningAssignment assignment) {
+        if (feedbackRepository == null) return false;
+        return feedbackRepository.findByTenantIdAndLearningAssignmentIdOrderByCreatedAtDesc(
+                        tenantId, assignment.getId(),
+                        org.springframework.data.domain.PageRequest.of(0, 100)).stream()
+                .anyMatch(feedback -> (feedback.getStatus() == LearningAssignmentFeedbackStatus.OPEN
+                        || feedback.getStatus() == LearningAssignmentFeedbackStatus.ACKNOWLEDGED)
+                        && (feedback.getAction() == LearningAssignmentFeedbackAction.RECOMMEND_RETRY
+                        || feedback.getAction() == LearningAssignmentFeedbackAction.REQUEST_EVIDENCE));
     }
 }
