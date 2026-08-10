@@ -57,6 +57,17 @@ const learningAssignments = ref([])
 const learningAssignmentProgressMap = ref({})
 const learningAssignmentEvidenceMap = ref({})
 const learningAssignmentFeedbackMap = ref({})
+const educationCourses = ref([])
+const activeEducationCourseId = ref('')
+const educationCourseEnrollments = ref([])
+const educationCourseProgress = ref(null)
+const educationCourseLoading = ref(false)
+const educationCourseSaving = ref(false)
+const educationCourseRosterSaving = ref(false)
+const educationCourseAssignmentSaving = ref(false)
+const educationCourseActionId = ref('')
+const learningAssignmentCourseFilter = ref('')
+const learningAssignmentLearnerFilter = ref('')
 const educationMetrics = ref(null)
 const learningTaskLoading = ref(false)
 const learningTaskStartingId = ref('')
@@ -79,6 +90,23 @@ const learningAssignmentForm = reactive({
   subject: '',
   gradeLevel: '',
   curriculumVersion: '',
+  conceptKey: '',
+  targetMastery: '0.8',
+  dueAt: '',
+})
+const educationCourseForm = reactive({
+  code: '',
+  title: '',
+  subject: '数学',
+  gradeLevel: '高中一年级',
+  curriculumVersion: '人教A版',
+})
+const educationCourseEnrollmentForm = reactive({
+  learnerUserId: '',
+})
+const educationCourseAssignmentForm = reactive({
+  title: '',
+  instructions: '',
   conceptKey: '',
   targetMastery: '0.8',
   dueAt: '',
@@ -604,6 +632,22 @@ const selectedAllowedToolsSummary = computed(() => {
   return selected.length === 1
     ? `已选择：${selected[0]}`
     : `已选择 ${selected.length} 项：${selected.join('、')}`
+})
+
+const activeEducationCourse = computed(() => educationCourses.value
+  .find((course) => course.id === activeEducationCourseId.value) || null)
+const activeEducationCourseIsOwner = computed(() => Boolean(
+  activeEducationCourse.value && activeEducationCourse.value.ownerUserId === form.userId,
+))
+const visibleLearningAssignments = computed(() => {
+  let entries = learningAssignments.value
+  if (learningAssignmentCourseFilter.value) {
+    entries = entries.filter((assignment) => assignment.courseId === learningAssignmentCourseFilter.value)
+  }
+  if (learningAssignmentLearnerFilter.value) {
+    entries = entries.filter((assignment) => assignment.learnerUserId === learningAssignmentLearnerFilter.value)
+  }
+  return entries.slice(0, 8)
 })
 
 function toggleAllAllowedTools() {
@@ -2673,13 +2717,14 @@ async function loadDashboard() {
 
 async function loadEducationData() {
   try {
-    const [sources, profiles, goals, tasks, assignments, metrics] = await Promise.all([
+    const [sources, profiles, goals, tasks, assignments, metrics, courses] = await Promise.all([
       api.listEducationSources(),
       api.listLearnerProfiles(),
       api.listLearningGoals(),
       api.listLearningTasks(),
       api.listLearningAssignments(),
       api.getEducationMetrics(),
+      api.listEducationCourses(),
     ])
     educationSources.value = sources
     learnerProfiles.value = profiles
@@ -2687,6 +2732,7 @@ async function loadEducationData() {
     learningTasks.value = tasks
     learningAssignments.value = assignments
     educationMetrics.value = metrics
+    educationCourses.value = courses || []
     const progressEntries = await Promise.all(assignments.slice(0, 20).map(async (assignment) => {
       try {
         return [assignment.id, await api.getLearningAssignmentProgress(assignment.id)]
@@ -2732,11 +2778,195 @@ async function loadEducationData() {
       || goals.find((goal) => goal.status === 'ACTIVE')
       || goals[0]
     if (nextGoal) await selectLearningGoal(nextGoal, false)
+    const ownerCourses = educationCourses.value.filter((course) => course.ownerUserId === form.userId)
+    const nextCourse = ownerCourses.find((course) => course.id === activeEducationCourseId.value)
+      || ownerCourses.find((course) => course.status === 'ACTIVE')
+      || ownerCourses[0]
+    if (nextCourse) {
+      await loadEducationCourseWorkspace(nextCourse.id)
+    } else {
+      activeEducationCourseId.value = ''
+      educationCourseEnrollments.value = []
+      educationCourseProgress.value = null
+    }
     educationError.value = ''
   } catch (error) {
     // 教育权限是可选的；不应让没有教育权限的通用 Agent 用户无法打开控制台。
     educationError.value = errorText(error)
   }
+}
+
+async function loadEducationCourseWorkspace(courseId) {
+  const course = educationCourses.value.find((item) => item.id === courseId)
+  if (!course || course.ownerUserId !== form.userId) {
+    activeEducationCourseId.value = course?.id || ''
+    educationCourseEnrollments.value = []
+    educationCourseProgress.value = null
+    return
+  }
+  activeEducationCourseId.value = course.id
+  educationCourseLoading.value = true
+  try {
+    const [enrollments, progress] = await Promise.all([
+      api.listEducationCourseEnrollments(course.id),
+      api.getEducationCourseProgress(course.id),
+    ])
+    if (activeEducationCourseId.value === course.id) {
+      educationCourseEnrollments.value = enrollments || []
+      educationCourseProgress.value = progress || null
+    }
+  } catch (error) {
+    educationCourseEnrollments.value = []
+    educationCourseProgress.value = null
+    educationError.value = errorText(error)
+  } finally {
+    educationCourseLoading.value = false
+  }
+}
+
+async function selectEducationCourse(course) {
+  if (!course) return
+  activeEducationCourseId.value = course.id
+  learningAssignmentCourseFilter.value = course.id
+  learningAssignmentLearnerFilter.value = ''
+  await loadEducationCourseWorkspace(course.id)
+  noticeMessage.value = `已打开课程：${course.title}`
+}
+
+async function createEducationCourse() {
+  if (educationCourseSaving.value
+    || !educationCourseForm.code.trim()
+    || !educationCourseForm.title.trim()
+    || !educationCourseForm.subject.trim()
+    || !educationCourseForm.gradeLevel.trim()
+    || !educationCourseForm.curriculumVersion.trim()) return
+  clearMessages()
+  educationCourseSaving.value = true
+  try {
+    const course = await api.createEducationCourse({
+      code: educationCourseForm.code.trim(),
+      title: educationCourseForm.title.trim(),
+      subject: educationCourseForm.subject.trim(),
+      gradeLevel: educationCourseForm.gradeLevel.trim(),
+      curriculumVersion: educationCourseForm.curriculumVersion.trim(),
+    })
+    educationCourses.value = [course, ...educationCourses.value.filter((item) => item.id !== course.id)]
+    educationCourseForm.code = ''
+    educationCourseForm.title = ''
+    await loadEducationCourseWorkspace(course.id)
+    noticeMessage.value = `课程“${course.title}”已创建，可以开始维护名单。`
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    educationCourseSaving.value = false
+  }
+}
+
+async function enrollEducationLearner() {
+  const course = activeEducationCourse.value
+  const learnerUserId = educationCourseEnrollmentForm.learnerUserId.trim()
+  if (!course || !activeEducationCourseIsOwner.value || !learnerUserId
+    || educationCourseRosterSaving.value) return
+  clearMessages()
+  educationCourseRosterSaving.value = true
+  try {
+    await api.enrollEducationLearner(course.id, { learnerUserId })
+    educationCourseEnrollmentForm.learnerUserId = ''
+    await loadEducationCourseWorkspace(course.id)
+    await loadEducationData()
+    noticeMessage.value = `已将 ${learnerUserId} 加入课程名单。`
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    educationCourseRosterSaving.value = false
+  }
+}
+
+async function removeEducationLearner(enrollment) {
+  const course = activeEducationCourse.value
+  if (!course || !activeEducationCourseIsOwner.value || !enrollment?.learnerUserId
+    || educationCourseActionId.value) return
+  if (!window.confirm(`确认将 ${enrollment.learnerUserId} 移出课程名单吗？`)) return
+  educationCourseActionId.value = enrollment.learnerUserId
+  clearMessages()
+  try {
+    await api.removeEducationLearner(course.id, enrollment.learnerUserId)
+    await loadEducationCourseWorkspace(course.id)
+    await loadEducationData()
+    noticeMessage.value = `已将 ${enrollment.learnerUserId} 移出课程名单。`
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    educationCourseActionId.value = ''
+  }
+}
+
+async function archiveEducationCourse(course) {
+  if (!course || course.ownerUserId !== form.userId || educationCourseActionId.value) return
+  if (!window.confirm(`确认归档课程“${course.title}”吗？归档后不能再加名单或布置新作业。`)) return
+  educationCourseActionId.value = course.id
+  clearMessages()
+  try {
+    const archived = await api.archiveEducationCourse(course.id)
+    educationCourses.value = educationCourses.value.map((item) => item.id === archived.id ? archived : item)
+    await loadEducationData()
+    noticeMessage.value = `课程“${course.title}”已归档，历史证据仍保留。`
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    educationCourseActionId.value = ''
+  }
+}
+
+async function assignEducationCourse() {
+  const course = activeEducationCourse.value
+  if (!course || !activeEducationCourseIsOwner.value || course.status !== 'ACTIVE'
+    || educationCourseAssignmentSaving.value
+    || !educationCourseAssignmentForm.title.trim()
+    || !educationCourseAssignmentForm.instructions.trim()
+    || !educationCourseAssignmentForm.conceptKey.trim()) return
+  clearMessages()
+  educationCourseAssignmentSaving.value = true
+  try {
+    const idempotencyKey = `course-${course.id}-${Date.now()}-${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`
+    const result = await api.assignEducationCourse(course.id, {
+      title: educationCourseAssignmentForm.title.trim(),
+      instructions: educationCourseAssignmentForm.instructions.trim(),
+      conceptKey: educationCourseAssignmentForm.conceptKey.trim(),
+      targetMastery: Number(educationCourseAssignmentForm.targetMastery) || 0.8,
+      dueAt: educationCourseAssignmentForm.dueAt
+        ? new Date(educationCourseAssignmentForm.dueAt).toISOString() : null,
+    }, idempotencyKey)
+    educationCourseAssignmentForm.title = ''
+    educationCourseAssignmentForm.instructions = ''
+    educationCourseAssignmentForm.conceptKey = ''
+    await loadEducationData()
+    await loadEducationCourseWorkspace(course.id)
+    noticeMessage.value = `已向课程活跃名单布置 ${result.assignmentCount} 份作业。`
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    educationCourseAssignmentSaving.value = false
+  }
+}
+
+function courseLearnerAttentionCount(learner) {
+  if (!learner) return 0
+  return Number(learner.awaitingEvidence || 0) + Number(learner.retryRequired || 0)
+    + Number(learner.overdue || 0) + Number(learner.reviewPending || 0)
+    + Number(learner.openInterventionCount || 0)
+}
+
+function focusCourseLearner(learner) {
+  if (!learner?.learnerUserId) return
+  learningAssignmentCourseFilter.value = activeEducationCourseId.value
+  learningAssignmentLearnerFilter.value = learner.learnerUserId
+  nextTick(() => document.getElementById('learning-assignment-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+}
+
+function clearLearningAssignmentFilter() {
+  learningAssignmentCourseFilter.value = ''
+  learningAssignmentLearnerFilter.value = ''
 }
 
 async function loadLearningTasks() {
@@ -5601,8 +5831,83 @@ onBeforeUnmount(() => {
                 <strong>{{ profile.subject }} · {{ profile.gradeLevel }}</strong><small>{{ profile.curriculumVersion }} · {{ profile.learningGoal || '未设置学习目标' }}</small>
               </button>
             </div>
+            <section class="education-course-workbench" aria-label="课程教师工作台">
+              <div class="subsection-title education-course-heading">
+                <div><h4>课程教师工作台</h4><span>{{ educationCourses.length }} 个课程实例</span></div>
+                <span v-if="activeEducationCourse" class="context-mode-chip">{{ activeEducationCourse.status === 'ACTIVE' ? '运营中' : '已归档' }}</span>
+              </div>
+              <p class="learning-task-help">先创建课程实例，再维护活跃名单；批量布置会生成可追踪的独立作业，课程进度会把待证据、待重试和待教师确认集中呈现。</p>
+              <form class="education-course-form" @submit.prevent="createEducationCourse">
+                <label class="field"><span>课程代码</span><input v-model="educationCourseForm.code" required maxlength="128" placeholder="例如：MATH-G1-2026" /></label>
+                <label class="field"><span>课程名称</span><input v-model="educationCourseForm.title" required maxlength="255" placeholder="例如：高中数学函数基础" /></label>
+                <label class="field"><span>学科</span><input v-model="educationCourseForm.subject" required maxlength="128" /></label>
+                <label class="field"><span>年级</span><input v-model="educationCourseForm.gradeLevel" required maxlength="128" /></label>
+                <label class="field"><span>课程版本</span><input v-model="educationCourseForm.curriculumVersion" required maxlength="128" /></label>
+                <button class="secondary-button" type="submit" :disabled="educationCourseSaving">{{ educationCourseSaving ? '创建中…' : '创建课程实例' }}</button>
+              </form>
+              <div v-if="educationCourses.length" class="education-course-list">
+                <button v-for="course in educationCourses" :key="course.id" type="button" class="education-course-chip" :class="{ active: course.id === activeEducationCourseId }" @click="selectEducationCourse(course)">
+                  <span><strong>{{ course.title }}</strong><small>{{ course.code }} · {{ course.subject }} · {{ course.gradeLevel }} · {{ course.curriculumVersion }}</small></span>
+                  <em>{{ course.activeEnrollmentCount }} 人</em>
+                </button>
+              </div>
+              <div v-else class="context-preview-empty">还没有课程实例；创建后才能使用课程名单和批量布置。</div>
+              <div v-if="activeEducationCourse && activeEducationCourseIsOwner" class="education-course-detail">
+                <div class="education-course-detail-heading">
+                  <div><strong>{{ activeEducationCourse.title }}</strong><small>{{ activeEducationCourse.code }} · 课程负责人 {{ activeEducationCourse.ownerUserId }}</small></div>
+                  <button v-if="activeEducationCourse.status === 'ACTIVE'" class="text-button" type="button" :disabled="educationCourseActionId === activeEducationCourse.id" @click="archiveEducationCourse(activeEducationCourse)">{{ educationCourseActionId === activeEducationCourse.id ? '归档中…' : '归档课程' }}</button>
+                </div>
+                <div class="education-course-columns">
+                  <div class="education-course-roster">
+                    <div class="subsection-title"><div><h4>活跃名单</h4><span>{{ educationCourseEnrollments.filter((item) => item.status === 'ACTIVE').length }} 人</span></div></div>
+                    <form class="education-course-enrollment-form" @submit.prevent="enrollEducationLearner">
+                      <label class="field"><span>学习者 ID</span><input v-model="educationCourseEnrollmentForm.learnerUserId" required maxlength="255" placeholder="例如：student-1" /></label>
+                      <button class="secondary-button" type="submit" :disabled="educationCourseRosterSaving">{{ educationCourseRosterSaving ? '加入中…' : '加入名单' }}</button>
+                    </form>
+                    <div v-if="educationCourseEnrollments.length" class="education-course-roster-list">
+                      <div v-for="enrollment in educationCourseEnrollments" :key="enrollment.id" class="education-course-roster-row" :class="{ inactive: enrollment.status !== 'ACTIVE' }">
+                        <span><strong>{{ enrollment.learnerUserId }}</strong><small>{{ enrollment.status === 'ACTIVE' ? '活跃成员' : '已移除' }} · {{ formatDate(enrollment.enrolledAt) }}</small></span>
+                        <button v-if="enrollment.status === 'ACTIVE'" class="text-button" type="button" :disabled="educationCourseActionId === enrollment.learnerUserId" @click="removeEducationLearner(enrollment)">{{ educationCourseActionId === enrollment.learnerUserId ? '处理中…' : '移除' }}</button>
+                      </div>
+                    </div>
+                    <div v-else class="context-preview-empty">名单为空；请先加入学习者。</div>
+                  </div>
+                  <div class="education-course-assignment">
+                    <div class="subsection-title"><div><h4>批量布置作业</h4><span>一次提交，逐人追踪</span></div></div>
+                    <form class="education-course-assignment-form" @submit.prevent="assignEducationCourse">
+                      <label class="field"><span>作业标题</span><input v-model="educationCourseAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域练习" /></label>
+                      <label class="field"><span>目标知识点</span><input v-model="educationCourseAssignmentForm.conceptKey" required maxlength="255" placeholder="函数定义域" /></label>
+                      <label class="field"><span>目标掌握度</span><input v-model="educationCourseAssignmentForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required /></label>
+                      <label class="field"><span>截止时间（可选）</span><input v-model="educationCourseAssignmentForm.dueAt" type="datetime-local" /></label>
+                      <label class="field education-course-wide"><span>作业说明</span><textarea v-model="educationCourseAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作答范围、提交要求或迁移任务"></textarea></label>
+                      <button class="secondary-button" type="submit" :disabled="educationCourseAssignmentSaving || !educationCourseEnrollments.some((item) => item.status === 'ACTIVE')">{{ educationCourseAssignmentSaving ? '布置中…' : '向活跃名单布置' }}</button>
+                    </form>
+                  </div>
+                </div>
+                <div v-if="educationCourseProgress" class="education-course-progress">
+                  <div class="subsection-title"><div><h4>课程进度与干预队列</h4><span>{{ educationCourseProgress.truncated ? '仅展示最近 500 份作业' : '覆盖全部课程作业' }}</span></div><button class="text-button" type="button" :disabled="educationCourseLoading" @click="loadEducationCourseWorkspace(activeEducationCourse.id)">{{ educationCourseLoading ? '刷新中…' : '刷新进度' }}</button></div>
+                  <div class="education-course-summary-grid">
+                    <div><span>作业完成</span><strong>{{ formatRate(educationCourseProgress.assignmentCompletionRate) }}</strong><small>{{ educationCourseProgress.completed }} / {{ educationCourseProgress.assignmentTotal }}</small></div>
+                    <div><span>教师确认</span><strong>{{ formatRate(educationCourseProgress.teacherVerificationRate) }}</strong><small>{{ educationCourseProgress.reviewVerified }} / {{ educationCourseProgress.reviewPending + educationCourseProgress.reviewVerified + educationCourseProgress.revisionRequired }}</small></div>
+                    <div><span>待证据</span><strong>{{ educationCourseProgress.awaitingEvidence }}</strong><small>Run 已结束但证据未回写</small></div>
+                    <div><span>待重试</span><strong>{{ educationCourseProgress.retryRequired }}</strong><small>失败、超时或返工</small></div>
+                    <div><span>开放干预</span><strong>{{ educationCourseProgress.openInterventionCount }}</strong><small>补证据或建议重试</small></div>
+                  </div>
+                  <div v-if="educationCourseProgress.learners?.length" class="education-course-progress-list">
+                    <div class="education-course-progress-header"><span>学习者</span><span>作业状态</span><span>掌握度进度</span><span>下一步</span></div>
+                    <div v-for="learner in educationCourseProgress.learners" :key="learner.learnerUserId" class="education-course-progress-row">
+                      <span><strong>{{ learner.learnerUserId }}</strong><small>{{ learner.lastActivityAt ? `最近 ${formatDate(learner.lastActivityAt)}` : '尚无作业活动' }}</small></span>
+                      <span class="education-course-status-copy">{{ learner.completed }} 完成 · {{ learner.awaitingEvidence }} 待证据 · {{ learner.retryRequired }} 待重试 · {{ learner.reviewPending }} 待确认</span>
+                      <span><strong>{{ formatRate(learner.averageMasteryProgress) }}</strong><small>提升 {{ learner.averageMasteryGain >= 0 ? '+' : '' }}{{ formatRate(learner.averageMasteryGain) }}</small></span>
+                      <button class="text-button" type="button" @click="focusCourseLearner(learner)">{{ courseLearnerAttentionCount(learner) ? `处理 ${courseLearnerAttentionCount(learner)} 项` : '查看作业' }}</button>
+                    </div>
+                  </div>
+                  <div v-else class="context-preview-empty">名单中的学习者还没有作业；布置作业后，这里会显示每人的业务状态。</div>
+                </div>
+              </div>
+            </section>
             <section class="learning-assignment-workbench" aria-label="课程作业入口">
-              <div class="subsection-title"><h4>课程作业入口</h4><span>{{ learningAssignments.length }} 个作业</span></div>
+              <div class="subsection-title"><h4>课程作业入口</h4><div><span v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter">当前已筛选</span><button v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter" class="text-button" type="button" @click="clearLearningAssignmentFilter">清除筛选</button><span v-else>{{ learningAssignments.length }} 个作业</span></div></div>
               <p class="learning-task-help">教师或组织可把课程约束和目标知识点布置给指定学习者；学习者接受后自动生成画像与学习目标。</p>
               <div class="subsection-title learning-task-heading"><div><h4>作业通知</h4><span>{{ learningAssignmentNotifications.length }} 条</span></div><div class="learning-notification-heading-actions"><span>{{ learningAssignmentNotificationUnreadCount }} 条未读</span><button v-if="learningAssignmentNotificationUnreadCount" class="text-button" type="button" @click="markAllLearningAssignmentNotificationsRead">全部已读</button></div></div>
               <div v-if="learningAssignmentNotifications.length" class="learning-notification-list" aria-label="课程作业通知">
@@ -5623,8 +5928,8 @@ onBeforeUnmount(() => {
                 <label class="field learning-assignment-wide"><span>作业说明</span><textarea v-model="learningAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作业要求、作答范围或迁移任务"></textarea></label>
                 <button class="secondary-button learning-assignment-submit" type="submit" :disabled="learningAssignmentSaving">{{ learningAssignmentSaving ? '布置中…' : '布置课程作业' }}</button>
               </form>
-              <div v-if="learningAssignments.length" class="learning-assignment-list">
-                <article v-for="assignment in learningAssignments.slice(0, 8)" :id="`learning-assignment-${assignment.id}`" :key="assignment.id" class="learning-assignment-row">
+              <div v-if="visibleLearningAssignments.length" id="learning-assignment-list" class="learning-assignment-list">
+                <article v-for="assignment in visibleLearningAssignments" :id="`learning-assignment-${assignment.id}`" :key="assignment.id" class="learning-assignment-row">
                   <div class="learning-assignment-main">
                     <div class="learning-assignment-meta"><strong>{{ assignment.title }}</strong><span>{{ learningAssignmentStatusLabel(assignment.status) }}</span></div>
                     <small>{{ assignment.teacherUserId }} → {{ assignment.learnerUserId }} · {{ assignment.subject }} · {{ assignment.gradeLevel }} · {{ assignment.curriculumVersion }}</small>
@@ -5644,6 +5949,7 @@ onBeforeUnmount(() => {
                   </div>
                 </article>
               </div>
+              <div v-else class="context-preview-empty">{{ learningAssignments.length ? '当前筛选范围没有作业。' : '还没有课程作业；可以先在上方创建课程并向活跃名单布置。' }}</div>
               <form v-if="learningAssignmentFeedbackForm.assignmentId" class="learning-assignment-feedback-form" @submit.prevent="submitLearningAssignmentFeedback">
                 <div class="subsection-title"><h4>教师反馈</h4><button class="text-button" type="button" @click="closeLearningAssignmentFeedback">关闭</button></div>
                 <label class="field"><span>反馈动作</span><select v-model="learningAssignmentFeedbackForm.action"><option value="COMMENT">教师反馈</option><option value="REQUEST_EVIDENCE">要求补充证据</option><option value="RECOMMEND_RETRY">建议重新学习</option><option value="RESCHEDULE">重新安排截止时间</option></select></label>

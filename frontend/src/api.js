@@ -321,6 +321,35 @@ export const api = {
     return request(`/education/tasks${query}`)
   },
   getEducationMetrics: () => request('/education/metrics'),
+  listEducationCourses: () => request('/education/courses'),
+  createEducationCourse: (payload) => request('/education/courses', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
+  getEducationCourse: (courseId) => request(`/education/courses/${encodeURIComponent(courseId)}`),
+  listEducationCourseEnrollments: (courseId) => request(
+    `/education/courses/${encodeURIComponent(courseId)}/enrollments`),
+  enrollEducationLearner: (courseId, payload) => request(
+    `/education/courses/${encodeURIComponent(courseId)}/enrollments`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  removeEducationLearner: (courseId, learnerUserId) => request(
+    `/education/courses/${encodeURIComponent(courseId)}/enrollments/${encodeURIComponent(learnerUserId)}/remove`, {
+      method: 'POST',
+    }),
+  archiveEducationCourse: (courseId) => request(
+    `/education/courses/${encodeURIComponent(courseId)}/archive`, {
+      method: 'POST',
+    }),
+  assignEducationCourse: (courseId, payload, idempotencyKey) => request(
+    `/education/courses/${encodeURIComponent(courseId)}/assignments`, {
+      method: 'POST',
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+      body: JSON.stringify(payload),
+    }),
+  getEducationCourseProgress: (courseId, limit = 500) => request(
+    `/education/courses/${encodeURIComponent(courseId)}/progress?limit=${encodeURIComponent(limit)}`),
   startLearningTask: (taskId, payload = {}, idempotencyKey) => request(
     `/education/tasks/${encodeURIComponent(taskId)}/start`, {
       method: 'POST',
@@ -363,7 +392,7 @@ export const api = {
     `/education/assignments/${encodeURIComponent(assignmentId)}/start`, {
       method: 'POST',
       headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
-      body: payload,
+      body: JSON.stringify(payload),
     }),
   reviewLearningAssignment: (assignmentId, payload) => request(
     `/education/assignments/${encodeURIComponent(assignmentId)}/review`, {
