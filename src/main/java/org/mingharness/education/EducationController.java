@@ -248,6 +248,13 @@ public class EducationController {
         return assignmentService.accept(identity.tenantId(), identity.userId(), assignmentId);
     }
 
+    @PostMapping("/assignments/{assignmentId}/cancel")
+    public LearningAssignmentView cancelAssignment(@PathVariable String assignmentId) {
+        HarnessIdentity identity = identity();
+        return LearningAssignmentView.from(assignmentService.cancel(
+                identity.tenantId(), identity.userId(), assignmentId));
+    }
+
     @PostMapping("/tasks/{taskId}/start")
     public LearningTaskStartView startTask(@PathVariable String taskId,
                                            @Valid @RequestBody(required = false)

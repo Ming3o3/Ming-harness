@@ -128,6 +128,22 @@ public class LearningAssignmentService {
                 profile.getId(), goal.getId());
     }
 
+    @Transactional
+    public LearningAssignment cancel(String tenantId, String teacherUserId, String assignmentId) {
+        LearningAssignment assignment = getForParticipant(tenantId, teacherUserId, assignmentId);
+        if (!teacherUserId.equals(assignment.getTeacherUserId())) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "LEARNING_ASSIGNMENT_TEACHER_ONLY",
+                    "只有布置者可以取消课程作业");
+        }
+        if (assignment.getStatus() == LearningAssignmentStatus.COMPLETED) {
+            throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_ASSIGNMENT_ALREADY_COMPLETED",
+                    "已完成的课程作业不能取消");
+        }
+        if (assignment.getStatus() == LearningAssignmentStatus.CANCELLED) return assignment;
+        assignment.cancel();
+        return assignmentRepository.save(assignment);
+    }
+
     /** 后台和查询入口共同调用，确保作业不会永久停留在已布置/学习中。 */
     @Transactional
     public int expireOverdue(Instant reference, int limit) {

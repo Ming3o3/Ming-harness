@@ -359,6 +359,10 @@ export const api = {
     `/education/assignments/${encodeURIComponent(assignmentId)}/accept`, {
       method: 'POST',
     }),
+  cancelLearningAssignment: (assignmentId) => request(
+    `/education/assignments/${encodeURIComponent(assignmentId)}/cancel`, {
+      method: 'POST',
+    }),
   getLearningAssignmentProgress: (assignmentId) => request(
     `/education/assignments/${encodeURIComponent(assignmentId)}/progress`),
   executeLearningGoalNextAction: (goalId, payload = {}, idempotencyKey) => request(

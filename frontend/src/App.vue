@@ -2924,6 +2924,19 @@ async function acceptLearningAssignment(assignment) {
   }
 }
 
+async function cancelLearningAssignment(assignment) {
+  if (!assignment?.id || assignment.teacherUserId !== form.userId) return
+  if (!window.confirm(`确认取消课程作业“${assignment.title}”吗？`)) return
+  clearMessages()
+  try {
+    await api.cancelLearningAssignment(assignment.id)
+    await loadEducationData()
+    noticeMessage.value = `已取消课程作业：${assignment.title}`
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  }
+}
+
 async function useLearningRecommendation() {
   const recommendation = learningRecommendation.value
   if (!recommendation) return
@@ -5343,7 +5356,10 @@ onBeforeUnmount(() => {
               <div v-if="learningAssignments.length" class="learning-assignment-list">
                 <article v-for="assignment in learningAssignments.slice(0, 8)" :key="assignment.id" class="learning-assignment-row">
                   <div class="learning-assignment-main"><div class="learning-assignment-meta"><strong>{{ assignment.title }}</strong><span>{{ learningAssignmentStatusLabel(assignment.status) }}</span></div><small>{{ assignment.teacherUserId }} → {{ assignment.learnerUserId }} · {{ assignment.subject }} · {{ assignment.gradeLevel }} · {{ assignment.curriculumVersion }}</small><p>{{ assignment.instructions }}</p><small v-if="learningAssignmentProgressMap[assignment.id]" class="learning-assignment-progress">掌握度 {{ formatRate(learningAssignmentProgressMap[assignment.id].currentMastery) }} / {{ formatRate(learningAssignmentProgressMap[assignment.id].targetMastery) }} · 目标进度 {{ formatRate(learningAssignmentProgressMap[assignment.id].masteryProgress) }} · 测评 {{ learningAssignmentProgressMap[assignment.id].assessmentTotal }} 次 · 任务 {{ learningAssignmentProgressMap[assignment.id].taskCompleted }} / {{ learningAssignmentProgressMap[assignment.id].taskTotal }}</small></div>
-                  <button v-if="assignment.learnerUserId === form.userId && assignment.status === 'ASSIGNED'" class="secondary-button" type="button" :disabled="learningAssignmentAcceptingId === assignment.id" @click="acceptLearningAssignment(assignment)">{{ learningAssignmentAcceptingId === assignment.id ? '接受中…' : '接受并开始学习' }}</button>
+                  <div class="learning-assignment-actions">
+                    <button v-if="assignment.learnerUserId === form.userId && assignment.status === 'ASSIGNED'" class="secondary-button" type="button" :disabled="learningAssignmentAcceptingId === assignment.id" @click="acceptLearningAssignment(assignment)">{{ learningAssignmentAcceptingId === assignment.id ? '接受中…' : '接受并开始学习' }}</button>
+                    <button v-if="assignment.teacherUserId === form.userId && ['ASSIGNED', 'ACCEPTED', 'OVERDUE'].includes(assignment.status)" class="text-button" type="button" @click="cancelLearningAssignment(assignment)">取消作业</button>
+                  </div>
                 </article>
               </div>
             </section>

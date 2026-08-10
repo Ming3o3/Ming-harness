@@ -61,6 +61,26 @@ class LearningAssignmentServiceTests {
         assertEquals(LearningAssignmentStatus.OVERDUE, overdue.getStatus());
     }
 
+    @Test
+    void shouldAllowOnlyTheTeacherToCancelAnIncompleteAssignment() {
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        LearningAssignment assignment = assignment();
+        when(assignments.findByTenantIdAndId("tenant-a", assignment.getId()))
+                .thenReturn(Optional.of(assignment));
+        when(assignments.save(any(LearningAssignment.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        LearningAssignmentService service = new LearningAssignmentService(
+                assignments, mock(LearnerProfileRepository.class), mock(LearningGoalRepository.class),
+                mock(LearnerMasteryRepository.class), new SensitiveDataSanitizer());
+
+        org.mingharness.common.BusinessException forbidden = org.junit.jupiter.api.Assertions.assertThrows(
+                org.mingharness.common.BusinessException.class,
+                () -> service.cancel("tenant-a", "student-1", assignment.getId()));
+        assertEquals("LEARNING_ASSIGNMENT_TEACHER_ONLY", forbidden.getCode());
+
+        LearningAssignment cancelled = service.cancel("tenant-a", "teacher-1", assignment.getId());
+        assertEquals(LearningAssignmentStatus.CANCELLED, cancelled.getStatus());
+    }
+
     private LearningAssignment assignment() {
         return new LearningAssignment("tenant-a", "teacher-1", "student-1", "函数作业",
                 "完成函数定义域练习", "数学", "高中一年级", "人教A版", "函数定义域",

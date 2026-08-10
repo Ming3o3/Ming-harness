@@ -220,6 +220,13 @@ class HarnessIdentityInterceptorTests {
         assertTrue(interceptor.preHandle(readProgress, new MockHttpServletResponse(), null));
         assertTrue(HarnessIdentityContext.require().hasPermission("education.read"));
         interceptor.afterCompletion(readProgress, new MockHttpServletResponse(), null, null);
+
+        MockHttpServletRequest cancel = request(
+                "POST", "/api/education/assignments/assignment-1/cancel");
+        cancel.addHeader("X-Api-Key", "teacher-key");
+        assertTrue(interceptor.preHandle(cancel, new MockHttpServletResponse(), null));
+        assertTrue(HarnessIdentityContext.require().hasPermission("education.assign"));
+        interceptor.afterCompletion(cancel, new MockHttpServletResponse(), null, null);
     }
 
     private MockHttpServletRequest request(String method, String uri) {
