@@ -33,6 +33,8 @@ import org.mingharness.education.api.EducationCourseRequest;
 import org.mingharness.education.api.EducationCourseView;
 import org.mingharness.education.api.EducationEnrollmentRequest;
 import org.mingharness.education.api.EducationEnrollmentView;
+import org.mingharness.education.api.EducationCourseAssignmentRequest;
+import org.mingharness.education.api.EducationCourseAssignmentBatchView;
 import org.mingharness.education.api.ManualAssessmentSubmissionRequest;
 import org.mingharness.education.api.MasteryUpdateRequest;
 import org.mingharness.security.HarnessIdentity;
@@ -72,6 +74,7 @@ public class EducationController {
     private final LearningAssignmentStartService assignmentStartService;
     private final LearningAssignmentReviewService assignmentReviewService;
     private final EducationCourseService courseService;
+    private final LearningAssignmentBatchService assignmentBatchService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
@@ -89,7 +92,8 @@ public class EducationController {
                                LearningAssignmentFeedbackService assignmentFeedbackService,
                                LearningAssignmentStartService assignmentStartService,
                                LearningAssignmentReviewService assignmentReviewService,
-                               EducationCourseService courseService) {
+                               EducationCourseService courseService,
+                               LearningAssignmentBatchService assignmentBatchService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
@@ -107,6 +111,7 @@ public class EducationController {
         this.assignmentStartService = assignmentStartService;
         this.assignmentReviewService = assignmentReviewService;
         this.courseService = courseService;
+        this.assignmentBatchService = assignmentBatchService;
     }
 
     @PostMapping("/sources")
@@ -285,6 +290,17 @@ public class EducationController {
     public EducationCourseView archiveCourse(@PathVariable String courseId) {
         HarnessIdentity identity = identity();
         return courseService.archive(identity.tenantId(), identity.userId(), courseId);
+    }
+
+    @PostMapping("/courses/{courseId}/assignments")
+    @ResponseStatus(HttpStatus.CREATED)
+    public EducationCourseAssignmentBatchView assignCourse(
+            @PathVariable String courseId,
+            @Valid @RequestBody EducationCourseAssignmentRequest request,
+            HttpServletRequest httpRequest) {
+        HarnessIdentity identity = identity();
+        return assignmentBatchService.assign(identity.tenantId(), identity.userId(), courseId,
+                request, httpRequest.getHeader("Idempotency-Key"));
     }
 
     @PostMapping("/assignments")

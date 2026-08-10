@@ -68,6 +68,13 @@ public class LearningAssignmentService {
     @Transactional
     public LearningAssignment create(String tenantId, String teacherUserId,
                                      LearningAssignmentRequest request) {
+        return create(tenantId, teacherUserId, request, null);
+    }
+
+    /** 批量布置使用同一作业状态机，仅额外固化不可变的批次幂等键。 */
+    @Transactional
+    public LearningAssignment create(String tenantId, String teacherUserId,
+                                     LearningAssignmentRequest request, String batchId) {
         String learnerUserId = clean(request.learnerUserId());
         if (learnerUserId.isBlank()) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "ASSIGNMENT_LEARNER_REQUIRED",
@@ -98,7 +105,7 @@ public class LearningAssignmentService {
                 clean(request.title()), clean(request.instructions()), clean(request.subject()),
                 clean(request.gradeLevel()), clean(request.curriculumVersion()),
                 clean(request.conceptKey()), request.effectiveTargetMastery(), request.dueAt(),
-                course == null ? null : course.getId()));
+                course == null ? null : course.getId(), clean(batchId)));
         notifyState(saved);
         return saved;
     }
