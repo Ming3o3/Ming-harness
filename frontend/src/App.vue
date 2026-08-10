@@ -62,6 +62,7 @@ const educationCourses = ref([])
 const activeEducationCourseId = ref('')
 const educationCourseEnrollments = ref([])
 const educationCourseProgress = ref(null)
+const educationCourseResult = ref(null)
 const educationCourseLoading = ref(false)
 const educationCourseSaving = ref(false)
 const educationCourseRosterSaving = ref(false)
@@ -2808,6 +2809,7 @@ async function loadEducationData() {
       activeEducationCourseId.value = ''
       educationCourseEnrollments.value = []
       educationCourseProgress.value = null
+      educationCourseResult.value = null
     }
     educationError.value = ''
   } catch (error) {
@@ -2822,22 +2824,26 @@ async function loadEducationCourseWorkspace(courseId) {
     activeEducationCourseId.value = course?.id || ''
     educationCourseEnrollments.value = []
     educationCourseProgress.value = null
+    educationCourseResult.value = null
     return
   }
   activeEducationCourseId.value = course.id
   educationCourseLoading.value = true
   try {
-    const [enrollments, progress] = await Promise.all([
+    const [enrollments, progress, result] = await Promise.all([
       api.listEducationCourseEnrollments(course.id),
       api.getEducationCourseProgress(course.id),
+      api.getEducationCourseResult(course.id).catch(() => null),
     ])
     if (activeEducationCourseId.value === course.id) {
       educationCourseEnrollments.value = enrollments || []
       educationCourseProgress.value = progress || null
+      educationCourseResult.value = result || null
     }
   } catch (error) {
     educationCourseEnrollments.value = []
     educationCourseProgress.value = null
+    educationCourseResult.value = null
     educationError.value = errorText(error)
   } finally {
     educationCourseLoading.value = false
@@ -6020,6 +6026,24 @@ onBeforeUnmount(() => {
                     </div>
                   </div>
                   <div v-else class="context-preview-empty">名单中的学习者还没有作业；布置作业后，这里会显示每人的业务状态。</div>
+                  <div v-if="educationCourseResult" class="education-course-progress education-course-result">
+                    <div class="subsection-title"><div><h4>结课结果快照</h4><span>{{ formatDate(educationCourseResult.completedAt) }}</span></div><span class="context-mode-chip">不可被后续复习改写</span></div>
+                    <div class="education-course-summary-grid">
+                      <div><span>有效作业</span><strong>{{ educationCourseResult.assignmentCompleted }} / {{ educationCourseResult.effectiveAssignmentTotal }}</strong><small>教师确认 {{ educationCourseResult.assignmentVerified }}</small></div>
+                      <div><span>提交物覆盖</span><strong>{{ formatRate(educationCourseResult.effectiveAssignmentTotal ? educationCourseResult.submissionCovered / educationCourseResult.effectiveAssignmentTotal : 0) }}</strong><small>{{ educationCourseResult.submissionCovered }} 份</small></div>
+                      <div><span>平均目标进度</span><strong>{{ formatRate(educationCourseResult.averageMasteryProgress) }}</strong><small>平均提升 {{ formatRate(educationCourseResult.averageMasteryGain) }}</small></div>
+                      <div><span>学习者结果</span><strong>{{ educationCourseResult.learners?.length || 0 }} / {{ educationCourseResult.activeLearnerTotal }}</strong><small>覆盖 {{ educationCourseResult.learnersWithAssignments }} 人</small></div>
+                    </div>
+                    <div v-if="educationCourseResult.learners?.length" class="education-course-progress-list">
+                      <div class="education-course-progress-header"><span>学习者</span><span>有效作业</span><span>掌握度</span><span>提交物</span></div>
+                      <div v-for="learner in educationCourseResult.learners" :key="learner.learnerUserId" class="education-course-progress-row">
+                        <span><strong>{{ learner.learnerUserId }}</strong><small>{{ learner.lastActivityAt ? `最近 ${formatDate(learner.lastActivityAt)}` : '无活动时间' }}</small></span>
+                        <span>{{ learner.assignmentCompleted }} / {{ learner.effectiveAssignmentTotal }}<small>确认 {{ learner.assignmentVerified }}</small></span>
+                        <span>{{ formatRate(learner.averageMasteryProgress) }}<small>提升 {{ formatRate(learner.averageMasteryGain) }}</small></span>
+                        <span>{{ learner.submissionCovered }} / {{ learner.effectiveAssignmentTotal }}</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </section>
@@ -6144,9 +6168,9 @@ onBeforeUnmount(() => {
                 <div v-for="source in educationSources" :key="source.id" class="education-source-row">
                   <div><strong>{{ documents.find((document) => document.id === source.documentId)?.title || source.documentId }}</strong><small>{{ source.subject }} · {{ source.gradeLevel }} · {{ source.curriculumVersion }} · 难度 {{ source.difficultyLevel }}</small></div>
                   <button class="text-button" type="button" @click="educationSourceForm.documentId = source.documentId; educationSourceForm.subject = source.subject; educationSourceForm.gradeLevel = source.gradeLevel; educationSourceForm.curriculumVersion = source.curriculumVersion; educationSourceForm.chapter = source.chapter || ''; educationSourceForm.conceptTags = source.conceptTags || ''; educationSourceForm.prerequisiteConcepts = source.prerequisiteConcepts || ''; educationSourceForm.learningObjectives = source.learningObjectives || ''; educationSourceForm.difficultyLevel = source.difficultyLevel">编辑</button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
           </section>
           <form class="governance-card governance-fixed-card memory-card" @submit.prevent="createMemory">
             <div class="context-workbench-heading">

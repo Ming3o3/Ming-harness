@@ -469,6 +469,7 @@ curl -X POST http://localhost:8080/api/runs \
 - `POST /api/education/courses/{courseId}/assignments`：向课程活跃名单批量布置统一目标，必须携带 `Idempotency-Key`；同一课程和幂等键会复用原批次，同一键提交不同内容会返回 `409 ASSIGNMENT_BATCH_KEY_REUSED_WITH_DIFFERENT_REQUEST`
 - `GET /api/education/courses/{courseId}/progress?limit=500`：教师查看课程级作业状态、教师确认、开放干预、活跃名单作业覆盖率和名单中每个学习者的掌握度进度；超过上限时返回 `truncated=true`
 - `POST /api/education/courses/{courseId}/complete`：教师在有活跃名单、每名活跃学习者至少有一份有效作业、所有未取消作业均达到 `COMPLETED + VERIFIED` 且每份作业都有学习者提交物后结课；结课说明、操作者和时间会作为课程事实保存，未满足条件时返回相应 `409` 状态码
+- `GET /api/education/courses/{courseId}/result`：查询结课时固化的课程级和学习者级结果快照；课程教师可查看全班结果，学习者只能查看自己的结果，后续保持度复习不会改写该快照
 - `POST/GET /api/education/assignments`：教师/组织以当前身份布置或查询课程作业；作业携带学科、年级、课程版本和目标知识点，截止时间到达后会显示为 `OVERDUE`
 - `GET /api/education/assignments/{assignmentId}`：查询当前用户作为布置者或学习者参与的课程作业
 - `GET /api/education/assignments/{assignmentId}/progress`：查询当前参与者可见的掌握度、测评、Run 证据覆盖、掌握度提升、反馈确认和学习任务进度；教师可据此判断是否需要干预以及干预是否被确认

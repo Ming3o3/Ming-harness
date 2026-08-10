@@ -20,12 +20,21 @@ public class EducationCourseCompletionService {
     private final LearningAssignmentSubmissionRepository submissionRepository;
     private final EducationEnrollmentRepository enrollmentRepository;
     private final SensitiveDataSanitizer sanitizer;
+    private final EducationCourseResultService resultService;
 
     public EducationCourseCompletionService(EducationCourseRepository courseRepository,
                                             LearningAssignmentRepository assignmentRepository,
                                             EducationEnrollmentRepository enrollmentRepository,
                                             SensitiveDataSanitizer sanitizer) {
-        this(courseRepository, assignmentRepository, null, enrollmentRepository, sanitizer);
+        this(courseRepository, assignmentRepository, null, enrollmentRepository, sanitizer, null);
+    }
+
+    public EducationCourseCompletionService(EducationCourseRepository courseRepository,
+                                            LearningAssignmentRepository assignmentRepository,
+                                            LearningAssignmentSubmissionRepository submissionRepository,
+                                            EducationEnrollmentRepository enrollmentRepository,
+                                            SensitiveDataSanitizer sanitizer) {
+        this(courseRepository, assignmentRepository, submissionRepository, enrollmentRepository, sanitizer, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -33,12 +42,14 @@ public class EducationCourseCompletionService {
                                             LearningAssignmentRepository assignmentRepository,
                                             LearningAssignmentSubmissionRepository submissionRepository,
                                             EducationEnrollmentRepository enrollmentRepository,
-                                            SensitiveDataSanitizer sanitizer) {
+                                            SensitiveDataSanitizer sanitizer,
+                                            EducationCourseResultService resultService) {
         this.courseRepository = courseRepository;
         this.assignmentRepository = assignmentRepository;
         this.submissionRepository = submissionRepository;
         this.enrollmentRepository = enrollmentRepository;
         this.sanitizer = sanitizer;
+        this.resultService = resultService;
     }
 
     @Transactional
@@ -109,7 +120,11 @@ public class EducationCourseCompletionService {
         }
         String note = cleanNullable(request == null ? null : request.note());
         course.complete(teacherUserId, note, Instant.now());
-        return view(courseRepository.save(course));
+        EducationCourse saved = courseRepository.save(course);
+        if (resultService != null) {
+            resultService.capture(tenantId, teacherUserId, saved, saved.getCompletedAt());
+        }
+        return view(saved);
     }
 
     private EducationCourseView view(EducationCourse course) {

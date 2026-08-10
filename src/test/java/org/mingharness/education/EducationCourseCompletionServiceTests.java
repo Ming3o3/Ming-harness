@@ -26,6 +26,7 @@ class EducationCourseCompletionServiceTests {
         LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
         LearningAssignmentSubmissionRepository submissions = mock(LearningAssignmentSubmissionRepository.class);
         EducationEnrollmentRepository enrollments = mock(EducationEnrollmentRepository.class);
+        EducationCourseResultService resultService = mock(EducationCourseResultService.class);
         EducationCourse course = course();
         LearningAssignment completed = completedAssignment(course, "student-1");
         completed.verifyByTeacher("teacher-1", "已核验", Instant.now());
@@ -42,7 +43,7 @@ class EducationCourseCompletionServiceTests {
                 "tenant-a", course.getId(), EducationEnrollmentStatus.ACTIVE)).thenReturn(1L);
 
         var result = new EducationCourseCompletionService(courses, assignments, submissions, enrollments,
-                new SensitiveDataSanitizer()).complete("tenant-a", "teacher-1", course.getId(),
+                new SensitiveDataSanitizer(), resultService).complete("tenant-a", "teacher-1", course.getId(),
                 new EducationCourseCompletionRequest("本期课程完成"));
 
         assertEquals("COMPLETED", result.status());
@@ -50,6 +51,8 @@ class EducationCourseCompletionServiceTests {
         assertEquals("teacher-1", result.completedByUserId());
         assertNotNull(result.completedAt());
         verify(courses).save(course);
+        org.mockito.Mockito.verify(resultService).capture(
+                "tenant-a", "teacher-1", course, course.getCompletedAt());
     }
 
     @Test

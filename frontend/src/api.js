@@ -347,6 +347,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  getEducationCourseResult: (courseId) => request(
+    `/education/courses/${encodeURIComponent(courseId)}/result`),
   assignEducationCourse: (courseId, payload, idempotencyKey) => request(
     `/education/courses/${encodeURIComponent(courseId)}/assignments`, {
       method: 'POST',
