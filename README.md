@@ -465,7 +465,7 @@ curl -X POST http://localhost:8080/api/runs \
 - `GET /api/education/metrics`：读取当前租户和用户可见的作业、任务、测评证据和通知触达指标；无事实时各比率返回 `0`
 - `POST/GET /api/education/assignments`：教师/组织以当前身份布置或查询课程作业；作业携带学科、年级、课程版本和目标知识点，截止时间到达后会显示为 `OVERDUE`
 - `GET /api/education/assignments/{assignmentId}`：查询当前用户作为布置者或学习者参与的课程作业
-- `GET /api/education/assignments/{assignmentId}/progress`：查询当前参与者可见的掌握度、测评和学习任务进度；教师可据此判断是否需要干预
+- `GET /api/education/assignments/{assignmentId}/progress`：查询当前参与者可见的掌握度、测评、Run 证据覆盖、掌握度提升、反馈确认和学习任务进度；教师可据此判断是否需要干预以及干预是否被确认
 - `POST /api/education/assignments/{assignmentId}/accept`：学习者接受作业，系统幂等创建对应学习者画像和结构化学习目标
 - `POST /api/education/assignments/{assignmentId}/start`：学习者接受（如尚未接受）并直接启动第一步教育 Run；返回绑定的学习会话，作业要求会冻结到 Run 上下文
 - `POST /api/education/assignments/{assignmentId}/cancel`：布置者取消尚未完成的课程作业，取消后学习者不能再接受该作业

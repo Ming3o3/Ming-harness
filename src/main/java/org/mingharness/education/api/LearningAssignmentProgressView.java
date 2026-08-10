@@ -22,6 +22,16 @@ public record LearningAssignmentProgressView(
         long taskStarted,
         long taskCompleted,
         long taskAwaitingEvidence,
-        long taskFailed
+        long taskFailed,
+        double masteryGain,
+        long runTotal,
+        long runWithAssessmentEvidence,
+        double runEvidenceCoverageRate,
+        long feedbackTotal,
+        long feedbackAcknowledged,
+        double feedbackAcknowledgementRate,
+        long feedbackEvidenceRequests,
+        long feedbackRetryRecommendations,
+        Instant lastFeedbackAt
 ) {
 }

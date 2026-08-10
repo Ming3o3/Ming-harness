@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -43,6 +44,9 @@ class LearningAssignmentProgressServiceTests {
         LearnerMasteryRepository masteryRepository = mock(LearnerMasteryRepository.class);
         LearningTaskRepository tasks = mock(LearningTaskRepository.class);
         AssessmentAttemptRepository assessments = mock(AssessmentAttemptRepository.class);
+        LearningAssignmentFeedbackRepository feedbacks = mock(LearningAssignmentFeedbackRepository.class);
+        org.mingharness.runtime.repository.RunRepository runs =
+                mock(org.mingharness.runtime.repository.RunRepository.class);
         when(assignments.getForParticipant("tenant-a", "teacher-1", assignment.getId()))
                 .thenReturn(assignment);
         when(goals.findByIdAndTenantIdAndUserId(goal.getId(), "tenant-a", "student-1"))
@@ -53,9 +57,17 @@ class LearningAssignmentProgressServiceTests {
                 "tenant-a", "student-1", goal.getId())).thenReturn(List.of(completed, awaiting));
         when(assessments.findByTenantIdAndUserIdAndLearningGoalIdOrderByCreatedAtAsc(
                 "tenant-a", "student-1", goal.getId())).thenReturn(List.of(first, second));
+        when(runs.countByTenantIdAndUserIdAndEducationLearningAssignmentId(
+                "tenant-a", "student-1", assignment.getId())).thenReturn(2L);
+        LearningAssignmentFeedback feedback = new LearningAssignmentFeedback(
+                "tenant-a", assignment.getId(), "teacher-1", "student-1",
+                LearningAssignmentFeedbackAction.REQUEST_EVIDENCE, "请补充作答依据", null, Instant.now());
+        feedback.acknowledge(Instant.now());
+        when(feedbacks.findByTenantIdAndLearningAssignmentIdOrderByCreatedAtDesc(
+                eq("tenant-a"), eq(assignment.getId()), any())).thenReturn(List.of(feedback));
 
         LearningAssignmentProgressView view = new LearningAssignmentProgressService(
-                assignments, goals, masteryRepository, tasks, assessments)
+                assignments, goals, masteryRepository, tasks, assessments, feedbacks, runs)
                 .get("tenant-a", "teacher-1", assignment.getId());
 
         assertEquals("ACCEPTED", view.status());
@@ -67,5 +79,11 @@ class LearningAssignmentProgressServiceTests {
         assertEquals(2, view.taskStarted());
         assertEquals(1, view.taskCompleted());
         assertEquals(1, view.taskAwaitingEvidence());
+        assertEquals(0.3, view.masteryGain(), 1e-9);
+        assertEquals(2, view.runTotal());
+        assertEquals(1.0, view.runEvidenceCoverageRate(), 1e-9);
+        assertEquals(1, view.feedbackTotal());
+        assertEquals(1.0, view.feedbackAcknowledgementRate(), 1e-9);
+        assertEquals(1, view.feedbackEvidenceRequests());
     }
 }
