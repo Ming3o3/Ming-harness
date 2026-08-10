@@ -35,6 +35,7 @@ import org.mingharness.education.api.EducationEnrollmentRequest;
 import org.mingharness.education.api.EducationEnrollmentView;
 import org.mingharness.education.api.EducationCourseAssignmentRequest;
 import org.mingharness.education.api.EducationCourseAssignmentBatchView;
+import org.mingharness.education.api.EducationCourseProgressView;
 import org.mingharness.education.api.ManualAssessmentSubmissionRequest;
 import org.mingharness.education.api.MasteryUpdateRequest;
 import org.mingharness.security.HarnessIdentity;
@@ -75,6 +76,7 @@ public class EducationController {
     private final LearningAssignmentReviewService assignmentReviewService;
     private final EducationCourseService courseService;
     private final LearningAssignmentBatchService assignmentBatchService;
+    private final EducationCourseProgressService courseProgressService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
@@ -93,7 +95,8 @@ public class EducationController {
                                LearningAssignmentStartService assignmentStartService,
                                LearningAssignmentReviewService assignmentReviewService,
                                EducationCourseService courseService,
-                               LearningAssignmentBatchService assignmentBatchService) {
+                               LearningAssignmentBatchService assignmentBatchService,
+                               EducationCourseProgressService courseProgressService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
@@ -112,6 +115,7 @@ public class EducationController {
         this.assignmentReviewService = assignmentReviewService;
         this.courseService = courseService;
         this.assignmentBatchService = assignmentBatchService;
+        this.courseProgressService = courseProgressService;
     }
 
     @PostMapping("/sources")
@@ -301,6 +305,14 @@ public class EducationController {
         HarnessIdentity identity = identity();
         return assignmentBatchService.assign(identity.tenantId(), identity.userId(), courseId,
                 request, httpRequest.getHeader("Idempotency-Key"));
+    }
+
+    @GetMapping("/courses/{courseId}/progress")
+    public EducationCourseProgressView courseProgress(
+            @PathVariable String courseId,
+            @RequestParam(defaultValue = "500") int limit) {
+        HarnessIdentity identity = identity();
+        return courseProgressService.get(identity.tenantId(), identity.userId(), courseId, limit);
     }
 
     @PostMapping("/assignments")
