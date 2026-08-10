@@ -455,6 +455,8 @@ h3 { margin: 0; font-size: 13px; }
 .learning-assignment-form .field { min-width: 0; }
 .learning-assignment-wide { grid-column: 1 / -1; }
 .learning-assignment-submit { justify-self: start; }
+.learning-assignment-feedback-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; border-top: 1px solid rgba(76,226,213,.18); padding-top: 10px; }
+.learning-assignment-feedback-form .subsection-title, .learning-assignment-feedback-form .learning-assignment-wide { grid-column: 1 / -1; }
 .learning-assignment-list { display: grid; gap: 6px; }
 .learning-assignment-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; border: 1px solid rgba(153,174,218,.12); border-radius: 7px; background: var(--input-bg); padding: 9px 10px; }
 .learning-assignment-actions { display: grid; justify-items: end; gap: 5px; }
@@ -533,7 +535,7 @@ h3 { margin: 0; font-size: 13px; }
   .education-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .learning-task-row { grid-template-columns: 1fr; }
   .learning-task-actions { grid-auto-flow: column; justify-content: start; justify-items: start; }
-  .learning-assignment-form { grid-template-columns: 1fr; }
+  .learning-assignment-form, .learning-assignment-feedback-form { grid-template-columns: 1fr; }
   .learning-assignment-wide { grid-column: auto; }
   .learning-assignment-row { grid-template-columns: 1fr; }
   .learning-assignment-actions { grid-auto-flow: column; justify-content: start; justify-items: start; }

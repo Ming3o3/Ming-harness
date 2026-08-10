@@ -110,6 +110,22 @@ public class LearningAssignment {
         updatedAt = observedAt == null ? Instant.now() : observedAt;
     }
 
+    public void reschedule(Instant nextDueAt) {
+        if (nextDueAt == null || !nextDueAt.isAfter(Instant.now())) {
+            throw new IllegalArgumentException("新的截止时间必须晚于当前时间");
+        }
+        if (status == LearningAssignmentStatus.COMPLETED
+                || status == LearningAssignmentStatus.CANCELLED) {
+            throw new IllegalStateException("已完成或已取消的作业不能重新安排截止时间");
+        }
+        dueAt = nextDueAt;
+        if (status == LearningAssignmentStatus.OVERDUE) {
+            status = learningGoalId == null
+                    ? LearningAssignmentStatus.ASSIGNED : LearningAssignmentStatus.ACCEPTED;
+        }
+        updatedAt = Instant.now();
+    }
+
     public void cancel() {
         if (status == LearningAssignmentStatus.COMPLETED) {
             throw new IllegalStateException("已完成的作业不能取消");

@@ -25,6 +25,10 @@ public interface LearningAssignmentNotificationRepository
     List<LearningAssignmentNotification> findByTenantIdAndUserIdAndStatus(
             String tenantId, String userId, LearningAssignmentNotificationStatus status);
 
+    List<LearningAssignmentNotification> findByTenantIdAndLearningAssignmentIdAndNotificationTypeAndStatus(
+            String tenantId, String learningAssignmentId, LearningAssignmentNotificationType notificationType,
+            LearningAssignmentNotificationStatus status);
+
     long countByTenantIdAndUserIdAndStatus(
             String tenantId, String userId, LearningAssignmentNotificationStatus status);
 

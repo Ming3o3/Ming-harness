@@ -6,5 +6,7 @@ public enum LearningAssignmentNotificationType {
     ACCEPTED,
     OVERDUE,
     COMPLETED,
-    CANCELLED
+    CANCELLED,
+    FEEDBACK,
+    FEEDBACK_ACKNOWLEDGED
 }

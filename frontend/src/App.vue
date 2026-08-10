@@ -56,12 +56,21 @@ const learningAssignmentNotificationUnreadCount = ref(0)
 const learningAssignments = ref([])
 const learningAssignmentProgressMap = ref({})
 const learningAssignmentEvidenceMap = ref({})
+const learningAssignmentFeedbackMap = ref({})
 const educationMetrics = ref(null)
 const learningTaskLoading = ref(false)
 const learningTaskStartingId = ref('')
 const learningTaskDeferringId = ref('')
 const learningAssignmentSaving = ref(false)
 const learningAssignmentAcceptingId = ref('')
+const learningAssignmentFeedbackSavingId = ref('')
+const learningAssignmentFeedbackAcknowledgingId = ref('')
+const learningAssignmentFeedbackForm = reactive({
+  assignmentId: '',
+  action: 'COMMENT',
+  message: '',
+  suggestedDueAt: '',
+})
 const learningAssignmentForm = reactive({
   learnerUserId: '',
   title: '',
@@ -2695,6 +2704,15 @@ async function loadEducationData() {
     }))
     learningAssignmentEvidenceMap.value = Object.fromEntries(
       evidenceEntries.filter(([, value]) => value))
+    const feedbackEntries = await Promise.all(assignments.slice(0, 20).map(async (assignment) => {
+      try {
+        return [assignment.id, await api.listLearningAssignmentFeedback(assignment.id)]
+      } catch {
+        return [assignment.id, null]
+      }
+    }))
+    learningAssignmentFeedbackMap.value = Object.fromEntries(
+      feedbackEntries.filter(([, value]) => value))
     await Promise.all([loadLearningNotifications(), loadLearningAssignmentNotifications()])
     const recommendationEntries = await Promise.all(goals.map(async (goal) => {
       try {
@@ -2836,6 +2854,74 @@ function learningAssignmentStatusLabel(status) {
   }[status] || status || '未知'
 }
 
+function learningAssignmentFeedbackActionLabel(action) {
+  return {
+    COMMENT: '教师反馈',
+    REQUEST_EVIDENCE: '补充证据',
+    RECOMMEND_RETRY: '建议重试',
+    RESCHEDULE: '重新安排',
+  }[action] || action || '反馈'
+}
+
+function startLearningAssignmentFeedback(assignment) {
+  if (!assignment?.id || assignment.teacherUserId !== form.userId) return
+  learningAssignmentFeedbackForm.assignmentId = assignment.id
+  learningAssignmentFeedbackForm.action = 'COMMENT'
+  learningAssignmentFeedbackForm.message = ''
+  learningAssignmentFeedbackForm.suggestedDueAt = ''
+}
+
+function closeLearningAssignmentFeedback() {
+  learningAssignmentFeedbackForm.assignmentId = ''
+  learningAssignmentFeedbackForm.message = ''
+  learningAssignmentFeedbackForm.suggestedDueAt = ''
+}
+
+async function submitLearningAssignmentFeedback() {
+  const assignmentId = learningAssignmentFeedbackForm.assignmentId
+  if (!assignmentId || !learningAssignmentFeedbackForm.message.trim()
+    || learningAssignmentFeedbackSavingId.value) return
+  if (learningAssignmentFeedbackForm.action === 'RESCHEDULE'
+    && !learningAssignmentFeedbackForm.suggestedDueAt) return
+  learningAssignmentFeedbackSavingId.value = assignmentId
+  clearMessages()
+  try {
+    await api.createLearningAssignmentFeedback(assignmentId, {
+      action: learningAssignmentFeedbackForm.action,
+      message: learningAssignmentFeedbackForm.message.trim(),
+      suggestedDueAt: learningAssignmentFeedbackForm.action === 'RESCHEDULE'
+        ? new Date(learningAssignmentFeedbackForm.suggestedDueAt).toISOString() : null,
+    })
+    closeLearningAssignmentFeedback()
+    await loadEducationData()
+    noticeMessage.value = '教师反馈已发送给学习者。'
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    learningAssignmentFeedbackSavingId.value = ''
+  }
+}
+
+async function acknowledgeLearningAssignmentFeedback(assignment, feedback) {
+  if (!assignment?.id || !feedback?.id || feedback.status !== 'OPEN'
+    || assignment.learnerUserId !== form.userId
+    || learningAssignmentFeedbackAcknowledgingId.value) return
+  learningAssignmentFeedbackAcknowledgingId.value = feedback.id
+  try {
+    const updated = await api.acknowledgeLearningAssignmentFeedback(assignment.id, feedback.id)
+    learningAssignmentFeedbackMap.value = {
+      ...learningAssignmentFeedbackMap.value,
+      [assignment.id]: (learningAssignmentFeedbackMap.value[assignment.id] || [])
+        .map((item) => item.id === updated.id ? updated : item),
+    }
+    noticeMessage.value = '已确认教师反馈。'
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    learningAssignmentFeedbackAcknowledgingId.value = ''
+  }
+}
+
 async function openLearningAssignmentNotification(notification) {
   if (!notification) return
   await markLearningAssignmentNotificationRead(notification)
@@ -2843,6 +2929,16 @@ async function openLearningAssignmentNotification(notification) {
   if (!assignment) {
     await loadEducationData()
     assignment = learningAssignments.value.find((item) => item.id === notification.learningAssignmentId)
+  }
+  if (['FEEDBACK', 'FEEDBACK_ACKNOWLEDGED'].includes(notification.notificationType)) {
+    await nextTick()
+    document.getElementById(`learning-assignment-${assignment.id}`)?.scrollIntoView({
+      behavior: 'smooth', block: 'center',
+    })
+    noticeMessage.value = notification.notificationType === 'FEEDBACK_ACKNOWLEDGED'
+      ? `已打开课程作业“${assignment.title}”的反馈确认回执。`
+      : `已打开课程作业“${assignment.title}”的教师反馈。`
+    return
   }
   if (!assignment) {
     noticeMessage.value = '通知对应的课程作业已不在当前列表中，请刷新教育状态。'
@@ -5427,7 +5523,7 @@ onBeforeUnmount(() => {
               <div v-if="learningAssignmentNotifications.length" class="learning-notification-list" aria-label="课程作业通知">
                 <article v-for="notification in learningAssignmentNotifications.slice(0, 5)" :key="notification.id" class="learning-notification-row" :class="{ unread: notification.unread }">
                   <div class="learning-notification-main"><div class="learning-notification-meta"><strong>{{ notification.title }}</strong><small>{{ formatDate(notification.createdAt) }}</small></div><p>{{ notification.body }}</p></div>
-                  <div class="learning-notification-actions"><button class="secondary-button" type="button" @click="openLearningAssignmentNotification(notification)">{{ notification.notificationType === 'ASSIGNED' ? '接受作业' : (notification.assignmentStatus === 'ACCEPTED' ? '查看目标' : '查看作业') }}</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningAssignmentNotificationRead(notification)">标记已读</button></div>
+                  <div class="learning-notification-actions"><button class="secondary-button" type="button" @click="openLearningAssignmentNotification(notification)">{{ notification.notificationType === 'ASSIGNED' ? '接受作业' : (['FEEDBACK', 'FEEDBACK_ACKNOWLEDGED'].includes(notification.notificationType) ? '查看反馈' : (notification.assignmentStatus === 'ACCEPTED' ? '查看目标' : '查看作业')) }}</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningAssignmentNotificationRead(notification)">标记已读</button></div>
                 </article>
               </div>
               <form class="learning-assignment-form" @submit.prevent="createLearningAssignment">
@@ -5443,14 +5539,29 @@ onBeforeUnmount(() => {
                 <button class="secondary-button learning-assignment-submit" type="submit" :disabled="learningAssignmentSaving">{{ learningAssignmentSaving ? '布置中…' : '布置课程作业' }}</button>
               </form>
               <div v-if="learningAssignments.length" class="learning-assignment-list">
-                <article v-for="assignment in learningAssignments.slice(0, 8)" :key="assignment.id" class="learning-assignment-row">
-                  <div class="learning-assignment-main"><div class="learning-assignment-meta"><strong>{{ assignment.title }}</strong><span>{{ learningAssignmentStatusLabel(assignment.status) }}</span></div><small>{{ assignment.teacherUserId }} → {{ assignment.learnerUserId }} · {{ assignment.subject }} · {{ assignment.gradeLevel }} · {{ assignment.curriculumVersion }}</small><p>{{ assignment.instructions }}</p><small v-if="learningAssignmentProgressMap[assignment.id]" class="learning-assignment-progress">掌握度 {{ formatRate(learningAssignmentProgressMap[assignment.id].currentMastery) }} / {{ formatRate(learningAssignmentProgressMap[assignment.id].targetMastery) }} · 目标进度 {{ formatRate(learningAssignmentProgressMap[assignment.id].masteryProgress) }} · 测评 {{ learningAssignmentProgressMap[assignment.id].assessmentTotal }} 次 · 任务 {{ learningAssignmentProgressMap[assignment.id].taskCompleted }} / {{ learningAssignmentProgressMap[assignment.id].taskTotal }}</small><details v-if="learningAssignmentEvidenceMap[assignment.id]?.length" class="learning-assessment-history"><summary>查看测评证据（{{ learningAssignmentEvidenceMap[assignment.id].length }}）</summary><div v-for="attempt in learningAssignmentEvidenceMap[assignment.id].slice().reverse().slice(0, 5)" :key="attempt.id"><span :class="attempt.correct ? 'assessment-correct' : 'assessment-wrong'">{{ attempt.correct ? '正确' : '错误' }}</span><span>{{ attempt.evidenceText || '未填写证据文本' }}<small v-if="attempt.feedback"> · {{ attempt.feedback }}</small></span><small>{{ attempt.evidenceSource === 'MANUAL_REVIEW' ? '人工复核' : (attempt.assessmentType === 'REVIEW' ? '保持度复习' : 'Agent观察') }} · {{ formatDate(attempt.createdAt) }}</small></div></details></div>
+                <article v-for="assignment in learningAssignments.slice(0, 8)" :id="`learning-assignment-${assignment.id}`" :key="assignment.id" class="learning-assignment-row">
+                  <div class="learning-assignment-main">
+                    <div class="learning-assignment-meta"><strong>{{ assignment.title }}</strong><span>{{ learningAssignmentStatusLabel(assignment.status) }}</span></div>
+                    <small>{{ assignment.teacherUserId }} → {{ assignment.learnerUserId }} · {{ assignment.subject }} · {{ assignment.gradeLevel }} · {{ assignment.curriculumVersion }}</small>
+                    <p>{{ assignment.instructions }}</p>
+                    <small v-if="learningAssignmentProgressMap[assignment.id]" class="learning-assignment-progress">掌握度 {{ formatRate(learningAssignmentProgressMap[assignment.id].currentMastery) }} / {{ formatRate(learningAssignmentProgressMap[assignment.id].targetMastery) }} · 目标进度 {{ formatRate(learningAssignmentProgressMap[assignment.id].masteryProgress) }} · 测评 {{ learningAssignmentProgressMap[assignment.id].assessmentTotal }} 次 · 任务 {{ learningAssignmentProgressMap[assignment.id].taskCompleted }} / {{ learningAssignmentProgressMap[assignment.id].taskTotal }}</small>
+                    <details v-if="learningAssignmentEvidenceMap[assignment.id]?.length" class="learning-assessment-history"><summary>查看测评证据（{{ learningAssignmentEvidenceMap[assignment.id].length }}）</summary><div v-for="attempt in learningAssignmentEvidenceMap[assignment.id].slice().reverse().slice(0, 5)" :key="attempt.id"><span :class="attempt.correct ? 'assessment-correct' : 'assessment-wrong'">{{ attempt.correct ? '正确' : '错误' }}</span><span>{{ attempt.evidenceText || '未填写证据文本' }}<small v-if="attempt.feedback"> · {{ attempt.feedback }}</small></span><small>{{ attempt.evidenceSource === 'MANUAL_REVIEW' ? '人工复核' : (attempt.assessmentType === 'REVIEW' ? '保持度复习' : 'Agent观察') }} · {{ formatDate(attempt.createdAt) }}</small></div></details>
+                    <details v-if="learningAssignmentFeedbackMap[assignment.id]?.length" class="learning-assessment-history"><summary>教师反馈（{{ learningAssignmentFeedbackMap[assignment.id].length }}）</summary><div v-for="feedback in learningAssignmentFeedbackMap[assignment.id].slice(0, 5)" :key="feedback.id"><span>{{ learningAssignmentFeedbackActionLabel(feedback.action) }}</span><span>{{ feedback.message }}<small v-if="feedback.suggestedDueAt"> · 截止 {{ formatDate(feedback.suggestedDueAt) }}</small></span><small>{{ feedback.status === 'ACKNOWLEDGED' ? '已确认' : '待确认' }} · {{ formatDate(feedback.createdAt) }}<button v-if="assignment.learnerUserId === form.userId && feedback.status === 'OPEN'" class="text-button" type="button" :disabled="learningAssignmentFeedbackAcknowledgingId === feedback.id" @click="acknowledgeLearningAssignmentFeedback(assignment, feedback)">确认</button></small></div></details>
+                  </div>
                   <div class="learning-assignment-actions">
                     <button v-if="assignment.learnerUserId === form.userId && assignment.status === 'ASSIGNED'" class="secondary-button" type="button" :disabled="learningAssignmentAcceptingId === assignment.id" @click="acceptLearningAssignment(assignment)">{{ learningAssignmentAcceptingId === assignment.id ? '接受中…' : '接受并开始学习' }}</button>
+                    <button v-if="assignment.teacherUserId === form.userId && assignment.status !== 'CANCELLED'" class="text-button" type="button" @click="startLearningAssignmentFeedback(assignment)">写教师反馈</button>
                     <button v-if="assignment.teacherUserId === form.userId && ['ASSIGNED', 'ACCEPTED', 'OVERDUE'].includes(assignment.status)" class="text-button" type="button" @click="cancelLearningAssignment(assignment)">取消作业</button>
                   </div>
                 </article>
               </div>
+              <form v-if="learningAssignmentFeedbackForm.assignmentId" class="learning-assignment-feedback-form" @submit.prevent="submitLearningAssignmentFeedback">
+                <div class="subsection-title"><h4>教师反馈</h4><button class="text-button" type="button" @click="closeLearningAssignmentFeedback">关闭</button></div>
+                <label class="field"><span>反馈动作</span><select v-model="learningAssignmentFeedbackForm.action"><option value="COMMENT">教师反馈</option><option value="REQUEST_EVIDENCE">要求补充证据</option><option value="RECOMMEND_RETRY">建议重新学习</option><option value="RESCHEDULE">重新安排截止时间</option></select></label>
+                <label v-if="learningAssignmentFeedbackForm.action === 'RESCHEDULE'" class="field"><span>新的截止时间</span><input v-model="learningAssignmentFeedbackForm.suggestedDueAt" type="datetime-local" required /></label>
+                <label class="field learning-assignment-wide"><span>反馈内容</span><textarea v-model="learningAssignmentFeedbackForm.message" required maxlength="4000" rows="2" placeholder="写明证据判断和下一步行动"></textarea></label>
+                <button class="secondary-button" type="submit" :disabled="learningAssignmentFeedbackSavingId === learningAssignmentFeedbackForm.assignmentId">{{ learningAssignmentFeedbackSavingId ? '发送中…' : '发送反馈' }}</button>
+              </form>
             </section>
             <div class="learning-goal-workbench">
               <div class="learning-task-workbench">

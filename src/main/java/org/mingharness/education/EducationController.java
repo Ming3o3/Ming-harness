@@ -24,6 +24,8 @@ import org.mingharness.education.api.LearningAssignmentRequest;
 import org.mingharness.education.api.LearningAssignmentView;
 import org.mingharness.education.api.LearningAssignmentProgressView;
 import org.mingharness.education.api.LearningAssignmentNotificationView;
+import org.mingharness.education.api.LearningAssignmentFeedbackRequest;
+import org.mingharness.education.api.LearningAssignmentFeedbackView;
 import org.mingharness.education.api.EducationMetricsView;
 import org.mingharness.education.api.ManualAssessmentSubmissionRequest;
 import org.mingharness.education.api.MasteryUpdateRequest;
@@ -60,6 +62,7 @@ public class EducationController {
     private final LearningAssignmentProgressService assignmentProgressService;
     private final LearningAssignmentNotificationService assignmentNotificationService;
     private final LearningAssignmentEvidenceService assignmentEvidenceService;
+    private final LearningAssignmentFeedbackService assignmentFeedbackService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
@@ -73,7 +76,8 @@ public class EducationController {
                                EducationMetricsService metricsService,
                                LearningAssignmentProgressService assignmentProgressService,
                                LearningAssignmentNotificationService assignmentNotificationService,
-                               LearningAssignmentEvidenceService assignmentEvidenceService) {
+                               LearningAssignmentEvidenceService assignmentEvidenceService,
+                               LearningAssignmentFeedbackService assignmentFeedbackService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
@@ -87,6 +91,7 @@ public class EducationController {
         this.assignmentProgressService = assignmentProgressService;
         this.assignmentNotificationService = assignmentNotificationService;
         this.assignmentEvidenceService = assignmentEvidenceService;
+        this.assignmentFeedbackService = assignmentFeedbackService;
     }
 
     @PostMapping("/sources")
@@ -253,6 +258,28 @@ public class EducationController {
     public List<AssessmentAttemptView> assignmentEvidence(@PathVariable String assignmentId) {
         HarnessIdentity identity = identity();
         return assignmentEvidenceService.list(identity.tenantId(), identity.userId(), assignmentId);
+    }
+
+    @GetMapping("/assignments/{assignmentId}/feedback")
+    public List<LearningAssignmentFeedbackView> assignmentFeedback(@PathVariable String assignmentId) {
+        HarnessIdentity identity = identity();
+        return assignmentFeedbackService.list(identity.tenantId(), identity.userId(), assignmentId);
+    }
+
+    @PostMapping("/assignments/{assignmentId}/feedback")
+    public LearningAssignmentFeedbackView createAssignmentFeedback(
+            @PathVariable String assignmentId,
+            @Valid @RequestBody LearningAssignmentFeedbackRequest request) {
+        HarnessIdentity identity = identity();
+        return assignmentFeedbackService.create(identity.tenantId(), identity.userId(), assignmentId, request);
+    }
+
+    @PostMapping("/assignments/{assignmentId}/feedback/{feedbackId}/acknowledge")
+    public LearningAssignmentFeedbackView acknowledgeAssignmentFeedback(
+            @PathVariable String assignmentId, @PathVariable String feedbackId) {
+        HarnessIdentity identity = identity();
+        return assignmentFeedbackService.acknowledge(
+                identity.tenantId(), identity.userId(), assignmentId, feedbackId);
     }
 
     @PostMapping("/assignments/{assignmentId}/accept")

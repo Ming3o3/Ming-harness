@@ -42,6 +42,66 @@ public class LearningAssignmentNotificationService {
     }
 
     @Transactional
+    public void ensureForFeedback(LearningAssignmentFeedback feedback, LearningAssignment assignment) {
+        if (feedback == null || assignment == null) return;
+        String eventKey = "FEEDBACK:" + feedback.getId();
+        if (notificationRepository.findByTenantIdAndUserIdAndLearningAssignmentIdAndEventKey(
+                assignment.getTenantId(), assignment.getLearnerUserId(), assignment.getId(), eventKey).isPresent()) {
+            return;
+        }
+        String title = switch (feedback.getAction()) {
+            case COMMENT -> "教师有新的作业反馈";
+            case REQUEST_EVIDENCE -> "教师要求补充作业证据";
+            case RECOMMEND_RETRY -> "教师建议重新学习作业知识点";
+            case RESCHEDULE -> "教师已重新安排作业截止时间";
+        };
+        String body = feedback.getMessage();
+        if (feedback.getSuggestedDueAt() != null) {
+            body += " 截止时间已调整为 " + feedback.getSuggestedDueAt() + "。";
+        }
+        notificationRepository.save(new LearningAssignmentNotification(
+                assignment.getTenantId(), assignment.getLearnerUserId(), assignment.getId(),
+                LearningAssignmentNotificationType.FEEDBACK, eventKey, title, body, Instant.now()));
+    }
+
+    @Transactional
+    public void ensureForFeedbackAcknowledged(LearningAssignmentFeedback feedback,
+                                              LearningAssignment assignment) {
+        if (feedback == null || assignment == null) return;
+        String eventKey = "FEEDBACK_ACKNOWLEDGED:" + feedback.getId();
+        if (notificationRepository.findByTenantIdAndUserIdAndLearningAssignmentIdAndEventKey(
+                assignment.getTenantId(), assignment.getTeacherUserId(), assignment.getId(), eventKey).isPresent()) {
+            return;
+        }
+        notificationRepository.save(new LearningAssignmentNotification(
+                assignment.getTenantId(), assignment.getTeacherUserId(), assignment.getId(),
+                LearningAssignmentNotificationType.FEEDBACK_ACKNOWLEDGED, eventKey,
+                "学习者已确认教师反馈", assignment.getLearnerUserId() + "已确认作业反馈。", Instant.now()));
+    }
+
+    @Transactional
+    public void markFeedbackRead(String tenantId, String userId, String assignmentId, String feedbackId) {
+        notificationRepository.findByTenantIdAndUserIdAndLearningAssignmentIdAndEventKey(
+                        tenantId, userId, assignmentId, "FEEDBACK:" + feedbackId)
+                .ifPresent(notification -> {
+                    notification.markRead(Instant.now());
+                    notificationRepository.save(notification);
+                });
+    }
+
+    @Transactional
+    public void resolveForAssignmentState(String tenantId, String assignmentId,
+                                          LearningAssignmentNotificationType notificationType) {
+        List<LearningAssignmentNotification> notifications = notificationRepository
+                .findByTenantIdAndLearningAssignmentIdAndNotificationTypeAndStatus(
+                        tenantId, assignmentId, notificationType, LearningAssignmentNotificationStatus.UNREAD);
+        if (notifications.isEmpty()) return;
+        Instant now = Instant.now();
+        notifications.forEach(notification -> notification.markRead(now));
+        notificationRepository.saveAll(notifications);
+    }
+
+    @Transactional
     public NotificationPage list(String tenantId, String userId, boolean unreadOnly, int limit) {
         int boundedLimit = Math.max(1, Math.min(100, limit));
         PageRequest page = PageRequest.of(0, boundedLimit);
@@ -119,6 +179,12 @@ public class LearningAssignmentNotificationService {
                         "课程作业已取消", assignment.getTitle() + "已被布置者取消。"));
                 recipients.add(spec(assignment.getTeacherUserId(), type, eventKey,
                         "课程作业已取消", "课程作业“" + assignment.getTitle() + "”已取消。"));
+            }
+            case FEEDBACK -> {
+                // 反馈通知由 ensureForFeedback 根据反馈 ID 单独创建。
+            }
+            case FEEDBACK_ACKNOWLEDGED -> {
+                // 回执通知由 ensureForFeedbackAcknowledged 根据反馈 ID 单独创建。
             }
         }
         return recipients;

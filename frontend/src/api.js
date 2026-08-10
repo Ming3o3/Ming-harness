@@ -367,6 +367,17 @@ export const api = {
     `/education/assignments/${encodeURIComponent(assignmentId)}/progress`),
   getLearningAssignmentEvidence: (assignmentId) => request(
     `/education/assignments/${encodeURIComponent(assignmentId)}/evidence`),
+  listLearningAssignmentFeedback: (assignmentId) => request(
+    `/education/assignments/${encodeURIComponent(assignmentId)}/feedback`),
+  createLearningAssignmentFeedback: (assignmentId, payload) => request(
+    `/education/assignments/${encodeURIComponent(assignmentId)}/feedback`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  acknowledgeLearningAssignmentFeedback: (assignmentId, feedbackId) => request(
+    `/education/assignments/${encodeURIComponent(assignmentId)}/feedback/${encodeURIComponent(feedbackId)}/acknowledge`, {
+      method: 'POST',
+    }),
   listLearningAssignmentNotifications: (unreadOnly = false, limit = 50) => {
     const params = new URLSearchParams({ unreadOnly: String(Boolean(unreadOnly)), limit: String(limit) })
     return request(`/education/assignment-notifications?${params.toString()}`)
