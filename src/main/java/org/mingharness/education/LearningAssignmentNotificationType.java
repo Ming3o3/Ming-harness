@@ -4,6 +4,7 @@ package org.mingharness.education;
 public enum LearningAssignmentNotificationType {
     ASSIGNED,
     ACCEPTED,
+    EVIDENCE_REQUIRED,
     OVERDUE,
     COMPLETED,
     CANCELLED,

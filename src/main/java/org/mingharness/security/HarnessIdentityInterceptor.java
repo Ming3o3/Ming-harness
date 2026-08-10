@@ -238,10 +238,10 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
             return "GET".equalsIgnoreCase(method) ? "education.read" : "education.write";
         }
         if (path.equals("/api/education/metrics")) return "education.read";
-        if (path.matches("/api/education/assignments(?:/[^/]+)?(?:/(accept|progress|evidence|feedback|cancel)(?:/[^/]+/acknowledge)?)?")) {
+        if (path.matches("/api/education/assignments(?:/[^/]+)?(?:/(accept|start|progress|evidence|feedback|cancel)(?:/[^/]+/acknowledge)?)?")) {
             if ("GET".equalsIgnoreCase(method)) return "education.read";
             if (path.endsWith("/progress")) return "education.read";
-            return path.endsWith("/accept") || path.endsWith("/acknowledge")
+            return path.endsWith("/accept") || path.endsWith("/start") || path.endsWith("/acknowledge")
                     ? "education.write" : "education.assign";
         }
         if (path.matches("/api/education/assignment-notifications(?:/[^/]+)?(?:/(read|read-all))?")) {

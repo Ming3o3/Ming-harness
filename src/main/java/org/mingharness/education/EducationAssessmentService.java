@@ -201,6 +201,10 @@ public class EducationAssessmentService {
                 cleanEvidence(evidenceText),
                 cleanFeedback(feedback), run.getEducationLearningAssignmentId());
         AssessmentAttempt saved = attemptRepository.save(attempt);
+        if (attemptType == AssessmentAttemptType.FORMATIVE && assignmentCompletionService != null) {
+            assignmentCompletionService.resumeAfterEvidenceForGoal(
+                    tenantId, userId, goal.getId(), java.time.Instant.now());
+        }
         if (attemptType == AssessmentAttemptType.REVIEW) {
             if (taskCompletionService != null) {
                 taskCompletionService.completeForReview(tenantId, userId, runId, correct, java.time.Instant.now());

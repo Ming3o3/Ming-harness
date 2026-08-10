@@ -90,6 +90,7 @@ public class LearningAssignment {
 
     public void complete(Instant completedAt) {
         if (status != LearningAssignmentStatus.ACCEPTED
+                && status != LearningAssignmentStatus.AWAITING_EVIDENCE
                 && status != LearningAssignmentStatus.OVERDUE) return;
         this.status = LearningAssignmentStatus.COMPLETED;
         this.completedAt = completedAt == null ? Instant.now() : completedAt;
@@ -119,11 +120,26 @@ public class LearningAssignment {
             throw new IllegalStateException("已完成或已取消的作业不能重新安排截止时间");
         }
         dueAt = nextDueAt;
-        if (status == LearningAssignmentStatus.OVERDUE) {
+        if (status == LearningAssignmentStatus.OVERDUE
+                || status == LearningAssignmentStatus.AWAITING_EVIDENCE) {
             status = learningGoalId == null
                     ? LearningAssignmentStatus.ASSIGNED : LearningAssignmentStatus.ACCEPTED;
         }
         updatedAt = Instant.now();
+    }
+
+    /** 教育 Run 成功但尚未有测评证据时，作业进入待补证据；证据写入后恢复执行中。 */
+    public void awaitEvidence(Instant observedAt) {
+        if (status != LearningAssignmentStatus.ACCEPTED
+                && status != LearningAssignmentStatus.OVERDUE) return;
+        status = LearningAssignmentStatus.AWAITING_EVIDENCE;
+        updatedAt = observedAt == null ? Instant.now() : observedAt;
+    }
+
+    public void resumeAfterEvidence(Instant resumedAt) {
+        if (status != LearningAssignmentStatus.AWAITING_EVIDENCE) return;
+        status = LearningAssignmentStatus.ACCEPTED;
+        updatedAt = resumedAt == null ? Instant.now() : resumedAt;
     }
 
     public void cancel() {

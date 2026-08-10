@@ -32,6 +32,9 @@ public interface LearningAssignmentRepository extends JpaRepository<LearningAssi
             String tenantId, Collection<LearningAssignmentStatus> statuses,
             Instant reference, Pageable pageable);
 
+    List<LearningAssignment> findByStatusInOrderByUpdatedAtAsc(
+            Collection<LearningAssignmentStatus> statuses, Pageable pageable);
+
     @Query("select count(a) from LearningAssignment a where a.tenantId = :tenantId "
             + "and (a.teacherUserId = :userId or a.learnerUserId = :userId)")
     long countForParticipant(@Param("tenantId") String tenantId, @Param("userId") String userId);

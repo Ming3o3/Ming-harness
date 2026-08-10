@@ -109,6 +109,7 @@ public class LearningAssignmentService {
                     "只有被布置作业的学习者可以接受作业");
         }
         if (assignment.getStatus() == LearningAssignmentStatus.ACCEPTED
+                || assignment.getStatus() == LearningAssignmentStatus.AWAITING_EVIDENCE
                 || assignment.getStatus() == LearningAssignmentStatus.COMPLETED) {
             return new LearningAssignmentAcceptView(LearningAssignmentView.from(assignment),
                     assignment.getLearnerProfileId(), assignment.getLearningGoalId());

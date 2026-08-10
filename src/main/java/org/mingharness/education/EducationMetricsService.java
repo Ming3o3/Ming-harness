@@ -41,6 +41,8 @@ public class EducationMetricsService {
         long assignmentAccepted = assignmentRepository.countForParticipantByStatus(
                 tenantId, userId, LearningAssignmentStatus.ACCEPTED)
                 + assignmentRepository.countForParticipantByStatus(
+                tenantId, userId, LearningAssignmentStatus.AWAITING_EVIDENCE)
+                + assignmentRepository.countForParticipantByStatus(
                 tenantId, userId, LearningAssignmentStatus.OVERDUE)
                 + assignmentRepository.countForParticipantByStatus(
                 tenantId, userId, LearningAssignmentStatus.COMPLETED);

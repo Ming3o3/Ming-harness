@@ -79,6 +79,30 @@ public class LearningAssignmentNotificationService {
                 "学习者已确认教师反馈", assignment.getLearnerUserId() + "已确认作业反馈。", Instant.now()));
     }
 
+    /** Run 成功但缺少形成性测评时，按 Run 维度幂等通知学习者和教师。 */
+    @Transactional
+    public void ensureForEvidenceRequired(LearningAssignment assignment, String runId) {
+        if (assignment == null || runId == null || runId.isBlank()) return;
+        String eventKey = "EVIDENCE_REQUIRED:" + runId;
+        saveIfAbsent(assignment, assignment.getLearnerUserId(), eventKey,
+                "课程作业待补证据", assignment.getTitle() + "对应的学习 Run 已完成，请补充形成性测评证据。");
+        saveIfAbsent(assignment, assignment.getTeacherUserId(), eventKey,
+                "课程作业缺少测评证据", assignment.getLearnerUserId() + "的作业“"
+                        + assignment.getTitle() + "”对应 Run 已完成，但尚未形成测评证据。");
+    }
+
+    @Transactional
+    public void resolveForAssignmentEvidenceRequired(String tenantId, String assignmentId) {
+        List<LearningAssignmentNotification> notifications = notificationRepository
+                .findByTenantIdAndLearningAssignmentIdAndNotificationTypeAndStatus(
+                        tenantId, assignmentId, LearningAssignmentNotificationType.EVIDENCE_REQUIRED,
+                        LearningAssignmentNotificationStatus.UNREAD);
+        if (notifications.isEmpty()) return;
+        Instant now = Instant.now();
+        notifications.forEach(notification -> notification.markRead(now));
+        notificationRepository.saveAll(notifications);
+    }
+
     @Transactional
     public void markFeedbackRead(String tenantId, String userId, String assignmentId, String feedbackId) {
         notificationRepository.findByTenantIdAndUserIdAndLearningAssignmentIdAndEventKey(
@@ -152,6 +176,7 @@ public class LearningAssignmentNotificationService {
         LearningAssignmentNotificationType type = switch (assignment.getStatus()) {
             case ASSIGNED -> LearningAssignmentNotificationType.ASSIGNED;
             case ACCEPTED -> LearningAssignmentNotificationType.ACCEPTED;
+            case AWAITING_EVIDENCE -> LearningAssignmentNotificationType.EVIDENCE_REQUIRED;
             case OVERDUE -> LearningAssignmentNotificationType.OVERDUE;
             case COMPLETED -> LearningAssignmentNotificationType.COMPLETED;
             case CANCELLED -> LearningAssignmentNotificationType.CANCELLED;
@@ -164,6 +189,13 @@ public class LearningAssignmentNotificationService {
             case ACCEPTED -> recipients.add(spec(assignment.getTeacherUserId(), type, eventKey,
                     "学习者已接受作业", assignment.getLearnerUserId() + "已接受课程作业“"
                             + assignment.getTitle() + "”。"));
+            case EVIDENCE_REQUIRED -> {
+                recipients.add(spec(assignment.getLearnerUserId(), type, eventKey,
+                        "课程作业待补证据", assignment.getTitle() + "需要补充形成性测评证据。"));
+                recipients.add(spec(assignment.getTeacherUserId(), type, eventKey,
+                        "课程作业缺少测评证据", assignment.getLearnerUserId() + "的作业“"
+                                + assignment.getTitle() + "”需要补充测评证据。"));
+            }
             case OVERDUE -> {
                 recipients.add(spec(assignment.getLearnerUserId(), type, eventKey,
                         "课程作业已逾期", assignment.getTitle() + "已超过截止时间，请联系教师重新安排。"));
@@ -188,6 +220,16 @@ public class LearningAssignmentNotificationService {
             }
         }
         return recipients;
+    }
+
+    private void saveIfAbsent(LearningAssignment assignment, String userId, String eventKey,
+                              String title, String body) {
+        if (notificationRepository.findByTenantIdAndUserIdAndLearningAssignmentIdAndEventKey(
+                assignment.getTenantId(), userId, assignment.getId(), eventKey).isPresent()) return;
+        notificationRepository.save(new LearningAssignmentNotification(
+                assignment.getTenantId(), userId, assignment.getId(),
+                LearningAssignmentNotificationType.EVIDENCE_REQUIRED, eventKey,
+                title, body, Instant.now()));
     }
 
     private RecipientSpec spec(String userId, LearningAssignmentNotificationType type,

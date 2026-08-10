@@ -37,6 +37,21 @@ class LearningAssignmentTests {
         assertEquals(LearningAssignmentStatus.COMPLETED, assignment.getStatus());
     }
 
+    @Test
+    void shouldRequireEvidenceAfterSuccessfulRunAndResumeWhenEvidenceArrives() {
+        LearningAssignment assignment = assignment();
+        assignment.accept("profile-1", "goal-1", Instant.now());
+
+        assignment.awaitEvidence(Instant.now());
+        assertEquals(LearningAssignmentStatus.AWAITING_EVIDENCE, assignment.getStatus());
+
+        assignment.resumeAfterEvidence(Instant.now());
+        assertEquals(LearningAssignmentStatus.ACCEPTED, assignment.getStatus());
+        assignment.awaitEvidence(Instant.now());
+        assignment.complete(Instant.now());
+        assertEquals(LearningAssignmentStatus.COMPLETED, assignment.getStatus());
+    }
+
     private LearningAssignment assignment() {
         return new LearningAssignment("tenant-a", "teacher-1", "student-1", "函数作业",
                 "完成函数定义域练习", "数学", "高中一年级", "人教A版", "函数定义域",

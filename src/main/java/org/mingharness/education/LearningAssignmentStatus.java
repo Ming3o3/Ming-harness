@@ -4,6 +4,7 @@ package org.mingharness.education;
 public enum LearningAssignmentStatus {
     ASSIGNED,
     ACCEPTED,
+    AWAITING_EVIDENCE,
     OVERDUE,
     COMPLETED,
     CANCELLED

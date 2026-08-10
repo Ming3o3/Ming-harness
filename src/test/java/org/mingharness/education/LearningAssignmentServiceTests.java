@@ -44,6 +44,25 @@ class LearningAssignmentServiceTests {
     }
 
     @Test
+    void shouldTreatAwaitingEvidenceAsAnAlreadyAcceptedAssignment() {
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        LearningAssignment assignment = assignment();
+        assignment.accept("profile-1", "goal-1", Instant.now());
+        assignment.awaitEvidence(Instant.now());
+        when(assignments.findByTenantIdAndId("tenant-a", assignment.getId()))
+                .thenReturn(Optional.of(assignment));
+
+        LearningAssignmentAcceptView accepted = new LearningAssignmentService(
+                assignments, mock(LearnerProfileRepository.class), mock(LearningGoalRepository.class),
+                mock(LearnerMasteryRepository.class), new SensitiveDataSanitizer())
+                .accept("tenant-a", "student-1", assignment.getId());
+
+        assertEquals(LearningAssignmentStatus.AWAITING_EVIDENCE.name(), accepted.assignment().status());
+        assertEquals("profile-1", accepted.learnerProfileId());
+        assertEquals("goal-1", accepted.learningGoalId());
+    }
+
+    @Test
     void shouldExpireDueAssignmentsAndPersistTheLifecycleTransition() {
         LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
         LearningAssignment overdue = new LearningAssignment("tenant-a", "teacher-1", "student-1",

@@ -11,13 +11,16 @@ public class LearningTaskScheduler {
 
     private final LearningTaskService taskService;
     private final LearningTaskReconciliationService reconciliationService;
+    private final LearningAssignmentReconciliationService assignmentReconciliationService;
     private final LearningAssignmentService assignmentService;
 
     public LearningTaskScheduler(LearningTaskService taskService,
                                 LearningTaskReconciliationService reconciliationService,
+                                LearningAssignmentReconciliationService assignmentReconciliationService,
                                 LearningAssignmentService assignmentService) {
         this.taskService = taskService;
         this.reconciliationService = reconciliationService;
+        this.assignmentReconciliationService = assignmentReconciliationService;
         this.assignmentService = assignmentService;
     }
 
@@ -27,6 +30,7 @@ public class LearningTaskScheduler {
     )
     public void materializeDueTasks() {
         assignmentService.expireOverdue(Instant.now(), 100);
+        assignmentReconciliationService.reconcile(Instant.now(), 100);
         reconciliationService.reconcile(Instant.now(), 100);
         taskService.materializeDueTasks(Instant.now(), 100);
     }

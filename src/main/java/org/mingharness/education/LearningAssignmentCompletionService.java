@@ -42,4 +42,26 @@ public class LearningAssignmentCompletionService {
         }
         return completed;
     }
+
+    @Transactional
+    public int resumeAfterEvidenceForGoal(String tenantId, String userId, String learningGoalId,
+                                           Instant resumedAt) {
+        int resumed = 0;
+        for (LearningAssignment assignment : assignmentRepository
+                .findByTenantIdAndLearningGoalId(tenantId, learningGoalId)) {
+            if (!tenantId.equals(assignment.getTenantId())
+                    || !userId.equals(assignment.getLearnerUserId())) continue;
+            if (assignment.getStatus() == LearningAssignmentStatus.AWAITING_EVIDENCE) {
+                assignment.resumeAfterEvidence(resumedAt);
+                assignmentRepository.save(assignment);
+                if (notificationService != null) {
+                    notificationService.resolveForAssignmentEvidenceRequired(
+                            tenantId, assignment.getId());
+                    notificationService.ensureForState(assignment);
+                }
+                resumed++;
+            }
+        }
+        return resumed;
+    }
 }

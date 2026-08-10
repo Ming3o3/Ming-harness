@@ -37,6 +37,8 @@ public interface RunRepository extends JpaRepository<Run, String> {
     Optional<Run> findByTenantIdAndIdempotencyKey(String tenantId, String idempotencyKey);
     long countByTenantIdAndUserIdAndEducationLearningAssignmentId(
             String tenantId, String userId, String educationLearningAssignmentId);
+    Optional<Run> findTopByTenantIdAndUserIdAndEducationLearningAssignmentIdOrderByCreatedAtDesc(
+            String tenantId, String userId, String educationLearningAssignmentId);
     long countByTenantIdAndStatusIn(String tenantId, List<RunStatus> statuses);
     /** 恢复器必须锁住候选 Run，等待并发 Worker 提交后再重新判断状态，避免覆盖最新结果。 */
     @Lock(LockModeType.PESSIMISTIC_WRITE)

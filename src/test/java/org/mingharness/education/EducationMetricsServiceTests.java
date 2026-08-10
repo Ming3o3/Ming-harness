@@ -34,6 +34,8 @@ class EducationMetricsServiceTests {
         when(assignments.countForParticipantByStatus("tenant-a", "student-1",
                 LearningAssignmentStatus.ACCEPTED)).thenReturn(1L);
         when(assignments.countForParticipantByStatus("tenant-a", "student-1",
+                LearningAssignmentStatus.AWAITING_EVIDENCE)).thenReturn(1L);
+        when(assignments.countForParticipantByStatus("tenant-a", "student-1",
                 LearningAssignmentStatus.COMPLETED)).thenReturn(2L);
         when(tasks.countByTenantIdAndUserId("tenant-a", "student-1")).thenReturn(5L);
         when(tasks.countByTenantIdAndUserIdAndStartedAtIsNotNull("tenant-a", "student-1"))
@@ -71,9 +73,9 @@ class EducationMetricsServiceTests {
                 .summarize("tenant-a", "student-1");
 
         assertEquals(4, metrics.assignmentTotal());
-        assertEquals(3, metrics.assignmentAccepted());
+        assertEquals(4, metrics.assignmentAccepted());
         assertEquals(2, metrics.assignmentCompleted());
-        assertEquals(0.75, metrics.assignmentAcceptanceRate());
+        assertEquals(1.0, metrics.assignmentAcceptanceRate());
         assertEquals(0.5, metrics.assignmentCompletionRate());
         assertEquals(0.8, metrics.taskStartRate());
         assertEquals(0.6, metrics.taskCompletionRate());
