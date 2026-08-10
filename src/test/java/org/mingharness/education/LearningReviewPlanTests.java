@@ -46,4 +46,19 @@ class LearningReviewPlanTests {
         assertEquals(failed.plus(1, ChronoUnit.DAYS), plan.getNextReviewAt());
         assertEquals(Boolean.FALSE, plan.getLastReviewCorrect());
     }
+
+    @Test
+    void shouldKeepHistoricalReviewSequenceWhenRestartingAfterRevision() {
+        Instant start = Instant.parse("2026-08-01T00:00:00Z");
+        LearningReviewPlan plan = new LearningReviewPlan("tenant-a", "student-1", "goal-1",
+                "profile-1", "函数", start);
+        plan.recordReview(true, start);
+        plan.restartFromCompletion(Instant.parse("2026-08-10T00:00:00Z"));
+
+        assertEquals(1, plan.getReviewCount());
+        assertEquals(1, plan.getSuccessfulReviewCount());
+        assertEquals(0, plan.getIntervalDays());
+        assertEquals(Instant.parse("2026-08-10T00:00:00Z"), plan.getNextReviewAt());
+        assertTrue(plan.isDue(Instant.parse("2026-08-10T00:00:00Z")));
+    }
 }

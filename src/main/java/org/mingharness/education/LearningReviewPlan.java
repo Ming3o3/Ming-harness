@@ -104,12 +104,10 @@ public class LearningReviewPlan {
         updatedAt = Instant.now();
     }
 
-    /** 目标被教师退回后重新达标，复习周期从本次返工完成时间重新开始。 */
+    /** 目标被教师退回后重新达标；保留历史序号，避免旧任务与新周期发生唯一键冲突。 */
     public void restartFromCompletion(Instant completedAt) {
         Instant completed = completedAt == null ? Instant.now() : completedAt;
         status = LearningReviewPlanStatus.ACTIVE;
-        reviewCount = 0;
-        successfulReviewCount = 0;
         intervalDays = 0;
         nextReviewAt = completed;
         lastReviewedAt = null;
