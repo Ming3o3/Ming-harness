@@ -52,6 +52,7 @@ const learningTasks = ref([])
 const learningNotifications = ref([])
 const learningNotificationUnreadCount = ref(0)
 const learningAssignments = ref([])
+const learningAssignmentProgressMap = ref({})
 const educationMetrics = ref(null)
 const learningTaskLoading = ref(false)
 const learningTaskStartingId = ref('')
@@ -2673,6 +2674,15 @@ async function loadEducationData() {
     learningTasks.value = tasks
     learningAssignments.value = assignments
     educationMetrics.value = metrics
+    const progressEntries = await Promise.all(assignments.slice(0, 20).map(async (assignment) => {
+      try {
+        return [assignment.id, await api.getLearningAssignmentProgress(assignment.id)]
+      } catch {
+        return [assignment.id, null]
+      }
+    }))
+    learningAssignmentProgressMap.value = Object.fromEntries(
+      progressEntries.filter(([, value]) => value))
     await loadLearningNotifications()
     const recommendationEntries = await Promise.all(goals.map(async (goal) => {
       try {
@@ -5332,7 +5342,7 @@ onBeforeUnmount(() => {
               </form>
               <div v-if="learningAssignments.length" class="learning-assignment-list">
                 <article v-for="assignment in learningAssignments.slice(0, 8)" :key="assignment.id" class="learning-assignment-row">
-                  <div class="learning-assignment-main"><div class="learning-assignment-meta"><strong>{{ assignment.title }}</strong><span>{{ learningAssignmentStatusLabel(assignment.status) }}</span></div><small>{{ assignment.teacherUserId }} → {{ assignment.learnerUserId }} · {{ assignment.subject }} · {{ assignment.gradeLevel }} · {{ assignment.curriculumVersion }}</small><p>{{ assignment.instructions }}</p></div>
+                  <div class="learning-assignment-main"><div class="learning-assignment-meta"><strong>{{ assignment.title }}</strong><span>{{ learningAssignmentStatusLabel(assignment.status) }}</span></div><small>{{ assignment.teacherUserId }} → {{ assignment.learnerUserId }} · {{ assignment.subject }} · {{ assignment.gradeLevel }} · {{ assignment.curriculumVersion }}</small><p>{{ assignment.instructions }}</p><small v-if="learningAssignmentProgressMap[assignment.id]" class="learning-assignment-progress">掌握度 {{ formatRate(learningAssignmentProgressMap[assignment.id].currentMastery) }} / {{ formatRate(learningAssignmentProgressMap[assignment.id].targetMastery) }} · 目标进度 {{ formatRate(learningAssignmentProgressMap[assignment.id].masteryProgress) }} · 测评 {{ learningAssignmentProgressMap[assignment.id].assessmentTotal }} 次 · 任务 {{ learningAssignmentProgressMap[assignment.id].taskCompleted }} / {{ learningAssignmentProgressMap[assignment.id].taskTotal }}</small></div>
                   <button v-if="assignment.learnerUserId === form.userId && assignment.status === 'ASSIGNED'" class="secondary-button" type="button" :disabled="learningAssignmentAcceptingId === assignment.id" @click="acceptLearningAssignment(assignment)">{{ learningAssignmentAcceptingId === assignment.id ? '接受中…' : '接受并开始学习' }}</button>
                 </article>
               </div>

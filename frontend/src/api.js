@@ -359,6 +359,8 @@ export const api = {
     `/education/assignments/${encodeURIComponent(assignmentId)}/accept`, {
       method: 'POST',
     }),
+  getLearningAssignmentProgress: (assignmentId) => request(
+    `/education/assignments/${encodeURIComponent(assignmentId)}/progress`),
   executeLearningGoalNextAction: (goalId, payload = {}, idempotencyKey) => request(
     `/education/goals/${encodeURIComponent(goalId)}/next-action`, {
       method: 'POST',

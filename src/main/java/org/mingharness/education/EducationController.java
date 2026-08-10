@@ -22,6 +22,7 @@ import org.mingharness.education.api.LearningTaskView;
 import org.mingharness.education.api.LearningAssignmentAcceptView;
 import org.mingharness.education.api.LearningAssignmentRequest;
 import org.mingharness.education.api.LearningAssignmentView;
+import org.mingharness.education.api.LearningAssignmentProgressView;
 import org.mingharness.education.api.EducationMetricsView;
 import org.mingharness.education.api.ManualAssessmentSubmissionRequest;
 import org.mingharness.education.api.MasteryUpdateRequest;
@@ -55,6 +56,7 @@ public class EducationController {
     private final LearningTaskNotificationService notificationService;
     private final LearningAssignmentService assignmentService;
     private final EducationMetricsService metricsService;
+    private final LearningAssignmentProgressService assignmentProgressService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
@@ -65,7 +67,8 @@ public class EducationController {
                                LearningTaskService taskService,
                                LearningTaskNotificationService notificationService,
                                LearningAssignmentService assignmentService,
-                               EducationMetricsService metricsService) {
+                               EducationMetricsService metricsService,
+                               LearningAssignmentProgressService assignmentProgressService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
@@ -76,6 +79,7 @@ public class EducationController {
         this.notificationService = notificationService;
         this.assignmentService = assignmentService;
         this.metricsService = metricsService;
+        this.assignmentProgressService = assignmentProgressService;
     }
 
     @PostMapping("/sources")
@@ -230,6 +234,12 @@ public class EducationController {
         HarnessIdentity identity = identity();
         return LearningAssignmentView.from(assignmentService.getForParticipant(
                 identity.tenantId(), identity.userId(), assignmentId));
+    }
+
+    @GetMapping("/assignments/{assignmentId}/progress")
+    public LearningAssignmentProgressView assignmentProgress(@PathVariable String assignmentId) {
+        HarnessIdentity identity = identity();
+        return assignmentProgressService.get(identity.tenantId(), identity.userId(), assignmentId);
     }
 
     @PostMapping("/assignments/{assignmentId}/accept")

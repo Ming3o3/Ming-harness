@@ -462,6 +462,7 @@ h3 { margin: 0; font-size: 13px; }
 .learning-assignment-meta strong { overflow: hidden; color: var(--soft); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .learning-assignment-meta span { border: 1px solid rgba(76,226,213,.25); border-radius: 9px; color: var(--cyan); padding: 2px 5px; font: 8px "DM Mono", monospace; white-space: nowrap; }
 .learning-assignment-main > small { display: block; margin-top: 4px; color: var(--muted); font: 8px "DM Mono", monospace; }
+.learning-assignment-main > small.learning-assignment-progress { margin-top: 6px; color: var(--cyan); }
 .learning-assignment-main p { margin: 5px 0 0; color: var(--soft); font-size: 9px; line-height: 1.45; }
 .learning-task-workbench { display: grid; gap: 8px; border: 1px solid rgba(255,196,92,.24); border-radius: 8px; background: rgba(255,196,92,.045); padding: 11px; }
 .learning-task-heading { align-items: center; }
