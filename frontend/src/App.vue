@@ -2946,7 +2946,7 @@ async function openLearningAssignmentNotification(notification) {
   }
   if (notification.notificationType === 'ASSIGNED' && assignment.status === 'ASSIGNED'
     && assignment.learnerUserId === form.userId) {
-    await acceptLearningAssignment(assignment)
+    await startLearningAssignment(assignment)
     return
   }
   const goal = learningGoals.value.find((item) => item.id === assignment.learningGoalId)
@@ -3082,16 +3082,26 @@ async function createLearningAssignment() {
   }
 }
 
-async function acceptLearningAssignment(assignment) {
+async function startLearningAssignment(assignment) {
   if (!assignment?.id || learningAssignmentAcceptingId.value) return
   learningAssignmentAcceptingId.value = assignment.id
   clearMessages()
   try {
-    const accepted = await api.acceptLearningAssignment(assignment.id)
+    const started = await api.startLearningAssignment(
+      assignment.id,
+      { maxTurns: chatMaxTurns.value },
+      `learning-assignment-${assignment.id}`,
+    )
+    activeConversation.value = started.conversation
+    conversations.value = [started.conversation.conversation, ...conversations.value
+      .filter((item) => item.id !== started.conversation.conversation.id)]
+    rememberConversation(started.conversation.conversation.id)
+    chatMode.value = true
+    const runId = latestConversationRun(started.conversation)
+    if (runId) void selectRun(runId, false, false)
     await loadEducationData()
-    const goal = learningGoals.value.find((item) => item.id === accepted.learningGoalId)
-    if (goal) await selectLearningGoal(goal, false)
-    noticeMessage.value = `已接受课程作业：${accepted.assignment.title}，学习目标已建立。`
+    void loadConversations(started.conversation.conversation.id)
+    noticeMessage.value = `已开始课程作业：${started.assignment.title}`
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
@@ -5549,7 +5559,7 @@ onBeforeUnmount(() => {
                     <details v-if="learningAssignmentFeedbackMap[assignment.id]?.length" class="learning-assessment-history"><summary>教师反馈（{{ learningAssignmentFeedbackMap[assignment.id].length }}）</summary><div v-for="feedback in learningAssignmentFeedbackMap[assignment.id].slice(0, 5)" :key="feedback.id"><span>{{ learningAssignmentFeedbackActionLabel(feedback.action) }}</span><span>{{ feedback.message }}<small v-if="feedback.suggestedDueAt"> · 截止 {{ formatDate(feedback.suggestedDueAt) }}</small></span><small>{{ feedback.status === 'ACKNOWLEDGED' ? '已确认' : '待确认' }} · {{ formatDate(feedback.createdAt) }}<button v-if="assignment.learnerUserId === form.userId && feedback.status === 'OPEN'" class="text-button" type="button" :disabled="learningAssignmentFeedbackAcknowledgingId === feedback.id" @click="acknowledgeLearningAssignmentFeedback(assignment, feedback)">确认</button></small></div></details>
                   </div>
                   <div class="learning-assignment-actions">
-                    <button v-if="assignment.learnerUserId === form.userId && assignment.status === 'ASSIGNED'" class="secondary-button" type="button" :disabled="learningAssignmentAcceptingId === assignment.id" @click="acceptLearningAssignment(assignment)">{{ learningAssignmentAcceptingId === assignment.id ? '接受中…' : '接受并开始学习' }}</button>
+                    <button v-if="assignment.learnerUserId === form.userId && assignment.status === 'ASSIGNED'" class="secondary-button" type="button" :disabled="learningAssignmentAcceptingId === assignment.id" @click="startLearningAssignment(assignment)">{{ learningAssignmentAcceptingId === assignment.id ? '启动中…' : '接受并开始学习' }}</button>
                     <button v-if="assignment.teacherUserId === form.userId && assignment.status !== 'CANCELLED'" class="text-button" type="button" @click="startLearningAssignmentFeedback(assignment)">写教师反馈</button>
                     <button v-if="assignment.teacherUserId === form.userId && ['ASSIGNED', 'ACCEPTED', 'OVERDUE'].includes(assignment.status)" class="text-button" type="button" @click="cancelLearningAssignment(assignment)">取消作业</button>
                   </div>
