@@ -11,6 +11,7 @@ public record AssessmentAttemptView(
         String runId,
         String stepId,
         String learningGoalId,
+        String learningAssignmentId,
         String learnerProfileId,
         String conceptKey,
         boolean correct,
@@ -28,7 +29,8 @@ public record AssessmentAttemptView(
     public static AssessmentAttemptView from(AssessmentAttempt attempt) {
         return new AssessmentAttemptView(attempt.getId(), attempt.getTenantId(), attempt.getUserId(),
                 attempt.getRunId(), attempt.getStepId(), attempt.getLearningGoalId(),
-                attempt.getLearnerProfileId(), attempt.getConceptKey(), attempt.isCorrect(),
+                attempt.getLearningAssignmentId(), attempt.getLearnerProfileId(),
+                attempt.getConceptKey(), attempt.isCorrect(),
                 attempt.getObservedMastery(), attempt.getMasteryBefore(), attempt.getMasteryAfter(),
                 attempt.getAssessmentType().name(), attempt.getReviewPlanId(),
                 attempt.getEvidenceSource(), attempt.getEvidenceText(),

@@ -1624,7 +1624,7 @@ public class RunService {
                 run.getEducationLearnerProfileId(), run.getEducationPedagogicalMode(),
                 run.getEducationLearningGoalId(), run.getEducationLearningGoalTitle(),
                 run.getEducationLearningGoalTarget(), run.getEducationConceptKey(),
-                run.getEducationReviewPlanId()
+                run.getEducationReviewPlanId(), run.getEducationLearningAssignmentId()
         );
     }
 

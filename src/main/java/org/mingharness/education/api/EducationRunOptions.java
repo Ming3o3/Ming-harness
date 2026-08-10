@@ -12,6 +12,7 @@ public record EducationRunOptions(
         Boolean enabled,
         @Size(max = 128, message = "学习者画像 ID 不能超过 128 个字符") String learnerProfileId,
         @Size(max = 128, message = "学习目标 ID 不能超过 128 个字符") String learningGoalId,
+        @Size(max = 128, message = "课程作业 ID 不能超过 128 个字符") String learningAssignmentId,
         @Size(max = 255, message = "复习计划 ID 不能超过 255 个字符") String reviewPlanId,
         @Size(max = 128, message = "学科长度不能超过 128 个字符") String subject,
         @Size(max = 128, message = "年级长度不能超过 128 个字符") String gradeLevel,
@@ -28,7 +29,7 @@ public record EducationRunOptions(
     public EducationRunOptions(Boolean enabled, String learnerProfileId, String subject,
                                String gradeLevel, String curriculumVersion, String conceptKey,
                                Integer minDifficulty, Integer maxDifficulty, String pedagogicalMode) {
-        this(enabled, learnerProfileId, null, null, subject, gradeLevel, curriculumVersion, conceptKey,
+        this(enabled, learnerProfileId, null, null, null, subject, gradeLevel, curriculumVersion, conceptKey,
                 minDifficulty, maxDifficulty, pedagogicalMode);
     }
 
@@ -37,7 +38,16 @@ public record EducationRunOptions(
                                String subject, String gradeLevel, String curriculumVersion,
                                String conceptKey, Integer minDifficulty, Integer maxDifficulty,
                                String pedagogicalMode) {
-        this(enabled, learnerProfileId, learningGoalId, null, subject, gradeLevel,
+        this(enabled, learnerProfileId, learningGoalId, null, null, subject, gradeLevel,
+                curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode);
+    }
+
+    /** 兼容已绑定学习目标和保持度复习计划的旧调用方。 */
+    public EducationRunOptions(Boolean enabled, String learnerProfileId, String learningGoalId,
+                               String reviewPlanId, String subject, String gradeLevel,
+                               String curriculumVersion, String conceptKey, Integer minDifficulty,
+                               Integer maxDifficulty, String pedagogicalMode) {
+        this(enabled, learnerProfileId, learningGoalId, null, reviewPlanId, subject, gradeLevel,
                 curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode);
     }
 

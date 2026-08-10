@@ -199,7 +199,7 @@ public class EducationAssessmentService {
                 goal.getId(), profileId, normalizedConcept, correct, boundedObserved, before,
                 updated.getMasteryScore(), attemptType, reviewPlanId, normalizedEvidenceSource,
                 cleanEvidence(evidenceText),
-                cleanFeedback(feedback));
+                cleanFeedback(feedback), run.getEducationLearningAssignmentId());
         AssessmentAttempt saved = attemptRepository.save(attempt);
         if (attemptType == AssessmentAttemptType.REVIEW) {
             if (taskCompletionService != null) {

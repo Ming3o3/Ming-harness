@@ -27,6 +27,8 @@ public class AssessmentAttempt {
     private String stepId;
     @Column(nullable = false, length = 255)
     private String learningGoalId;
+    @Column(name = "learning_assignment_id", length = 128)
+    private String learningAssignmentId;
     @Column(nullable = false, length = 255)
     private String learnerProfileId;
     @Column(nullable = false, length = 255)
@@ -62,7 +64,7 @@ public class AssessmentAttempt {
                              double masteryAfter, String feedback) {
         this(tenantId, userId, runId, stepId, learningGoalId, learnerProfileId, conceptKey,
                 correct, observedMastery, masteryBefore, masteryAfter,
-                AssessmentAttemptType.FORMATIVE, null, "MODEL_TOOL", null, feedback);
+                AssessmentAttemptType.FORMATIVE, null, "MODEL_TOOL", null, feedback, null);
     }
 
     public AssessmentAttempt(String tenantId, String userId, String runId, String stepId,
@@ -72,7 +74,7 @@ public class AssessmentAttempt {
                              String feedback) {
         this(tenantId, userId, runId, stepId, learningGoalId, learnerProfileId, conceptKey,
                 correct, observedMastery, masteryBefore, masteryAfter,
-                AssessmentAttemptType.FORMATIVE, null, evidenceSource, evidenceText, feedback);
+                AssessmentAttemptType.FORMATIVE, null, evidenceSource, evidenceText, feedback, null);
     }
 
     public AssessmentAttempt(String tenantId, String userId, String runId, String stepId,
@@ -81,12 +83,25 @@ public class AssessmentAttempt {
                              double masteryAfter, AssessmentAttemptType assessmentType,
                              String reviewPlanId, String evidenceSource, String evidenceText,
                              String feedback) {
+        this(tenantId, userId, runId, stepId, learningGoalId, learnerProfileId, conceptKey,
+                correct, observedMastery, masteryBefore, masteryAfter, assessmentType,
+                reviewPlanId, evidenceSource, evidenceText, feedback, null);
+    }
+
+    public AssessmentAttempt(String tenantId, String userId, String runId, String stepId,
+                             String learningGoalId, String learnerProfileId, String conceptKey,
+                             boolean correct, double observedMastery, double masteryBefore,
+                             double masteryAfter, AssessmentAttemptType assessmentType,
+                             String reviewPlanId, String evidenceSource, String evidenceText,
+                             String feedback, String learningAssignmentId) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = required(tenantId, "tenantId");
         this.userId = required(userId, "userId");
         this.runId = required(runId, "runId");
         this.stepId = required(stepId, "stepId");
         this.learningGoalId = required(learningGoalId, "learningGoalId");
+        this.learningAssignmentId = learningAssignmentId == null || learningAssignmentId.isBlank()
+                ? null : learningAssignmentId.trim();
         this.learnerProfileId = required(learnerProfileId, "learnerProfileId");
         this.conceptKey = required(conceptKey, "conceptKey");
         this.correct = correct;
@@ -118,6 +133,7 @@ public class AssessmentAttempt {
     public String getRunId() { return runId; }
     public String getStepId() { return stepId; }
     public String getLearningGoalId() { return learningGoalId; }
+    public String getLearningAssignmentId() { return learningAssignmentId; }
     public String getLearnerProfileId() { return learnerProfileId; }
     public String getConceptKey() { return conceptKey; }
     public boolean isCorrect() { return correct; }

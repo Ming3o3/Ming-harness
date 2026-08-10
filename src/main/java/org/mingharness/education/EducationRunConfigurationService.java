@@ -23,6 +23,7 @@ public class EducationRunConfigurationService {
     private final LearnerProfileRepository profileRepository;
     private final LearnerMasteryRepository masteryRepository;
     private final LearningGoalRepository goalRepository;
+    private final LearningAssignmentRepository assignmentRepository;
     private final LearningReviewPlanService reviewPlanService;
     private final SensitiveDataSanitizer sanitizer;
 
@@ -30,7 +31,7 @@ public class EducationRunConfigurationService {
     public EducationRunConfigurationService(LearnerProfileRepository profileRepository,
                                             LearnerMasteryRepository masteryRepository,
                                             SensitiveDataSanitizer sanitizer) {
-        this(profileRepository, masteryRepository, null, null, sanitizer);
+        this(profileRepository, masteryRepository, null, null, null, sanitizer);
     }
 
     /** 兼容已启用学习目标但尚未使用保持度复习的测试和扩展调用方。 */
@@ -38,7 +39,16 @@ public class EducationRunConfigurationService {
                                             LearnerMasteryRepository masteryRepository,
                                             LearningGoalRepository goalRepository,
                                             SensitiveDataSanitizer sanitizer) {
-        this(profileRepository, masteryRepository, goalRepository, null, sanitizer);
+        this(profileRepository, masteryRepository, goalRepository, null, null, sanitizer);
+    }
+
+    /** 兼容已接入保持度复习但尚未绑定课程作业的扩展调用方。 */
+    public EducationRunConfigurationService(LearnerProfileRepository profileRepository,
+                                            LearnerMasteryRepository masteryRepository,
+                                            LearningGoalRepository goalRepository,
+                                            LearningReviewPlanService reviewPlanService,
+                                            SensitiveDataSanitizer sanitizer) {
+        this(profileRepository, masteryRepository, goalRepository, reviewPlanService, null, sanitizer);
     }
 
     @Autowired
@@ -46,10 +56,12 @@ public class EducationRunConfigurationService {
                                             LearnerMasteryRepository masteryRepository,
                                             LearningGoalRepository goalRepository,
                                             LearningReviewPlanService reviewPlanService,
+                                            LearningAssignmentRepository assignmentRepository,
                                             SensitiveDataSanitizer sanitizer) {
         this.profileRepository = profileRepository;
         this.masteryRepository = masteryRepository;
         this.goalRepository = goalRepository;
+        this.assignmentRepository = assignmentRepository;
         this.reviewPlanService = reviewPlanService;
         this.sanitizer = sanitizer;
     }
@@ -61,6 +73,11 @@ public class EducationRunConfigurationService {
         }
         LearningReviewPlan reviewPlan = resolveReviewPlan(tenantId, userId, options.reviewPlanId());
         String requestedGoalId = options.learningGoalId();
+        LearningAssignment assignment = resolveAssignment(tenantId, userId,
+                options.learningAssignmentId(), requestedGoalId);
+        if (assignment != null) {
+            requestedGoalId = assignment.getLearningGoalId();
+        }
         if (reviewPlan != null) {
             if (requestedGoalId != null && !requestedGoalId.isBlank()
                     && !requestedGoalId.trim().equals(reviewPlan.getLearningGoalId())) {
@@ -74,6 +91,19 @@ public class EducationRunConfigurationService {
             }
         }
         LearningGoal goal = resolveGoal(tenantId, userId, requestedGoalId, reviewPlan != null);
+        if (assignment == null && goal != null && assignmentRepository != null) {
+            assignment = assignmentRepository
+                    .findByTenantIdAndLearnerUserIdAndLearningGoalIdOrderByCreatedAtDesc(
+                            tenantId, userId, goal.getId()).stream().findFirst().orElse(null);
+            validateAssignmentState(assignment);
+        }
+        if (assignment != null && goal != null) {
+            if (!goal.getId().equals(assignment.getLearningGoalId())
+                    || !goal.getLearnerProfileId().equals(assignment.getLearnerProfileId())) {
+                throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_ASSIGNMENT_CONTEXT_MISMATCH",
+                        "课程作业与学习目标的画像或目标不一致");
+            }
+        }
         String profileId = options.learnerProfileId();
         if (goal != null) {
             if (reviewPlan != null && goal.getStatus() != LearningGoalStatus.COMPLETED) {
@@ -120,12 +150,53 @@ public class EducationRunConfigurationService {
         }
         String conceptKey = goal == null ? requestedConcept : goal.getConceptKey();
         return new EducationRunConfiguration(true, profile.getId(),
-                goal == null ? null : goal.getId(), reviewPlan == null ? null : reviewPlan.getId(),
+                goal == null ? null : goal.getId(), assignment == null ? null : assignment.getId(),
+                reviewPlan == null ? null : reviewPlan.getId(),
                 goal == null ? null : goal.getTitle(),
                 goal == null ? 0.0 : goal.getBaselineMastery(),
                 goal == null ? 0.0 : goal.getTargetMastery(),
                 clean(subject), clean(gradeLevel), clean(curriculumVersion), conceptKey,
                 minDifficulty, maxDifficulty, pedagogicalMode, masterySummary(tenantId, profile.getId()));
+    }
+
+    private LearningAssignment resolveAssignment(String tenantId, String userId,
+                                                 String assignmentId, String requestedGoalId) {
+        String normalizedId = clean(assignmentId);
+        if (normalizedId == null) return null;
+        if (assignmentRepository == null) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "LEARNING_ASSIGNMENT_UNAVAILABLE",
+                    "当前运行环境未启用课程作业存储");
+        }
+        LearningAssignment assignment = assignmentRepository.findByTenantIdAndId(tenantId, normalizedId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
+                        "LEARNING_ASSIGNMENT_NOT_FOUND", "课程作业不存在"));
+        if (!userId.equals(assignment.getLearnerUserId())) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "LEARNING_ASSIGNMENT_LEARNER_ONLY",
+                    "只有作业学习者可以使用该作业创建教育 Run");
+        }
+        validateAssignmentState(assignment);
+        if (requestedGoalId != null && !requestedGoalId.isBlank()
+                && !requestedGoalId.trim().equals(assignment.getLearningGoalId())) {
+            throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_ASSIGNMENT_GOAL_MISMATCH",
+                    "课程作业与请求中的学习目标不一致");
+        }
+        if (assignment.getLearningGoalId() == null || assignment.getLearningGoalId().isBlank()) {
+            throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_ASSIGNMENT_GOAL_REQUIRED",
+                    "接受课程作业后才能创建绑定作业的教育 Run");
+        }
+        return assignment;
+    }
+
+    private void validateAssignmentState(LearningAssignment assignment) {
+        if (assignment == null) return;
+        if (assignment.getStatus() == LearningAssignmentStatus.ASSIGNED) {
+            throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_ASSIGNMENT_NOT_ACCEPTED",
+                    "课程作业尚未被学习者接受，不能创建教育 Run");
+        }
+        if (assignment.getStatus() == LearningAssignmentStatus.CANCELLED) {
+            throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_ASSIGNMENT_CANCELLED",
+                    "已取消的课程作业不能创建教育 Run");
+        }
     }
 
     private LearningGoal resolveGoal(String tenantId, String userId, String goalId, boolean allowCompleted) {

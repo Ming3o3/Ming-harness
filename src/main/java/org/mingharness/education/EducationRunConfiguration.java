@@ -13,6 +13,7 @@ public record EducationRunConfiguration(
         boolean enabled,
         String learnerProfileId,
         String learningGoalId,
+        String learningAssignmentId,
         String reviewPlanId,
         String learningGoalTitle,
         double learningGoalBaselineMastery,
@@ -28,7 +29,7 @@ public record EducationRunConfiguration(
 ) {
 
     public static EducationRunConfiguration disabled() {
-        return new EducationRunConfiguration(false, null, null, null, null, 0.0, 0.0,
+        return new EducationRunConfiguration(false, null, null, null, null, null, 0.0, 0.0,
                 null, null, null, null, null, null, "AUTO", "");
     }
 
@@ -39,7 +40,20 @@ public record EducationRunConfiguration(
                                      String curriculumVersion, String conceptKey, Integer minDifficulty,
                                      Integer maxDifficulty, String pedagogicalMode,
                                      String learnerStateSummary) {
-        this(enabled, learnerProfileId, learningGoalId, null, learningGoalTitle,
+        this(enabled, learnerProfileId, learningGoalId, null, null, learningGoalTitle,
+                learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
+                curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
+                learnerStateSummary);
+    }
+
+    /** 兼容旧版携带保持度复习计划的快照构造方式。 */
+    public EducationRunConfiguration(boolean enabled, String learnerProfileId, String learningGoalId,
+                                     String reviewPlanId, String learningGoalTitle,
+                                     double learningGoalBaselineMastery, double learningGoalTargetMastery,
+                                     String subject, String gradeLevel, String curriculumVersion,
+                                     String conceptKey, Integer minDifficulty, Integer maxDifficulty,
+                                     String pedagogicalMode, String learnerStateSummary) {
+        this(enabled, learnerProfileId, learningGoalId, null, reviewPlanId, learningGoalTitle,
                 learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
                 curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
                 learnerStateSummary);

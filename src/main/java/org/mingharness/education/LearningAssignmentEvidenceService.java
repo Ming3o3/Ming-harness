@@ -23,9 +23,15 @@ public class LearningAssignmentEvidenceService {
     public List<AssessmentAttemptView> list(String tenantId, String userId, String assignmentId) {
         LearningAssignment assignment = assignmentService.getForParticipant(tenantId, userId, assignmentId);
         if (assignment.getLearningGoalId() == null) return List.of();
-        return assessmentRepository
-                .findByTenantIdAndUserIdAndLearningGoalIdOrderByCreatedAtAsc(
-                        tenantId, assignment.getLearnerUserId(), assignment.getLearningGoalId())
-                .stream().map(AssessmentAttemptView::from).toList();
+        List<AssessmentAttempt> attempts = assessmentRepository
+                .findByTenantIdAndUserIdAndLearningAssignmentIdOrderByCreatedAtAsc(
+                        tenantId, assignment.getLearnerUserId(), assignment.getId());
+        // 兼容迁移前的历史证据：旧记录没有作业 ID，只能安全地回退到作业唯一绑定目标。
+        if (attempts.isEmpty()) {
+            attempts = assessmentRepository
+                    .findByTenantIdAndUserIdAndLearningGoalIdOrderByCreatedAtAsc(
+                            tenantId, assignment.getLearnerUserId(), assignment.getLearningGoalId());
+        }
+        return attempts.stream().map(AssessmentAttemptView::from).toList();
     }
 }

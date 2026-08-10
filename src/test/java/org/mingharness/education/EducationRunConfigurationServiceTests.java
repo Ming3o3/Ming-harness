@@ -127,4 +127,69 @@ class EducationRunConfigurationServiceTests {
         assertEquals(plan.getId(), configuration.reviewPlanId());
         assertEquals(profile.getId(), configuration.learnerProfileId());
     }
+
+    @Test
+    void shouldFreezeExplicitAssignmentAndRejectUnacceptedAssignmentRuns() {
+        LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        LearnerProfile profile = new LearnerProfile("tenant-a", "student-1", "数学",
+                "高中一年级", "人教A版", null, "zh-CN");
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", profile.getId(),
+                "掌握函数基础", "函数", 0.35, 0.8);
+        LearningAssignment assignment = new LearningAssignment("tenant-a", "teacher-1", "student-1",
+                "函数作业", "完成练习", "数学", "高中一年级", "人教A版", "函数", 0.8,
+                java.time.Instant.now().plusSeconds(3600));
+        assignment.accept(profile.getId(), goal.getId(), java.time.Instant.now());
+        when(assignments.findByTenantIdAndId("tenant-a", assignment.getId()))
+                .thenReturn(Optional.of(assignment));
+        when(goals.findByIdAndTenantIdAndUserId(goal.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(goal));
+        when(profiles.findByIdAndTenantIdAndUserId(profile.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(profile));
+        when(mastery.findByTenantIdAndLearnerProfileIdOrderByConceptKeyAsc("tenant-a", profile.getId()))
+                .thenReturn(List.of());
+
+        EducationRunConfigurationService service = new EducationRunConfigurationService(
+                profiles, mastery, goals, null, assignments, new SensitiveDataSanitizer());
+        EducationRunConfiguration configuration = service.resolve("tenant-a", "student-1",
+                new EducationRunOptions(true, profile.getId(), goal.getId(), assignment.getId(), null,
+                        null, null, null, null, null, null, "PRACTICE"));
+
+        assertEquals(assignment.getId(), configuration.learningAssignmentId());
+        assertEquals(goal.getId(), configuration.learningGoalId());
+    }
+
+    @Test
+    void shouldDeriveAssignmentWhenRunSelectsItsBoundGoal() {
+        LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        LearnerProfile profile = new LearnerProfile("tenant-a", "student-1", "数学",
+                "高中一年级", "人教A版", null, "zh-CN");
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", profile.getId(),
+                "掌握函数基础", "函数", 0.35, 0.8);
+        LearningAssignment assignment = new LearningAssignment("tenant-a", "teacher-1", "student-1",
+                "函数作业", "完成练习", "数学", "高中一年级", "人教A版", "函数", 0.8,
+                java.time.Instant.now().plusSeconds(3600));
+        assignment.accept(profile.getId(), goal.getId(), java.time.Instant.now());
+        when(goals.findByIdAndTenantIdAndUserId(goal.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(goal));
+        when(assignments.findByTenantIdAndLearnerUserIdAndLearningGoalIdOrderByCreatedAtDesc(
+                "tenant-a", "student-1", goal.getId())).thenReturn(List.of(assignment));
+        when(profiles.findByIdAndTenantIdAndUserId(profile.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(profile));
+        when(mastery.findByTenantIdAndLearnerProfileIdOrderByConceptKeyAsc("tenant-a", profile.getId()))
+                .thenReturn(List.of());
+
+        EducationRunConfigurationService service = new EducationRunConfigurationService(
+                profiles, mastery, goals, null, assignments, new SensitiveDataSanitizer());
+        EducationRunConfiguration configuration = service.resolve("tenant-a", "student-1",
+                new EducationRunOptions(true, profile.getId(), goal.getId(), null, null, null,
+                        null, null, null, null, "PRACTICE"));
+
+        assertEquals(assignment.getId(), configuration.learningAssignmentId());
+    }
 }

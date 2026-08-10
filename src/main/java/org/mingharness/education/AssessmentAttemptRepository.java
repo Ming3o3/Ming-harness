@@ -10,6 +10,9 @@ public interface AssessmentAttemptRepository extends JpaRepository<AssessmentAtt
     List<AssessmentAttempt> findByTenantIdAndUserIdAndLearningGoalIdOrderByCreatedAtAsc(
             String tenantId, String userId, String learningGoalId);
 
+    List<AssessmentAttempt> findByTenantIdAndUserIdAndLearningAssignmentIdOrderByCreatedAtAsc(
+            String tenantId, String userId, String learningAssignmentId);
+
     Optional<AssessmentAttempt> findTop1ByTenantIdAndUserIdAndLearningGoalIdOrderByCreatedAtDesc(
             String tenantId, String userId, String learningGoalId);
 
