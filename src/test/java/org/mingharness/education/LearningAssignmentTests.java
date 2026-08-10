@@ -18,6 +18,9 @@ class LearningAssignmentTests {
 
         assignment.complete(Instant.now());
         assertEquals(LearningAssignmentStatus.COMPLETED, assignment.getStatus());
+        assertEquals(LearningAssignmentReviewStatus.PENDING, assignment.getReviewStatus());
+        assignment.verifyByTeacher("teacher-1", "证据充分", Instant.now());
+        assertEquals(LearningAssignmentReviewStatus.VERIFIED, assignment.getReviewStatus());
         assertEquals("profile-1", assignment.getLearnerProfileId());
     }
 

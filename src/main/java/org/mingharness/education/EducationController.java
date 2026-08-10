@@ -23,6 +23,7 @@ import org.mingharness.education.api.LearningAssignmentAcceptView;
 import org.mingharness.education.api.LearningAssignmentStartView;
 import org.mingharness.education.api.LearningAssignmentRequest;
 import org.mingharness.education.api.LearningAssignmentView;
+import org.mingharness.education.api.LearningAssignmentReviewRequest;
 import org.mingharness.education.api.LearningAssignmentProgressView;
 import org.mingharness.education.api.LearningAssignmentNotificationView;
 import org.mingharness.education.api.LearningAssignmentFeedbackRequest;
@@ -65,6 +66,7 @@ public class EducationController {
     private final LearningAssignmentEvidenceService assignmentEvidenceService;
     private final LearningAssignmentFeedbackService assignmentFeedbackService;
     private final LearningAssignmentStartService assignmentStartService;
+    private final LearningAssignmentReviewService assignmentReviewService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
@@ -80,7 +82,8 @@ public class EducationController {
                                LearningAssignmentNotificationService assignmentNotificationService,
                                LearningAssignmentEvidenceService assignmentEvidenceService,
                                LearningAssignmentFeedbackService assignmentFeedbackService,
-                               LearningAssignmentStartService assignmentStartService) {
+                               LearningAssignmentStartService assignmentStartService,
+                               LearningAssignmentReviewService assignmentReviewService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
@@ -96,6 +99,7 @@ public class EducationController {
         this.assignmentEvidenceService = assignmentEvidenceService;
         this.assignmentFeedbackService = assignmentFeedbackService;
         this.assignmentStartService = assignmentStartService;
+        this.assignmentReviewService = assignmentReviewService;
     }
 
     @PostMapping("/sources")
@@ -303,6 +307,14 @@ public class EducationController {
                 ? identity.permissionsCsv() : httpRequest.getHeader("X-Permissions");
         return assignmentStartService.start(identity.tenantId(), identity.userId(), assignmentId,
                 request, permissions, httpRequest.getHeader("Idempotency-Key"));
+    }
+
+    @PostMapping("/assignments/{assignmentId}/review")
+    public LearningAssignmentView reviewAssignment(
+            @PathVariable String assignmentId,
+            @Valid @RequestBody LearningAssignmentReviewRequest request) {
+        HarnessIdentity identity = identity();
+        return assignmentReviewService.review(identity.tenantId(), identity.userId(), assignmentId, request);
     }
 
     @PostMapping("/assignments/{assignmentId}/cancel")

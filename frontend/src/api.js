@@ -365,6 +365,11 @@ export const api = {
       headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
       body: payload,
     }),
+  reviewLearningAssignment: (assignmentId, payload) => request(
+    `/education/assignments/${encodeURIComponent(assignmentId)}/review`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   cancelLearningAssignment: (assignmentId) => request(
     `/education/assignments/${encodeURIComponent(assignmentId)}/cancel`, {
       method: 'POST',

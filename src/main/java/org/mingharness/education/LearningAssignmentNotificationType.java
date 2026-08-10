@@ -7,6 +7,8 @@ public enum LearningAssignmentNotificationType {
     EVIDENCE_REQUIRED,
     OVERDUE,
     COMPLETED,
+    REVIEW_REQUIRED,
+    REVIEW_VERIFIED,
     CANCELLED,
     FEEDBACK,
     FEEDBACK_ACKNOWLEDGED

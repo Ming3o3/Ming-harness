@@ -23,7 +23,11 @@ public record LearningAssignmentView(
         Instant createdAt,
         Instant updatedAt,
         Instant acceptedAt,
-        Instant completedAt
+        Instant completedAt,
+        String reviewStatus,
+        Instant teacherReviewedAt,
+        String teacherReviewerUserId,
+        String teacherReviewNote
 ) {
     public static LearningAssignmentView from(LearningAssignment assignment) {
         return new LearningAssignmentView(assignment.getId(), assignment.getTeacherUserId(),
@@ -32,6 +36,8 @@ public record LearningAssignmentView(
                 assignment.getConceptKey(), assignment.getTargetMastery(), assignment.getDueAt(),
                 assignment.getStatus().name(), assignment.getLearnerProfileId(),
                 assignment.getLearningGoalId(), assignment.getCreatedAt(), assignment.getUpdatedAt(),
-                assignment.getAcceptedAt(), assignment.getCompletedAt());
+                assignment.getAcceptedAt(), assignment.getCompletedAt(),
+                assignment.getReviewStatus().name(), assignment.getTeacherReviewedAt(),
+                assignment.getTeacherReviewerUserId(), assignment.getTeacherReviewNote());
     }
 }

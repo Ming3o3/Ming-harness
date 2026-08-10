@@ -6,7 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Instant;
 
-/** 将学习目标达标事实回写到教师布置的作业，避免作业状态停留在已接受。 */
+/** 将学习目标达标事实回写到教师布置的作业，并把交付结果置为待教师确认。 */
 @Service
 public class LearningAssignmentCompletionService {
 

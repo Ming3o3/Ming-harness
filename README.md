@@ -469,6 +469,7 @@ curl -X POST http://localhost:8080/api/runs \
 - `GET /api/education/assignments/{assignmentId}/progress`：查询当前参与者可见的掌握度、测评、Run 证据覆盖、掌握度提升、反馈确认和学习任务进度；教师可据此判断是否需要干预以及干预是否被确认
 - `POST /api/education/assignments/{assignmentId}/accept`：学习者接受作业，系统幂等创建对应学习者画像和结构化学习目标
 - `POST /api/education/assignments/{assignmentId}/start`：学习者接受（如尚未接受）并直接启动第一步教育 Run；返回绑定的学习会话，作业要求和未完成的“补证据/重新学习”教师干预会冻结到 Run 上下文
+- `POST /api/education/assignments/{assignmentId}/review`：布置者确认已达标作业的业务结果；系统把学习者掌握度达标与教师交付确认分开记录，重复确认幂等返回
 - `POST /api/education/assignments/{assignmentId}/cancel`：布置者取消尚未完成的课程作业，取消后学习者不能再接受该作业
 - `GET /api/context/preview?query=...`：预览授权来源和引用
 - `GET/PUT/DELETE /api/context/embedding-config`：读取、保存或恢复当前组织的 Embedding 连接配置；密钥只返回掩码

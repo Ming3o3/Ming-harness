@@ -44,6 +44,9 @@ public class LearningAssignment {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private LearningAssignmentStatus status;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 32)
+    private LearningAssignmentReviewStatus reviewStatus;
     private String learnerProfileId;
     private String learningGoalId;
     @Column(nullable = false)
@@ -52,6 +55,10 @@ public class LearningAssignment {
     private Instant updatedAt;
     private Instant acceptedAt;
     private Instant completedAt;
+    private Instant teacherReviewedAt;
+    private String teacherReviewerUserId;
+    @Column(columnDefinition = "text")
+    private String teacherReviewNote;
 
     protected LearningAssignment() {
     }
@@ -73,6 +80,7 @@ public class LearningAssignment {
         this.targetMastery = clampTarget(targetMastery);
         this.dueAt = dueAt;
         this.status = LearningAssignmentStatus.ASSIGNED;
+        this.reviewStatus = LearningAssignmentReviewStatus.NOT_REQUIRED;
         this.createdAt = Instant.now();
         this.updatedAt = this.createdAt;
     }
@@ -93,7 +101,22 @@ public class LearningAssignment {
                 && status != LearningAssignmentStatus.AWAITING_EVIDENCE
                 && status != LearningAssignmentStatus.OVERDUE) return;
         this.status = LearningAssignmentStatus.COMPLETED;
+        this.reviewStatus = LearningAssignmentReviewStatus.PENDING;
         this.completedAt = completedAt == null ? Instant.now() : completedAt;
+        this.updatedAt = Instant.now();
+    }
+
+    public void verifyByTeacher(String reviewerUserId, String reviewNote, Instant reviewedAt) {
+        if (status != LearningAssignmentStatus.COMPLETED) {
+            throw new IllegalStateException("只有已完成的作业可以提交教师确认");
+        }
+        if (reviewStatus != LearningAssignmentReviewStatus.PENDING) {
+            throw new IllegalStateException("当前作业不在待教师确认状态");
+        }
+        this.teacherReviewerUserId = required(reviewerUserId, "teacherReviewerUserId");
+        this.teacherReviewNote = reviewNote == null || reviewNote.isBlank() ? null : reviewNote.trim();
+        this.teacherReviewedAt = reviewedAt == null ? Instant.now() : reviewedAt;
+        this.reviewStatus = LearningAssignmentReviewStatus.VERIFIED;
         this.updatedAt = Instant.now();
     }
 
@@ -175,10 +198,14 @@ public class LearningAssignment {
     public double getTargetMastery() { return targetMastery; }
     public Instant getDueAt() { return dueAt; }
     public LearningAssignmentStatus getStatus() { return status; }
+    public LearningAssignmentReviewStatus getReviewStatus() { return reviewStatus; }
     public String getLearnerProfileId() { return learnerProfileId; }
     public String getLearningGoalId() { return learningGoalId; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getAcceptedAt() { return acceptedAt; }
     public Instant getCompletedAt() { return completedAt; }
+    public Instant getTeacherReviewedAt() { return teacherReviewedAt; }
+    public String getTeacherReviewerUserId() { return teacherReviewerUserId; }
+    public String getTeacherReviewNote() { return teacherReviewNote; }
 }

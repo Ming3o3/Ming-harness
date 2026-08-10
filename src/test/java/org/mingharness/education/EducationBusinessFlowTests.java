@@ -6,6 +6,7 @@ import org.mingharness.conversation.api.ConversationDetail;
 import org.mingharness.conversation.api.ConversationMessageView;
 import org.mingharness.conversation.api.ConversationSummary;
 import org.mingharness.education.api.ExecuteLearningActionRequest;
+import org.mingharness.education.api.LearningAssignmentReviewRequest;
 import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.domain.Step;
 import org.mingharness.runtime.domain.StepType;
@@ -120,6 +121,12 @@ class EducationBusinessFlowTests {
                 profile.getId(), assignment.getConceptKey(), true, 0.85,
                 "MANUAL_REVIEW", "学生写出定义域判定依据", "证据充分");
         assertEquals(LearningAssignmentStatus.COMPLETED, assignment.getStatus());
+
+        LearningAssignmentReviewService reviewService = new LearningAssignmentReviewService(
+                assignments, assignmentNotifications, new SensitiveDataSanitizer());
+        var reviewed = reviewService.review("tenant-a", "teacher-1", assignment.getId(),
+                new LearningAssignmentReviewRequest("VERIFY", "已确认作答依据"));
+        assertEquals("VERIFIED", reviewed.reviewStatus());
 
         feedbackService.acknowledge("tenant-a", "student-1", assignment.getId(), feedback.getId());
         assertEquals(LearningAssignmentFeedbackStatus.ACKNOWLEDGED, feedback.getStatus());

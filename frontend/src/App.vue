@@ -63,6 +63,7 @@ const learningTaskStartingId = ref('')
 const learningTaskDeferringId = ref('')
 const learningAssignmentSaving = ref(false)
 const learningAssignmentAcceptingId = ref('')
+const learningAssignmentReviewSavingId = ref('')
 const learningAssignmentFeedbackSavingId = ref('')
 const learningAssignmentFeedbackAcknowledgingId = ref('')
 const learningAssignmentFeedbackForm = reactive({
@@ -2855,6 +2856,14 @@ function learningAssignmentStatusLabel(status) {
   }[status] || status || '未知'
 }
 
+function learningAssignmentReviewStatusLabel(status) {
+  return {
+    NOT_REQUIRED: '未进入教师确认',
+    PENDING: '待教师确认',
+    VERIFIED: '教师已确认',
+  }[status] || status || '未知'
+}
+
 function learningAssignmentFeedbackActionLabel(action) {
   return {
     COMMENT: '教师反馈',
@@ -2927,6 +2936,25 @@ async function acknowledgeLearningAssignmentFeedback(assignment, feedback) {
     errorMessage.value = errorText(error)
   } finally {
     learningAssignmentFeedbackAcknowledgingId.value = ''
+  }
+}
+
+async function verifyLearningAssignment(assignment) {
+  if (!assignment?.id || assignment.teacherUserId !== form.userId
+    || assignment.status !== 'COMPLETED' || assignment.reviewStatus !== 'PENDING'
+    || learningAssignmentReviewSavingId.value) return
+  const note = window.prompt('可填写教师确认说明（可选）：', '')
+  if (note === null) return
+  learningAssignmentReviewSavingId.value = assignment.id
+  clearMessages()
+  try {
+    await api.reviewLearningAssignment(assignment.id, { decision: 'VERIFY', note: note.trim() || null })
+    await loadEducationData()
+    noticeMessage.value = `已确认课程作业：${assignment.title}`
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    learningAssignmentReviewSavingId.value = ''
   }
 }
 
@@ -5561,6 +5589,7 @@ onBeforeUnmount(() => {
                   <div class="learning-assignment-main">
                     <div class="learning-assignment-meta"><strong>{{ assignment.title }}</strong><span>{{ learningAssignmentStatusLabel(assignment.status) }}</span></div>
                     <small>{{ assignment.teacherUserId }} → {{ assignment.learnerUserId }} · {{ assignment.subject }} · {{ assignment.gradeLevel }} · {{ assignment.curriculumVersion }}</small>
+                    <small v-if="assignment.status === 'COMPLETED'" class="learning-assignment-progress">业务结果：{{ learningAssignmentReviewStatusLabel(assignment.reviewStatus) }}<span v-if="assignment.teacherReviewedAt"> · {{ formatDate(assignment.teacherReviewedAt) }}</span></small>
                     <p>{{ assignment.instructions }}</p>
                     <small v-if="learningAssignmentProgressMap[assignment.id]" class="learning-assignment-progress">掌握度 {{ formatRate(learningAssignmentProgressMap[assignment.id].currentMastery) }} / {{ formatRate(learningAssignmentProgressMap[assignment.id].targetMastery) }} · 提升 {{ learningAssignmentProgressMap[assignment.id].masteryGain >= 0 ? '+' : '' }}{{ formatRate(learningAssignmentProgressMap[assignment.id].masteryGain) }} · 目标进度 {{ formatRate(learningAssignmentProgressMap[assignment.id].masteryProgress) }} · 测评 {{ learningAssignmentProgressMap[assignment.id].assessmentTotal }} 次 · 任务 {{ learningAssignmentProgressMap[assignment.id].taskCompleted }} / {{ learningAssignmentProgressMap[assignment.id].taskTotal }}</small>
                     <small v-if="learningAssignmentProgressMap[assignment.id]" class="learning-assignment-progress">Run 证据覆盖 {{ formatRate(learningAssignmentProgressMap[assignment.id].runEvidenceCoverageRate) }}（{{ learningAssignmentProgressMap[assignment.id].runWithAssessmentEvidence }} / {{ learningAssignmentProgressMap[assignment.id].runTotal }}） · 教师反馈确认 {{ formatRate(learningAssignmentProgressMap[assignment.id].feedbackAcknowledgementRate) }}（{{ learningAssignmentProgressMap[assignment.id].feedbackAcknowledged }} / {{ learningAssignmentProgressMap[assignment.id].feedbackTotal }}）</small>
@@ -5569,6 +5598,7 @@ onBeforeUnmount(() => {
                   </div>
                   <div class="learning-assignment-actions">
                     <button v-if="assignment.learnerUserId === form.userId && (assignment.status === 'ASSIGNED' || assignment.status === 'AWAITING_EVIDENCE' || (['ACCEPTED', 'OVERDUE'].includes(assignment.status) && learningAssignmentHasOpenIntervention(assignment)))" class="secondary-button" type="button" :disabled="learningAssignmentAcceptingId === assignment.id" @click="startLearningAssignment(assignment)">{{ learningAssignmentAcceptingId === assignment.id ? '启动中…' : (assignment.status === 'ASSIGNED' ? '接受并开始学习' : (assignment.status === 'AWAITING_EVIDENCE' ? '补充证据并继续' : '按反馈继续学习')) }}</button>
+                    <button v-if="assignment.teacherUserId === form.userId && assignment.status === 'COMPLETED' && assignment.reviewStatus === 'PENDING'" class="secondary-button" type="button" :disabled="learningAssignmentReviewSavingId === assignment.id" @click="verifyLearningAssignment(assignment)">{{ learningAssignmentReviewSavingId === assignment.id ? '确认中…' : '确认作业结果' }}</button>
                     <button v-if="assignment.teacherUserId === form.userId && assignment.status !== 'CANCELLED'" class="text-button" type="button" @click="startLearningAssignmentFeedback(assignment)">写教师反馈</button>
                     <button v-if="assignment.teacherUserId === form.userId && ['ASSIGNED', 'ACCEPTED', 'OVERDUE'].includes(assignment.status)" class="text-button" type="button" @click="cancelLearningAssignment(assignment)">取消作业</button>
                   </div>

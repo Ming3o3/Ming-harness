@@ -27,6 +27,7 @@ class LearningAssignmentCompletionServiceTests {
         LearningAssignmentCompletionService service = new LearningAssignmentCompletionService(assignments);
         assertEquals(1, service.completeForGoal("tenant-a", "student-1", "goal-1", Instant.now()));
         assertEquals(LearningAssignmentStatus.COMPLETED, assignment.getStatus());
+        assertEquals(LearningAssignmentReviewStatus.PENDING, assignment.getReviewStatus());
         verify(assignments).save(assignment);
     }
 
@@ -45,6 +46,7 @@ class LearningAssignmentCompletionServiceTests {
         LearningAssignmentCompletionService service = new LearningAssignmentCompletionService(assignments);
         assertEquals(1, service.completeForGoal("tenant-a", "student-1", "goal-1", Instant.now()));
         assertEquals(LearningAssignmentStatus.COMPLETED, assignment.getStatus());
+        assertEquals(LearningAssignmentReviewStatus.PENDING, assignment.getReviewStatus());
         verify(assignments).save(assignment);
     }
 
