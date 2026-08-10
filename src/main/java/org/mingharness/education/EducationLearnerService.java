@@ -90,17 +90,20 @@ public class EducationLearnerService {
     @Transactional
     public LearnerMastery updateMastery(String tenantId, String userId, String profileId,
                                         MasteryUpdateRequest request) {
+        if (request == null || request.isObservation()) {
+            throw new BusinessException(HttpStatus.CONFLICT, "MASTERY_EVIDENCE_REQUIRED",
+                    "答题观察必须通过绑定教育 Run 的测评接口提交，不能直接写入掌握度");
+        }
         LearnerProfile profile = profileRepository.findByIdAndTenantIdAndUserId(profileId, tenantId, userId)
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
                         "LEARNER_PROFILE_NOT_FOUND", "学习者画像不存在"));
         String conceptKey = clean(request.conceptKey());
+        rejectCalibrationDuringActiveGoal(tenantId, userId, profileId, conceptKey);
         LearnerMastery mastery = masteryRepository
                 .findByTenantIdAndLearnerProfileIdAndConceptKey(tenantId, profile.getId(), conceptKey)
                 .orElseGet(() -> new LearnerMastery(tenantId, profile.getId(), conceptKey,
                         request.effectiveMasteryScore(), 0, 0));
-        if (request.isObservation()) {
-            mastery.recordAssessment(Boolean.TRUE.equals(request.correct()), request.effectiveMasteryScore());
-        } else if (request.masteryScore() != null) {
+        if (request.masteryScore() != null) {
             mastery.setMastery(request.effectiveMasteryScore(),
                     request.attempts() == null ? mastery.getAttempts() : request.attempts(),
                     request.correctAttempts() == null ? mastery.getCorrectAttempts() : request.correctAttempts());
@@ -108,6 +111,30 @@ public class EducationLearnerService {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "MASTERY_UPDATE_REQUIRED",
                     "掌握度更新必须提供 masteryScore 或 correct");
         }
+        LearnerMastery saved = masteryRepository.save(mastery);
+        return saved;
+    }
+
+    /**
+     * 只有经过 Run 绑定和证据校验的测评才可以推进目标与课程作业。
+     * 普通画像写入口不能伪造一次答题事实。
+     */
+    @Transactional
+    public LearnerMastery recordObservedMastery(String tenantId, String userId, String profileId,
+                                                MasteryUpdateRequest request) {
+        if (request == null || !request.isObservation()) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "MASTERY_OBSERVATION_REQUIRED",
+                    "形成性测评必须提供答题观察结果");
+        }
+        LearnerProfile profile = profileRepository.findByIdAndTenantIdAndUserId(profileId, tenantId, userId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
+                        "LEARNER_PROFILE_NOT_FOUND", "学习者画像不存在"));
+        String conceptKey = clean(request.conceptKey());
+        LearnerMastery mastery = masteryRepository
+                .findByTenantIdAndLearnerProfileIdAndConceptKey(tenantId, profile.getId(), conceptKey)
+                .orElseGet(() -> new LearnerMastery(tenantId, profile.getId(), conceptKey,
+                        0.0, 0, 0));
+        mastery.recordAssessment(Boolean.TRUE.equals(request.correct()), request.effectiveMasteryScore());
         LearnerMastery saved = masteryRepository.save(mastery);
         completeEligibleGoals(tenantId, userId, profile.getId(), conceptKey, saved.getMasteryScore());
         return saved;
@@ -148,5 +175,19 @@ public class EducationLearnerService {
                                 java.time.Instant.now());
                     }
                 });
+    }
+
+    private void rejectCalibrationDuringActiveGoal(String tenantId, String userId,
+                                                    String profileId, String conceptKey) {
+        if (goalRepository == null) return;
+        boolean activeGoal = goalRepository
+                .findByTenantIdAndUserIdAndLearnerProfileIdAndConceptKeyIgnoreCase(
+                        tenantId, userId, profileId, conceptKey)
+                .stream()
+                .anyMatch(goal -> goal.getStatus() == LearningGoalStatus.ACTIVE);
+        if (activeGoal) {
+            throw new BusinessException(HttpStatus.CONFLICT, "MASTERY_EVIDENCE_REQUIRED",
+                    "进行中的学习目标必须通过绑定 Run 的测评证据更新，不能直接校准掌握度");
+        }
     }
 }

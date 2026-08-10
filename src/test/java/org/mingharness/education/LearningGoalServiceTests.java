@@ -79,4 +79,22 @@ class LearningGoalServiceTests {
                 "tenant-a", "student-1", goal.getId(), "ACTIVE"));
         assertEquals("LEARNING_GOAL_STATUS_CONFLICT", exception.getCode());
     }
+
+    @Test
+    void shouldRejectDirectCompletionWithoutAssessmentEvidence() {
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", "profile-1",
+                "掌握函数", "函数", 0.2, 0.8);
+        when(goals.findByIdAndTenantIdAndUserId(goal.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(goal));
+
+        LearningGoalService service = new LearningGoalService(goals, profiles, mastery,
+                new SensitiveDataSanitizer());
+        var exception = assertThrows(org.mingharness.common.BusinessException.class,
+                () -> service.changeStatus("tenant-a", "student-1", goal.getId(), "COMPLETED"));
+
+        assertEquals("LEARNING_GOAL_EVIDENCE_REQUIRED", exception.getCode());
+    }
 }

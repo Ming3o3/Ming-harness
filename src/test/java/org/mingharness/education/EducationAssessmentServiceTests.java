@@ -45,7 +45,7 @@ class EducationAssessmentServiceTests {
                 .thenReturn(Optional.of(goal));
         when(mastery.findByTenantIdAndLearnerProfileIdAndConceptKey("tenant-a", "profile-1", "函数"))
                 .thenReturn(Optional.of(previous));
-        when(learnerService.updateMastery(any(), any(), any(), any())).thenReturn(updated);
+        when(learnerService.recordObservedMastery(any(), any(), any(), any())).thenReturn(updated);
         when(attempts.save(any(AssessmentAttempt.class))).thenReturn(saved);
 
         EducationAssessmentService service = new EducationAssessmentService(attempts, runs, goals, mastery,
@@ -87,7 +87,7 @@ class EducationAssessmentServiceTests {
                 .thenReturn(Optional.of(goal));
         when(mastery.findByTenantIdAndLearnerProfileIdAndConceptKey("tenant-a", "profile-1", "函数"))
                 .thenReturn(Optional.of(previous));
-        when(learnerService.updateMastery(any(), any(), any(), any())).thenReturn(updated);
+        when(learnerService.recordObservedMastery(any(), any(), any(), any())).thenReturn(updated);
         when(attempts.save(any(AssessmentAttempt.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         EducationAssessmentService service = new EducationAssessmentService(attempts, runs, goals, mastery,
@@ -133,7 +133,7 @@ class EducationAssessmentServiceTests {
         when(reviewPlans.getById("tenant-a", "student-1", plan.getId())).thenReturn(plan);
         when(mastery.findByTenantIdAndLearnerProfileIdAndConceptKey("tenant-a", "profile-1", "函数"))
                 .thenReturn(Optional.of(previous));
-        when(learnerService.updateMastery(any(), any(), any(), any())).thenReturn(updated);
+        when(learnerService.recordObservedMastery(any(), any(), any(), any())).thenReturn(updated);
         when(attempts.save(any(AssessmentAttempt.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(reviewPlans.recordReview(org.mockito.ArgumentMatchers.eq("tenant-a"),
                 org.mockito.ArgumentMatchers.eq("student-1"),

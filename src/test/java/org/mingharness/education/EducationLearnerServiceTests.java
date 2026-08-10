@@ -41,7 +41,7 @@ class EducationLearnerServiceTests {
         when(mastery.findByTenantIdAndLearnerProfileIdAndConceptKey(
                 "tenant-a", profileId, "函数")).thenReturn(Optional.of(existing));
 
-        LearnerMastery updated = service.updateMastery("tenant-a", "student-1", profileId,
+        LearnerMastery updated = service.recordObservedMastery("tenant-a", "student-1", profileId,
                 new MasteryUpdateRequest("函数", 1.0, true, null, null));
 
         assertEquals(profileId, updated.getLearnerProfileId());
@@ -62,8 +62,9 @@ class EducationLearnerServiceTests {
 
         when(profiles.findByIdAndTenantIdAndUserId(profile.getId(), "tenant-a", "student-1"))
                 .thenReturn(java.util.Optional.of(profile));
+        LearnerMastery existing = new LearnerMastery("tenant-a", profile.getId(), "函数", 0.5, 1, 0);
         when(mastery.findByTenantIdAndLearnerProfileIdAndConceptKey(
-                "tenant-a", profile.getId(), "函数")).thenReturn(java.util.Optional.empty());
+                "tenant-a", profile.getId(), "函数")).thenReturn(java.util.Optional.of(existing));
         when(mastery.save(any(LearnerMastery.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(goals.findByTenantIdAndUserIdAndLearnerProfileIdAndConceptKeyIgnoreCase(
                 "tenant-a", "student-1", profile.getId(), "函数"))
@@ -72,10 +73,49 @@ class EducationLearnerServiceTests {
 
         EducationLearnerService service = new EducationLearnerService(profiles, mastery, goals,
                 new SensitiveDataSanitizer());
-        service.updateMastery("tenant-a", "student-1", profile.getId(),
-                new MasteryUpdateRequest("函数", 1.0, null, null, null));
+        service.recordObservedMastery("tenant-a", "student-1", profile.getId(),
+                new MasteryUpdateRequest("函数", 1.0, true, null, null));
 
         assertEquals(LearningGoalStatus.COMPLETED, goal.getStatus());
         verify(goals).save(goal);
+    }
+
+    @Test
+    void shouldRejectDirectCalibrationWhileAnActiveGoalExists() {
+        LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        LearnerProfile profile = new LearnerProfile("tenant-a", "student-1", "数学",
+                "高中一年级", "人教A版", "掌握函数", "zh-CN");
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", profile.getId(),
+                "掌握函数", "函数", 0.2, 0.8);
+        when(profiles.findByIdAndTenantIdAndUserId(profile.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(profile));
+        when(goals.findByTenantIdAndUserIdAndLearnerProfileIdAndConceptKeyIgnoreCase(
+                "tenant-a", "student-1", profile.getId(), "函数"))
+                .thenReturn(java.util.List.of(goal));
+
+        EducationLearnerService service = new EducationLearnerService(profiles, mastery, goals,
+                new SensitiveDataSanitizer());
+        var exception = org.junit.jupiter.api.Assertions.assertThrows(
+                org.mingharness.common.BusinessException.class,
+                () -> service.updateMastery("tenant-a", "student-1", profile.getId(),
+                        new MasteryUpdateRequest("函数", 1.0, null, null, null)));
+
+        assertEquals("MASTERY_EVIDENCE_REQUIRED", exception.getCode());
+    }
+
+    @Test
+    void shouldRejectObservationOnDirectMasteryWrite() {
+        EducationLearnerService service = new EducationLearnerService(
+                mock(LearnerProfileRepository.class), mock(LearnerMasteryRepository.class),
+                new SensitiveDataSanitizer());
+
+        var exception = org.junit.jupiter.api.Assertions.assertThrows(
+                org.mingharness.common.BusinessException.class,
+                () -> service.updateMastery("tenant-a", "student-1", "profile-1",
+                        new MasteryUpdateRequest("函数", 1.0, true, null, null)));
+
+        assertEquals("MASTERY_EVIDENCE_REQUIRED", exception.getCode());
     }
 }

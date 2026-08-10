@@ -455,7 +455,8 @@ curl -X POST http://localhost:8080/api/runs \
 - `POST/GET/DELETE /api/context/documents`：管理组织隔离的知识文档
 - `POST /api/context/documents/upload`：以 multipart 上传一个 PDF/DOCX，字段为 `file`（必填）、`title`、`sensitivity`、`allowedUsers`（可选）；需要 `context.write` 权限，成功后立即创建 chunk 并异步补齐 embedding
 - `POST/GET/DELETE /api/context/memories`：管理用户范围的长期记忆
-- `POST/GET /api/education/goals`：创建和查询绑定学习者画像的结构化学习目标；目标测评、推荐和保持度计划接口位于 `/api/education/goals/{goalId}/...`
+- `POST/GET /api/education/goals`：创建和查询绑定学习者画像的结构化学习目标；目标测评、推荐和保持度计划接口位于 `/api/education/goals/{goalId}/...`，目标不能通过状态接口直接改为 `COMPLETED`
+- `POST /api/education/profiles/{profileId}/mastery`：仅用于没有进行中学习目标时的画像基线/校准写入；形成性或保持度观察必须通过绑定 Run 的测评接口提交，不能直接伪造目标完成
 - `GET /api/education/tasks`：查询当前用户的教育学习任务；到期复习会在查询或后台调度时自动物化
 - `POST /api/education/tasks/{taskId}/start`：启动任务并绑定学习会话与教育 Run；重复调用会恢复已绑定会话
 - `POST /api/education/tasks/{taskId}/defer`：延期任务并同步顺延复习计划，不记录虚假的复习结果

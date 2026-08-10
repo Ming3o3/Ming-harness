@@ -92,6 +92,10 @@ public class LearningGoalService {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "LEARNING_GOAL_STATUS_INVALID",
                     "不支持的学习目标状态: " + status);
         }
+        if (next == LearningGoalStatus.COMPLETED) {
+            throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_GOAL_EVIDENCE_REQUIRED",
+                    "学习目标只能由绑定 Run 的测评证据完成，不能直接修改为已完成");
+        }
         try {
             goal.changeStatus(next);
         } catch (IllegalStateException exception) {

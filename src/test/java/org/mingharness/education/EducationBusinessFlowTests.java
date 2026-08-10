@@ -105,7 +105,7 @@ class EducationBusinessFlowTests {
                 "tenant-a", profile.getId(), assignment.getConceptKey()))
                 .thenReturn(Optional.of(new LearnerMastery("tenant-a", profile.getId(),
                         assignment.getConceptKey(), 0.2, 1, 0)));
-        when(learnerService.updateMastery(anyString(), anyString(), anyString(), any()))
+        when(learnerService.recordObservedMastery(anyString(), anyString(), anyString(), any()))
                 .thenReturn(updated);
         when(attempts.save(any(AssessmentAttempt.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(assignments.findByTenantIdAndLearningGoalId("tenant-a", goal.getId()))

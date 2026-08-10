@@ -193,7 +193,7 @@ public class EducationAssessmentService {
                 .map(LearnerMastery::getMasteryScore)
                 .orElse(0.0);
         double boundedObserved = clamp(observedMastery);
-        LearnerMastery updated = learnerService.updateMastery(tenantId, userId, profileId,
+        LearnerMastery updated = learnerService.recordObservedMastery(tenantId, userId, profileId,
                 new MasteryUpdateRequest(normalizedConcept, boundedObserved, correct, null, null));
         AssessmentAttempt attempt = new AssessmentAttempt(tenantId, userId, runId, stepId,
                 goal.getId(), profileId, normalizedConcept, correct, boundedObserved, before,
