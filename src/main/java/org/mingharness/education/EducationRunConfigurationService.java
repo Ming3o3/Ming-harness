@@ -166,6 +166,9 @@ public class EducationRunConfigurationService {
         }
         String conceptKey = goal == null ? requestedConcept : goal.getConceptKey();
         String assignmentInstructions = assignment == null ? null : assignment.getInstructions();
+        String teacherReviewNote = assignment != null
+                && assignment.getReviewStatus() == LearningAssignmentReviewStatus.REVISION_REQUIRED
+                ? clean(assignment.getTeacherReviewNote()) : null;
         LearningAssignmentFeedback intervention = latestOpenIntervention(
                 tenantId, userId, assignment);
         if (intervention != null) {
@@ -177,6 +180,7 @@ public class EducationRunConfigurationService {
                 goal == null ? null : goal.getId(), assignment == null ? null : assignment.getId(),
                 assignment == null ? null : assignment.getTitle(),
                 assignmentInstructions,
+                teacherReviewNote,
                 reviewPlan == null ? null : reviewPlan.getId(),
                 goal == null ? null : goal.getTitle(),
                 goal == null ? 0.0 : goal.getBaselineMastery(),

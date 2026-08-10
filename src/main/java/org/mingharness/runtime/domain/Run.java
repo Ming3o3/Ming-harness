@@ -54,6 +54,8 @@ public class Run {
     private String educationLearningAssignmentTitle;
     @Column(name = "education_learning_assignment_instructions", columnDefinition = "text")
     private String educationLearningAssignmentInstructions;
+    @Column(name = "education_learning_assignment_teacher_review_note", columnDefinition = "text")
+    private String educationLearningAssignmentTeacherReviewNote;
     @Column(name = "education_review_plan_id", length = 255)
     private String educationReviewPlanId;
     @Column(name = "education_learning_goal_title", length = 255)
@@ -203,6 +205,7 @@ public class Run {
         this.educationLearningAssignmentId = value.learningAssignmentId();
         this.educationLearningAssignmentTitle = value.learningAssignmentTitle();
         this.educationLearningAssignmentInstructions = value.learningAssignmentInstructions();
+        this.educationLearningAssignmentTeacherReviewNote = value.learningAssignmentTeacherReviewNote();
         this.educationReviewPlanId = value.reviewPlanId();
         this.educationLearningGoalTitle = value.learningGoalTitle();
         this.educationLearningGoalBaseline = value.learningGoalBaselineMastery();
@@ -221,6 +224,7 @@ public class Run {
         return new EducationRunConfiguration(isEducationMode(), educationLearnerProfileId,
                 educationLearningGoalId, educationLearningAssignmentId,
                 educationLearningAssignmentTitle, educationLearningAssignmentInstructions,
+                educationLearningAssignmentTeacherReviewNote,
                 educationReviewPlanId,
                 educationLearningGoalTitle,
                 educationLearningGoalBaseline == null ? 0.0 : educationLearningGoalBaseline,

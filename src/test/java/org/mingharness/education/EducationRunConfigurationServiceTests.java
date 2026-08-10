@@ -3,7 +3,9 @@ package org.mingharness.education;
 import org.junit.jupiter.api.Test;
 import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.education.api.EducationRunOptions;
+import org.mingharness.runtime.domain.Run;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -236,5 +238,47 @@ class EducationRunConfigurationServiceTests {
 
         assertTrue(configuration.learningAssignmentInstructions().contains("教师当前干预"));
         assertTrue(configuration.promptSummary().contains("请补充函数定义域的判定依据"));
+    }
+
+    @Test
+    void shouldFreezeTeacherRevisionNoteIntoTheNextAssignmentRun() {
+        LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        LearnerProfile profile = new LearnerProfile("tenant-a", "student-1", "数学",
+                "高中一年级", "人教A版", null, "zh-CN");
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", profile.getId(),
+                "掌握函数基础", "函数", 0.35, 0.8);
+        goal.changeStatus(LearningGoalStatus.COMPLETED);
+        LearningAssignment assignment = new LearningAssignment("tenant-a", "teacher-1", "student-1",
+                "函数作业", "完成练习", "数学", "高中一年级", "人教A版", "函数", 0.8,
+                java.time.Instant.now().plusSeconds(3600));
+        assignment.accept(profile.getId(), goal.getId(), java.time.Instant.now());
+        assignment.complete(java.time.Instant.now());
+        goal.requestRevision(java.time.Instant.now());
+        assignment.returnForRevision("teacher-1", "请补充定义域判定依据", java.time.Instant.now());
+        when(assignments.findByTenantIdAndId("tenant-a", assignment.getId()))
+                .thenReturn(Optional.of(assignment));
+        when(goals.findByIdAndTenantIdAndUserId(goal.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(goal));
+        when(profiles.findByIdAndTenantIdAndUserId(profile.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(profile));
+        when(mastery.findByTenantIdAndLearnerProfileIdOrderByConceptKeyAsc("tenant-a", profile.getId()))
+                .thenReturn(List.of());
+
+        EducationRunConfigurationService service = new EducationRunConfigurationService(
+                profiles, mastery, goals, null, assignments, new SensitiveDataSanitizer());
+        EducationRunConfiguration configuration = service.resolve("tenant-a", "student-1",
+                new EducationRunOptions(true, profile.getId(), goal.getId(), assignment.getId(), null,
+                        null, null, null, null, null, null, "PRACTICE"));
+
+        assertEquals("请补充定义域判定依据", configuration.learningAssignmentTeacherReviewNote());
+        assertTrue(configuration.promptSummary().contains("教师返工说明=请补充定义域判定依据"));
+        Run run = new Run("tenant-a", "student-1", "函数作业", "返工",
+                BigDecimal.ONE, "demo-model", "prompt-v1", "policy-v1");
+        run.attachEducationConfiguration(configuration);
+        assertEquals("请补充定义域判定依据",
+                run.educationConfiguration().learningAssignmentTeacherReviewNote());
     }
 }

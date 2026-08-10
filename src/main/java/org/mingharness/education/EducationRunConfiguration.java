@@ -16,6 +16,7 @@ public record EducationRunConfiguration(
         String learningAssignmentId,
         String learningAssignmentTitle,
         String learningAssignmentInstructions,
+        String learningAssignmentTeacherReviewNote,
         String reviewPlanId,
         String learningGoalTitle,
         double learningGoalBaselineMastery,
@@ -31,8 +32,24 @@ public record EducationRunConfiguration(
 ) {
 
     public static EducationRunConfiguration disabled() {
-        return new EducationRunConfiguration(false, null, null, null, null, null, null, null, 0.0, 0.0,
+        return new EducationRunConfiguration(false, null, null, null, null, null, null, null, null, 0.0, 0.0,
                 null, null, null, null, null, null, "AUTO", "");
+    }
+
+    /** 兼容未绑定教师返工说明的既有完整快照构造方式。 */
+    public EducationRunConfiguration(boolean enabled, String learnerProfileId, String learningGoalId,
+                                     String learningAssignmentId, String learningAssignmentTitle,
+                                     String learningAssignmentInstructions, String reviewPlanId,
+                                     String learningGoalTitle, double learningGoalBaselineMastery,
+                                     double learningGoalTargetMastery, String subject, String gradeLevel,
+                                     String curriculumVersion, String conceptKey, Integer minDifficulty,
+                                     Integer maxDifficulty, String pedagogicalMode,
+                                     String learnerStateSummary) {
+        this(enabled, learnerProfileId, learningGoalId, learningAssignmentId, learningAssignmentTitle,
+                learningAssignmentInstructions, null, reviewPlanId, learningGoalTitle,
+                learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
+                curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
+                learnerStateSummary);
     }
 
     /** 兼容未绑定保持度复习计划的既有调用方。 */
@@ -107,6 +124,10 @@ public record EducationRunConfiguration(
             }
             if (learningAssignmentInstructions != null && !learningAssignmentInstructions.isBlank()) {
                 summary.append("；作业要求=").append(learningAssignmentInstructions);
+            }
+            if (learningAssignmentTeacherReviewNote != null
+                    && !learningAssignmentTeacherReviewNote.isBlank()) {
+                summary.append("；教师返工说明=").append(learningAssignmentTeacherReviewNote);
             }
         }
         if (reviewPlanId != null && !reviewPlanId.isBlank()) {
