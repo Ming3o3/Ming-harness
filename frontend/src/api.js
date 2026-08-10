@@ -342,6 +342,11 @@ export const api = {
     `/education/courses/${encodeURIComponent(courseId)}/archive`, {
       method: 'POST',
     }),
+  completeEducationCourse: (courseId, payload = {}) => request(
+    `/education/courses/${encodeURIComponent(courseId)}/complete`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   assignEducationCourse: (courseId, payload, idempotencyKey) => request(
     `/education/courses/${encodeURIComponent(courseId)}/assignments`, {
       method: 'POST',

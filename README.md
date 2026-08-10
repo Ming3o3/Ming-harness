@@ -464,10 +464,11 @@ curl -X POST http://localhost:8080/api/runs \
 - `POST /api/education/notifications/{notificationId}/read`：将一条学习任务通知标记为已读
 - `POST /api/education/notifications/read-all`：将当前用户的学习任务通知全部标记为已读
 - `GET /api/education/metrics`：读取当前租户和用户可见的作业、待重试/待返工作业、任务、测评证据、教师确认、反馈确认与执行、反馈确认时延、重试成功率、保持度正确率和平均掌握度提升；无事实时各比率返回 `0`
-- `POST/GET /api/education/courses`：教师创建或查询课程实例；课程固定学科、年级和课程版本，课程负责人可维护名单
-- `POST/GET /api/education/courses/{courseId}/enrollments`：课程负责人加入或查询学习者名单；`POST /api/education/courses/{courseId}/enrollments/{learnerUserId}/remove` 可移除成员，归档课程不能再变更名单
+- `POST/GET /api/education/courses`：教师创建或查询课程实例；课程固定学科、年级和课程版本，课程状态为 `ACTIVE`、`COMPLETED` 或 `ARCHIVED`
+- `POST/GET /api/education/courses/{courseId}/enrollments`：课程负责人加入或查询学习者名单；`POST /api/education/courses/{courseId}/enrollments/{learnerUserId}/remove` 可移除成员，已结课或已归档课程不能再变更名单
 - `POST /api/education/courses/{courseId}/assignments`：向课程活跃名单批量布置统一目标，必须携带 `Idempotency-Key`；同一课程和幂等键会复用原批次，同一键提交不同内容会返回 `409 ASSIGNMENT_BATCH_KEY_REUSED_WITH_DIFFERENT_REQUEST`
 - `GET /api/education/courses/{courseId}/progress?limit=500`：教师查看课程级作业状态、教师确认、开放干预和名单中每个学习者的掌握度进度；超过上限时返回 `truncated=true`
+- `POST /api/education/courses/{courseId}/complete`：教师在所有未取消作业均达到 `COMPLETED + VERIFIED` 后结课；结课说明、操作者和时间会作为课程事实保存，未满足条件时返回 `409 EDUCATION_COURSE_NOT_READY_TO_COMPLETE`
 - `POST/GET /api/education/assignments`：教师/组织以当前身份布置或查询课程作业；作业携带学科、年级、课程版本和目标知识点，截止时间到达后会显示为 `OVERDUE`
 - `GET /api/education/assignments/{assignmentId}`：查询当前用户作为布置者或学习者参与的课程作业
 - `GET /api/education/assignments/{assignmentId}/progress`：查询当前参与者可见的掌握度、测评、Run 证据覆盖、掌握度提升、反馈确认和学习任务进度；教师可据此判断是否需要干预以及干预是否被确认

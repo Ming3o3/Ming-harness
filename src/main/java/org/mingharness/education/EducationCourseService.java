@@ -172,6 +172,10 @@ public class EducationCourseService {
 
     private void ensureActive(EducationCourse course) {
         if (!course.isActive()) {
+            if (course.getStatus() == EducationCourseStatus.COMPLETED) {
+                throw new BusinessException(HttpStatus.CONFLICT, "EDUCATION_COURSE_COMPLETED",
+                        "已结课课程不能再变更名单或布置作业");
+            }
             throw new BusinessException(HttpStatus.CONFLICT, "EDUCATION_COURSE_ARCHIVED",
                     "已归档课程不能再变更名单或布置作业");
         }

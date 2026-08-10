@@ -462,6 +462,7 @@ h3 { margin: 0; font-size: 13px; }
 .education-course-chip.active strong { color: var(--accent-light); }
 .education-course-detail { display: grid; gap: 10px; border-top: 1px solid rgba(141,124,255,.2); padding-top: 11px; }
 .education-course-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.education-course-detail-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .education-course-detail-heading > div { display: grid; gap: 3px; }
 .education-course-detail-heading strong { color: var(--soft); font-size: 11px; }
 .education-course-detail-heading small { color: var(--muted); font: 8px "DM Mono", monospace; }

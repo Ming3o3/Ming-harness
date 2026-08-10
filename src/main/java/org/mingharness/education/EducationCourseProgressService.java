@@ -72,6 +72,15 @@ public class EducationCourseProgressService {
             accumulator.accept(assignment, progress, openInterventions);
         }
 
+        long effectiveAssignments = allAssignments.stream()
+                .filter(item -> item.getStatus() != LearningAssignmentStatus.CANCELLED)
+                .count();
+        long completionBlockers = allAssignments.stream()
+                .filter(item -> item.getStatus() != LearningAssignmentStatus.CANCELLED)
+                .filter(item -> item.getStatus() != LearningAssignmentStatus.COMPLETED
+                        || item.getReviewStatus() != LearningAssignmentReviewStatus.VERIFIED)
+                .count();
+
         EducationCourseProgressView result = new EducationCourseProgressView(
                 EducationCourseView.from(course,
                         enrollments.stream().filter(item -> item.getStatus() == EducationEnrollmentStatus.ACTIVE).count()),
@@ -81,6 +90,8 @@ public class EducationCourseProgressService {
                 totals.openInterventions, ratio(totals.completed, totals.assignmentTotal),
                 ratio(totals.reviewVerified,
                         totals.reviewPending + totals.reviewVerified + totals.revisionRequired),
+                effectiveAssignments > 0 && completionBlockers == 0,
+                completionBlockers,
                 byLearner.values().stream().map(LearnerAccumulator::view)
                         .sorted(Comparator.comparing(EducationCourseLearnerProgressView::learnerUserId))
                         .toList(),

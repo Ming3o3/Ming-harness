@@ -39,6 +39,11 @@ public class EducationCourse {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private EducationCourseStatus status;
+    private Instant completedAt;
+    @Column(length = 255)
+    private String completedByUserId;
+    @Column(columnDefinition = "text")
+    private String completionNote;
     @Column(nullable = false)
     private Instant createdAt;
     @Column(nullable = false)
@@ -67,6 +72,20 @@ public class EducationCourse {
         this.updatedAt = archivedAt == null ? Instant.now() : archivedAt;
     }
 
+    /** 课程只有在全部有效作业完成并经教师确认后才能结课。 */
+    public void complete(String completedByUserId, String completionNote, Instant completedAt) {
+        if (status == EducationCourseStatus.ARCHIVED) {
+            throw new IllegalStateException("已归档课程不能结课");
+        }
+        if (status == EducationCourseStatus.COMPLETED) return;
+        this.status = EducationCourseStatus.COMPLETED;
+        this.completedAt = completedAt == null ? Instant.now() : completedAt;
+        this.completedByUserId = required(completedByUserId, "completedByUserId");
+        this.completionNote = completionNote == null || completionNote.isBlank()
+                ? null : completionNote.trim();
+        this.updatedAt = this.completedAt;
+    }
+
     public boolean isActive() {
         return status == EducationCourseStatus.ACTIVE;
     }
@@ -86,6 +105,9 @@ public class EducationCourse {
     public String getGradeLevel() { return gradeLevel; }
     public String getCurriculumVersion() { return curriculumVersion; }
     public EducationCourseStatus getStatus() { return status; }
+    public Instant getCompletedAt() { return completedAt; }
+    public String getCompletedByUserId() { return completedByUserId; }
+    public String getCompletionNote() { return completionNote; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

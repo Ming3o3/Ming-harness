@@ -15,6 +15,9 @@ public record EducationCourseView(
         String curriculumVersion,
         String status,
         long activeEnrollmentCount,
+        Instant completedAt,
+        String completedByUserId,
+        String completionNote,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -22,6 +25,7 @@ public record EducationCourseView(
         return new EducationCourseView(course.getId(), course.getOwnerUserId(), course.getCode(),
                 course.getTitle(), course.getSubject(), course.getGradeLevel(),
                 course.getCurriculumVersion(), course.getStatus().name(), activeEnrollmentCount,
+                course.getCompletedAt(), course.getCompletedByUserId(), course.getCompletionNote(),
                 course.getCreatedAt(), course.getUpdatedAt());
     }
 }

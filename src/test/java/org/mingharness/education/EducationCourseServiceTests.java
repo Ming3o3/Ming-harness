@@ -90,4 +90,21 @@ class EducationCourseServiceTests {
         assertEquals("ACTIVE", result.status());
         assertEquals(EducationEnrollmentStatus.ACTIVE, removed.getStatus());
     }
+
+    @Test
+    void shouldRejectRosterChangesAfterCourseCompletion() {
+        EducationCourseRepository courses = mock(EducationCourseRepository.class);
+        EducationEnrollmentRepository enrollments = mock(EducationEnrollmentRepository.class);
+        EducationCourse course = new EducationCourse(
+                "tenant-a", "teacher-1", "math-g1", "高一数学", "数学", "高中一年级", "人教A版");
+        course.complete("teacher-1", "本期结课", java.time.Instant.now());
+        when(courses.findByTenantIdAndId("tenant-a", course.getId())).thenReturn(Optional.of(course));
+
+        BusinessException exception = assertThrows(BusinessException.class, () ->
+                new EducationCourseService(courses, enrollments, new SensitiveDataSanitizer())
+                        .enroll("tenant-a", "teacher-1", course.getId(),
+                                new EducationEnrollmentRequest("student-1")));
+
+        assertEquals("EDUCATION_COURSE_COMPLETED", exception.getCode());
+    }
 }

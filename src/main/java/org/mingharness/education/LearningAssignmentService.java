@@ -96,6 +96,10 @@ public class LearningAssignmentService {
             }
             course = courseService.requireOwnerCourse(tenantId, teacherUserId, courseId);
             if (!course.isActive()) {
+                if (course.getStatus() == EducationCourseStatus.COMPLETED) {
+                    throw new BusinessException(HttpStatus.CONFLICT, "EDUCATION_COURSE_COMPLETED",
+                            "已结课课程不能再布置作业");
+                }
                 throw new BusinessException(HttpStatus.CONFLICT, "EDUCATION_COURSE_ARCHIVED",
                         "已归档课程不能再布置作业");
             }

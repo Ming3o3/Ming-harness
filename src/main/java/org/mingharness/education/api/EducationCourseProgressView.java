@@ -19,6 +19,8 @@ public record EducationCourseProgressView(
         long openInterventionCount,
         double assignmentCompletionRate,
         double teacherVerificationRate,
+        boolean readyToComplete,
+        long completionBlockerCount,
         List<EducationCourseLearnerProgressView> learners,
         boolean truncated
 ) {
