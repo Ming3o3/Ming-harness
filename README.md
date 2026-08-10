@@ -49,7 +49,7 @@ Ming Harness 是一个面向企业 Agent 开发与治理的平台：后端使用
 - 敏感数据治理：Run、Step、审计、模型、工具和上下文边界统一凭证脱敏，长期记忆拒绝写入疑似凭证
 - 数据保留策略：终态 Run 与审计链原子清理，过期记忆/文档和已完成 Outbox 定时删除，待投递消息不自动删除
 - 业务闭环沉淀：每次 Run 持久化实际上下文证据，助手消息支持有用/需改进反馈
-- 教育业务闭环：教师/组织可把课程约束和知识目标布置给指定学习者，学习者接受后自动生成画像与结构化学习目标；目标达标后自动建立保持度计划，到期计划由调度器幂等物化为学习任务，任务可开始、延期并在复习测评后回写完成结果；失败 Run 可重试，成功但缺少测评证据的任务会进入待补证据；到期、待补证据和失败状态会生成可幂等追踪的站内通知，支持未读、已读和触达时间记录
+- 教育业务闭环：教师/组织可把课程约束和知识目标布置给指定学习者，学习者接受后自动生成画像与结构化学习目标；作业截止时间由调度器收敛为逾期状态，逾期作业不能再接受但仍可在已有学习目标达标后完成；目标达标后自动建立保持度计划，到期计划由调度器幂等物化为学习任务，任务可开始、延期并在复习测评后回写完成结果；失败 Run 可重试，成功但缺少测评证据的任务会进入待补证据；到期、待补证据和失败状态会生成可幂等追踪的站内通知，支持未读、已读和触达时间记录
 - 本地基础设施 Profile：PostgreSQL + Flyway、Redis 共享治理、RabbitMQ Outbox Worker
 - 健康检查与运行指标：公开存活探针、受 `ops.read` 保护的 `/api/health` 和 Actuator 指标
 - 请求关联追踪：自动生成并回传 `X-Request-Id`、`X-Trace-Id`，错误响应包含 `traceId`
@@ -463,7 +463,7 @@ curl -X POST http://localhost:8080/api/runs \
 - `POST /api/education/notifications/{notificationId}/read`：将一条学习任务通知标记为已读
 - `POST /api/education/notifications/read-all`：将当前用户的学习任务通知全部标记为已读
 - `GET /api/education/metrics`：读取当前租户和用户可见的作业、任务、测评证据和通知触达指标；无事实时各比率返回 `0`
-- `POST/GET /api/education/assignments`：教师/组织以当前身份布置或查询课程作业；作业携带学科、年级、课程版本和目标知识点
+- `POST/GET /api/education/assignments`：教师/组织以当前身份布置或查询课程作业；作业携带学科、年级、课程版本和目标知识点，截止时间到达后会显示为 `OVERDUE`
 - `GET /api/education/assignments/{assignmentId}`：查询当前用户作为布置者或学习者参与的课程作业
 - `POST /api/education/assignments/{assignmentId}/accept`：学习者接受作业，系统幂等创建对应学习者画像和结构化学习目标
 - `GET /api/context/preview?query=...`：预览授权来源和引用

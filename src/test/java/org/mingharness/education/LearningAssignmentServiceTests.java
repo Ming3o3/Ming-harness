@@ -43,6 +43,24 @@ class LearningAssignmentServiceTests {
         assertEquals(accepted.learningGoalId(), accepted.assignment().learningGoalId());
     }
 
+    @Test
+    void shouldExpireDueAssignmentsAndPersistTheLifecycleTransition() {
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        LearningAssignment overdue = new LearningAssignment("tenant-a", "teacher-1", "student-1",
+                "函数作业", "完成练习", "数学", "高中一年级", "人教A版", "函数定义域", 0.8,
+                Instant.parse("2026-08-01T00:00:00Z"));
+        when(assignments.findByStatusInAndDueAtLessThanEqualOrderByDueAtAsc(
+                any(), eq(Instant.parse("2026-08-01T00:00:00Z")), any()))
+                .thenReturn(java.util.List.of(overdue));
+        when(assignments.save(any(LearningAssignment.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        LearningAssignmentService service = new LearningAssignmentService(
+                assignments, mock(LearnerProfileRepository.class), mock(LearningGoalRepository.class),
+                mock(LearnerMasteryRepository.class), new SensitiveDataSanitizer());
+
+        assertEquals(1, service.expireOverdue(Instant.parse("2026-08-01T00:00:00Z"), 100));
+        assertEquals(LearningAssignmentStatus.OVERDUE, overdue.getStatus());
+    }
+
     private LearningAssignment assignment() {
         return new LearningAssignment("tenant-a", "teacher-1", "student-1", "函数作业",
                 "完成函数定义域练习", "数学", "高中一年级", "人教A版", "函数定义域",

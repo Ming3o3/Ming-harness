@@ -89,10 +89,25 @@ public class LearningAssignment {
     }
 
     public void complete(Instant completedAt) {
-        if (status != LearningAssignmentStatus.ACCEPTED) return;
+        if (status != LearningAssignmentStatus.ACCEPTED
+                && status != LearningAssignmentStatus.OVERDUE) return;
         this.status = LearningAssignmentStatus.COMPLETED;
         this.completedAt = completedAt == null ? Instant.now() : completedAt;
         this.updatedAt = Instant.now();
+    }
+
+    public boolean isOverdue(Instant reference) {
+        return dueAt != null
+                && !dueAt.isAfter(reference == null ? Instant.now() : reference)
+                && (status == LearningAssignmentStatus.ASSIGNED
+                || status == LearningAssignmentStatus.ACCEPTED);
+    }
+
+    public void markOverdue(Instant observedAt) {
+        if (status != LearningAssignmentStatus.ASSIGNED
+                && status != LearningAssignmentStatus.ACCEPTED) return;
+        status = LearningAssignmentStatus.OVERDUE;
+        updatedAt = observedAt == null ? Instant.now() : observedAt;
     }
 
     public void cancel() {

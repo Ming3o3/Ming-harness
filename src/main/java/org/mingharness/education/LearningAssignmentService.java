@@ -6,6 +6,7 @@ import org.mingharness.education.api.LearningAssignmentAcceptView;
 import org.mingharness.education.api.LearningAssignmentRequest;
 import org.mingharness.education.api.LearningAssignmentView;
 import org.springframework.http.HttpStatus;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,8 +53,9 @@ public class LearningAssignmentService {
                 clean(request.conceptKey()), request.effectiveTargetMastery(), request.dueAt()));
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public List<LearningAssignment> list(String tenantId, String userId) {
+        expireOverdue(tenantId, Instant.now(), 100);
         LinkedHashMap<String, LearningAssignment> merged = new LinkedHashMap<>();
         assignmentRepository.findByTenantIdAndTeacherUserIdOrderByCreatedAtDesc(tenantId, userId)
                 .forEach(item -> merged.put(item.getId(), item));
@@ -64,7 +66,7 @@ public class LearningAssignmentService {
                 .toList();
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public LearningAssignment getForParticipant(String tenantId, String userId, String assignmentId) {
         LearningAssignment assignment = assignmentRepository.findByTenantIdAndId(tenantId, assignmentId)
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
@@ -73,6 +75,10 @@ public class LearningAssignmentService {
                 && !userId.equals(assignment.getLearnerUserId())) {
             throw new BusinessException(HttpStatus.FORBIDDEN, "LEARNING_ASSIGNMENT_ACCESS_DENIED",
                     "无权访问该课程作业");
+        }
+        if (assignment.isOverdue(Instant.now())) {
+            assignment.markOverdue(Instant.now());
+            assignmentRepository.save(assignment);
         }
         return assignment;
     }
@@ -91,6 +97,10 @@ public class LearningAssignmentService {
                     assignment.getLearnerProfileId(), assignment.getLearningGoalId());
         }
         if (assignment.getStatus() != LearningAssignmentStatus.ASSIGNED) {
+            if (assignment.getStatus() == LearningAssignmentStatus.OVERDUE) {
+                throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_ASSIGNMENT_OVERDUE",
+                        "课程作业已逾期，不能再接受");
+            }
             throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_ASSIGNMENT_NOT_ACCEPTABLE",
                     "当前作业不能接受");
         }
@@ -116,6 +126,33 @@ public class LearningAssignmentService {
         LearningAssignment saved = assignmentRepository.save(assignment);
         return new LearningAssignmentAcceptView(LearningAssignmentView.from(saved),
                 profile.getId(), goal.getId());
+    }
+
+    /** 后台和查询入口共同调用，确保作业不会永久停留在已布置/学习中。 */
+    @Transactional
+    public int expireOverdue(Instant reference, int limit) {
+        return expireOverdue(null, reference, limit);
+    }
+
+    @Transactional
+    public int expireOverdue(String tenantId, Instant reference, int limit) {
+        Instant now = reference == null ? Instant.now() : reference;
+        int boundedLimit = Math.max(1, Math.min(500, limit));
+        List<LearningAssignment> candidates = tenantId == null
+                ? assignmentRepository.findByStatusInAndDueAtLessThanEqualOrderByDueAtAsc(
+                List.of(LearningAssignmentStatus.ASSIGNED, LearningAssignmentStatus.ACCEPTED),
+                now, PageRequest.of(0, boundedLimit))
+                : assignmentRepository.findByTenantIdAndStatusInAndDueAtLessThanEqualOrderByDueAtAsc(
+                tenantId, List.of(LearningAssignmentStatus.ASSIGNED, LearningAssignmentStatus.ACCEPTED),
+                now, PageRequest.of(0, boundedLimit));
+        int changed = 0;
+        for (LearningAssignment assignment : candidates) {
+            if (!assignment.isOverdue(now)) continue;
+            assignment.markOverdue(now);
+            assignmentRepository.save(assignment);
+            changed++;
+        }
+        return changed;
     }
 
     private String clean(String value) {

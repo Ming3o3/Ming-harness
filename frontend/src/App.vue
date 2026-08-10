@@ -2767,6 +2767,7 @@ function learningAssignmentStatusLabel(status) {
   return {
     ASSIGNED: '待接受',
     ACCEPTED: '学习中',
+    OVERDUE: '已逾期',
     COMPLETED: '已完成',
     CANCELLED: '已取消',
   }[status] || status || '未知'

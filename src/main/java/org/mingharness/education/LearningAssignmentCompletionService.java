@@ -23,7 +23,8 @@ public class LearningAssignmentCompletionService {
                 .findByTenantIdAndLearningGoalId(tenantId, learningGoalId)) {
             if (!tenantId.equals(assignment.getTenantId())
                     || !userId.equals(assignment.getLearnerUserId())) continue;
-            if (assignment.getStatus() == LearningAssignmentStatus.ACCEPTED) {
+            if (assignment.getStatus() == LearningAssignmentStatus.ACCEPTED
+                    || assignment.getStatus() == LearningAssignmentStatus.OVERDUE) {
                 assignment.complete(completedAt);
                 assignmentRepository.save(assignment);
                 completed++;
