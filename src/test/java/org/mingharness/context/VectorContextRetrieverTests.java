@@ -61,6 +61,7 @@ class VectorContextRetrieverTests {
         verify(jdbcTemplate).query(sql.capture(), parameters.capture(), any(RowMapper.class));
         assertTrue(sql.getValue().contains("ROW_NUMBER() OVER"));
         assertTrue(sql.getValue().contains("PARTITION BY parent_type, parent_id"));
+        assertTrue(sql.getValue().contains("LOWER(:educationConceptKey)"));
         assertEquals(60, parameters.getValue().getValue("candidateLimit"));
         assertEquals(1_200, parameters.getValue().getValue("candidatePoolLimit"));
         assertEquals(4, parameters.getValue().getValue("maxCandidatesPerParent"));

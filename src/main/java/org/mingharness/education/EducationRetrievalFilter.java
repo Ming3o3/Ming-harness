@@ -3,6 +3,7 @@ package org.mingharness.education;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -76,7 +77,7 @@ public record EducationRetrievalFilter(
     /** 供教育重排使用：没有观测过的知识点按中性掌握度处理。 */
     public double masteryFor(String concept) {
         if (concept == null || concept.isBlank()) return 0.5;
-        return masteryScores.getOrDefault(normalize(concept), 0.5);
+        return masteryScores.getOrDefault(normalizeConcept(concept), 0.5);
     }
 
     private static boolean equalsOrUnconstrained(String expected, String actual) {
@@ -87,10 +88,10 @@ public record EducationRetrievalFilter(
         if (expected == null) return true;
         if (values == null || values.isBlank()) return false;
         Set<String> normalized = Arrays.stream(values.split(","))
-                .map(EducationRetrievalFilter::normalize)
+                .map(EducationRetrievalFilter::normalizeConcept)
                 .filter(value -> value != null)
                 .collect(Collectors.toSet());
-        return normalized.contains(expected);
+        return normalized.contains(normalizeConcept(expected));
     }
 
     private static String normalize(String value) {
@@ -106,7 +107,7 @@ public record EducationRetrievalFilter(
         if (values == null || values.isEmpty()) return Map.of();
         Map<String, Double> normalized = new LinkedHashMap<>();
         values.forEach((key, value) -> {
-            String concept = normalize(key);
+            String concept = normalizeConcept(key);
             if (concept == null || value == null || !Double.isFinite(value)) return;
             double bounded = Math.max(0.0, Math.min(1.0, value));
             // Run 快照的摘要使用两位小数；过滤器采用同一规范化精度，确保幂等重放稳定。
@@ -114,5 +115,10 @@ public record EducationRetrievalFilter(
         });
         return normalized.isEmpty()
                 ? Map.of() : Collections.unmodifiableMap(normalized);
+    }
+
+    private static String normalizeConcept(String value) {
+        String normalized = normalize(value);
+        return normalized == null ? null : normalized.toLowerCase(Locale.ROOT);
     }
 }

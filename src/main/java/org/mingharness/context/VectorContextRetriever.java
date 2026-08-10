@@ -67,7 +67,8 @@ public class VectorContextRetriever {
                                AND (:educationCurriculumVersion IS NULL
                                     OR es.curriculum_version = :educationCurriculumVersion)
                                AND (:educationConceptKey IS NULL
-                                    OR :educationConceptKey = ANY(string_to_array(es.concept_tags, ',')))
+                                    OR LOWER(:educationConceptKey) = ANY(
+                                        string_to_array(LOWER(es.concept_tags), ',')))
                                AND (:educationMinDifficulty IS NULL
                                     OR es.difficulty_level >= :educationMinDifficulty)
                                AND (:educationMaxDifficulty IS NULL
