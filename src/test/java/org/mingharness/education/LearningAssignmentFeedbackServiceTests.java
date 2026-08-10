@@ -154,7 +154,7 @@ class LearningAssignmentFeedbackServiceTests {
     }
 
     @Test
-    void shouldResolveActionableFeedbackAfterLearnerStartsNextRun() {
+    void shouldResolveActionableFeedbackAfterLearnerSubmitsEvidence() {
         LearningAssignmentFeedbackRepository feedbacks = mock(LearningAssignmentFeedbackRepository.class);
         LearningAssignmentService assignments = mock(LearningAssignmentService.class);
         LearningAssignmentFeedback feedback = new LearningAssignmentFeedback(
@@ -170,7 +170,7 @@ class LearningAssignmentFeedbackServiceTests {
                 feedbacks, assignments, mock(LearningAssignmentRepository.class),
                 mock(LearningAssignmentNotificationService.class), new org.mingharness.common.SensitiveDataSanitizer());
 
-        assertEquals(1, service.resolveForRunStart("tenant-a", "student-1", "assignment-1",
+        assertEquals(1, service.resolveForEvidence("tenant-a", "student-1", "assignment-1",
                 Instant.parse("2026-08-10T01:00:00Z")));
         assertEquals(LearningAssignmentFeedbackStatus.RESOLVED, feedback.getStatus());
         assertEquals(Instant.parse("2026-08-10T01:00:00Z"), feedback.getResolvedAt());

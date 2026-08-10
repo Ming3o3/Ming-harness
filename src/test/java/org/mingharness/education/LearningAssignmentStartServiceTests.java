@@ -16,6 +16,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class LearningAssignmentStartServiceTests {
@@ -65,7 +66,7 @@ class LearningAssignmentStartServiceTests {
     }
 
     @Test
-    void shouldResolveTeacherInterventionAfterRunIsCreated() {
+    void shouldLeaveTeacherInterventionOpenUntilEvidenceIsRecorded() {
         LearningAssignmentService assignments = mock(LearningAssignmentService.class);
         EducationActionService actions = mock(EducationActionService.class);
         LearningAssignmentFeedbackRepository feedbackRepository = mock(LearningAssignmentFeedbackRepository.class);
@@ -84,8 +85,7 @@ class LearningAssignmentStartServiceTests {
                 new ExecuteLearningActionRequest(null, null, 4),
                 "education.read,education.write", "assignment-start-2");
 
-        verify(feedbackService).resolveForRunStart(eq("tenant-a"), eq("student-1"),
-                eq(assignment.getId()), any(Instant.class));
+        verifyNoInteractions(feedbackService);
     }
 
     private LearningAssignment assignment() {

@@ -24,6 +24,7 @@ public class EducationAssessmentService {
     private final LearningReviewPlanService reviewPlanService;
     private final LearningTaskCompletionService taskCompletionService;
     private final LearningAssignmentCompletionService assignmentCompletionService;
+    private final LearningAssignmentFeedbackService feedbackService;
     private final SensitiveDataSanitizer sanitizer;
 
     public EducationAssessmentService(AssessmentAttemptRepository attemptRepository,
@@ -33,7 +34,7 @@ public class EducationAssessmentService {
                                       EducationLearnerService learnerService,
                                       SensitiveDataSanitizer sanitizer) {
         this(attemptRepository, runRepository, goalRepository, masteryRepository, learnerService,
-                null, null, null, sanitizer);
+                null, null, null, sanitizer, null);
     }
 
     /** 兼容已有组件测试和旧扩展调用方；保持度任务由 Spring 主构造器接入。 */
@@ -45,7 +46,7 @@ public class EducationAssessmentService {
                                       LearningReviewPlanService reviewPlanService,
                                       SensitiveDataSanitizer sanitizer) {
         this(attemptRepository, runRepository, goalRepository, masteryRepository, learnerService,
-                reviewPlanService, null, null, sanitizer);
+                reviewPlanService, null, null, sanitizer, null);
     }
 
     public EducationAssessmentService(AssessmentAttemptRepository attemptRepository,
@@ -57,7 +58,20 @@ public class EducationAssessmentService {
                                       LearningTaskCompletionService taskCompletionService,
                                       SensitiveDataSanitizer sanitizer) {
         this(attemptRepository, runRepository, goalRepository, masteryRepository, learnerService,
-                reviewPlanService, taskCompletionService, null, sanitizer);
+                reviewPlanService, taskCompletionService, null, sanitizer, null);
+    }
+
+    public EducationAssessmentService(AssessmentAttemptRepository attemptRepository,
+                                      RunRepository runRepository,
+                                      LearningGoalRepository goalRepository,
+                                      LearnerMasteryRepository masteryRepository,
+                                      EducationLearnerService learnerService,
+                                      LearningReviewPlanService reviewPlanService,
+                                      LearningTaskCompletionService taskCompletionService,
+                                      LearningAssignmentCompletionService assignmentCompletionService,
+                                      SensitiveDataSanitizer sanitizer) {
+        this(attemptRepository, runRepository, goalRepository, masteryRepository, learnerService,
+                reviewPlanService, taskCompletionService, assignmentCompletionService, sanitizer, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -69,7 +83,8 @@ public class EducationAssessmentService {
                                       LearningReviewPlanService reviewPlanService,
                                       LearningTaskCompletionService taskCompletionService,
                                       LearningAssignmentCompletionService assignmentCompletionService,
-                                      SensitiveDataSanitizer sanitizer) {
+                                      SensitiveDataSanitizer sanitizer,
+                                      LearningAssignmentFeedbackService feedbackService) {
         this.attemptRepository = attemptRepository;
         this.runRepository = runRepository;
         this.goalRepository = goalRepository;
@@ -78,6 +93,7 @@ public class EducationAssessmentService {
         this.reviewPlanService = reviewPlanService;
         this.taskCompletionService = taskCompletionService;
         this.assignmentCompletionService = assignmentCompletionService;
+        this.feedbackService = feedbackService;
         this.sanitizer = sanitizer;
     }
 
@@ -205,6 +221,12 @@ public class EducationAssessmentService {
         if (attemptType == AssessmentAttemptType.FORMATIVE && assignmentCompletionService != null) {
             assignmentCompletionService.resumeAfterEvidenceForGoal(
                     tenantId, userId, goal.getId(), java.time.Instant.now());
+        }
+        if (attemptType == AssessmentAttemptType.FORMATIVE && feedbackService != null
+                && run.getEducationLearningAssignmentId() != null
+                && !run.getEducationLearningAssignmentId().isBlank()) {
+            feedbackService.resolveForEvidence(tenantId, userId,
+                    run.getEducationLearningAssignmentId(), java.time.Instant.now());
         }
         if (attemptType == AssessmentAttemptType.REVIEW) {
             if (taskCompletionService != null) {

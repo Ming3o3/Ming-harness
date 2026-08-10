@@ -121,8 +121,9 @@ public class LearningAssignmentFeedbackService {
         return LearningAssignmentFeedbackView.from(saved);
     }
 
+    /** 只有新的形成性测评证据真正写入后，补证据/重试干预才算完成。 */
     @Transactional
-    public int resolveForRunStart(String tenantId, String learnerUserId, String assignmentId,
+    public int resolveForEvidence(String tenantId, String learnerUserId, String assignmentId,
                                   Instant resolvedAt) {
         List<LearningAssignmentFeedback> actionable = feedbackRepository
                 .findByTenantIdAndLearningAssignmentIdOrderByCreatedAtDesc(

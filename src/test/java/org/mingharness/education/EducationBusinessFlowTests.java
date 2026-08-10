@@ -27,7 +27,7 @@ import static org.mockito.Mockito.when;
 class EducationBusinessFlowTests {
 
     @Test
-    void shouldCloseAssignmentFromTeacherInstructionToMeasuredCompletionAndAcknowledgedFeedback() {
+    void shouldCloseAssignmentFromTeacherInstructionToMeasuredCompletionAndResolvedFeedback() {
         LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
         LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
         LearningGoalRepository goals = mock(LearningGoalRepository.class);
@@ -78,11 +78,14 @@ class EducationBusinessFlowTests {
         when(feedbacks.save(any(LearningAssignmentFeedback.class))).thenReturn(feedback);
         when(feedbacks.findByTenantIdAndLearningAssignmentIdAndId(
                 "tenant-a", assignment.getId(), feedback.getId())).thenReturn(Optional.of(feedback));
+        when(feedbacks.findByTenantIdAndLearningAssignmentIdOrderByCreatedAtDesc(
+                anyString(), anyString(), any())).thenReturn(List.of(feedback));
         LearningAssignmentFeedbackService feedbackService = new LearningAssignmentFeedbackService(
                 feedbacks, assignmentService, assignments, notifications, new SensitiveDataSanitizer());
         feedbackService.create("tenant-a", "teacher-1", assignment.getId(),
                 new org.mingharness.education.api.LearningAssignmentFeedbackRequest(
                         "REQUEST_EVIDENCE", feedback.getMessage(), null));
+        assertEquals(LearningAssignmentFeedbackStatus.OPEN, feedback.getStatus());
 
         Run run = new Run("tenant-a", "student-1", assignment.getTitle(), "完成作业",
                 BigDecimal.ONE, "demo-model", "prompt-v1", "policy-v1", null,
@@ -116,11 +119,12 @@ class EducationBusinessFlowTests {
                 assignments, assignmentNotifications);
         EducationAssessmentService assessmentService = new EducationAssessmentService(
                 attempts, runs, goals, mastery, learnerService, null, null,
-                completionService, new SensitiveDataSanitizer());
+                completionService, new SensitiveDataSanitizer(), feedbackService);
         assessmentService.record("tenant-a", "student-1", run.getId(), step.getId(),
                 profile.getId(), assignment.getConceptKey(), true, 0.85,
                 "MANUAL_REVIEW", "学生写出定义域判定依据", "证据充分");
         assertEquals(LearningAssignmentStatus.COMPLETED, assignment.getStatus());
+        assertEquals(LearningAssignmentFeedbackStatus.RESOLVED, feedback.getStatus());
 
         LearningAssignmentReviewService reviewService = new LearningAssignmentReviewService(
                 assignments, assignmentNotifications, new SensitiveDataSanitizer());
@@ -128,8 +132,6 @@ class EducationBusinessFlowTests {
                 new LearningAssignmentReviewRequest("VERIFY", "已确认作答依据"));
         assertEquals("VERIFIED", reviewed.reviewStatus());
 
-        feedbackService.acknowledge("tenant-a", "student-1", assignment.getId(), feedback.getId());
-        assertEquals(LearningAssignmentFeedbackStatus.ACKNOWLEDGED, feedback.getStatus());
     }
 
     private ConversationDetail detail(String conversationId) {
