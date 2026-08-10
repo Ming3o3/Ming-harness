@@ -13,6 +13,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** 将课程名单和已有单份作业进度投影为教师可行动的班级结果。 */
 @Service
@@ -62,6 +63,19 @@ public class EducationCourseProgressService {
         List<LearningAssignment> assignments = allAssignments.stream().limit(limit).toList();
         List<EducationEnrollment> enrollments = enrollmentRepository
                 .findByTenantIdAndCourseIdOrderByEnrolledAtAsc(tenantId, course.getId());
+        List<EducationEnrollment> activeEnrollments = enrollments.stream()
+                .filter(item -> item.getStatus() == EducationEnrollmentStatus.ACTIVE)
+                .toList();
+        Set<String> activeLearnerIds = activeEnrollments.stream()
+                .map(EducationEnrollment::getLearnerUserId).collect(java.util.stream.Collectors.toSet());
+        List<LearningAssignment> effectiveAssignments = allAssignments.stream()
+                .filter(item -> item.getStatus() != LearningAssignmentStatus.CANCELLED)
+                .toList();
+        Set<String> learnersWithAssignments = effectiveAssignments.stream()
+                .map(LearningAssignment::getLearnerUserId)
+                .filter(activeLearnerIds::contains)
+                .collect(java.util.stream.Collectors.toSet());
+        long rosterCoverageBlockers = activeLearnerIds.size() - learnersWithAssignments.size();
 
         Map<String, LearnerAccumulator> byLearner = new LinkedHashMap<>();
         enrollments.stream().filter(item -> item.getStatus() == EducationEnrollmentStatus.ACTIVE)
@@ -85,16 +99,13 @@ public class EducationCourseProgressService {
             accumulator.accept(assignment, progress, openInterventions);
         }
 
-        long effectiveAssignments = allAssignments.stream()
-                .filter(item -> item.getStatus() != LearningAssignmentStatus.CANCELLED)
-                .count();
+        long effectiveAssignmentTotal = effectiveAssignments.size();
         long completionBlockers = allAssignments.stream()
                 .filter(item -> item.getStatus() != LearningAssignmentStatus.CANCELLED)
                 .filter(item -> item.getStatus() != LearningAssignmentStatus.COMPLETED
                         || item.getReviewStatus() != LearningAssignmentReviewStatus.VERIFIED)
                 .count();
-        long submissionBlockers = submissionRepository == null ? 0 : allAssignments.stream()
-                .filter(item -> item.getStatus() != LearningAssignmentStatus.CANCELLED)
+        long submissionBlockers = submissionRepository == null ? 0 : effectiveAssignments.stream()
                 .filter(item -> !submissionRepository.existsByTenantIdAndLearningAssignmentId(
                         tenantId, item.getId()))
                 .count();
@@ -102,13 +113,17 @@ public class EducationCourseProgressService {
         EducationCourseProgressView result = new EducationCourseProgressView(
                 EducationCourseView.from(course,
                         enrollments.stream().filter(item -> item.getStatus() == EducationEnrollmentStatus.ACTIVE).count()),
+                activeLearnerIds.size(), learnersWithAssignments.size(),
+                ratio(learnersWithAssignments.size(), activeLearnerIds.size()), rosterCoverageBlockers,
                 totals.assignmentTotal, totals.assigned, totals.accepted, totals.awaitingEvidence,
                 totals.retryRequired, totals.overdue, totals.completed, totals.cancelled,
                 totals.reviewPending, totals.reviewVerified, totals.revisionRequired,
                 totals.openInterventions, ratio(totals.completed, totals.assignmentTotal),
                 ratio(totals.reviewVerified,
                         totals.reviewPending + totals.reviewVerified + totals.revisionRequired),
-                effectiveAssignments > 0 && completionBlockers == 0 && submissionBlockers == 0,
+                !activeLearnerIds.isEmpty() && effectiveAssignmentTotal > 0
+                        && rosterCoverageBlockers == 0 && completionBlockers == 0
+                        && submissionBlockers == 0,
                 completionBlockers,
                 submissionBlockers,
                 byLearner.values().stream().map(LearnerAccumulator::view)

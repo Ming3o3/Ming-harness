@@ -55,6 +55,9 @@ class EducationCourseBusinessFlowTests {
         when(courses.findByTenantIdAndId("tenant-a", course.getId())).thenReturn(Optional.of(course));
         when(assignments.findByTenantIdAndCourseIdOrderByCreatedAtDesc(
                 "tenant-a", course.getId())).thenReturn(List.of(assignment));
+        when(enrollments.findByTenantIdAndCourseIdAndStatus(
+                "tenant-a", course.getId(), EducationEnrollmentStatus.ACTIVE)).thenReturn(List.of(
+                new EducationEnrollment("tenant-a", course.getId(), "student-1", Instant.now())));
         when(submissions.existsByTenantIdAndLearningAssignmentId("tenant-a", assignment.getId()))
                 .thenReturn(true);
         when(courses.save(any(EducationCourse.class))).thenAnswer(invocation -> invocation.getArgument(0));

@@ -56,6 +56,10 @@ class EducationCourseProgressServiceTests {
         assertEquals(1, result.assigned());
         assertEquals(1, result.reviewPending());
         assertEquals(0.5, result.assignmentCompletionRate());
+        assertEquals(3, result.activeLearnerTotal());
+        assertEquals(2, result.learnersWithAssignments());
+        assertEquals(2.0 / 3.0, result.rosterCoverageRate());
+        assertEquals(1, result.rosterCoverageBlockerCount());
         assertEquals(false, result.readyToComplete());
         assertEquals(2, result.completionBlockerCount());
         assertEquals(0, result.submissionBlockerCount());

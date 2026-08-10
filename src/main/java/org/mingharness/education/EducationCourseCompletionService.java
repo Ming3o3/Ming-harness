@@ -77,6 +77,25 @@ public class EducationCourseCompletionService {
                     "EDUCATION_COURSE_NOT_READY_TO_COMPLETE",
                     "仍有 " + blocked + " 份作业未完成教师确认，暂不能结课");
         }
+        List<EducationEnrollment> activeEnrollments = enrollmentRepository
+                .findByTenantIdAndCourseIdAndStatus(tenantId, course.getId(), EducationEnrollmentStatus.ACTIVE);
+        if (activeEnrollments.isEmpty()) {
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "EDUCATION_COURSE_ROSTER_EMPTY",
+                    "课程没有活跃学习者，暂不能结课");
+        }
+        java.util.Set<String> activeLearnerIds = activeEnrollments.stream()
+                .map(EducationEnrollment::getLearnerUserId).collect(java.util.stream.Collectors.toSet());
+        java.util.Set<String> assignedLearnerIds = effective.stream()
+                .map(LearningAssignment::getLearnerUserId)
+                .filter(activeLearnerIds::contains)
+                .collect(java.util.stream.Collectors.toSet());
+        long missingLearners = activeLearnerIds.size() - assignedLearnerIds.size();
+        if (missingLearners > 0) {
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "EDUCATION_COURSE_ROSTER_ASSIGNMENTS_REQUIRED",
+                    "仍有 " + missingLearners + " 名活跃学习者没有课程作业，暂不能结课");
+        }
         if (submissionRepository != null) {
             long missingSubmissions = effective.stream()
                     .filter(item -> !submissionRepository.existsByTenantIdAndLearningAssignmentId(

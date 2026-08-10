@@ -5,6 +5,10 @@ import java.util.List;
 /** 教师课程级运营结果：名单、作业状态、确认状态和学习者进度在同一投影中可见。 */
 public record EducationCourseProgressView(
         EducationCourseView course,
+        long activeLearnerTotal,
+        long learnersWithAssignments,
+        double rosterCoverageRate,
+        long rosterCoverageBlockerCount,
         long assignmentTotal,
         long assigned,
         long accepted,

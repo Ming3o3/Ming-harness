@@ -32,6 +32,9 @@ class EducationCourseCompletionServiceTests {
         when(courses.findByTenantIdAndId("tenant-a", course.getId())).thenReturn(Optional.of(course));
         when(assignments.findByTenantIdAndCourseIdOrderByCreatedAtDesc(
                 "tenant-a", course.getId())).thenReturn(List.of(completed));
+        when(enrollments.findByTenantIdAndCourseIdAndStatus(
+                "tenant-a", course.getId(), EducationEnrollmentStatus.ACTIVE)).thenReturn(List.of(
+                new EducationEnrollment("tenant-a", course.getId(), "student-1", Instant.now())));
         when(submissions.existsByTenantIdAndLearningAssignmentId("tenant-a", completed.getId()))
                 .thenReturn(true);
         when(courses.save(any(EducationCourse.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -103,6 +106,9 @@ class EducationCourseCompletionServiceTests {
         when(courses.findByTenantIdAndId("tenant-a", course.getId())).thenReturn(Optional.of(course));
         when(assignments.findByTenantIdAndCourseIdOrderByCreatedAtDesc(
                 "tenant-a", course.getId())).thenReturn(List.of(completed));
+        when(enrollments.findByTenantIdAndCourseIdAndStatus(
+                "tenant-a", course.getId(), EducationEnrollmentStatus.ACTIVE)).thenReturn(List.of(
+                new EducationEnrollment("tenant-a", course.getId(), "student-1", Instant.now())));
         when(submissions.existsByTenantIdAndLearningAssignmentId("tenant-a", completed.getId()))
                 .thenReturn(false);
 
@@ -111,6 +117,29 @@ class EducationCourseCompletionServiceTests {
                         new SensitiveDataSanitizer()).complete("tenant-a", "teacher-1", course.getId(), null));
 
         assertEquals("EDUCATION_COURSE_SUBMISSIONS_REQUIRED", exception.getCode());
+    }
+
+    @Test
+    void shouldRejectCourseCompletionWhenActiveLearnerHasNoAssignment() {
+        EducationCourseRepository courses = mock(EducationCourseRepository.class);
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        EducationEnrollmentRepository enrollments = mock(EducationEnrollmentRepository.class);
+        EducationCourse course = course();
+        LearningAssignment completed = completedAssignment(course, "student-1");
+        completed.verifyByTeacher("teacher-1", "已核验", Instant.now());
+        when(courses.findByTenantIdAndId("tenant-a", course.getId())).thenReturn(Optional.of(course));
+        when(assignments.findByTenantIdAndCourseIdOrderByCreatedAtDesc(
+                "tenant-a", course.getId())).thenReturn(List.of(completed));
+        when(enrollments.findByTenantIdAndCourseIdAndStatus(
+                "tenant-a", course.getId(), EducationEnrollmentStatus.ACTIVE)).thenReturn(List.of(
+                new EducationEnrollment("tenant-a", course.getId(), "student-1", Instant.now()),
+                new EducationEnrollment("tenant-a", course.getId(), "student-2", Instant.now())));
+
+        BusinessException exception = assertThrows(BusinessException.class, () ->
+                new EducationCourseCompletionService(courses, assignments, enrollments,
+                        new SensitiveDataSanitizer()).complete("tenant-a", "teacher-1", course.getId(), null));
+
+        assertEquals("EDUCATION_COURSE_ROSTER_ASSIGNMENTS_REQUIRED", exception.getCode());
     }
 
     private EducationCourse course() {

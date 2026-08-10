@@ -2951,7 +2951,7 @@ async function completeEducationCourse(course) {
     || educationCourseActionId.value) return
   const progress = educationCourseProgress.value
   if (!progress?.readyToComplete) {
-    noticeMessage.value = `当前还有 ${Number(progress?.completionBlockerCount || 0)} 份作业未完成教师确认，暂不能结课。`
+    noticeMessage.value = `课程尚未满足结课条件：待处理作业 ${Number(progress?.completionBlockerCount || 0)}，缺提交物 ${Number(progress?.submissionBlockerCount || 0)}，名单覆盖缺口 ${Number(progress?.rosterCoverageBlockerCount || 0)}。`
     return
   }
   const note = window.prompt('可填写结课说明（可选）：', '')
@@ -6002,12 +6002,13 @@ onBeforeUnmount(() => {
                 <div v-if="educationCourseProgress" class="education-course-progress">
                   <div class="subsection-title"><div><h4>课程进度与干预队列</h4><span>{{ educationCourseProgress.truncated ? '仅展示最近 500 份作业' : '覆盖全部课程作业' }}</span></div><button class="text-button" type="button" :disabled="educationCourseLoading" @click="loadEducationCourseWorkspace(activeEducationCourse.id)">{{ educationCourseLoading ? '刷新中…' : '刷新进度' }}</button></div>
                   <div class="education-course-summary-grid">
+                    <div><span>名单覆盖</span><strong>{{ formatRate(educationCourseProgress.rosterCoverageRate) }}</strong><small>{{ educationCourseProgress.learnersWithAssignments }} / {{ educationCourseProgress.activeLearnerTotal }} 名活跃学习者</small></div>
                     <div><span>作业完成</span><strong>{{ formatRate(educationCourseProgress.assignmentCompletionRate) }}</strong><small>{{ educationCourseProgress.completed }} / {{ educationCourseProgress.assignmentTotal }}</small></div>
                     <div><span>教师确认</span><strong>{{ formatRate(educationCourseProgress.teacherVerificationRate) }}</strong><small>{{ educationCourseProgress.reviewVerified }} / {{ educationCourseProgress.reviewPending + educationCourseProgress.reviewVerified + educationCourseProgress.revisionRequired }}</small></div>
                     <div><span>待证据</span><strong>{{ educationCourseProgress.awaitingEvidence }}</strong><small>Run 已结束但证据未回写</small></div>
                     <div><span>待重试</span><strong>{{ educationCourseProgress.retryRequired }}</strong><small>失败、超时或返工</small></div>
                     <div><span>开放干预</span><strong>{{ educationCourseProgress.openInterventionCount }}</strong><small>补证据或建议重试</small></div>
-                    <div><span>结课判定</span><strong>{{ educationCourseProgress.readyToComplete ? '可结课' : '未就绪' }}</strong><small>{{ educationCourseProgress.readyToComplete ? '确认与提交物齐全' : `作业待处理 ${educationCourseProgress.completionBlockerCount} · 缺提交物 ${educationCourseProgress.submissionBlockerCount}` }}</small></div>
+                    <div><span>结课判定</span><strong>{{ educationCourseProgress.readyToComplete ? '可结课' : '未就绪' }}</strong><small>{{ educationCourseProgress.readyToComplete ? '名单、确认与提交物齐全' : `作业待处理 ${educationCourseProgress.completionBlockerCount} · 缺提交物 ${educationCourseProgress.submissionBlockerCount} · 名单缺口 ${educationCourseProgress.rosterCoverageBlockerCount}` }}</small></div>
                   </div>
                   <div v-if="educationCourseProgress.learners?.length" class="education-course-progress-list">
                     <div class="education-course-progress-header"><span>学习者</span><span>作业状态</span><span>掌握度进度</span><span>下一步</span></div>
