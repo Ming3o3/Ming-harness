@@ -365,6 +365,8 @@ export const api = {
     }),
   getLearningAssignmentProgress: (assignmentId) => request(
     `/education/assignments/${encodeURIComponent(assignmentId)}/progress`),
+  getLearningAssignmentEvidence: (assignmentId) => request(
+    `/education/assignments/${encodeURIComponent(assignmentId)}/evidence`),
   listLearningAssignmentNotifications: (unreadOnly = false, limit = 50) => {
     const params = new URLSearchParams({ unreadOnly: String(Boolean(unreadOnly)), limit: String(limit) })
     return request(`/education/assignment-notifications?${params.toString()}`)

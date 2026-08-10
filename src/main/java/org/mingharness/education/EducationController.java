@@ -59,6 +59,7 @@ public class EducationController {
     private final EducationMetricsService metricsService;
     private final LearningAssignmentProgressService assignmentProgressService;
     private final LearningAssignmentNotificationService assignmentNotificationService;
+    private final LearningAssignmentEvidenceService assignmentEvidenceService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
@@ -71,7 +72,8 @@ public class EducationController {
                                LearningAssignmentService assignmentService,
                                EducationMetricsService metricsService,
                                LearningAssignmentProgressService assignmentProgressService,
-                               LearningAssignmentNotificationService assignmentNotificationService) {
+                               LearningAssignmentNotificationService assignmentNotificationService,
+                               LearningAssignmentEvidenceService assignmentEvidenceService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
@@ -84,6 +86,7 @@ public class EducationController {
         this.metricsService = metricsService;
         this.assignmentProgressService = assignmentProgressService;
         this.assignmentNotificationService = assignmentNotificationService;
+        this.assignmentEvidenceService = assignmentEvidenceService;
     }
 
     @PostMapping("/sources")
@@ -244,6 +247,12 @@ public class EducationController {
     public LearningAssignmentProgressView assignmentProgress(@PathVariable String assignmentId) {
         HarnessIdentity identity = identity();
         return assignmentProgressService.get(identity.tenantId(), identity.userId(), assignmentId);
+    }
+
+    @GetMapping("/assignments/{assignmentId}/evidence")
+    public List<AssessmentAttemptView> assignmentEvidence(@PathVariable String assignmentId) {
+        HarnessIdentity identity = identity();
+        return assignmentEvidenceService.list(identity.tenantId(), identity.userId(), assignmentId);
     }
 
     @PostMapping("/assignments/{assignmentId}/accept")

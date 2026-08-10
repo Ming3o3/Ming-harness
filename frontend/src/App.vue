@@ -55,6 +55,7 @@ const learningAssignmentNotifications = ref([])
 const learningAssignmentNotificationUnreadCount = ref(0)
 const learningAssignments = ref([])
 const learningAssignmentProgressMap = ref({})
+const learningAssignmentEvidenceMap = ref({})
 const educationMetrics = ref(null)
 const learningTaskLoading = ref(false)
 const learningTaskStartingId = ref('')
@@ -2685,6 +2686,15 @@ async function loadEducationData() {
     }))
     learningAssignmentProgressMap.value = Object.fromEntries(
       progressEntries.filter(([, value]) => value))
+    const evidenceEntries = await Promise.all(assignments.slice(0, 20).map(async (assignment) => {
+      try {
+        return [assignment.id, await api.getLearningAssignmentEvidence(assignment.id)]
+      } catch {
+        return [assignment.id, null]
+      }
+    }))
+    learningAssignmentEvidenceMap.value = Object.fromEntries(
+      evidenceEntries.filter(([, value]) => value))
     await Promise.all([loadLearningNotifications(), loadLearningAssignmentNotifications()])
     const recommendationEntries = await Promise.all(goals.map(async (goal) => {
       try {
@@ -5434,7 +5444,7 @@ onBeforeUnmount(() => {
               </form>
               <div v-if="learningAssignments.length" class="learning-assignment-list">
                 <article v-for="assignment in learningAssignments.slice(0, 8)" :key="assignment.id" class="learning-assignment-row">
-                  <div class="learning-assignment-main"><div class="learning-assignment-meta"><strong>{{ assignment.title }}</strong><span>{{ learningAssignmentStatusLabel(assignment.status) }}</span></div><small>{{ assignment.teacherUserId }} → {{ assignment.learnerUserId }} · {{ assignment.subject }} · {{ assignment.gradeLevel }} · {{ assignment.curriculumVersion }}</small><p>{{ assignment.instructions }}</p><small v-if="learningAssignmentProgressMap[assignment.id]" class="learning-assignment-progress">掌握度 {{ formatRate(learningAssignmentProgressMap[assignment.id].currentMastery) }} / {{ formatRate(learningAssignmentProgressMap[assignment.id].targetMastery) }} · 目标进度 {{ formatRate(learningAssignmentProgressMap[assignment.id].masteryProgress) }} · 测评 {{ learningAssignmentProgressMap[assignment.id].assessmentTotal }} 次 · 任务 {{ learningAssignmentProgressMap[assignment.id].taskCompleted }} / {{ learningAssignmentProgressMap[assignment.id].taskTotal }}</small></div>
+                  <div class="learning-assignment-main"><div class="learning-assignment-meta"><strong>{{ assignment.title }}</strong><span>{{ learningAssignmentStatusLabel(assignment.status) }}</span></div><small>{{ assignment.teacherUserId }} → {{ assignment.learnerUserId }} · {{ assignment.subject }} · {{ assignment.gradeLevel }} · {{ assignment.curriculumVersion }}</small><p>{{ assignment.instructions }}</p><small v-if="learningAssignmentProgressMap[assignment.id]" class="learning-assignment-progress">掌握度 {{ formatRate(learningAssignmentProgressMap[assignment.id].currentMastery) }} / {{ formatRate(learningAssignmentProgressMap[assignment.id].targetMastery) }} · 目标进度 {{ formatRate(learningAssignmentProgressMap[assignment.id].masteryProgress) }} · 测评 {{ learningAssignmentProgressMap[assignment.id].assessmentTotal }} 次 · 任务 {{ learningAssignmentProgressMap[assignment.id].taskCompleted }} / {{ learningAssignmentProgressMap[assignment.id].taskTotal }}</small><details v-if="learningAssignmentEvidenceMap[assignment.id]?.length" class="learning-assessment-history"><summary>查看测评证据（{{ learningAssignmentEvidenceMap[assignment.id].length }}）</summary><div v-for="attempt in learningAssignmentEvidenceMap[assignment.id].slice().reverse().slice(0, 5)" :key="attempt.id"><span :class="attempt.correct ? 'assessment-correct' : 'assessment-wrong'">{{ attempt.correct ? '正确' : '错误' }}</span><span>{{ attempt.evidenceText || '未填写证据文本' }}<small v-if="attempt.feedback"> · {{ attempt.feedback }}</small></span><small>{{ attempt.evidenceSource === 'MANUAL_REVIEW' ? '人工复核' : (attempt.assessmentType === 'REVIEW' ? '保持度复习' : 'Agent观察') }} · {{ formatDate(attempt.createdAt) }}</small></div></details></div>
                   <div class="learning-assignment-actions">
                     <button v-if="assignment.learnerUserId === form.userId && assignment.status === 'ASSIGNED'" class="secondary-button" type="button" :disabled="learningAssignmentAcceptingId === assignment.id" @click="acceptLearningAssignment(assignment)">{{ learningAssignmentAcceptingId === assignment.id ? '接受中…' : '接受并开始学习' }}</button>
                     <button v-if="assignment.teacherUserId === form.userId && ['ASSIGNED', 'ACCEPTED', 'OVERDUE'].includes(assignment.status)" class="text-button" type="button" @click="cancelLearningAssignment(assignment)">取消作业</button>
