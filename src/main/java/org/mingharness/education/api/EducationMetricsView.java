@@ -25,6 +25,18 @@ public record EducationMetricsView(
         long formativeAssessmentTotal,
         long reviewAssessmentTotal,
         long correctAssessmentTotal,
-        double assessmentAccuracyRate
+        double assessmentAccuracyRate,
+        long assignmentReviewPending,
+        long assignmentReviewVerified,
+        double assignmentReviewVerificationRate,
+        long feedbackTotal,
+        long feedbackAcknowledged,
+        double feedbackAcknowledgementRate,
+        long feedbackAcknowledgementLatencySeconds,
+        long retriedTaskTotal,
+        long retriedTaskCompleted,
+        double retrySuccessRate,
+        double averageMasteryGain,
+        double reviewAssessmentAccuracyRate
 ) {
 }

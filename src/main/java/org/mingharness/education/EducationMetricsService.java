@@ -5,6 +5,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 /** 汇总作业、任务、测评和触达事实，给业务闭环提供可验证的结果视图。 */
 @Service
 public class EducationMetricsService {
@@ -13,13 +18,24 @@ public class EducationMetricsService {
     private final LearningTaskRepository taskRepository;
     private final LearningTaskNotificationRepository notificationRepository;
     private final LearningAssignmentNotificationRepository assignmentNotificationRepository;
+    private final LearningAssignmentFeedbackRepository feedbackRepository;
     private final AssessmentAttemptRepository assessmentRepository;
 
     public EducationMetricsService(LearningAssignmentRepository assignmentRepository,
                                    LearningTaskRepository taskRepository,
                                    LearningTaskNotificationRepository notificationRepository,
                                    AssessmentAttemptRepository assessmentRepository) {
-        this(assignmentRepository, taskRepository, notificationRepository, null, assessmentRepository);
+        this(assignmentRepository, taskRepository, notificationRepository, null, null, assessmentRepository);
+    }
+
+    /** 兼容已有组件测试和旧扩展调用方。 */
+    public EducationMetricsService(LearningAssignmentRepository assignmentRepository,
+                                   LearningTaskRepository taskRepository,
+                                   LearningTaskNotificationRepository notificationRepository,
+                                   LearningAssignmentNotificationRepository assignmentNotificationRepository,
+                                   AssessmentAttemptRepository assessmentRepository) {
+        this(assignmentRepository, taskRepository, notificationRepository,
+                assignmentNotificationRepository, null, assessmentRepository);
     }
 
     @Autowired
@@ -27,11 +43,13 @@ public class EducationMetricsService {
                                    LearningTaskRepository taskRepository,
                                    LearningTaskNotificationRepository notificationRepository,
                                    LearningAssignmentNotificationRepository assignmentNotificationRepository,
+                                   LearningAssignmentFeedbackRepository feedbackRepository,
                                    AssessmentAttemptRepository assessmentRepository) {
         this.assignmentRepository = assignmentRepository;
         this.taskRepository = taskRepository;
         this.notificationRepository = notificationRepository;
         this.assignmentNotificationRepository = assignmentNotificationRepository;
+        this.feedbackRepository = feedbackRepository;
         this.assessmentRepository = assessmentRepository;
     }
 
@@ -48,6 +66,10 @@ public class EducationMetricsService {
                 tenantId, userId, LearningAssignmentStatus.COMPLETED);
         long assignmentCompleted = assignmentRepository.countForParticipantByStatus(
                 tenantId, userId, LearningAssignmentStatus.COMPLETED);
+        long assignmentReviewPending = assignmentRepository.countForParticipantByReviewStatus(
+                tenantId, userId, LearningAssignmentReviewStatus.PENDING);
+        long assignmentReviewVerified = assignmentRepository.countForParticipantByReviewStatus(
+                tenantId, userId, LearningAssignmentReviewStatus.VERIFIED);
 
         long taskTotal = taskRepository.countByTenantIdAndUserId(tenantId, userId);
         long taskStarted = taskRepository.countByTenantIdAndUserIdAndStartedAtIsNotNull(
@@ -59,7 +81,16 @@ public class EducationMetricsService {
         long taskFailed = taskRepository.countByTenantIdAndUserIdAndStatus(
                 tenantId, userId, LearningTaskStatus.FAILED);
         long taskRetryCount = taskRepository.sumFailureCount(tenantId, userId);
+        long retriedTaskTotal = taskRepository.countRetriedTasks(tenantId, userId);
+        long retriedTaskCompleted = taskRepository.countRetriedTasksCompleted(tenantId, userId);
         long taskEvidenceCovered = taskRepository.countStartedWithAssessmentEvidence(tenantId, userId);
+
+        List<LearningAssignmentFeedback> feedbacks = feedbackRepository == null
+                ? List.of() : feedbackRepository.findByTenantIdAndParticipantOrderByCreatedAtAsc(tenantId, userId);
+        long feedbackTotal = feedbacks.size();
+        long feedbackAcknowledged = feedbacks.stream()
+                .filter(item -> item.getStatus() == LearningAssignmentFeedbackStatus.ACKNOWLEDGED).count();
+        long feedbackAcknowledgementLatencySeconds = averageAcknowledgementLatencySeconds(feedbacks);
 
         long notificationTotal = notificationRepository.countByTenantIdAndUserId(tenantId, userId);
         long notificationSeen = notificationRepository.countByTenantIdAndUserIdAndSeenAtIsNotNull(
@@ -81,6 +112,13 @@ public class EducationMetricsService {
                 tenantId, userId, AssessmentAttemptType.REVIEW);
         long correctAssessmentTotal = assessmentRepository.countByTenantIdAndUserIdAndCorrectTrue(
                 tenantId, userId);
+        long correctReviewAssessmentTotal = assessmentRepository
+                .countByTenantIdAndUserIdAndAssessmentTypeAndCorrectTrue(
+                        tenantId, userId, AssessmentAttemptType.REVIEW);
+        List<AssessmentAttempt> participantAssessments = assessmentRepository
+                .findByTenantIdAndUserIdOrderByCreatedAtAsc(tenantId, userId);
+        double averageMasteryGain = averageMasteryGain(
+                participantAssessments == null ? List.of() : participantAssessments);
 
         return new EducationMetricsView(
                 assignmentTotal, assignmentAccepted, assignmentCompleted,
@@ -91,7 +129,35 @@ public class EducationMetricsService {
                 notificationTotal, notificationSeen, notificationRead,
                 ratio(notificationRead, notificationTotal),
                 assessmentTotal, formativeAssessmentTotal, reviewAssessmentTotal,
-                correctAssessmentTotal, ratio(correctAssessmentTotal, assessmentTotal));
+                correctAssessmentTotal, ratio(correctAssessmentTotal, assessmentTotal),
+                assignmentReviewPending, assignmentReviewVerified,
+                ratio(assignmentReviewVerified, assignmentReviewPending + assignmentReviewVerified),
+                feedbackTotal, feedbackAcknowledged, ratio(feedbackAcknowledged, feedbackTotal),
+                feedbackAcknowledgementLatencySeconds, retriedTaskTotal, retriedTaskCompleted,
+                ratio(retriedTaskCompleted, retriedTaskTotal), averageMasteryGain,
+                ratio(correctReviewAssessmentTotal, reviewAssessmentTotal));
+    }
+
+    private long averageAcknowledgementLatencySeconds(List<LearningAssignmentFeedback> feedbacks) {
+        List<Long> latencies = feedbacks.stream()
+                .filter(item -> item.getAcknowledgedAt() != null)
+                .map(item -> Duration.between(item.getCreatedAt(), item.getAcknowledgedAt()).getSeconds())
+                .filter(value -> value >= 0)
+                .toList();
+        return latencies.isEmpty() ? 0L
+                : Math.round(latencies.stream().mapToLong(Long::longValue).average().orElse(0.0));
+    }
+
+    private double averageMasteryGain(List<AssessmentAttempt> attempts) {
+        Map<String, double[]> perGoal = new HashMap<>();
+        for (AssessmentAttempt attempt : attempts) {
+            double[] values = perGoal.computeIfAbsent(attempt.getLearningGoalId(), key ->
+                    new double[]{attempt.getMasteryBefore(), attempt.getMasteryAfter()});
+            values[1] = attempt.getMasteryAfter();
+        }
+        return perGoal.values().stream()
+                .mapToDouble(values -> values[1] - values[0])
+                .average().orElse(0.0);
     }
 
     private double ratio(long numerator, long denominator) {

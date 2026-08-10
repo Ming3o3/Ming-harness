@@ -41,6 +41,14 @@ public interface LearningTaskRepository extends JpaRepository<LearningTask, Stri
     long sumFailureCount(@Param("tenantId") String tenantId, @Param("userId") String userId);
 
     @Query("select count(t) from LearningTask t where t.tenantId = :tenantId "
+            + "and t.userId = :userId and t.failureCount > 0")
+    long countRetriedTasks(@Param("tenantId") String tenantId, @Param("userId") String userId);
+
+    @Query("select count(t) from LearningTask t where t.tenantId = :tenantId "
+            + "and t.userId = :userId and t.failureCount > 0 and t.completedAt is not null")
+    long countRetriedTasksCompleted(@Param("tenantId") String tenantId, @Param("userId") String userId);
+
+    @Query("select count(t) from LearningTask t where t.tenantId = :tenantId "
             + "and t.userId = :userId and t.startedAt is not null "
             + "and exists (select a.id from AssessmentAttempt a "
             + "where a.tenantId = t.tenantId and a.userId = t.userId and a.runId = t.runId)")

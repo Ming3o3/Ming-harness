@@ -86,6 +86,58 @@ class EducationMetricsServiceTests {
         assertEquals(0.8, metrics.assessmentAccuracyRate());
     }
 
+    @Test
+    void shouldExposeTeacherReviewRetryRetentionAndMasteryOutcomeMetrics() {
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        LearningTaskRepository tasks = mock(LearningTaskRepository.class);
+        LearningTaskNotificationRepository notifications = mock(LearningTaskNotificationRepository.class);
+        LearningAssignmentNotificationRepository assignmentNotifications =
+                mock(LearningAssignmentNotificationRepository.class);
+        LearningAssignmentFeedbackRepository feedbacks = mock(LearningAssignmentFeedbackRepository.class);
+        AssessmentAttemptRepository assessments = mock(AssessmentAttemptRepository.class);
+
+        when(assignments.countForParticipant("tenant-a", "student-1")).thenReturn(2L);
+        when(assignments.countForParticipantByReviewStatus("tenant-a", "student-1",
+                LearningAssignmentReviewStatus.PENDING)).thenReturn(1L);
+        when(assignments.countForParticipantByReviewStatus("tenant-a", "student-1",
+                LearningAssignmentReviewStatus.VERIFIED)).thenReturn(1L);
+        when(tasks.countRetriedTasks("tenant-a", "student-1")).thenReturn(2L);
+        when(tasks.countRetriedTasksCompleted("tenant-a", "student-1")).thenReturn(1L);
+        LearningAssignmentFeedback feedback = new LearningAssignmentFeedback(
+                "tenant-a", "assignment-1", "teacher-1", "student-1",
+                LearningAssignmentFeedbackAction.COMMENT, "请确认依据", null,
+                java.time.Instant.parse("2026-08-10T00:00:00Z"));
+        feedback.acknowledge(java.time.Instant.parse("2026-08-10T00:01:30Z"));
+        when(feedbacks.findByTenantIdAndParticipantOrderByCreatedAtAsc("tenant-a", "student-1"))
+                .thenReturn(java.util.List.of(feedback));
+        when(assessments.countByTenantIdAndUserIdAndAssessmentType("tenant-a", "student-1",
+                AssessmentAttemptType.REVIEW)).thenReturn(2L);
+        when(assessments.countByTenantIdAndUserIdAndAssessmentTypeAndCorrectTrue(
+                "tenant-a", "student-1", AssessmentAttemptType.REVIEW)).thenReturn(1L);
+        AssessmentAttempt attempt = new AssessmentAttempt("tenant-a", "student-1", "run-1", "step-1",
+                "goal-1", "profile-1", "函数", true, 0.8, 0.2, 0.65,
+                AssessmentAttemptType.FORMATIVE, null, "MODEL_TOOL", "依据", "通过");
+        when(assessments.findByTenantIdAndUserIdOrderByCreatedAtAsc("tenant-a", "student-1"))
+                .thenReturn(java.util.List.of(attempt));
+
+        EducationMetricsView metrics = new EducationMetricsService(
+                assignments, tasks, notifications, assignmentNotifications, feedbacks, assessments)
+                .summarize("tenant-a", "student-1");
+
+        assertEquals(1, metrics.assignmentReviewPending());
+        assertEquals(1, metrics.assignmentReviewVerified());
+        assertEquals(0.5, metrics.assignmentReviewVerificationRate());
+        assertEquals(1, metrics.feedbackTotal());
+        assertEquals(1, metrics.feedbackAcknowledged());
+        assertEquals(1.0, metrics.feedbackAcknowledgementRate());
+        assertEquals(90, metrics.feedbackAcknowledgementLatencySeconds());
+        assertEquals(2, metrics.retriedTaskTotal());
+        assertEquals(1, metrics.retriedTaskCompleted());
+        assertEquals(0.5, metrics.retrySuccessRate());
+        assertEquals(0.45, metrics.averageMasteryGain());
+        assertEquals(0.5, metrics.reviewAssessmentAccuracyRate());
+    }
+
     private EducationMetricsService service() {
         return new EducationMetricsService(
                 mock(LearningAssignmentRepository.class),

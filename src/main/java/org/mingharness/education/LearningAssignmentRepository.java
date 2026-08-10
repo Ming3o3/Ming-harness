@@ -45,4 +45,11 @@ public interface LearningAssignmentRepository extends JpaRepository<LearningAssi
     long countForParticipantByStatus(@Param("tenantId") String tenantId,
                                      @Param("userId") String userId,
                                      @Param("status") LearningAssignmentStatus status);
+
+    @Query("select count(a) from LearningAssignment a where a.tenantId = :tenantId "
+            + "and (a.teacherUserId = :userId or a.learnerUserId = :userId) "
+            + "and a.reviewStatus = :reviewStatus")
+    long countForParticipantByReviewStatus(@Param("tenantId") String tenantId,
+                                           @Param("userId") String userId,
+                                           @Param("reviewStatus") LearningAssignmentReviewStatus reviewStatus);
 }

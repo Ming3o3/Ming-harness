@@ -5549,6 +5549,10 @@ onBeforeUnmount(() => {
               <div><span>测评证据覆盖</span><strong>{{ formatRate(educationMetrics.taskEvidenceCoverageRate) }}</strong><small>{{ educationMetrics.taskEvidenceCovered }} / {{ educationMetrics.taskStarted }}</small></div>
               <div><span>通知读取率</span><strong>{{ formatRate(educationMetrics.notificationReadRate) }}</strong><small>{{ educationMetrics.notificationRead }} / {{ educationMetrics.notificationTotal }}</small></div>
               <div><span>测评正确率</span><strong>{{ formatRate(educationMetrics.assessmentAccuracyRate) }}</strong><small>{{ educationMetrics.correctAssessmentTotal }} / {{ educationMetrics.assessmentTotal }}</small></div>
+              <div><span>教师确认率</span><strong>{{ formatRate(educationMetrics.assignmentReviewVerificationRate) }}</strong><small>{{ educationMetrics.assignmentReviewVerified }} / {{ educationMetrics.assignmentReviewPending + educationMetrics.assignmentReviewVerified }}</small></div>
+              <div><span>反馈确认率</span><strong>{{ formatRate(educationMetrics.feedbackAcknowledgementRate) }}</strong><small>{{ educationMetrics.feedbackAcknowledged }} / {{ educationMetrics.feedbackTotal }}</small></div>
+              <div><span>重试成功率</span><strong>{{ formatRate(educationMetrics.retrySuccessRate) }}</strong><small>{{ educationMetrics.retriedTaskCompleted }} / {{ educationMetrics.retriedTaskTotal }}</small></div>
+              <div><span>保持度正确率</span><strong>{{ formatRate(educationMetrics.reviewAssessmentAccuracyRate) }}</strong><small>平均掌握度提升 {{ formatRate(educationMetrics.averageMasteryGain) }}</small></div>
             </div>
             <form class="education-profile-form" @submit.prevent="saveLearnerProfile">
               <label class="field"><span>学科</span><input v-model="learnerProfileForm.subject" required maxlength="128" /></label>
