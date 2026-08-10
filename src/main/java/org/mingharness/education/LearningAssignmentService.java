@@ -27,6 +27,7 @@ public class LearningAssignmentService {
     private final LearnerMasteryRepository masteryRepository;
     private final SensitiveDataSanitizer sanitizer;
     private final LearningAssignmentNotificationService notificationService;
+    private final EducationCourseService courseService;
 
     /** 保留旧构造器，方便已有单元测试和嵌入式调用；生产环境由 Spring 使用带通知服务的构造器。 */
     public LearningAssignmentService(LearningAssignmentRepository assignmentRepository,
@@ -34,7 +35,17 @@ public class LearningAssignmentService {
                                      LearningGoalRepository goalRepository,
                                      LearnerMasteryRepository masteryRepository,
                                      SensitiveDataSanitizer sanitizer) {
-        this(assignmentRepository, profileRepository, goalRepository, masteryRepository, sanitizer, null);
+        this(assignmentRepository, profileRepository, goalRepository, masteryRepository, sanitizer, null, null);
+    }
+
+    public LearningAssignmentService(LearningAssignmentRepository assignmentRepository,
+                                     LearnerProfileRepository profileRepository,
+                                     LearningGoalRepository goalRepository,
+                                     LearnerMasteryRepository masteryRepository,
+                                     SensitiveDataSanitizer sanitizer,
+                                     LearningAssignmentNotificationService notificationService) {
+        this(assignmentRepository, profileRepository, goalRepository, masteryRepository, sanitizer,
+                notificationService, null);
     }
 
     @Autowired
@@ -43,13 +54,15 @@ public class LearningAssignmentService {
                                      LearningGoalRepository goalRepository,
                                      LearnerMasteryRepository masteryRepository,
                                      SensitiveDataSanitizer sanitizer,
-                                     LearningAssignmentNotificationService notificationService) {
+                                     LearningAssignmentNotificationService notificationService,
+                                     EducationCourseService courseService) {
         this.assignmentRepository = assignmentRepository;
         this.profileRepository = profileRepository;
         this.goalRepository = goalRepository;
         this.masteryRepository = masteryRepository;
         this.sanitizer = sanitizer;
         this.notificationService = notificationService;
+        this.courseService = courseService;
     }
 
     @Transactional
@@ -60,11 +73,32 @@ public class LearningAssignmentService {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "ASSIGNMENT_LEARNER_REQUIRED",
                     "布置作业时必须指定学习者");
         }
+        String courseId = clean(request.courseId());
+        EducationCourse course = null;
+        if (!courseId.isBlank()) {
+            if (courseService == null) {
+                throw new BusinessException(HttpStatus.CONFLICT, "EDUCATION_COURSE_UNAVAILABLE",
+                        "当前运行环境未启用课程实例管理");
+            }
+            course = courseService.requireOwnerCourse(tenantId, teacherUserId, courseId);
+            if (!course.isActive()) {
+                throw new BusinessException(HttpStatus.CONFLICT, "EDUCATION_COURSE_ARCHIVED",
+                        "已归档课程不能再布置作业");
+            }
+            courseService.requireActiveEnrollment(tenantId, courseId, learnerUserId);
+            if (!same(course.getSubject(), request.subject())
+                    || !same(course.getGradeLevel(), request.gradeLevel())
+                    || !same(course.getCurriculumVersion(), request.curriculumVersion())) {
+                throw new BusinessException(HttpStatus.CONFLICT, "EDUCATION_COURSE_CONTEXT_MISMATCH",
+                        "作业课程约束必须与课程实例一致");
+            }
+        }
         LearningAssignment saved = assignmentRepository.save(new LearningAssignment(
                 tenantId, teacherUserId, learnerUserId,
                 clean(request.title()), clean(request.instructions()), clean(request.subject()),
                 clean(request.gradeLevel()), clean(request.curriculumVersion()),
-                clean(request.conceptKey()), request.effectiveTargetMastery(), request.dueAt()));
+                clean(request.conceptKey()), request.effectiveTargetMastery(), request.dueAt(),
+                course == null ? null : course.getId()));
         notifyState(saved);
         return saved;
     }
@@ -214,6 +248,10 @@ public class LearningAssignmentService {
 
     private String clean(String value) {
         return sanitizer.sanitize(value == null ? "" : value.trim());
+    }
+
+    private boolean same(String left, String right) {
+        return left != null && right != null && left.trim().equalsIgnoreCase(right.trim());
     }
 
     private void notifyState(LearningAssignment assignment) {

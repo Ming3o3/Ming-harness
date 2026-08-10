@@ -29,6 +29,10 @@ import org.mingharness.education.api.LearningAssignmentNotificationView;
 import org.mingharness.education.api.LearningAssignmentFeedbackRequest;
 import org.mingharness.education.api.LearningAssignmentFeedbackView;
 import org.mingharness.education.api.EducationMetricsView;
+import org.mingharness.education.api.EducationCourseRequest;
+import org.mingharness.education.api.EducationCourseView;
+import org.mingharness.education.api.EducationEnrollmentRequest;
+import org.mingharness.education.api.EducationEnrollmentView;
 import org.mingharness.education.api.ManualAssessmentSubmissionRequest;
 import org.mingharness.education.api.MasteryUpdateRequest;
 import org.mingharness.security.HarnessIdentity;
@@ -67,6 +71,7 @@ public class EducationController {
     private final LearningAssignmentFeedbackService assignmentFeedbackService;
     private final LearningAssignmentStartService assignmentStartService;
     private final LearningAssignmentReviewService assignmentReviewService;
+    private final EducationCourseService courseService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
@@ -83,7 +88,8 @@ public class EducationController {
                                LearningAssignmentEvidenceService assignmentEvidenceService,
                                LearningAssignmentFeedbackService assignmentFeedbackService,
                                LearningAssignmentStartService assignmentStartService,
-                               LearningAssignmentReviewService assignmentReviewService) {
+                               LearningAssignmentReviewService assignmentReviewService,
+                               EducationCourseService courseService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
@@ -100,6 +106,7 @@ public class EducationController {
         this.assignmentFeedbackService = assignmentFeedbackService;
         this.assignmentStartService = assignmentStartService;
         this.assignmentReviewService = assignmentReviewService;
+        this.courseService = courseService;
     }
 
     @PostMapping("/sources")
@@ -232,6 +239,52 @@ public class EducationController {
     public EducationMetricsView metrics() {
         HarnessIdentity identity = identity();
         return metricsService.summarize(identity.tenantId(), identity.userId());
+    }
+
+    @PostMapping("/courses")
+    @ResponseStatus(HttpStatus.CREATED)
+    public EducationCourseView createCourse(@Valid @RequestBody EducationCourseRequest request) {
+        HarnessIdentity identity = identity();
+        return courseService.create(identity.tenantId(), identity.userId(), request);
+    }
+
+    @GetMapping("/courses")
+    public List<EducationCourseView> listCourses() {
+        HarnessIdentity identity = identity();
+        return courseService.list(identity.tenantId(), identity.userId());
+    }
+
+    @GetMapping("/courses/{courseId}")
+    public EducationCourseView getCourse(@PathVariable String courseId) {
+        HarnessIdentity identity = identity();
+        return courseService.getForParticipant(identity.tenantId(), identity.userId(), courseId);
+    }
+
+    @PostMapping("/courses/{courseId}/enrollments")
+    @ResponseStatus(HttpStatus.CREATED)
+    public EducationEnrollmentView enrollLearner(@PathVariable String courseId,
+                                                 @Valid @RequestBody EducationEnrollmentRequest request) {
+        HarnessIdentity identity = identity();
+        return courseService.enroll(identity.tenantId(), identity.userId(), courseId, request);
+    }
+
+    @GetMapping("/courses/{courseId}/enrollments")
+    public List<EducationEnrollmentView> listCourseRoster(@PathVariable String courseId) {
+        HarnessIdentity identity = identity();
+        return courseService.roster(identity.tenantId(), identity.userId(), courseId);
+    }
+
+    @PostMapping("/courses/{courseId}/enrollments/{learnerUserId}/remove")
+    public EducationEnrollmentView removeLearner(@PathVariable String courseId,
+                                                 @PathVariable String learnerUserId) {
+        HarnessIdentity identity = identity();
+        return courseService.removeEnrollment(identity.tenantId(), identity.userId(), courseId, learnerUserId);
+    }
+
+    @PostMapping("/courses/{courseId}/archive")
+    public EducationCourseView archiveCourse(@PathVariable String courseId) {
+        HarnessIdentity identity = identity();
+        return courseService.archive(identity.tenantId(), identity.userId(), courseId);
     }
 
     @PostMapping("/assignments")

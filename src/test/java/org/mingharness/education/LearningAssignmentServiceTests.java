@@ -1,6 +1,7 @@
 package org.mingharness.education;
 
 import org.junit.jupiter.api.Test;
+import org.mingharness.common.BusinessException;
 import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.education.api.LearningAssignmentAcceptView;
 import org.mingharness.education.api.LearningAssignmentRequest;
@@ -9,12 +10,54 @@ import java.time.Instant;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class LearningAssignmentServiceTests {
+
+    @Test
+    void shouldBindAssignmentToAnActiveCourseAndPreserveCourseContext() {
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        EducationCourseService courses = mock(EducationCourseService.class);
+        EducationCourse course = new EducationCourse(
+                "tenant-a", "teacher-1", "math-g1", "高一数学", "数学", "高中一年级", "人教A版");
+        when(courses.requireOwnerCourse("tenant-a", "teacher-1", course.getId()))
+                .thenReturn(course);
+        when(assignments.save(any(LearningAssignment.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        LearningAssignment saved = new LearningAssignmentService(
+                assignments, mock(LearnerProfileRepository.class), mock(LearningGoalRepository.class),
+                mock(LearnerMasteryRepository.class), new SensitiveDataSanitizer(),
+                mock(LearningAssignmentNotificationService.class), courses)
+                .create("tenant-a", "teacher-1", new LearningAssignmentRequest(
+                        "student-1", "函数作业", "完成练习", "数学", "高中一年级", "人教A版",
+                        "函数定义域", 0.8, Instant.now().plusSeconds(3600), course.getId()));
+
+        assertEquals(course.getId(), saved.getCourseId());
+    }
+
+    @Test
+    void shouldRejectBoundAssignmentWhenRequestChangesCourseContext() {
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        EducationCourseService courses = mock(EducationCourseService.class);
+        EducationCourse course = new EducationCourse(
+                "tenant-a", "teacher-1", "math-g1", "高一数学", "数学", "高中一年级", "人教A版");
+        when(courses.requireOwnerCourse("tenant-a", "teacher-1", course.getId()))
+                .thenReturn(course);
+
+        BusinessException mismatch = assertThrows(BusinessException.class, () -> new LearningAssignmentService(
+                assignments, mock(LearnerProfileRepository.class), mock(LearningGoalRepository.class),
+                mock(LearnerMasteryRepository.class), new SensitiveDataSanitizer(), null, courses)
+                .create("tenant-a", "teacher-1", new LearningAssignmentRequest(
+                        "student-1", "函数作业", "完成练习", "物理", "高中一年级", "人教A版",
+                        "函数定义域", 0.8, null, course.getId())));
+
+        assertEquals("EDUCATION_COURSE_CONTEXT_MISMATCH", mismatch.getCode());
+    }
 
     @Test
     void shouldAcceptAssignmentAndCreateLearnerProfileAndGoal() {

@@ -26,6 +26,8 @@ public class LearningAssignment {
     private String teacherUserId;
     @Column(nullable = false, length = 255)
     private String learnerUserId;
+    @Column(length = 255)
+    private String courseId;
     @Column(nullable = false, length = 255)
     private String title;
     @Column(nullable = false, columnDefinition = "text")
@@ -67,10 +69,19 @@ public class LearningAssignment {
                               String title, String instructions, String subject,
                               String gradeLevel, String curriculumVersion, String conceptKey,
                               double targetMastery, Instant dueAt) {
+        this(tenantId, teacherUserId, learnerUserId, title, instructions, subject, gradeLevel,
+                curriculumVersion, conceptKey, targetMastery, dueAt, null);
+    }
+
+    public LearningAssignment(String tenantId, String teacherUserId, String learnerUserId,
+                              String title, String instructions, String subject,
+                              String gradeLevel, String curriculumVersion, String conceptKey,
+                              double targetMastery, Instant dueAt, String courseId) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = required(tenantId, "tenantId");
         this.teacherUserId = required(teacherUserId, "teacherUserId");
         this.learnerUserId = required(learnerUserId, "learnerUserId");
+        this.courseId = optional(courseId);
         this.title = required(title, "title");
         this.instructions = required(instructions, "instructions");
         this.subject = required(subject, "subject");
@@ -222,10 +233,16 @@ public class LearningAssignment {
         return normalized;
     }
 
+    private static String optional(String value) {
+        String normalized = value == null ? "" : value.trim();
+        return normalized.isBlank() ? null : normalized;
+    }
+
     public String getId() { return id; }
     public String getTenantId() { return tenantId; }
     public String getTeacherUserId() { return teacherUserId; }
     public String getLearnerUserId() { return learnerUserId; }
+    public String getCourseId() { return courseId; }
     public String getTitle() { return title; }
     public String getInstructions() { return instructions; }
     public String getSubject() { return subject; }

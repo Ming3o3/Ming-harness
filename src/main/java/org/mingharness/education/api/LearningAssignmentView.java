@@ -9,6 +9,7 @@ public record LearningAssignmentView(
         String id,
         String teacherUserId,
         String learnerUserId,
+        String courseId,
         String title,
         String instructions,
         String subject,
@@ -31,7 +32,7 @@ public record LearningAssignmentView(
 ) {
     public static LearningAssignmentView from(LearningAssignment assignment) {
         return new LearningAssignmentView(assignment.getId(), assignment.getTeacherUserId(),
-                assignment.getLearnerUserId(), assignment.getTitle(), assignment.getInstructions(),
+                assignment.getLearnerUserId(), assignment.getCourseId(), assignment.getTitle(), assignment.getInstructions(),
                 assignment.getSubject(), assignment.getGradeLevel(), assignment.getCurriculumVersion(),
                 assignment.getConceptKey(), assignment.getTargetMastery(), assignment.getDueAt(),
                 assignment.getStatus().name(), assignment.getLearnerProfileId(),
