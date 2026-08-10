@@ -23,6 +23,7 @@ import org.mingharness.education.api.LearningAssignmentAcceptView;
 import org.mingharness.education.api.LearningAssignmentRequest;
 import org.mingharness.education.api.LearningAssignmentView;
 import org.mingharness.education.api.LearningAssignmentProgressView;
+import org.mingharness.education.api.LearningAssignmentNotificationView;
 import org.mingharness.education.api.EducationMetricsView;
 import org.mingharness.education.api.ManualAssessmentSubmissionRequest;
 import org.mingharness.education.api.MasteryUpdateRequest;
@@ -57,6 +58,7 @@ public class EducationController {
     private final LearningAssignmentService assignmentService;
     private final EducationMetricsService metricsService;
     private final LearningAssignmentProgressService assignmentProgressService;
+    private final LearningAssignmentNotificationService assignmentNotificationService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
@@ -68,7 +70,8 @@ public class EducationController {
                                LearningTaskNotificationService notificationService,
                                LearningAssignmentService assignmentService,
                                EducationMetricsService metricsService,
-                               LearningAssignmentProgressService assignmentProgressService) {
+                               LearningAssignmentProgressService assignmentProgressService,
+                               LearningAssignmentNotificationService assignmentNotificationService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
@@ -80,6 +83,7 @@ public class EducationController {
         this.assignmentService = assignmentService;
         this.metricsService = metricsService;
         this.assignmentProgressService = assignmentProgressService;
+        this.assignmentNotificationService = assignmentNotificationService;
     }
 
     @PostMapping("/sources")
@@ -253,6 +257,28 @@ public class EducationController {
         HarnessIdentity identity = identity();
         return LearningAssignmentView.from(assignmentService.cancel(
                 identity.tenantId(), identity.userId(), assignmentId));
+    }
+
+    @GetMapping("/assignment-notifications")
+    public LearningAssignmentNotificationService.NotificationPage listAssignmentNotifications(
+            @RequestParam(defaultValue = "false") boolean unreadOnly,
+            @RequestParam(defaultValue = "50") int limit) {
+        HarnessIdentity identity = identity();
+        return assignmentNotificationService.list(identity.tenantId(), identity.userId(), unreadOnly, limit);
+    }
+
+    @PostMapping("/assignment-notifications/{notificationId}/read")
+    public LearningAssignmentNotificationView markAssignmentNotificationRead(
+            @PathVariable String notificationId) {
+        HarnessIdentity identity = identity();
+        return assignmentNotificationService.markRead(identity.tenantId(), identity.userId(), notificationId);
+    }
+
+    @PostMapping("/assignment-notifications/read-all")
+    public java.util.Map<String, Long> markAllAssignmentNotificationsRead() {
+        HarnessIdentity identity = identity();
+        return java.util.Map.of("markedRead", assignmentNotificationService.markAllRead(
+                identity.tenantId(), identity.userId()));
     }
 
     @PostMapping("/tasks/{taskId}/start")

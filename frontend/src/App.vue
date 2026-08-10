@@ -51,6 +51,8 @@ const learningGoalRecommendationMap = ref({})
 const learningTasks = ref([])
 const learningNotifications = ref([])
 const learningNotificationUnreadCount = ref(0)
+const learningAssignmentNotifications = ref([])
+const learningAssignmentNotificationUnreadCount = ref(0)
 const learningAssignments = ref([])
 const learningAssignmentProgressMap = ref({})
 const educationMetrics = ref(null)
@@ -2683,7 +2685,7 @@ async function loadEducationData() {
     }))
     learningAssignmentProgressMap.value = Object.fromEntries(
       progressEntries.filter(([, value]) => value))
-    await loadLearningNotifications()
+    await Promise.all([loadLearningNotifications(), loadLearningAssignmentNotifications()])
     const recommendationEntries = await Promise.all(goals.map(async (goal) => {
       try {
         return [goal.id, await api.getGoalRecommendation(goal.id)]
@@ -2728,6 +2730,17 @@ async function loadLearningNotifications() {
   }
 }
 
+async function loadLearningAssignmentNotifications() {
+  try {
+    const page = await api.listLearningAssignmentNotifications(false, 50)
+    learningAssignmentNotifications.value = page?.notifications || []
+    learningAssignmentNotificationUnreadCount.value = Number(page?.unreadCount || 0)
+  } catch (error) {
+    // 作业触达属于教育工作台增强能力；通知接口不可用时仍保留作业和任务主流程。
+    if (!educationError.value) educationError.value = errorText(error)
+  }
+}
+
 async function markLearningNotificationRead(notification) {
   if (!notification?.id || !notification.unread) return
   try {
@@ -2757,6 +2770,36 @@ async function markAllLearningNotificationsRead() {
   }
 }
 
+async function markLearningAssignmentNotificationRead(notification) {
+  if (!notification?.id || !notification.unread) return
+  try {
+    const updated = await api.markLearningAssignmentNotificationRead(notification.id)
+    learningAssignmentNotifications.value = learningAssignmentNotifications.value.map((item) =>
+      item.id === updated.id ? updated : item)
+    learningAssignmentNotificationUnreadCount.value = Math.max(
+      0, learningAssignmentNotificationUnreadCount.value - 1)
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  }
+}
+
+async function markAllLearningAssignmentNotificationsRead() {
+  if (!learningAssignmentNotificationUnreadCount.value) return
+  try {
+    await api.markAllLearningAssignmentNotificationsRead()
+    learningAssignmentNotifications.value = learningAssignmentNotifications.value.map((item) => ({
+      ...item,
+      status: 'READ',
+      unread: false,
+      readAt: item.readAt || new Date().toISOString(),
+    }))
+    learningAssignmentNotificationUnreadCount.value = 0
+    noticeMessage.value = '课程作业通知已全部标记为已读。'
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  }
+}
+
 async function openLearningNotification(notification) {
   if (!notification) return
   await markLearningNotificationRead(notification)
@@ -2781,6 +2824,32 @@ function learningAssignmentStatusLabel(status) {
     COMPLETED: '已完成',
     CANCELLED: '已取消',
   }[status] || status || '未知'
+}
+
+async function openLearningAssignmentNotification(notification) {
+  if (!notification) return
+  await markLearningAssignmentNotificationRead(notification)
+  let assignment = learningAssignments.value.find((item) => item.id === notification.learningAssignmentId)
+  if (!assignment) {
+    await loadEducationData()
+    assignment = learningAssignments.value.find((item) => item.id === notification.learningAssignmentId)
+  }
+  if (!assignment) {
+    noticeMessage.value = '通知对应的课程作业已不在当前列表中，请刷新教育状态。'
+    return
+  }
+  if (notification.notificationType === 'ASSIGNED' && assignment.status === 'ASSIGNED'
+    && assignment.learnerUserId === form.userId) {
+    await acceptLearningAssignment(assignment)
+    return
+  }
+  const goal = learningGoals.value.find((item) => item.id === assignment.learningGoalId)
+  if (goal) {
+    await selectLearningGoal(goal, false)
+    noticeMessage.value = `已打开课程作业“${assignment.title}”对应的学习目标。`
+  } else {
+    noticeMessage.value = `课程作业“${assignment.title}”当前状态：${learningAssignmentStatusLabel(assignment.status)}`
+  }
 }
 
 function applyLearnerProfileToEducationRun(profile) {
@@ -4181,7 +4250,10 @@ onMounted(async () => {
   conversationPollTimer = window.setInterval(pollConversation, 1200)
   healthPollTimer = window.setInterval(loadHealth, 10000)
   learningNotificationPollTimer = window.setInterval(() => {
-    if (networkOnline.value) void loadLearningNotifications()
+    if (networkOnline.value) {
+      void loadLearningNotifications()
+      void loadLearningAssignmentNotifications()
+    }
   }, 15000)
 })
 
@@ -5341,6 +5413,13 @@ onBeforeUnmount(() => {
             <section class="learning-assignment-workbench" aria-label="课程作业入口">
               <div class="subsection-title"><h4>课程作业入口</h4><span>{{ learningAssignments.length }} 个作业</span></div>
               <p class="learning-task-help">教师或组织可把课程约束和目标知识点布置给指定学习者；学习者接受后自动生成画像与学习目标。</p>
+              <div class="subsection-title learning-task-heading"><div><h4>作业通知</h4><span>{{ learningAssignmentNotifications.length }} 条</span></div><div class="learning-notification-heading-actions"><span>{{ learningAssignmentNotificationUnreadCount }} 条未读</span><button v-if="learningAssignmentNotificationUnreadCount" class="text-button" type="button" @click="markAllLearningAssignmentNotificationsRead">全部已读</button></div></div>
+              <div v-if="learningAssignmentNotifications.length" class="learning-notification-list" aria-label="课程作业通知">
+                <article v-for="notification in learningAssignmentNotifications.slice(0, 5)" :key="notification.id" class="learning-notification-row" :class="{ unread: notification.unread }">
+                  <div class="learning-notification-main"><div class="learning-notification-meta"><strong>{{ notification.title }}</strong><small>{{ formatDate(notification.createdAt) }}</small></div><p>{{ notification.body }}</p></div>
+                  <div class="learning-notification-actions"><button class="secondary-button" type="button" @click="openLearningAssignmentNotification(notification)">{{ notification.notificationType === 'ASSIGNED' ? '接受作业' : (notification.assignmentStatus === 'ACCEPTED' ? '查看目标' : '查看作业') }}</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningAssignmentNotificationRead(notification)">标记已读</button></div>
+                </article>
+              </div>
               <form class="learning-assignment-form" @submit.prevent="createLearningAssignment">
                 <label class="field"><span>学习者 ID</span><input v-model="learningAssignmentForm.learnerUserId" required maxlength="255" placeholder="例如：student-1" /></label>
                 <label class="field"><span>作业标题</span><input v-model="learningAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域作业" /></label>

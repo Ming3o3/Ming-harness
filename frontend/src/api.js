@@ -365,6 +365,17 @@ export const api = {
     }),
   getLearningAssignmentProgress: (assignmentId) => request(
     `/education/assignments/${encodeURIComponent(assignmentId)}/progress`),
+  listLearningAssignmentNotifications: (unreadOnly = false, limit = 50) => {
+    const params = new URLSearchParams({ unreadOnly: String(Boolean(unreadOnly)), limit: String(limit) })
+    return request(`/education/assignment-notifications?${params.toString()}`)
+  },
+  markLearningAssignmentNotificationRead: (notificationId) => request(
+    `/education/assignment-notifications/${encodeURIComponent(notificationId)}/read`, {
+      method: 'POST',
+    }),
+  markAllLearningAssignmentNotificationsRead: () => request('/education/assignment-notifications/read-all', {
+    method: 'POST',
+  }),
   executeLearningGoalNextAction: (goalId, payload = {}, idempotencyKey) => request(
     `/education/goals/${encodeURIComponent(goalId)}/next-action`, {
       method: 'POST',

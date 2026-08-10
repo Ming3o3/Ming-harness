@@ -5,6 +5,7 @@ import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.education.api.LearningAssignmentAcceptView;
 import org.mingharness.education.api.LearningAssignmentRequest;
 import org.mingharness.education.api.LearningAssignmentView;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -25,17 +26,30 @@ public class LearningAssignmentService {
     private final LearningGoalRepository goalRepository;
     private final LearnerMasteryRepository masteryRepository;
     private final SensitiveDataSanitizer sanitizer;
+    private final LearningAssignmentNotificationService notificationService;
 
+    /** 保留旧构造器，方便已有单元测试和嵌入式调用；生产环境由 Spring 使用带通知服务的构造器。 */
     public LearningAssignmentService(LearningAssignmentRepository assignmentRepository,
                                      LearnerProfileRepository profileRepository,
                                      LearningGoalRepository goalRepository,
                                      LearnerMasteryRepository masteryRepository,
                                      SensitiveDataSanitizer sanitizer) {
+        this(assignmentRepository, profileRepository, goalRepository, masteryRepository, sanitizer, null);
+    }
+
+    @Autowired
+    public LearningAssignmentService(LearningAssignmentRepository assignmentRepository,
+                                     LearnerProfileRepository profileRepository,
+                                     LearningGoalRepository goalRepository,
+                                     LearnerMasteryRepository masteryRepository,
+                                     SensitiveDataSanitizer sanitizer,
+                                     LearningAssignmentNotificationService notificationService) {
         this.assignmentRepository = assignmentRepository;
         this.profileRepository = profileRepository;
         this.goalRepository = goalRepository;
         this.masteryRepository = masteryRepository;
         this.sanitizer = sanitizer;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -46,11 +60,13 @@ public class LearningAssignmentService {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "ASSIGNMENT_LEARNER_REQUIRED",
                     "布置作业时必须指定学习者");
         }
-        return assignmentRepository.save(new LearningAssignment(
+        LearningAssignment saved = assignmentRepository.save(new LearningAssignment(
                 tenantId, teacherUserId, learnerUserId,
                 clean(request.title()), clean(request.instructions()), clean(request.subject()),
                 clean(request.gradeLevel()), clean(request.curriculumVersion()),
                 clean(request.conceptKey()), request.effectiveTargetMastery(), request.dueAt()));
+        notifyState(saved);
+        return saved;
     }
 
     @Transactional
@@ -79,6 +95,7 @@ public class LearningAssignmentService {
         if (assignment.isOverdue(Instant.now())) {
             assignment.markOverdue(Instant.now());
             assignmentRepository.save(assignment);
+            notifyState(assignment);
         }
         return assignment;
     }
@@ -124,6 +141,7 @@ public class LearningAssignmentService {
                 assignment.getConceptKey(), baseline, assignment.getTargetMastery()));
         assignment.accept(profile.getId(), goal.getId(), Instant.now());
         LearningAssignment saved = assignmentRepository.save(assignment);
+        notifyState(saved);
         return new LearningAssignmentAcceptView(LearningAssignmentView.from(saved),
                 profile.getId(), goal.getId());
     }
@@ -141,7 +159,9 @@ public class LearningAssignmentService {
         }
         if (assignment.getStatus() == LearningAssignmentStatus.CANCELLED) return assignment;
         assignment.cancel();
-        return assignmentRepository.save(assignment);
+        LearningAssignment saved = assignmentRepository.save(assignment);
+        notifyState(saved);
+        return saved;
     }
 
     /** 后台和查询入口共同调用，确保作业不会永久停留在已布置/学习中。 */
@@ -166,6 +186,7 @@ public class LearningAssignmentService {
             if (!assignment.isOverdue(now)) continue;
             assignment.markOverdue(now);
             assignmentRepository.save(assignment);
+            notifyState(assignment);
             changed++;
         }
         return changed;
@@ -173,5 +194,9 @@ public class LearningAssignmentService {
 
     private String clean(String value) {
         return sanitizer.sanitize(value == null ? "" : value.trim());
+    }
+
+    private void notifyState(LearningAssignment assignment) {
+        if (notificationService != null) notificationService.ensureForState(assignment);
     }
 }

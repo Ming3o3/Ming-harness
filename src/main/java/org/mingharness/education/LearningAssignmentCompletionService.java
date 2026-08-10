@@ -2,6 +2,7 @@ package org.mingharness.education;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.time.Instant;
 
@@ -10,9 +11,17 @@ import java.time.Instant;
 public class LearningAssignmentCompletionService {
 
     private final LearningAssignmentRepository assignmentRepository;
+    private final LearningAssignmentNotificationService notificationService;
 
     public LearningAssignmentCompletionService(LearningAssignmentRepository assignmentRepository) {
+        this(assignmentRepository, null);
+    }
+
+    @Autowired
+    public LearningAssignmentCompletionService(LearningAssignmentRepository assignmentRepository,
+                                               LearningAssignmentNotificationService notificationService) {
         this.assignmentRepository = assignmentRepository;
+        this.notificationService = notificationService;
     }
 
     @Transactional
@@ -27,6 +36,7 @@ public class LearningAssignmentCompletionService {
                     || assignment.getStatus() == LearningAssignmentStatus.OVERDUE) {
                 assignment.complete(completedAt);
                 assignmentRepository.save(assignment);
+                if (notificationService != null) notificationService.ensureForState(assignment);
                 completed++;
             }
         }
