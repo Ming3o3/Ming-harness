@@ -195,6 +195,26 @@ class HarnessIdentityInterceptorTests {
         assertEquals("API_KEY_PERMISSIONS_INVALID", invalidCount.getCode());
     }
 
+    @Test
+    void educationAssignmentAndNotificationRoutesShouldUseSpecificPermissions() throws Exception {
+        HarnessAuthProperties properties = new HarnessAuthProperties();
+        properties.setMode("api-key");
+        properties.setApiKeys("teacher-key|tenant-a|teacher|education.assign;student-key|tenant-a|student|education.read,education.write");
+        HarnessIdentityInterceptor interceptor = interceptor(properties);
+
+        MockHttpServletRequest create = request("POST", "/api/education/assignments");
+        create.addHeader("X-Api-Key", "teacher-key");
+        assertTrue(interceptor.preHandle(create, new MockHttpServletResponse(), null));
+        assertTrue(HarnessIdentityContext.require().hasPermission("education.assign"));
+        interceptor.afterCompletion(create, new MockHttpServletResponse(), null, null);
+
+        MockHttpServletRequest readNotifications = request("GET", "/api/education/notifications");
+        readNotifications.addHeader("X-Api-Key", "student-key");
+        assertTrue(interceptor.preHandle(readNotifications, new MockHttpServletResponse(), null));
+        assertTrue(HarnessIdentityContext.require().hasPermission("education.read"));
+        interceptor.afterCompletion(readNotifications, new MockHttpServletResponse(), null, null);
+    }
+
     private MockHttpServletRequest request(String method, String uri) {
         MockHttpServletRequest request = new MockHttpServletRequest(method, uri);
         request.setRequestURI(uri);

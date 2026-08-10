@@ -20,6 +20,7 @@ public class LearningGoalService {
     private final LearnerMasteryRepository masteryRepository;
     private final SensitiveDataSanitizer sanitizer;
     private final LearningReviewPlanService reviewPlanService;
+    private final LearningAssignmentCompletionService assignmentCompletionService;
 
     /** 兼容只使用学习目标生命周期的组件测试和旧扩展调用方。 */
     public LearningGoalService(LearningGoalRepository goalRepository,
@@ -29,17 +30,27 @@ public class LearningGoalService {
         this(goalRepository, profileRepository, masteryRepository, sanitizer, null);
     }
 
-    @Autowired
     public LearningGoalService(LearningGoalRepository goalRepository,
                                LearnerProfileRepository profileRepository,
                                LearnerMasteryRepository masteryRepository,
                                SensitiveDataSanitizer sanitizer,
                                LearningReviewPlanService reviewPlanService) {
+        this(goalRepository, profileRepository, masteryRepository, sanitizer, reviewPlanService, null);
+    }
+
+    @Autowired
+    public LearningGoalService(LearningGoalRepository goalRepository,
+                               LearnerProfileRepository profileRepository,
+                               LearnerMasteryRepository masteryRepository,
+                               SensitiveDataSanitizer sanitizer,
+                               LearningReviewPlanService reviewPlanService,
+                               LearningAssignmentCompletionService assignmentCompletionService) {
         this.goalRepository = goalRepository;
         this.profileRepository = profileRepository;
         this.masteryRepository = masteryRepository;
         this.sanitizer = sanitizer;
         this.reviewPlanService = reviewPlanService;
+        this.assignmentCompletionService = assignmentCompletionService;
     }
 
     @Transactional
@@ -90,7 +101,12 @@ public class LearningGoalService {
         if (next == LearningGoalStatus.COMPLETED && reviewPlanService != null) {
             reviewPlanService.ensureForCompletedGoal(goal);
         }
-        return goalRepository.save(goal);
+        LearningGoal saved = goalRepository.save(goal);
+        if (next == LearningGoalStatus.COMPLETED && assignmentCompletionService != null) {
+            assignmentCompletionService.completeForGoal(tenantId, userId, goal.getId(),
+                    java.time.Instant.now());
+        }
+        return saved;
     }
 
     private LearnerProfile resolveProfile(String tenantId, String userId, String profileId) {

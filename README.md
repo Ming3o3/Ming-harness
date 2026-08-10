@@ -49,7 +49,7 @@ Ming Harness 是一个面向企业 Agent 开发与治理的平台：后端使用
 - 敏感数据治理：Run、Step、审计、模型、工具和上下文边界统一凭证脱敏，长期记忆拒绝写入疑似凭证
 - 数据保留策略：终态 Run 与审计链原子清理，过期记忆/文档和已完成 Outbox 定时删除，待投递消息不自动删除
 - 业务闭环沉淀：每次 Run 持久化实际上下文证据，助手消息支持有用/需改进反馈
-- 教育业务闭环：课程约束与学习者状态驱动教育 Run；目标达标后自动建立保持度计划，到期计划由调度器幂等物化为学习任务，任务可开始、延期并在复习测评后回写完成结果；失败 Run 可重试，成功但缺少测评证据的任务会进入待补证据；到期、待补证据和失败状态会生成可幂等追踪的站内通知，支持未读、已读和触达时间记录
+- 教育业务闭环：教师/组织可把课程约束和知识目标布置给指定学习者，学习者接受后自动生成画像与结构化学习目标；目标达标后自动建立保持度计划，到期计划由调度器幂等物化为学习任务，任务可开始、延期并在复习测评后回写完成结果；失败 Run 可重试，成功但缺少测评证据的任务会进入待补证据；到期、待补证据和失败状态会生成可幂等追踪的站内通知，支持未读、已读和触达时间记录
 - 本地基础设施 Profile：PostgreSQL + Flyway、Redis 共享治理、RabbitMQ Outbox Worker
 - 健康检查与运行指标：公开存活探针、受 `ops.read` 保护的 `/api/health` 和 Actuator 指标
 - 请求关联追踪：自动生成并回传 `X-Request-Id`、`X-Trace-Id`，错误响应包含 `traceId`
@@ -214,7 +214,7 @@ Embedding 配置按组织保存（知识库向量是组织共享索引），从�
 
 ### API Key / OIDC 认证
 
-生产或共享环境建议设置 `HARNESS_AUTH_MODE=api-key`。调用方使用 `Authorization: Bearer <key>` 或 `X-Api-Key`，服务端根据配置或数据库凭证将请求绑定到固定组织和用户，并按接口校验权限，例如 `run.read`、`run.create`、`run.execute`、`run.approve`、`context.read`、`context.write`、`context.configure`、`audit.read`、`tool.read`、`model.configure` 和 `ops.read`。工作区读取工具还需要 `workspace.read`，写入工具需要 `workspace.write` 并进入人工审批；`model.configure` 允许当前用户在控制台保存自己的模型 URL、模型名和加密 API Key；`context.configure` 允许组织内授权操作者保存共享知识库的 Embedding URL、模型和加密 API Key；`ops.read` 用于读取 `/api/health`、Actuator 指标、Prometheus 和应用信息。
+生产或共享环境建议设置 `HARNESS_AUTH_MODE=api-key`。调用方使用 `Authorization: Bearer <key>` 或 `X-Api-Key`，服务端根据配置或数据库凭证将请求绑定到固定组织和用户，并按接口校验权限，例如 `run.read`、`run.create`、`run.execute`、`run.approve`、`context.read`、`context.write`、`context.configure`、`audit.read`、`tool.read`、`model.configure`、`education.assign` 和 `ops.read`。工作区读取工具还需要 `workspace.read`，写入工具需要 `workspace.write` 并进入人工审批；`education.assign` 只允许授权的教师/组织操作者创建课程作业，学习者接受作业仍使用 `education.write`；`model.configure` 允许当前用户在控制台保存自己的模型 URL、模型名和加密 API Key；`context.configure` 允许组织内授权操作者保存共享知识库的 Embedding URL、模型和加密 API Key；`ops.read` 用于读取 `/api/health`、Actuator 指标、Prometheus 和应用信息。
 
 通过具有 `auth.key.manage` 权限的引导 Key 或 OIDC 服务账号，可调用 `POST /api/admin/api-keys` 创建数据库 API Key；明文 `secret` 仅在创建响应中出现一次，数据库只保存 SHA-256 摘要。`GET /api/admin/api-keys` 只返回前缀和元数据，`POST /api/admin/api-keys/{keyId}/rotate` 会在同一事务中创建同权限新 Key 并立即撤销旧 Key，`DELETE /api/admin/api-keys/{keyId}` 可即时撤销，`GET /api/admin/api-keys/audits` 可查看生命周期审计。读取接口需要 `auth.key.read`，跨组织管理还需 `auth.key.cross-tenant`。环境变量 `HARNESS_API_KEYS` 保留为紧急引导兼容方案，变更或撤销需要重启；正式环境应逐步迁移至数据库生命周期 Key。
 
@@ -462,6 +462,9 @@ curl -X POST http://localhost:8080/api/runs \
 - `GET /api/education/notifications?unreadOnly=false&limit=50`：查询当前用户的学习任务站内通知，并返回未读数量；查询会记录通知已被客户端触达
 - `POST /api/education/notifications/{notificationId}/read`：将一条学习任务通知标记为已读
 - `POST /api/education/notifications/read-all`：将当前用户的学习任务通知全部标记为已读
+- `POST/GET /api/education/assignments`：教师/组织以当前身份布置或查询课程作业；作业携带学科、年级、课程版本和目标知识点
+- `GET /api/education/assignments/{assignmentId}`：查询当前用户作为布置者或学习者参与的课程作业
+- `POST /api/education/assignments/{assignmentId}/accept`：学习者接受作业，系统幂等创建对应学习者画像和结构化学习目标
 - `GET /api/context/preview?query=...`：预览授权来源和引用
 - `GET/PUT/DELETE /api/context/embedding-config`：读取、保存或恢复当前组织的 Embedding 连接配置；密钥只返回掩码
 - `POST /api/context/embedding-config/test`：使用未保存配置测试一次 OpenAI 兼容 `/embeddings` 连接

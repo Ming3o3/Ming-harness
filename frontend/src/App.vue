@@ -51,9 +51,23 @@ const learningGoalRecommendationMap = ref({})
 const learningTasks = ref([])
 const learningNotifications = ref([])
 const learningNotificationUnreadCount = ref(0)
+const learningAssignments = ref([])
 const learningTaskLoading = ref(false)
 const learningTaskStartingId = ref('')
 const learningTaskDeferringId = ref('')
+const learningAssignmentSaving = ref(false)
+const learningAssignmentAcceptingId = ref('')
+const learningAssignmentForm = reactive({
+  learnerUserId: '',
+  title: '',
+  instructions: '',
+  subject: '',
+  gradeLevel: '',
+  curriculumVersion: '',
+  conceptKey: '',
+  targetMastery: '0.8',
+  dueAt: '',
+})
 const manualAssessmentForm = reactive({
   stepId: '',
   correct: '',
@@ -175,6 +189,7 @@ const apiKeyPermissionOptions = [
   { value: 'network.external', label: '访问外部网络工具' },
   { value: 'education.read', label: '读取教育知识与画像' },
   { value: 'education.write', label: '记录形成性评价' },
+  { value: 'education.assign', label: '布置课程作业' },
 ]
 const defaultApiKeyPermissions = [
   'run.read', 'run.create', 'run.execute', 'run.approve', 'run.cancel',
@@ -183,6 +198,7 @@ const defaultApiKeyPermissions = [
   'model.configure', 'tenant.policy.read', 'tenant.policy.write',
   'auth.key.read', 'auth.key.manage',
   'education.read', 'education.write',
+  'education.assign',
 ]
 // 工作区状态用于告知用户 Agent 是否直接连接到本地项目；接口不会返回绝对路径。
 const workspace = ref(null)
@@ -458,6 +474,7 @@ const permissionDescriptions = {
   'network.external': { label: '外部网络访问', description: '允许工具访问外部网络' },
   'education.read': { label: '读取教育画像', description: '读取课程元数据和学习者掌握度' },
   'education.write': { label: '更新教育状态', description: '记录形成性评价并更新学习者画像' },
+  'education.assign': { label: '布置课程作业', description: '向组织内指定学习者创建课程作业' },
 }
 
 function permissionList(value) {
@@ -2634,16 +2651,18 @@ async function loadDashboard() {
 
 async function loadEducationData() {
   try {
-    const [sources, profiles, goals, tasks] = await Promise.all([
+    const [sources, profiles, goals, tasks, assignments] = await Promise.all([
       api.listEducationSources(),
       api.listLearnerProfiles(),
       api.listLearningGoals(),
       api.listLearningTasks(),
+      api.listLearningAssignments(),
     ])
     educationSources.value = sources
     learnerProfiles.value = profiles
     learningGoals.value = goals
     learningTasks.value = tasks
+    learningAssignments.value = assignments
     await loadLearningNotifications()
     const recommendationEntries = await Promise.all(goals.map(async (goal) => {
       try {
@@ -2734,6 +2753,15 @@ async function openLearningNotification(notification) {
   if (goal) await selectLearningGoal(goal, false)
 }
 
+function learningAssignmentStatusLabel(status) {
+  return {
+    ASSIGNED: '待接受',
+    ACCEPTED: '学习中',
+    COMPLETED: '已完成',
+    CANCELLED: '已取消',
+  }[status] || status || '未知'
+}
+
 function applyLearnerProfileToEducationRun(profile) {
   if (!profile) return
   if (activeLearningGoal.value && activeLearningGoal.value.learnerProfileId !== profile.id) {
@@ -2819,6 +2847,59 @@ async function createLearningGoal() {
     educationError.value = errorText(error)
   } finally {
     educationLoading.value = false
+  }
+}
+
+async function createLearningAssignment() {
+  if (learningAssignmentSaving.value
+    || !learningAssignmentForm.learnerUserId.trim()
+    || !learningAssignmentForm.title.trim()
+    || !learningAssignmentForm.instructions.trim()
+    || !learningAssignmentForm.subject.trim()
+    || !learningAssignmentForm.gradeLevel.trim()
+    || !learningAssignmentForm.curriculumVersion.trim()
+    || !learningAssignmentForm.conceptKey.trim()) return
+  clearMessages()
+  learningAssignmentSaving.value = true
+  try {
+    await api.createLearningAssignment({
+      learnerUserId: learningAssignmentForm.learnerUserId.trim(),
+      title: learningAssignmentForm.title.trim(),
+      instructions: learningAssignmentForm.instructions.trim(),
+      subject: learningAssignmentForm.subject.trim(),
+      gradeLevel: learningAssignmentForm.gradeLevel.trim(),
+      curriculumVersion: learningAssignmentForm.curriculumVersion.trim(),
+      conceptKey: learningAssignmentForm.conceptKey.trim(),
+      targetMastery: Number(learningAssignmentForm.targetMastery) || 0.8,
+      dueAt: learningAssignmentForm.dueAt
+        ? new Date(learningAssignmentForm.dueAt).toISOString() : null,
+    })
+    learningAssignmentForm.title = ''
+    learningAssignmentForm.instructions = ''
+    learningAssignmentForm.conceptKey = ''
+    await loadEducationData()
+    noticeMessage.value = `已向 ${learningAssignmentForm.learnerUserId.trim()} 布置课程作业。`
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    learningAssignmentSaving.value = false
+  }
+}
+
+async function acceptLearningAssignment(assignment) {
+  if (!assignment?.id || learningAssignmentAcceptingId.value) return
+  learningAssignmentAcceptingId.value = assignment.id
+  clearMessages()
+  try {
+    const accepted = await api.acceptLearningAssignment(assignment.id)
+    await loadEducationData()
+    const goal = learningGoals.value.find((item) => item.id === accepted.learningGoalId)
+    if (goal) await selectLearningGoal(goal, false)
+    noticeMessage.value = `已接受课程作业：${accepted.assignment.title}，学习目标已建立。`
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    learningAssignmentAcceptingId.value = ''
   }
 }
 
@@ -5214,6 +5295,28 @@ onBeforeUnmount(() => {
                 <strong>{{ profile.subject }} · {{ profile.gradeLevel }}</strong><small>{{ profile.curriculumVersion }} · {{ profile.learningGoal || '未设置学习目标' }}</small>
               </button>
             </div>
+            <section class="learning-assignment-workbench" aria-label="课程作业入口">
+              <div class="subsection-title"><h4>课程作业入口</h4><span>{{ learningAssignments.length }} 个作业</span></div>
+              <p class="learning-task-help">教师或组织可把课程约束和目标知识点布置给指定学习者；学习者接受后自动生成画像与学习目标。</p>
+              <form class="learning-assignment-form" @submit.prevent="createLearningAssignment">
+                <label class="field"><span>学习者 ID</span><input v-model="learningAssignmentForm.learnerUserId" required maxlength="255" placeholder="例如：student-1" /></label>
+                <label class="field"><span>作业标题</span><input v-model="learningAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域作业" /></label>
+                <label class="field"><span>学科</span><input v-model="learningAssignmentForm.subject" required maxlength="128" placeholder="数学" /></label>
+                <label class="field"><span>年级</span><input v-model="learningAssignmentForm.gradeLevel" required maxlength="128" placeholder="高中一年级" /></label>
+                <label class="field"><span>课程版本</span><input v-model="learningAssignmentForm.curriculumVersion" required maxlength="128" placeholder="人教A版" /></label>
+                <label class="field"><span>目标知识点</span><input v-model="learningAssignmentForm.conceptKey" required maxlength="255" placeholder="函数定义域" /></label>
+                <label class="field"><span>目标掌握度</span><input v-model="learningAssignmentForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required /></label>
+                <label class="field"><span>截止时间（可选）</span><input v-model="learningAssignmentForm.dueAt" type="datetime-local" /></label>
+                <label class="field learning-assignment-wide"><span>作业说明</span><textarea v-model="learningAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作业要求、作答范围或迁移任务"></textarea></label>
+                <button class="secondary-button learning-assignment-submit" type="submit" :disabled="learningAssignmentSaving">{{ learningAssignmentSaving ? '布置中…' : '布置课程作业' }}</button>
+              </form>
+              <div v-if="learningAssignments.length" class="learning-assignment-list">
+                <article v-for="assignment in learningAssignments.slice(0, 8)" :key="assignment.id" class="learning-assignment-row">
+                  <div class="learning-assignment-main"><div class="learning-assignment-meta"><strong>{{ assignment.title }}</strong><span>{{ learningAssignmentStatusLabel(assignment.status) }}</span></div><small>{{ assignment.teacherUserId }} → {{ assignment.learnerUserId }} · {{ assignment.subject }} · {{ assignment.gradeLevel }} · {{ assignment.curriculumVersion }}</small><p>{{ assignment.instructions }}</p></div>
+                  <button v-if="assignment.learnerUserId === form.userId && assignment.status === 'ASSIGNED'" class="secondary-button" type="button" :disabled="learningAssignmentAcceptingId === assignment.id" @click="acceptLearningAssignment(assignment)">{{ learningAssignmentAcceptingId === assignment.id ? '接受中…' : '接受并开始学习' }}</button>
+                </article>
+              </div>
+            </section>
             <div class="learning-goal-workbench">
               <div class="learning-task-workbench">
                 <div class="subsection-title learning-task-heading"><div><h4>待处理学习任务</h4><span>{{ learningTasks.filter((task) => ['OPEN', 'IN_PROGRESS', 'AWAITING_EVIDENCE', 'DEFERRED', 'FAILED'].includes(task.status)).length }} 条</span></div><div class="learning-notification-heading-actions"><span>{{ learningNotificationUnreadCount }} 条未读</span><button v-if="learningNotificationUnreadCount" class="text-button" type="button" @click="markAllLearningNotificationsRead">全部已读</button></div></div>

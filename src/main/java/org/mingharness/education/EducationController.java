@@ -19,6 +19,9 @@ import org.mingharness.education.api.LearningReviewPlanView;
 import org.mingharness.education.api.LearningTaskStartView;
 import org.mingharness.education.api.LearningTaskNotificationView;
 import org.mingharness.education.api.LearningTaskView;
+import org.mingharness.education.api.LearningAssignmentAcceptView;
+import org.mingharness.education.api.LearningAssignmentRequest;
+import org.mingharness.education.api.LearningAssignmentView;
 import org.mingharness.education.api.ManualAssessmentSubmissionRequest;
 import org.mingharness.education.api.MasteryUpdateRequest;
 import org.mingharness.security.HarnessIdentity;
@@ -49,6 +52,7 @@ public class EducationController {
     private final EducationActionService actionService;
     private final LearningTaskService taskService;
     private final LearningTaskNotificationService notificationService;
+    private final LearningAssignmentService assignmentService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
@@ -57,7 +61,8 @@ public class EducationController {
                                LearningRecommendationService recommendationService,
                                EducationActionService actionService,
                                LearningTaskService taskService,
-                               LearningTaskNotificationService notificationService) {
+                               LearningTaskNotificationService notificationService,
+                               LearningAssignmentService assignmentService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
@@ -66,6 +71,7 @@ public class EducationController {
         this.actionService = actionService;
         this.taskService = taskService;
         this.notificationService = notificationService;
+        this.assignmentService = assignmentService;
     }
 
     @PostMapping("/sources")
@@ -192,6 +198,34 @@ public class EducationController {
         LearningTaskStatus requested = parseTaskStatus(status);
         return taskService.list(identity.tenantId(), identity.userId(), requested).stream()
                 .map(LearningTaskView::from).toList();
+    }
+
+    @PostMapping("/assignments")
+    @ResponseStatus(HttpStatus.CREATED)
+    public LearningAssignmentView createAssignment(@Valid @RequestBody LearningAssignmentRequest request) {
+        HarnessIdentity identity = identity();
+        return LearningAssignmentView.from(assignmentService.create(
+                identity.tenantId(), identity.userId(), request));
+    }
+
+    @GetMapping("/assignments")
+    public List<LearningAssignmentView> listAssignments() {
+        HarnessIdentity identity = identity();
+        return assignmentService.list(identity.tenantId(), identity.userId()).stream()
+                .map(LearningAssignmentView::from).toList();
+    }
+
+    @GetMapping("/assignments/{assignmentId}")
+    public LearningAssignmentView getAssignment(@PathVariable String assignmentId) {
+        HarnessIdentity identity = identity();
+        return LearningAssignmentView.from(assignmentService.getForParticipant(
+                identity.tenantId(), identity.userId(), assignmentId));
+    }
+
+    @PostMapping("/assignments/{assignmentId}/accept")
+    public LearningAssignmentAcceptView acceptAssignment(@PathVariable String assignmentId) {
+        HarnessIdentity identity = identity();
+        return assignmentService.accept(identity.tenantId(), identity.userId(), assignmentId);
     }
 
     @PostMapping("/tasks/{taskId}/start")

@@ -18,13 +18,14 @@ public class EducationLearnerService {
     private final LearnerMasteryRepository masteryRepository;
     private final LearningGoalRepository goalRepository;
     private final LearningReviewPlanService reviewPlanService;
+    private final LearningAssignmentCompletionService assignmentCompletionService;
     private final SensitiveDataSanitizer sanitizer;
 
     /** 兼容不启用学习目标存储的组件测试和旧扩展调用方。 */
     public EducationLearnerService(LearnerProfileRepository profileRepository,
                                    LearnerMasteryRepository masteryRepository,
                                    SensitiveDataSanitizer sanitizer) {
-        this(profileRepository, masteryRepository, null, null, sanitizer);
+        this(profileRepository, masteryRepository, null, null, null, sanitizer);
     }
 
     /** 兼容已有学习目标服务测试和旧扩展调用方。 */
@@ -32,7 +33,15 @@ public class EducationLearnerService {
                                    LearnerMasteryRepository masteryRepository,
                                    LearningGoalRepository goalRepository,
                                    SensitiveDataSanitizer sanitizer) {
-        this(profileRepository, masteryRepository, goalRepository, null, sanitizer);
+        this(profileRepository, masteryRepository, goalRepository, null, null, sanitizer);
+    }
+
+    public EducationLearnerService(LearnerProfileRepository profileRepository,
+                                   LearnerMasteryRepository masteryRepository,
+                                   LearningGoalRepository goalRepository,
+                                   LearningReviewPlanService reviewPlanService,
+                                   SensitiveDataSanitizer sanitizer) {
+        this(profileRepository, masteryRepository, goalRepository, reviewPlanService, null, sanitizer);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -40,11 +49,13 @@ public class EducationLearnerService {
                                    LearnerMasteryRepository masteryRepository,
                                    LearningGoalRepository goalRepository,
                                    LearningReviewPlanService reviewPlanService,
+                                   LearningAssignmentCompletionService assignmentCompletionService,
                                    SensitiveDataSanitizer sanitizer) {
         this.profileRepository = profileRepository;
         this.masteryRepository = masteryRepository;
         this.goalRepository = goalRepository;
         this.reviewPlanService = reviewPlanService;
+        this.assignmentCompletionService = assignmentCompletionService;
         this.sanitizer = sanitizer;
     }
 
@@ -132,6 +143,10 @@ public class EducationLearnerService {
                         reviewPlanService.ensureForCompletedGoal(goal);
                     }
                     goalRepository.save(goal);
+                    if (assignmentCompletionService != null) {
+                        assignmentCompletionService.completeForGoal(tenantId, userId, goal.getId(),
+                                java.time.Instant.now());
+                    }
                 });
     }
 }
