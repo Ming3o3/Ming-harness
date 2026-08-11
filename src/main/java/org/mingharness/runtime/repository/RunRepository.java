@@ -39,6 +39,8 @@ public interface RunRepository extends JpaRepository<Run, String> {
             String tenantId, String userId, String educationLearningAssignmentId);
     Optional<Run> findTopByTenantIdAndUserIdAndEducationLearningAssignmentIdOrderByCreatedAtDesc(
             String tenantId, String userId, String educationLearningAssignmentId);
+    /** 对话历史只能在同一学习者与课程约束下复用，查询最后一轮教育 Run 作为会话边界。 */
+    Optional<Run> findTopByConversationIdAndEducationModeTrueOrderByCreatedAtDesc(String conversationId);
     long countByTenantIdAndStatusIn(String tenantId, List<RunStatus> statuses);
     /** 恢复器必须锁住候选 Run，等待并发 Worker 提交后再重新判断状态，避免覆盖最新结果。 */
     @Lock(LockModeType.PESSIMISTIC_WRITE)

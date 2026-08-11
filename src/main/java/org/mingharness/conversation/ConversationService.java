@@ -248,6 +248,7 @@ public class ConversationService {
         conversation.autoTitleFromFirstMessage(content);
         EducationRunConfiguration educationConfiguration = educationRunConfigurationService.resolve(
                 tenantId, userId, request.education());
+        ensureEducationConversationBoundary(conversation, educationConfiguration);
         requireEducationPermissions(educationConfiguration, permissions);
         List<String> attachmentIds = request.effectiveAttachmentIds();
         String effectiveIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
@@ -334,6 +335,28 @@ public class ConversationService {
         if (!read || !write) {
             throw new BusinessException(HttpStatus.FORBIDDEN, "EDUCATION_PERMISSION_REQUIRED",
                     "教育 Agent 需要 education.read 和 education.write 权限");
+        }
+    }
+
+    /**
+     * 对话历史会进入下一轮模型输入，因此课程或学习者切换后不能继续复用原会话。
+     * Run 本身已有不可变教育快照，这里仅以最近一轮教育 Run 建立会话级边界，无需复制状态。
+     */
+    private void ensureEducationConversationBoundary(Conversation conversation,
+                                                     EducationRunConfiguration current) {
+        Optional<Run> previous = runRepository
+                .findTopByConversationIdAndEducationModeTrueOrderByCreatedAtDesc(conversation.getId());
+        if (previous.isEmpty()) return;
+        EducationRunConfiguration earlier = previous.get().educationConfiguration();
+        boolean same = current != null && current.enabled()
+                && java.util.Objects.equals(earlier.learnerProfileId(), current.learnerProfileId())
+                && java.util.Objects.equals(earlier.courseId(), current.courseId())
+                && java.util.Objects.equals(earlier.subject(), current.subject())
+                && java.util.Objects.equals(earlier.gradeLevel(), current.gradeLevel())
+                && java.util.Objects.equals(earlier.curriculumVersion(), current.curriculumVersion());
+        if (!same) {
+            throw new BusinessException(HttpStatus.CONFLICT, "CONVERSATION_EDUCATION_CONTEXT_MISMATCH",
+                    "当前对话已绑定另一份学习者或课程约束；请新建学习对话后再继续学习");
         }
     }
 

@@ -192,6 +192,31 @@ class ConversationServiceTests {
     }
 
     @Test
+    void shouldRequireNewConversationWhenLearnerEducationContextChanges() {
+        LearnerProfile firstProfile = learnerProfileRepository.save(new LearnerProfile(
+                "tenant-chat", "operator", "数学", "高中一年级", "人教A版", null, "zh-CN"));
+        LearnerProfile secondProfile = learnerProfileRepository.save(new LearnerProfile(
+                "tenant-chat", "operator", "物理", "高中一年级", "人教版", null, "zh-CN"));
+        ConversationDetail created = conversationService.create(
+                "tenant-chat", "operator", new CreateConversationRequest("课程上下文边界"));
+        EducationRunOptions firstContext = new EducationRunOptions(
+                true, firstProfile.getId(), null, null, null, "函数", null, null, "PRACTICE");
+        conversationService.send(created.conversation().id(), "tenant-chat", "operator",
+                new SendConversationMessageRequest("先讲解函数", null, 2, List.of(), firstContext),
+                "chat-context-first", "run.create,run.execute,education.read,education.write");
+
+        EducationRunOptions secondContext = new EducationRunOptions(
+                true, secondProfile.getId(), null, null, null, "力学", null, null, "PRACTICE");
+        BusinessException error = assertThrows(BusinessException.class, () -> conversationService.send(
+                created.conversation().id(), "tenant-chat", "operator",
+                new SendConversationMessageRequest("改为讲解力学", null, 2, List.of(), secondContext),
+                "chat-context-second", "run.create,run.execute,education.read,education.write"));
+
+        assertEquals("CONVERSATION_EDUCATION_CONTEXT_MISMATCH", error.getCode());
+        assertEquals(2, messageRepository.countByConversationId(created.conversation().id()));
+    }
+
+    @Test
     void shouldAutoTitleDefaultConversationFromFirstMessageWithoutOverwritingCustomTitle() {
         ConversationDetail defaultConversation = conversationService.create(
                 "tenant-chat", "operator", new CreateConversationRequest(null));

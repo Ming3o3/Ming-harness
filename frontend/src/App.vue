@@ -3570,17 +3570,33 @@ function ensureChatCourseMatchesProfile(profile = activeLearnerProfile.value) {
   return course
 }
 
-function selectChatCourse() {
+async function selectChatCourse() {
   const course = availableChatCourses.value.find((item) => item.id === chatEducation.courseId)
+  const mustStartNewConversation = chatUserMessages.value.length > 0
+  const draft = chatInput.value
   if (!course) {
     chatEducation.courseId = ''
     form.education.courseId = ''
+    if (mustStartNewConversation) {
+      const created = await createChatConversation()
+      if (created) {
+        setChatInput(draft)
+        noticeMessage.value = '已解除课程实例绑定，并创建新学习对话以隔离历史上下文。'
+      }
+    }
     return
   }
   chatEducation.subject = course.subject
   chatEducation.gradeLevel = course.gradeLevel
   chatEducation.curriculumVersion = course.curriculumVersion
   form.education.courseId = course.id
+  if (mustStartNewConversation) {
+    const created = await createChatConversation()
+    if (!created) return
+    setChatInput(draft)
+    noticeMessage.value = `已锁定课程约束：${course.code} · ${course.title}；已创建独立学习对话。`
+    return
+  }
   noticeMessage.value = `已锁定课程约束：${course.code} · ${course.title}`
 }
 
@@ -3840,7 +3856,19 @@ async function deferLearningTask(task) {
 
 async function selectChatLearnerProfile() {
   const profile = learnerProfiles.value.find((item) => item.id === chatEducation.learnerProfileId)
-  if (profile) await selectLearnerProfile(profile, false)
+  if (!profile) return
+  const previousProfileId = activeLearnerProfile.value?.id || ''
+  if (previousProfileId && previousProfileId !== profile.id && chatUserMessages.value.length > 0) {
+    const draft = chatInput.value
+    const created = await createChatConversation()
+    if (!created) {
+      chatEducation.learnerProfileId = previousProfileId
+      return
+    }
+    setChatInput(draft)
+    noticeMessage.value = '已切换学习者画像，并创建新学习对话以隔离历史上下文。'
+  }
+  await selectLearnerProfile(profile, false)
 }
 
 async function loadContextConfiguration() {
@@ -4642,6 +4670,7 @@ async function selectRun(runId, announce = true, showLoading = true) {
     const [detail, events] = await Promise.all([api.getRun(runId), api.listAuditEvents(runId)])
     if (requestToken !== runDetailRequestToken) return
     selectedRun.value = detail
+    syncActiveConversationEducationContext(detail.run)
     auditEvents.value = events
     startRunEventStream(runId)
   } catch (error) {
@@ -4649,6 +4678,21 @@ async function selectRun(runId, announce = true, showLoading = true) {
   } finally {
     if (showLoading && requestToken === runDetailRequestToken) detailLoading.value = false
   }
+}
+
+/** 打开历史教育会话时恢复它冻结的上下文，避免浏览器残留设置触发跨课程请求。 */
+function syncActiveConversationEducationContext(run) {
+  if (!run?.educationMode || !activeConversation.value?.messages?.some((message) => message.runId === run.id)) return
+  chatEducation.enabled = true
+  chatEducation.learnerProfileId = run.educationLearnerProfileId || ''
+  chatEducation.learningGoalId = run.educationLearningGoalId || ''
+  chatEducation.courseId = run.educationCourseId || ''
+  chatEducation.subject = run.educationSubject || ''
+  chatEducation.gradeLevel = run.educationGradeLevel || ''
+  chatEducation.curriculumVersion = run.educationCurriculumVersion || ''
+  chatEducation.conceptKey = run.educationConceptKey || ''
+  chatEducation.pedagogicalMode = run.educationPedagogicalMode || 'AUTO'
+  form.education.courseId = chatEducation.courseId
 }
 
 function handleNetworkOffline() {
