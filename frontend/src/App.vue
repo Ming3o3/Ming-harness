@@ -1097,6 +1097,12 @@ const educationSendBlockReason = computed(() => {
 const educationAgentReady = computed(() => !educationSendBlockReason.value)
 const educationComposerPlaceholder = computed(() => {
   if (educationSendBlockReason.value) return '先完成课程资料配置，再提交学习任务…'
+  if (activeLearningTask.value?.status === 'AWAITING_EVIDENCE') {
+    return '补充本轮作答证据：写出解题过程、判断依据，或指出卡住的步骤…'
+  }
+  if (activeLearningGoal.value) {
+    return `围绕「${activeLearningGoal.value.conceptKey}」完成本轮学习：写下你的理解、答案或推理…`
+  }
   return '提交一个学习任务：题目、知识点、学习困难或目标…'
 })
 const currentEducationSourceLabel = computed(() => {
@@ -1193,6 +1199,39 @@ const learningEvidenceSummary = computed(() => {
   if (!activeLearningGoal.value) return '等待学习目标'
   const count = learningGoalAssessments.value.length
   return count ? `${count} 条测评证据` : '尚无测评证据'
+})
+// 把课程来源、当前目标和已有掌握度合并成一条可读的课程路径。教育 Agent
+// 的核心不是“回答得像老师”，而是能指出学习者正在课程中的哪个节点、
+// 哪些前置节点还不稳，以及下一次作答要验证什么。
+const learningConceptTrail = computed(() => {
+  const scope = currentEducationRetrievalScope.value
+  const goalConcept = String(activeLearningGoal.value?.conceptKey || scope.conceptKey || '').trim()
+  const sourceConcepts = currentEducationSourcePreview.value.flatMap((source) =>
+    String(source?.conceptTags || '')
+      .split(/[,，;；\n]/)
+      .map((item) => item.trim())
+      .filter(Boolean))
+  const concepts = [goalConcept, ...sourceConcepts, ...learnerMasteryPreview.value.map((item) => item.conceptKey)]
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+  const uniqueConcepts = [...new Set(concepts)].slice(0, 5)
+  const mastery = new Map(learnerMastery.value.map((item) => [String(item.conceptKey || '').trim(), Number(item.masteryScore)]))
+  if (!uniqueConcepts.length) {
+    return [{ concept: '等待课程节点', detail: '配置课程资料后显示知识路径', state: 'pending', score: null }]
+  }
+  return uniqueConcepts.map((concept, index) => {
+    const score = mastery.get(concept)
+    const isTarget = concept === goalConcept
+    const state = isTarget
+      ? 'target'
+      : (Number.isFinite(score) ? (score >= 0.8 ? 'ready' : 'attention') : (index === 0 ? 'available' : 'pending'))
+    return {
+      concept,
+      detail: isTarget ? '本轮目标' : (Number.isFinite(score) ? `掌握度 ${formatRate(score)}` : '课程来源'),
+      state,
+      score: Number.isFinite(score) ? score : null,
+    }
+  })
 })
 const manualAssessmentSteps = computed(() => (selectedRun.value?.steps || [])
   .filter((step) => step.status === 'SUCCEEDED'))
@@ -6048,6 +6087,36 @@ onBeforeUnmount(() => {
               </div>
               <div class="learning-agent-workbench-state" :class="{ ready: educationAgentReady }"><i></i>{{ educationAgentReady ? '课程与学情已接入' : '还缺少课程资料' }}</div>
             </div>
+            <section class="learning-session-focus" aria-label="当前学习任务">
+              <header class="learning-session-focus-heading">
+                <div>
+                  <p>ACTIVE LEARNING SESSION</p>
+                  <strong>{{ activeLearningGoal?.title || '尚未设定学习目标' }}</strong>
+                  <span>{{ activeLearningGoal ? `围绕「${activeLearningGoal.conceptKey}」把一次作答变成可验证的学习进展。` : '先设定目标，Agent 才能判断什么算一次有效进展。' }}</span>
+                </div>
+                <span class="learning-session-focus-status" :class="`is-${agentTeachingAction.state}`">{{ agentTeachingAction.state === 'blocked' ? '等待课程边界' : (agentTeachingAction.state === 'ready' ? '正在推进' : '等待证据') }}</span>
+              </header>
+              <div class="learning-session-focus-grid">
+                <div class="learning-course-path">
+                  <div class="learning-session-subheading"><span>课程路径</span><small>{{ activeChatCourse?.title || `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` }}</small></div>
+                  <div class="learning-course-path-nodes">
+                    <article v-for="(node, index) in learningConceptTrail" :key="`${node.concept}-${index}`" class="learning-course-path-node" :class="`is-${node.state}`">
+                      <i><Check v-if="node.state === 'ready'" :size="11" /><Target v-else-if="node.state === 'target'" :size="11" /><CircleDot v-else :size="10" /></i>
+                      <div><strong>{{ node.concept }}</strong><small>{{ node.detail }}</small></div>
+                    </article>
+                  </div>
+                </div>
+                <div class="learning-session-next-move">
+                  <div class="learning-session-subheading"><span>Agent 下一动作</span><small>{{ pedagogicalModeLabel }}</small></div>
+                  <strong>{{ agentTeachingAction.title }}</strong>
+                  <p>{{ agentTeachingAction.detail }}</p>
+                  <div class="learning-session-evidence-callout"><ListChecks :size="14" /><span><b>{{ agentEvidenceRequest.title }}</b><small>{{ agentEvidenceRequest.detail }}</small></span></div>
+                  <button class="primary-button" type="button" @click="educationSendBlockReason ? (chatMode = false, navigateConsoleSection('education')) : chatInputRef?.focus()">{{ educationSendBlockReason ? '先配置课程资料' : '进入本轮作答' }} <ArrowDown :size="13" /></button>
+                </div>
+              </div>
+            </section>
+            <details class="learning-agent-decision-details">
+              <summary><span>查看 Agent 本轮决策依据</span><small>课程边界 · 学情诊断 · 教学动作 · 证据回写</small></summary>
             <section class="learning-agent-decision-board" aria-label="Agent 实时教学决策">
               <header class="learning-agent-decision-board-heading">
                 <div><p>LIVE DECISION BOARD</p><strong>先限定知识，再根据证据决定教学动作</strong><span>每一项都是 Agent 本轮可观察、可解释、可改变的决策依据。</span></div>
@@ -6092,6 +6161,7 @@ onBeforeUnmount(() => {
                 </footer>
               </section>
             </section>
+            </details>
             <div v-if="nextLearnerCourseAssignment" class="learning-agent-assignment-inline">
               <span><BookOpen :size="14" /></span>
               <div><small>课程作业</small><strong>{{ nextLearnerCourseAssignment.title }}</strong><p>{{ learningAssignmentStatusLabel(nextLearnerCourseAssignment.status) }} · {{ nextLearnerCourseAssignment.conceptKey }}<span v-if="nextLearnerCourseAssignment.dueAt"> · 截止 {{ formatDate(nextLearnerCourseAssignment.dueAt) }}</span></p><p v-if="nextLearnerCourseAssignment.teacherReviewNote" class="learning-agent-assignment-review-note"><b>{{ learningAssignmentReviewNoteLabel(nextLearnerCourseAssignment) }}：</b>{{ nextLearnerCourseAssignment.teacherReviewNote }}</p></div>
@@ -6249,7 +6319,8 @@ onBeforeUnmount(() => {
                       <span>掌握度 <b>{{ formatRate(attempt.masteryBefore) }} → {{ formatRate(attempt.masteryAfter) }}</b></span>
                       <em :class="{ 'is-positive': Number(attempt.masteryAfter) >= Number(attempt.masteryBefore) }">{{ formatMasteryDelta(attempt) }}</em>
                     </div>
-                    <p v-if="attempt.evidenceText">{{ attempt.evidenceText }}</p>
+                    <blockquote v-if="attempt.learnerEvidenceQuote" class="chat-assessment-learner-quote"><span>学习者本轮原话</span>{{ attempt.learnerEvidenceQuote }}</blockquote>
+                    <p v-if="attempt.evidenceText"><b>Agent 观察：</b>{{ attempt.evidenceText }}</p>
                     <p v-else-if="attempt.feedback">{{ attempt.feedback }}</p>
                     <footer>
                       <span v-if="assessmentRetrievalEvidenceLabel(attempt)"><BookOpen :size="12" />知识源：{{ assessmentRetrievalEvidenceLabel(attempt) }}</span>
@@ -6353,7 +6424,7 @@ onBeforeUnmount(() => {
             <div class="chat-composer-footer">
               <span class="chat-composer-hint">
                 <span class="chat-composer-hint-primary"><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行<span v-if="canCancelChat"> · <kbd>Esc</kbd> 停止</span></span>
-                <span class="chat-composer-hint-context">{{ desktopWorkspaceDropping ? '正在导入知识材料…' : (educationSendBlockReason || (activeChatCourse ? `已锁定课程「${activeChatCourse.title}」、知识库范围与学习者掌握度` : '已应用画像课程约束、知识库范围与学习者掌握度')) }}</span>
+                <span class="chat-composer-hint-context">{{ desktopWorkspaceDropping ? '正在导入知识材料…' : (educationSendBlockReason || (activeLearningGoal ? `本轮证据将归入「${activeLearningGoal.conceptKey}」；只有作答、推理或教师评分会改变掌握度` : (activeChatCourse ? `已锁定课程「${activeChatCourse.title}」；设定目标后可开始累积学习证据` : '已应用画像课程约束；设定目标后可开始累积学习证据'))) }}</span>
               </span>
               <div class="chat-composer-actions">
                 <button class="secondary-button chat-agent-settings-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="showChatAgentSettings = !showChatAgentSettings"><Settings2 :size="14" /><span>调整学习计划</span></button>
@@ -7383,7 +7454,7 @@ onBeforeUnmount(() => {
                     <div v-if="assignment.teacherReviewNote" class="learning-assignment-review-note" :class="{ revision: assignment.reviewStatus === 'REVISION_REQUIRED' }"><CircleAlert :size="13" /><div><strong>{{ learningAssignmentReviewNoteLabel(assignment) }}</strong><span>{{ assignment.teacherReviewNote }}</span></div></div>
                     <small v-if="learningAssignmentProgressMap[assignment.id]" class="learning-assignment-progress">掌握度 {{ formatRate(learningAssignmentProgressMap[assignment.id].currentMastery) }} / {{ formatRate(learningAssignmentProgressMap[assignment.id].targetMastery) }} · 提升 {{ learningAssignmentProgressMap[assignment.id].masteryGain >= 0 ? '+' : '' }}{{ formatRate(learningAssignmentProgressMap[assignment.id].masteryGain) }} · 目标进度 {{ formatRate(learningAssignmentProgressMap[assignment.id].masteryProgress) }} · 测评 {{ learningAssignmentProgressMap[assignment.id].assessmentTotal }} 次 · 任务 {{ learningAssignmentProgressMap[assignment.id].taskCompleted }} / {{ learningAssignmentProgressMap[assignment.id].taskTotal }}</small>
                     <small v-if="learningAssignmentProgressMap[assignment.id]" class="learning-assignment-progress">Run 证据覆盖 {{ formatRate(learningAssignmentProgressMap[assignment.id].runEvidenceCoverageRate) }}（{{ learningAssignmentProgressMap[assignment.id].runWithAssessmentEvidence }} / {{ learningAssignmentProgressMap[assignment.id].runTotal }}） · 教师反馈确认 {{ formatRate(learningAssignmentProgressMap[assignment.id].feedbackAcknowledgementRate) }}（{{ learningAssignmentProgressMap[assignment.id].feedbackAcknowledged }} / {{ learningAssignmentProgressMap[assignment.id].feedbackTotal }}）</small>
-                    <details v-if="learningAssignmentEvidenceMap[assignment.id]?.length" class="learning-assessment-history"><summary>查看测评证据（{{ learningAssignmentEvidenceMap[assignment.id].length }}）</summary><div v-for="attempt in learningAssignmentEvidenceMap[assignment.id].slice().reverse().slice(0, 5)" :key="attempt.id"><span :class="attempt.correct ? 'assessment-correct' : 'assessment-wrong'">{{ attempt.correct ? '正确' : '错误' }}</span><span>{{ attempt.evidenceText || '未填写证据文本' }}<small v-if="attempt.feedback"> · {{ attempt.feedback }}</small></span><small>{{ attempt.evidenceSource === 'MANUAL_REVIEW' ? '人工复核' : (attempt.assessmentType === 'REVIEW' ? '保持度复习' : 'Agent观察') }} · {{ formatDate(attempt.createdAt) }}</small><small v-if="assessmentRetrievalEvidenceLabel(attempt)">知识源：{{ assessmentRetrievalEvidenceLabel(attempt) }}</small></div></details>
+                    <details v-if="learningAssignmentEvidenceMap[assignment.id]?.length" class="learning-assessment-history"><summary>查看测评证据（{{ learningAssignmentEvidenceMap[assignment.id].length }}）</summary><div v-for="attempt in learningAssignmentEvidenceMap[assignment.id].slice().reverse().slice(0, 5)" :key="attempt.id"><span :class="attempt.correct ? 'assessment-correct' : 'assessment-wrong'">{{ attempt.correct ? '正确' : '错误' }}</span><span><b v-if="attempt.learnerEvidenceQuote">学习者原话：{{ attempt.learnerEvidenceQuote }} · </b>{{ attempt.evidenceText || '未填写证据文本' }}<small v-if="attempt.feedback"> · {{ attempt.feedback }}</small></span><small>{{ attempt.evidenceSource === 'MANUAL_REVIEW' ? '人工复核' : (attempt.assessmentType === 'REVIEW' ? '保持度复习' : 'Agent观察') }} · {{ formatDate(attempt.createdAt) }}</small><small v-if="assessmentRetrievalEvidenceLabel(attempt)">知识源：{{ assessmentRetrievalEvidenceLabel(attempt) }}</small></div></details>
                     <details v-if="learningAssignmentSubmissionMap[assignment.id]?.length" class="learning-assessment-history"><summary>学习者提交物（{{ learningAssignmentSubmissionMap[assignment.id].length }}）</summary><div v-for="submission in learningAssignmentSubmissionMap[assignment.id].slice(0, 5)" :key="submission.id"><span>原始作答</span><span>{{ submission.content }}</span><small>Run {{ submission.runId.slice(0, 8) }} · {{ formatDate(submission.submittedAt) }}</small></div></details>
                     <details v-if="learningAssignmentFeedbackMap[assignment.id]?.length" class="learning-assessment-history"><summary>教师反馈（{{ learningAssignmentFeedbackMap[assignment.id].length }}）</summary><div v-for="feedback in learningAssignmentFeedbackMap[assignment.id].slice(0, 5)" :key="feedback.id"><span>{{ learningAssignmentFeedbackActionLabel(feedback.action) }}</span><span>{{ feedback.message }}<small v-if="feedback.suggestedDueAt"> · 截止 {{ formatDate(feedback.suggestedDueAt) }}</small></span><small>{{ feedback.status === 'RESOLVED' ? '已执行' : (feedback.status === 'ACKNOWLEDGED' ? '已确认' : '待确认') }} · {{ formatDate(feedback.createdAt) }}<button v-if="assignment.learnerUserId === form.userId && feedback.status === 'OPEN'" class="text-button" type="button" :disabled="learningAssignmentFeedbackAcknowledgingId === feedback.id" @click="acknowledgeLearningAssignmentFeedback(assignment, feedback)">确认</button></small></div></details>
                     <details v-if="learningAssignmentEvaluationMap[assignment.id]?.length" class="learning-assessment-history"><summary>教师量规评价（{{ learningAssignmentEvaluationMap[assignment.id].length }}）</summary><div v-for="evaluation in learningAssignmentEvaluationMap[assignment.id].slice(0, 5)" :key="evaluation.id"><span>{{ evaluation.decision === 'VERIFY' ? '确认' : '退回' }} · {{ evaluation.rubricVersion }}</span><span>内容 {{ evaluation.contentCorrectnessScore }} / 5 · 证据 {{ evaluation.evidenceQualityScore }} / 5 · 迁移 {{ evaluation.transferReadinessScore }} / 5</span><small>{{ evaluation.evaluatorUserId }} · {{ formatDate(evaluation.createdAt) }}<span v-if="evaluation.note"> · {{ evaluation.note }}</span></small></div></details>

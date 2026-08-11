@@ -845,7 +845,10 @@ h3 { margin: 0; font-size: 13px; }
 .chat-assessment-mastery b { color: var(--soft); font-weight: 500; }
 .chat-assessment-mastery em { color: var(--orange); font-style: normal; }
 .chat-assessment-mastery em.is-positive { color: var(--green); }
+.chat-assessment-learner-quote { display: grid; gap: 3px; margin: 0; border-left: 2px solid rgba(76,226,213,.55); background: rgba(76,226,213,.045); color: var(--soft); padding: 6px 8px; font-size: 9px; line-height: 1.55; white-space: pre-wrap; }
+.chat-assessment-learner-quote span { color: var(--cyan); font: 8px "DM Mono", monospace; letter-spacing: .05em; }
 .chat-assessment-evidence-card > p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.55; }
+.chat-assessment-evidence-card > p b { color: var(--soft); font-weight: 600; }
 .chat-assessment-evidence-card > footer { display: flex; flex-wrap: wrap; gap: 5px 9px; color: var(--muted); font: 8px/1.45 "DM Mono", monospace; }
 .chat-assessment-evidence-card > footer > span { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
 .chat-assessment-evidence-card > footer svg { flex: 0 0 auto; color: var(--cyan); }
@@ -2164,6 +2167,81 @@ button svg {
 .learning-agent-workbench-state i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .learning-agent-workbench-state.ready { border-color: color-mix(in srgb, var(--cyan) 42%, var(--line)); background: color-mix(in srgb, var(--cyan) 8%, var(--panel)); color: var(--cyan); }
 
+/* The session card is intentionally task-first: it shows the curriculum node,
+ * the learner's evidence state, and the next intervention before exposing any
+ * implementation detail of the Agent's retrieval pipeline. */
+.learning-session-focus {
+  display: grid;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 31%, var(--line));
+  border-radius: 11px;
+  background:
+    radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--cyan) 13%, transparent), transparent 31%),
+    color-mix(in srgb, var(--panel) 84%, transparent);
+  padding: 12px;
+}
+
+.learning-session-focus-heading,
+.learning-session-subheading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.learning-session-focus-heading > div { display: grid; min-width: 0; gap: 3px; }
+.learning-session-focus-heading p,
+.learning-session-subheading > span { margin: 0; color: var(--muted); font: 8px "DM Mono", monospace; letter-spacing: .11em; }
+.learning-session-focus-heading strong { overflow: hidden; color: var(--heading); font-size: 14px; letter-spacing: -.025em; text-overflow: ellipsis; white-space: nowrap; }
+.learning-session-focus-heading > div > span { color: var(--muted); font-size: 9px; line-height: 1.45; }
+.learning-session-focus-status { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); padding: 4px 7px; font: 8px "DM Mono", monospace; white-space: nowrap; }
+.learning-session-focus-status.is-ready { border-color: color-mix(in srgb, var(--green) 38%, var(--line)); color: var(--green); }
+.learning-session-focus-status.is-evidence,
+.learning-session-focus-status.is-pending { border-color: color-mix(in srgb, var(--orange) 34%, var(--line)); color: var(--orange); }
+.learning-session-focus-status.is-blocked { border-color: color-mix(in srgb, var(--red) 34%, var(--line)); color: var(--red); }
+
+.learning-session-focus-grid { display: grid; grid-template-columns: minmax(0, 1.18fr) minmax(220px, .82fr); gap: 9px; }
+.learning-course-path,
+.learning-session-next-move { display: grid; min-width: 0; gap: 8px; border: 1px solid var(--line); border-radius: 9px; background: color-mix(in srgb, var(--panel) 84%, transparent); padding: 10px; }
+.learning-session-subheading { align-items: baseline; }
+.learning-session-subheading small { overflow: hidden; color: var(--muted); font: 8px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+
+.learning-course-path-nodes { display: flex; align-items: stretch; min-width: 0; overflow-x: auto; padding: 1px 0 3px; scrollbar-width: thin; }
+.learning-course-path-node { display: grid; position: relative; grid-template-columns: auto minmax(74px, 1fr); align-items: center; gap: 6px; min-width: 128px; flex: 1 0 0; padding: 3px 9px 3px 0; }
+.learning-course-path-node + .learning-course-path-node { padding-left: 15px; }
+.learning-course-path-node + .learning-course-path-node::before { position: absolute; top: 15px; left: 0; width: 12px; height: 1px; background: var(--line); content: ""; }
+.learning-course-path-node > i { display: grid; width: 23px; height: 23px; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: var(--panel-soft); color: var(--muted); font-style: normal; }
+.learning-course-path-node > div { display: grid; min-width: 0; gap: 2px; }
+.learning-course-path-node strong { overflow: hidden; color: var(--soft); font-size: 9px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.learning-course-path-node small { overflow: hidden; color: var(--muted); font: 8px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.learning-course-path-node.is-target > i { border-color: color-mix(in srgb, var(--orange) 48%, var(--line)); background: color-mix(in srgb, var(--orange) 12%, var(--panel)); color: var(--orange); }
+.learning-course-path-node.is-target strong { color: var(--heading); }
+.learning-course-path-node.is-ready > i { border-color: color-mix(in srgb, var(--green) 42%, var(--line)); background: color-mix(in srgb, var(--green) 10%, var(--panel)); color: var(--green); }
+.learning-course-path-node.is-attention > i { border-color: color-mix(in srgb, var(--red) 34%, var(--line)); color: var(--red); }
+.learning-course-path-node.is-available > i { border-color: color-mix(in srgb, var(--cyan) 37%, var(--line)); color: var(--cyan); }
+
+.learning-session-next-move { border-color: color-mix(in srgb, var(--orange) 31%, var(--line)); background: color-mix(in srgb, var(--orange) 4%, var(--panel)); }
+.learning-session-next-move > strong { overflow: hidden; color: var(--heading); font-size: 11px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.learning-session-next-move > p { display: -webkit-box; overflow: hidden; min-height: 27px; margin: -3px 0 0; color: var(--muted); font-size: 9px; line-height: 1.48; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.learning-session-evidence-callout { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 6px; border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent); padding-top: 7px; }
+.learning-session-evidence-callout > svg { margin-top: 1px; color: var(--green); }
+.learning-session-evidence-callout > span { display: grid; min-width: 0; gap: 2px; }
+.learning-session-evidence-callout b { overflow: hidden; color: var(--soft); font-size: 9px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.learning-session-evidence-callout small { display: -webkit-box; overflow: hidden; color: var(--muted); font-size: 8px; line-height: 1.42; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.learning-session-next-move > .primary-button { justify-self: start; display: inline-flex; align-items: center; gap: 4px; min-height: 30px; background: var(--heading); color: var(--bg); padding: 6px 9px; font-size: 8px; }
+
+/* Detailed source selection and state transition logic remains available for
+ * auditability, but no longer competes with the learner's immediate task. */
+.learning-agent-decision-details { overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: color-mix(in srgb, var(--panel) 76%, transparent); }
+.learning-agent-decision-details > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; color: var(--soft); padding: 8px 10px; list-style: none; }
+.learning-agent-decision-details > summary::-webkit-details-marker { display: none; }
+.learning-agent-decision-details > summary::after { color: var(--muted); content: "⌄"; font: 13px/1 sans-serif; transition: transform .16s ease; }
+.learning-agent-decision-details[open] > summary { border-bottom: 1px solid var(--line); }
+.learning-agent-decision-details[open] > summary::after { transform: rotate(180deg); }
+.learning-agent-decision-details > summary > span { font-size: 9px; font-weight: 650; }
+.learning-agent-decision-details > summary > small { margin-left: auto; color: var(--muted); font: 8px "DM Mono", monospace; }
+.learning-agent-decision-details .learning-agent-decision-board { border: 0; border-radius: 0; background: transparent; }
+
 /* The main learning surface is a live decision board, not a row of dashboard
  * counters: it exposes the actual retrieval boundary, the learner diagnosis,
  * the chosen teaching action, and the evidence that may change the state. */
@@ -3270,6 +3348,14 @@ button svg {
     white-space: nowrap;
   }
 
+  .learning-session-focus-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .learning-course-path-node {
+    min-width: 150px;
+  }
+
   .learning-agent-decision-flow {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -3362,6 +3448,31 @@ button svg {
   .chat-composer {
     width: calc(100% - 28px);
     border-radius: 14px;
+  }
+
+  .chat-learning-overview {
+    padding-right: 15px;
+    padding-left: 15px;
+  }
+
+  .learning-agent-workbench-heading,
+  .learning-session-focus-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .learning-session-focus-status {
+    align-self: flex-start;
+  }
+
+  .learning-agent-decision-details > summary {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .learning-agent-decision-details > summary > small {
+    width: calc(100% - 24px);
+    margin-left: 0;
   }
 
   .education-source-gate {
