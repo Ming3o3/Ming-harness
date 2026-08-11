@@ -15,6 +15,13 @@ import jakarta.persistence.LockModeType;
 public interface KnowledgeDocumentRepository extends JpaRepository<KnowledgeDocument, String> {
     List<KnowledgeDocument> findTop100ByTenantIdAndDeletedAtIsNullOrderByCreatedAtDesc(String tenantId);
 
+    /**
+     * 教育检索先由课程元数据限定文档集合，再进行关键词召回。
+     * 不使用全库“最新 100 篇”的快捷查询，避免有效但较早上传的课程资料被截断。
+     */
+    List<KnowledgeDocument> findByTenantIdAndIdInAndDeletedAtIsNullOrderByCreatedAtDesc(
+            String tenantId, List<String> documentIds);
+
     List<KnowledgeDocument> findByTenantIdAndDeletedAtIsNullOrderByCreatedAtAsc(
             String tenantId, Pageable pageable);
 

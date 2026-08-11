@@ -110,8 +110,7 @@ public class ContextBuilder {
         String normalizedQuery = query.toLowerCase(Locale.ROOT);
         String[] terms = normalizedQuery.split("\\s+|[，。！？、,:：;；]+");
         List<ScoredContext> candidates = new ArrayList<>();
-        for (KnowledgeDocument document : documentRepository
-                .findTop100ByTenantIdAndDeletedAtIsNullOrderByCreatedAtDesc(tenantId)) {
+        for (KnowledgeDocument document : keywordDocuments(tenantId, educationFilter)) {
             if (!document.isVisibleTo(userId)) {
                 continue;
             }
@@ -160,6 +159,30 @@ public class ContextBuilder {
                     candidate.citation(), excerpt));
         }
         return new ContextResult(context.toString(), List.copyOf(evidences));
+    }
+
+    /**
+     * 教育关键词降级路径必须先应用课程硬约束，再考虑文档发布时间。
+     *
+     * <p>通用检索保留最近 100 篇的成本上限；教育检索则先从受约束知识源提取文档 ID，
+     * 让课程资料即使不在全库最新 100 篇内，也仍可作为本轮教学依据。</p>
+     */
+    private List<KnowledgeDocument> keywordDocuments(String tenantId,
+                                                     EducationRetrievalFilter educationFilter) {
+        if (educationFilter == null || !educationFilter.active()) {
+            return documentRepository.findTop100ByTenantIdAndDeletedAtIsNullOrderByCreatedAtDesc(tenantId);
+        }
+        if (educationSourceRepository == null) return List.of();
+        List<String> sourceDocumentIds = educationSourceRepository
+                .findByTenantIdAndDeletedAtIsNullOrderByUpdatedAtDesc(tenantId).stream()
+                .filter(educationFilter::matches)
+                .map(EducationKnowledgeSource::getDocumentId)
+                .filter(documentId -> documentId != null && !documentId.isBlank())
+                .distinct()
+                .toList();
+        if (sourceDocumentIds.isEmpty()) return List.of();
+        return documentRepository.findByTenantIdAndIdInAndDeletedAtIsNullOrderByCreatedAtDesc(
+                tenantId, sourceDocumentIds);
     }
 
     /**

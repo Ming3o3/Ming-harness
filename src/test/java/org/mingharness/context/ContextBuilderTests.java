@@ -18,6 +18,8 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ContextBuilderTests {
@@ -115,8 +117,10 @@ class ContextBuilderTests {
                 "数学", "高中一年级", "人教A版", "函数", null, null);
         when(vectorRetriever.retrieve("tenant-a", "student", "函数", 4_000, filter))
                 .thenReturn(new ContextResult("", List.of()));
-        when(documentRepository.findTop100ByTenantIdAndDeletedAtIsNullOrderByCreatedAtDesc("tenant-a"))
-                .thenReturn(List.of(math, physics));
+        when(sourceRepository.findByTenantIdAndDeletedAtIsNullOrderByUpdatedAtDesc("tenant-a"))
+                .thenReturn(List.of(mathSource, physicsSource));
+        when(documentRepository.findByTenantIdAndIdInAndDeletedAtIsNullOrderByCreatedAtDesc(
+                "tenant-a", List.of(math.getId()))).thenReturn(List.of(math));
         when(memoryRepository.findTop100ByTenantIdAndUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(
                 "tenant-a", "student")).thenReturn(List.of());
         when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", math.getId()))
@@ -128,6 +132,39 @@ class ContextBuilderTests {
 
         assertEquals(1, result.evidences().size());
         assertEquals(math.getId(), result.evidences().get(0).documentId());
+    }
+
+    @Test
+    void shouldFindMatchingCourseSourceOutsideTheGenericRecentDocumentWindow() {
+        KnowledgeDocumentRepository documentRepository = mock(KnowledgeDocumentRepository.class);
+        MemoryEntryRepository memoryRepository = mock(MemoryEntryRepository.class);
+        VectorContextRetriever vectorRetriever = mock(VectorContextRetriever.class);
+        EducationKnowledgeSourceRepository sourceRepository = mock(EducationKnowledgeSourceRepository.class);
+        HarnessMetrics metrics = new HarnessMetrics(new SimpleMeterRegistry());
+        ContextBuilder builder = new ContextBuilder(documentRepository, memoryRepository, vectorRetriever,
+                metrics, new ContextRetrievalProperties(20, 5, 1, 0.2), sourceRepository);
+        KnowledgeDocument courseDocument = new KnowledgeDocument("tenant-a", "teacher", "函数课件",
+                "函数定义域需要先排除分母为零的情况", "INTERNAL", "student");
+        EducationKnowledgeSource courseSource = new EducationKnowledgeSource(
+                "tenant-a", courseDocument.getId(), "数学", "高中一年级", "人教A版", "第一章",
+                "理解函数定义域", "函数,定义域", "集合", 3, "TEXTBOOK");
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "数学", "高中一年级", "人教A版", "函数", null, null);
+        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 4_000, filter))
+                .thenReturn(new ContextResult("", List.of()));
+        when(sourceRepository.findByTenantIdAndDeletedAtIsNullOrderByUpdatedAtDesc("tenant-a"))
+                .thenReturn(List.of(courseSource));
+        when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull(
+                "tenant-a", courseDocument.getId())).thenReturn(Optional.of(courseSource));
+        when(documentRepository.findByTenantIdAndIdInAndDeletedAtIsNullOrderByCreatedAtDesc(
+                "tenant-a", List.of(courseDocument.getId()))).thenReturn(List.of(courseDocument));
+
+        ContextResult result = builder.build("tenant-a", "student", "函数", 4_000, filter);
+
+        assertEquals(1, result.evidences().size());
+        assertEquals(courseDocument.getId(), result.evidences().get(0).documentId());
+        verify(documentRepository, never())
+                .findTop100ByTenantIdAndDeletedAtIsNullOrderByCreatedAtDesc("tenant-a");
     }
 
     @Test
@@ -146,7 +183,7 @@ class ContextBuilderTests {
 
         when(vectorRetriever.retrieve("tenant-a", "student", "函数", 4_000, filter))
                 .thenReturn(new ContextResult("", List.of()));
-        when(documentRepository.findTop100ByTenantIdAndDeletedAtIsNullOrderByCreatedAtDesc("tenant-a"))
+        when(sourceRepository.findByTenantIdAndDeletedAtIsNullOrderByUpdatedAtDesc("tenant-a"))
                 .thenReturn(List.of());
         when(memoryRepository.findTop100ByTenantIdAndUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(
                 "tenant-a", "student")).thenReturn(List.of(memory));
@@ -183,8 +220,10 @@ class ContextBuilderTests {
                 .thenReturn(new ContextResult("vector-context", List.of(
                         new ContextEvidence(hard.getId(), "函数综合提升", "document:" + hard.getId(), "综合"),
                         new ContextEvidence(easy.getId(), "函数基础讲解", "document:" + easy.getId(), "基础"))));
-        when(documentRepository.findTop100ByTenantIdAndDeletedAtIsNullOrderByCreatedAtDesc("tenant-a"))
-                .thenReturn(List.of());
+        when(sourceRepository.findByTenantIdAndDeletedAtIsNullOrderByUpdatedAtDesc("tenant-a"))
+                .thenReturn(List.of(hardSource, easySource));
+        when(documentRepository.findByTenantIdAndIdInAndDeletedAtIsNullOrderByCreatedAtDesc(
+                "tenant-a", List.of(hard.getId(), easy.getId()))).thenReturn(List.of());
         when(memoryRepository.findTop100ByTenantIdAndUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(
                 "tenant-a", "student")).thenReturn(List.of());
         when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", hard.getId()))
@@ -228,8 +267,10 @@ class ContextBuilderTests {
                                 "document:" + narrowerGap.getId(), "集合"),
                         new ContextEvidence(broaderGap.getId(), "函数前置补强",
                                 "document:" + broaderGap.getId(), "集合与定义域"))));
-        when(documentRepository.findTop100ByTenantIdAndDeletedAtIsNullOrderByCreatedAtDesc("tenant-a"))
-                .thenReturn(List.of());
+        when(sourceRepository.findByTenantIdAndDeletedAtIsNullOrderByUpdatedAtDesc("tenant-a"))
+                .thenReturn(List.of(narrowerGapSource, broaderGapSource));
+        when(documentRepository.findByTenantIdAndIdInAndDeletedAtIsNullOrderByCreatedAtDesc(
+                "tenant-a", List.of(narrowerGap.getId(), broaderGap.getId()))).thenReturn(List.of());
         when(memoryRepository.findTop100ByTenantIdAndUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(
                 "tenant-a", "student")).thenReturn(List.of());
         when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", broaderGap.getId()))
