@@ -704,14 +704,21 @@ const learnerCourseAssignments = computed(() => learningAssignments.value
       || new Date(left.dueAt || left.createdAt) - new Date(right.dueAt || right.createdAt)
   }))
 const nextLearnerCourseAssignment = computed(() => learnerCourseAssignments.value[0] || null)
-const nextLearnerCourseAssignmentOpenFeedback = computed(() => {
-  const assignment = nextLearnerCourseAssignment.value
+const activeChatLearningAssignment = computed(() => {
+  const assignmentId = chatEducation.learningAssignmentId
+  return assignmentId
+    ? learningAssignments.value.find((assignment) => assignment.id === assignmentId) || null
+    : null
+})
+const chatCourseAssignment = computed(() => activeChatLearningAssignment.value || nextLearnerCourseAssignment.value)
+const chatCourseAssignmentOpenFeedback = computed(() => {
+  const assignment = chatCourseAssignment.value
   if (!assignment) return null
   return (learningAssignmentFeedbackMap.value[assignment.id] || [])
     .find((feedback) => feedback.status === 'OPEN') || null
 })
-const nextLearnerCourseAssignmentLatestSubmission = computed(() => {
-  const assignment = nextLearnerCourseAssignment.value
+const chatCourseAssignmentLatestSubmission = computed(() => {
+  const assignment = chatCourseAssignment.value
   if (!assignment) return null
   return (learningAssignmentSubmissionMap.value[assignment.id] || [])[0] || null
 })
@@ -1476,6 +1483,7 @@ function defaultChatEducation() {
     enabled: true,
     learnerProfileId: '',
     learningGoalId: '',
+    learningAssignmentId: '',
     courseId: '',
     subject: '',
     gradeLevel: '',
@@ -2955,6 +2963,13 @@ async function loadEducationData() {
     learningGoals.value = goals
     learningTasks.value = tasks
     learningAssignments.value = assignments
+    const boundChatAssignment = chatEducation.learningAssignmentId
+      ? assignments.find((assignment) => assignment.id === chatEducation.learningAssignmentId)
+      : null
+    if (chatEducation.learningAssignmentId
+      && (!boundChatAssignment || ['COMPLETED', 'CANCELLED'].includes(boundChatAssignment.status))) {
+      chatEducation.learningAssignmentId = ''
+    }
     educationMetrics.value = metrics
     educationCourses.value = courses || []
     learningEvaluationQueue.value = await api.listLearningEvaluationQueue().catch(() => [])
@@ -3707,6 +3722,12 @@ function applyLearnerProfileToEducationRun(profile) {
 
 function applyLearnerProfileToChat(profile) {
   if (!profile) return
+  const boundAssignment = chatEducation.learningAssignmentId
+    ? learningAssignments.value.find((assignment) => assignment.id === chatEducation.learningAssignmentId)
+    : null
+  if (boundAssignment && boundAssignment.learnerProfileId !== profile.id) {
+    chatEducation.learningAssignmentId = ''
+  }
   chatEducation.learnerProfileId = profile.id
   chatEducation.subject = profile.subject || ''
   chatEducation.gradeLevel = profile.gradeLevel || ''
@@ -3732,6 +3753,12 @@ function ensureChatCourseMatchesProfile(profile = activeLearnerProfile.value) {
 
 async function selectChatCourse() {
   const course = availableChatCourses.value.find((item) => item.id === chatEducation.courseId)
+  const boundAssignment = chatEducation.learningAssignmentId
+    ? learningAssignments.value.find((assignment) => assignment.id === chatEducation.learningAssignmentId)
+    : null
+  if (boundAssignment && boundAssignment.courseId !== (course?.id || null)) {
+    chatEducation.learningAssignmentId = ''
+  }
   const mustStartNewConversation = chatUserMessages.value.length > 0
   const draft = chatInput.value
   if (!course) {
@@ -3777,6 +3804,12 @@ async function selectLearnerProfile(profile, notify = true) {
 
 async function selectLearningGoal(goal, notify = true) {
   if (!goal) return
+  const boundAssignment = chatEducation.learningAssignmentId
+    ? learningAssignments.value.find((assignment) => assignment.id === chatEducation.learningAssignmentId)
+    : null
+  if (boundAssignment && boundAssignment.learningGoalId !== goal.id) {
+    chatEducation.learningAssignmentId = ''
+  }
   activeLearningGoal.value = goal
   form.education.learningGoalId = goal.id
   form.education.learnerProfileId = goal.learnerProfileId
@@ -3887,6 +3920,7 @@ async function startLearningAssignment(assignment) {
       { maxTurns: chatMaxTurns.value },
       assignmentAttemptKey,
     )
+    await bindLearningAssignmentToChat(started.assignment)
     activeConversation.value = started.conversation
     conversations.value = [started.conversation.conversation, ...conversations.value
       .filter((item) => item.id !== started.conversation.conversation.id)]
@@ -3902,6 +3936,43 @@ async function startLearningAssignment(assignment) {
   } finally {
     learningAssignmentAcceptingId.value = ''
   }
+}
+
+/** 作业入口创建的后续消息必须继续携带同一作业约束，不能退回到仅按画像推断。 */
+async function bindLearningAssignmentToChat(assignment) {
+  if (!assignment?.id) return
+  chatEducation.enabled = true
+  chatEducation.learningAssignmentId = assignment.id
+  chatEducation.learnerProfileId = assignment.learnerProfileId || ''
+  chatEducation.learningGoalId = assignment.learningGoalId || ''
+  chatEducation.courseId = assignment.courseId || ''
+  chatEducation.subject = assignment.subject || ''
+  chatEducation.gradeLevel = assignment.gradeLevel || ''
+  chatEducation.curriculumVersion = assignment.curriculumVersion || ''
+  chatEducation.conceptKey = assignment.conceptKey || ''
+  form.education.learnerProfileId = chatEducation.learnerProfileId
+  form.education.learningGoalId = chatEducation.learningGoalId
+  form.education.courseId = chatEducation.courseId
+  form.education.subject = chatEducation.subject
+  form.education.gradeLevel = chatEducation.gradeLevel
+  form.education.curriculumVersion = chatEducation.curriculumVersion
+  form.education.conceptKey = chatEducation.conceptKey
+  const profile = learnerProfiles.value.find((item) => item.id === assignment.learnerProfileId)
+  if (profile) {
+    activeLearnerProfile.value = profile
+    await refreshLearnerMastery(profile.id)
+  }
+  const goal = learningGoals.value.find((item) => item.id === assignment.learningGoalId)
+  if (goal) await selectLearningGoal(goal, false)
+  // selectLearningGoal may reapply the profile defaults; the assignment remains
+  // the authoritative binding for this conversation, so restore it explicitly.
+  chatEducation.learningAssignmentId = assignment.id
+  chatEducation.courseId = assignment.courseId || ''
+  chatEducation.learningGoalId = assignment.learningGoalId || ''
+  chatEducation.conceptKey = assignment.conceptKey || ''
+  form.education.courseId = chatEducation.courseId
+  form.education.learningGoalId = chatEducation.learningGoalId
+  form.education.conceptKey = chatEducation.conceptKey
 }
 
 function focusLearnerCourseAssignment(assignment) {
@@ -5551,41 +5622,41 @@ onBeforeUnmount(() => {
             </div>
           </section>
 
-          <section v-if="nextLearnerCourseAssignment" class="chat-course-assignment-panel" aria-label="当前课程作业">
+          <section v-if="chatCourseAssignment" class="chat-course-assignment-panel" aria-label="当前课程作业">
             <header class="chat-course-assignment-heading">
               <div>
                 <p class="eyebrow">COURSE ASSIGNMENT / EVIDENCE LOOP</p>
-                <h2>{{ nextLearnerCourseAssignment.title }}</h2>
-                <p>{{ nextLearnerCourseAssignment.instructions }}</p>
+                <h2>{{ chatCourseAssignment.title }}</h2>
+                <p>{{ chatCourseAssignment.instructions }}</p>
               </div>
               <div class="chat-course-assignment-statuses">
-                <span :class="`assignment-status-${nextLearnerCourseAssignment.status.toLowerCase()}`">{{ learningAssignmentStatusLabel(nextLearnerCourseAssignment.status) }}</span>
-                <span v-if="nextLearnerCourseAssignment.reviewStatus && nextLearnerCourseAssignment.reviewStatus !== 'NOT_REQUIRED'">{{ learningAssignmentReviewStatusLabel(nextLearnerCourseAssignment.reviewStatus) }}</span>
+                <span :class="`assignment-status-${chatCourseAssignment.status.toLowerCase()}`">{{ learningAssignmentStatusLabel(chatCourseAssignment.status) }}</span>
+                <span v-if="chatCourseAssignment.reviewStatus && chatCourseAssignment.reviewStatus !== 'NOT_REQUIRED'">{{ learningAssignmentReviewStatusLabel(chatCourseAssignment.reviewStatus) }}</span>
               </div>
             </header>
             <div class="chat-course-assignment-meta">
-              <span><BookOpen :size="13" />{{ nextLearnerCourseAssignment.courseTitle || nextLearnerCourseAssignment.subject }} · {{ nextLearnerCourseAssignment.gradeLevel }} · {{ nextLearnerCourseAssignment.curriculumVersion }}</span>
-              <span><Target :size="13" />{{ nextLearnerCourseAssignment.conceptKey }} · 目标掌握度 {{ formatRate(nextLearnerCourseAssignment.targetMastery) }}</span>
-              <span v-if="nextLearnerCourseAssignment.dueAt"><CalendarClock :size="13" />截止 {{ formatDate(nextLearnerCourseAssignment.dueAt) }}</span>
+              <span><BookOpen :size="13" />{{ chatCourseAssignment.courseTitle || chatCourseAssignment.subject }} · {{ chatCourseAssignment.gradeLevel }} · {{ chatCourseAssignment.curriculumVersion }}</span>
+              <span><Target :size="13" />{{ chatCourseAssignment.conceptKey }} · 目标掌握度 {{ formatRate(chatCourseAssignment.targetMastery) }}</span>
+              <span v-if="chatCourseAssignment.dueAt"><CalendarClock :size="13" />截止 {{ formatDate(chatCourseAssignment.dueAt) }}</span>
             </div>
-            <div v-if="nextLearnerCourseAssignmentOpenFeedback" class="chat-course-assignment-feedback">
+            <div v-if="chatCourseAssignmentOpenFeedback" class="chat-course-assignment-feedback">
               <span class="chat-course-assignment-feedback-icon"><CircleAlert :size="15" /></span>
-              <div><strong>{{ learningAssignmentFeedbackActionLabel(nextLearnerCourseAssignmentOpenFeedback.action) }}</strong><p>{{ nextLearnerCourseAssignmentOpenFeedback.message }}</p><small v-if="nextLearnerCourseAssignmentOpenFeedback.suggestedDueAt">建议截止：{{ formatDate(nextLearnerCourseAssignmentOpenFeedback.suggestedDueAt) }}</small></div>
-              <button class="secondary-button" type="button" :disabled="learningAssignmentFeedbackAcknowledgingId === nextLearnerCourseAssignmentOpenFeedback.id" @click="acknowledgeLearningAssignmentFeedback(nextLearnerCourseAssignment, nextLearnerCourseAssignmentOpenFeedback)">{{ learningAssignmentFeedbackAcknowledgingId === nextLearnerCourseAssignmentOpenFeedback.id ? '确认中…' : '确认并继续' }}</button>
+              <div><strong>{{ learningAssignmentFeedbackActionLabel(chatCourseAssignmentOpenFeedback.action) }}</strong><p>{{ chatCourseAssignmentOpenFeedback.message }}</p><small v-if="chatCourseAssignmentOpenFeedback.suggestedDueAt">建议截止：{{ formatDate(chatCourseAssignmentOpenFeedback.suggestedDueAt) }}</small></div>
+              <button class="secondary-button" type="button" :disabled="learningAssignmentFeedbackAcknowledgingId === chatCourseAssignmentOpenFeedback.id" @click="acknowledgeLearningAssignmentFeedback(chatCourseAssignment, chatCourseAssignmentOpenFeedback)">{{ learningAssignmentFeedbackAcknowledgingId === chatCourseAssignmentOpenFeedback.id ? '确认中…' : '确认并继续' }}</button>
             </div>
             <div class="chat-course-assignment-actions">
-              <button v-if="['ASSIGNED', 'RETRY_REQUIRED', 'AWAITING_EVIDENCE'].includes(nextLearnerCourseAssignment.status)" class="primary-button" type="button" :disabled="learningAssignmentAcceptingId === nextLearnerCourseAssignment.id || chatSending || chatUploading" @click="startLearningAssignment(nextLearnerCourseAssignment)">{{ learningAssignmentAcceptingId === nextLearnerCourseAssignment.id ? '启动中…' : (nextLearnerCourseAssignment.status === 'ASSIGNED' ? '开始课程作业' : (nextLearnerCourseAssignment.status === 'RETRY_REQUIRED' ? '按反馈重试' : '补充学习证据')) }}</button>
-              <button v-if="learningAssignmentSubmissionOpen(nextLearnerCourseAssignment)" class="secondary-button" type="button" @click="openChatLearningAssignmentSubmission(nextLearnerCourseAssignment)">{{ learningAssignmentSubmissionForm.assignmentId === nextLearnerCourseAssignment.id ? '正在填写提交物' : '提交作业内容' }}</button>
-              <button class="text-button" type="button" @click="focusLearnerCourseAssignment(nextLearnerCourseAssignment)">查看完整证据链</button>
+              <button v-if="['ASSIGNED', 'RETRY_REQUIRED', 'AWAITING_EVIDENCE'].includes(chatCourseAssignment.status)" class="primary-button" type="button" :disabled="learningAssignmentAcceptingId === chatCourseAssignment.id || chatSending || chatUploading" @click="startLearningAssignment(chatCourseAssignment)">{{ learningAssignmentAcceptingId === chatCourseAssignment.id ? '启动中…' : (chatCourseAssignment.status === 'ASSIGNED' ? '开始课程作业' : (chatCourseAssignment.status === 'RETRY_REQUIRED' ? '按反馈重试' : '补充学习证据')) }}</button>
+              <button v-if="learningAssignmentSubmissionOpen(chatCourseAssignment)" class="secondary-button" type="button" @click="openChatLearningAssignmentSubmission(chatCourseAssignment)">{{ learningAssignmentSubmissionForm.assignmentId === chatCourseAssignment.id ? '正在填写提交物' : '提交作业内容' }}</button>
+              <button class="text-button" type="button" @click="focusLearnerCourseAssignment(chatCourseAssignment)">查看完整证据链</button>
             </div>
-            <form v-if="learningAssignmentSubmissionForm.assignmentId === nextLearnerCourseAssignment.id" class="chat-course-assignment-submission" @submit.prevent="submitLearningAssignmentSubmission">
+            <form v-if="learningAssignmentSubmissionForm.assignmentId === chatCourseAssignment.id" class="chat-course-assignment-submission" @submit.prevent="submitLearningAssignmentSubmission">
               <div><strong>提交作业内容</strong><small>提交物会绑定本次课程作业与最近一次教育 Run，供教师结合测评证据审核。</small></div>
               <textarea ref="chatAssignmentSubmissionInputRef" v-model="learningAssignmentSubmissionForm.content" required maxlength="8000" rows="4" placeholder="填写解题过程、答案、实验结果或反思；尽量说明你的判断依据。"></textarea>
-              <div><button class="text-button" type="button" @click="closeLearningAssignmentSubmission">稍后再写</button><button class="primary-button" type="submit" :disabled="learningAssignmentSubmissionSavingId === nextLearnerCourseAssignment.id">{{ learningAssignmentSubmissionSavingId === nextLearnerCourseAssignment.id ? '提交中…' : '保存提交物并通知教师' }}</button></div>
+              <div><button class="text-button" type="button" @click="closeLearningAssignmentSubmission">稍后再写</button><button class="primary-button" type="submit" :disabled="learningAssignmentSubmissionSavingId === chatCourseAssignment.id">{{ learningAssignmentSubmissionSavingId === chatCourseAssignment.id ? '提交中…' : '保存提交物并通知教师' }}</button></div>
             </form>
             <footer class="chat-course-assignment-evidence">
-              <span><ListChecks :size="13" />{{ learningAssignmentProgressMap[nextLearnerCourseAssignment.id] ? `测评 ${learningAssignmentProgressMap[nextLearnerCourseAssignment.id].assessmentTotal} 次 · Run 证据 ${formatRate(learningAssignmentProgressMap[nextLearnerCourseAssignment.id].runEvidenceCoverageRate)}` : '完成学习对话后，这里会汇总测评与 Run 证据。' }}</span>
-              <span v-if="nextLearnerCourseAssignmentLatestSubmission"><Check :size="13" />最近提交：{{ formatDate(nextLearnerCourseAssignmentLatestSubmission.submittedAt) }}</span>
+              <span><ListChecks :size="13" />{{ learningAssignmentProgressMap[chatCourseAssignment.id] ? `测评 ${learningAssignmentProgressMap[chatCourseAssignment.id].assessmentTotal} 次 · Run 证据 ${formatRate(learningAssignmentProgressMap[chatCourseAssignment.id].runEvidenceCoverageRate)}` : '完成学习对话后，这里会汇总测评与 Run 证据。' }}</span>
+              <span v-if="chatCourseAssignmentLatestSubmission"><Check :size="13" />最近提交：{{ formatDate(chatCourseAssignmentLatestSubmission.submittedAt) }}</span>
               <span v-else><PenLine :size="13" />尚未提交作业内容</span>
             </footer>
           </section>

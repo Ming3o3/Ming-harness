@@ -10,6 +10,10 @@ import org.mingharness.conversation.api.SendConversationMessageRequest;
 import org.mingharness.education.LearnerMasteryRepository;
 import org.mingharness.education.LearnerProfile;
 import org.mingharness.education.LearnerProfileRepository;
+import org.mingharness.education.LearningAssignment;
+import org.mingharness.education.LearningAssignmentRepository;
+import org.mingharness.education.LearningGoal;
+import org.mingharness.education.LearningGoalRepository;
 import org.mingharness.education.api.EducationRunOptions;
 import org.mingharness.runtime.repository.RunRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +26,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -54,6 +59,10 @@ class ConversationServiceTests {
     private LearnerMasteryRepository learnerMasteryRepository;
     @Autowired
     private LearnerProfileRepository learnerProfileRepository;
+    @Autowired
+    private LearningGoalRepository learningGoalRepository;
+    @Autowired
+    private LearningAssignmentRepository learningAssignmentRepository;
 
     @DynamicPropertySource
     static void configureWorkspace(DynamicPropertyRegistry registry) {
@@ -68,6 +77,8 @@ class ConversationServiceTests {
         messageRepository.deleteAll();
         auditEventRepository.deleteAll();
         runRepository.deleteAll();
+        learningAssignmentRepository.deleteAll();
+        learningGoalRepository.deleteAll();
         learnerMasteryRepository.deleteAll();
         learnerProfileRepository.deleteAll();
         conversationRepository.deleteAll();
@@ -173,6 +184,55 @@ class ConversationServiceTests {
         assertEquals("函数", run.getEducationConceptKey());
         assertEquals(2, run.getEducationMinDifficulty());
         assertEquals(4, run.getEducationMaxDifficulty());
+    }
+
+    @Test
+    void shouldKeepCourseAssignmentBoundAcrossConversationMessages() {
+        LearnerProfile profile = learnerProfileRepository.save(new LearnerProfile(
+                "tenant-chat", "operator", "数学", "高中一年级", "人教A版", null, "zh-CN"));
+        LearningGoal goal = learningGoalRepository.save(new LearningGoal(
+                "tenant-chat", "operator", profile.getId(), "掌握函数定义域", "函数定义域", 0.0, 0.8));
+        LearningAssignment assignment = new LearningAssignment(
+                "tenant-chat", "teacher", "operator", "函数作业", "结合定义域规则完成练习",
+                "数学", "高中一年级", "人教A版", "函数定义域", 0.8, null);
+        assignment.accept(profile.getId(), goal.getId(), Instant.now());
+        learningAssignmentRepository.save(assignment);
+        ConversationDetail created = conversationService.create(
+                "tenant-chat", "operator", new CreateConversationRequest("函数作业学习"));
+
+        EducationRunOptions assignmentContext = new EducationRunOptions(
+                true, profile.getId(), goal.getId(), assignment.getId(), null,
+                "数学", "高中一年级", "人教A版", "函数定义域", null, null, "PRACTICE", null);
+        conversationService.send(created.conversation().id(), "tenant-chat", "operator",
+                new SendConversationMessageRequest("请给我第一题", null, 2, List.of(), assignmentContext),
+                "chat-assignment-first", "run.create,run.execute,education.read,education.write");
+
+        // 模拟旧客户端后续只提交学习者画像；服务端必须继承上一轮的作业 ID。
+        EducationRunOptions followUpContext = new EducationRunOptions(
+                true, profile.getId(), null, null, null,
+                "数学", "高中一年级", "人教A版", "函数定义域", null, null, "PRACTICE", null);
+        ConversationDetail second = conversationService.send(created.conversation().id(), "tenant-chat", "operator",
+                new SendConversationMessageRequest("我的答案是 x 大于零", null, 2, List.of(), followUpContext),
+                "chat-assignment-follow-up", "run.create,run.execute,education.read,education.write");
+
+        var followUpRun = runRepository.findById(second.messages().get(2).runId()).orElseThrow();
+        assertEquals(assignment.getId(), followUpRun.getEducationLearningAssignmentId());
+        assertEquals(goal.getId(), followUpRun.getEducationLearningGoalId());
+        assertEquals(profile.getId(), followUpRun.getEducationLearnerProfileId());
+
+        LearningAssignment anotherAssignment = new LearningAssignment(
+                "tenant-chat", "teacher", "operator", "另一份函数作业", "完成另一组定义域练习",
+                "数学", "高中一年级", "人教A版", "函数定义域", 0.8, null);
+        anotherAssignment.accept(profile.getId(), goal.getId(), Instant.now());
+        learningAssignmentRepository.save(anotherAssignment);
+        EducationRunOptions changedAssignmentContext = new EducationRunOptions(
+                true, profile.getId(), goal.getId(), anotherAssignment.getId(), null,
+                "数学", "高中一年级", "人教A版", "函数定义域", null, null, "PRACTICE", null);
+        BusinessException mismatch = assertThrows(BusinessException.class, () -> conversationService.send(
+                created.conversation().id(), "tenant-chat", "operator",
+                new SendConversationMessageRequest("切换到另一份作业", null, 2, List.of(), changedAssignmentContext),
+                "chat-assignment-switch", "run.create,run.execute,education.read,education.write"));
+        assertEquals("CONVERSATION_EDUCATION_CONTEXT_MISMATCH", mismatch.getCode());
     }
 
     @Test

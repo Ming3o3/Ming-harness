@@ -10,6 +10,7 @@ import org.mingharness.conversation.api.CreateConversationRequest;
 import org.mingharness.conversation.api.SendConversationMessageRequest;
 import org.mingharness.education.EducationRunConfiguration;
 import org.mingharness.education.EducationRunConfigurationService;
+import org.mingharness.education.api.EducationRunOptions;
 import org.mingharness.runtime.api.CreateRunRequest;
 import org.mingharness.runtime.api.RunSummary;
 import org.mingharness.runtime.application.RunService;
@@ -246,8 +247,10 @@ public class ConversationService {
         Conversation conversation = loadForMessage(conversationId, tenantId, userId);
         String content = sanitizer.sanitize(request.content().trim());
         conversation.autoTitleFromFirstMessage(content);
+        EducationRunOptions effectiveEducation = inheritConversationAssignment(
+                conversation.getId(), request.education());
         EducationRunConfiguration educationConfiguration = educationRunConfigurationService.resolve(
-                tenantId, userId, request.education());
+                tenantId, userId, effectiveEducation);
         ensureEducationConversationBoundary(conversation, educationConfiguration);
         requireEducationPermissions(educationConfiguration, permissions);
         List<String> attachmentIds = request.effectiveAttachmentIds();
@@ -272,7 +275,7 @@ public class ConversationService {
                 tenantId, userId, conversation.getTitle(), runInput,
                 null, sanitizer.sanitize(request.modelName()), "prompt-v1", "policy-v1",
                 BigDecimal.ONE, effectiveIdempotencyKey, permissions, true, request.effectiveMaxTurns(),
-                conversation.getId(), conversation.getWorkspaceId(), request.education());
+                conversation.getId(), conversation.getWorkspaceId(), effectiveEducation);
         RunSummary run = runService.create(runRequest);
 
         ConversationMessage userMessage = messageRepository.findByRunIdAndRole(run.id(), ConversationMessageRole.USER)
@@ -353,11 +356,49 @@ public class ConversationService {
                 && java.util.Objects.equals(earlier.courseId(), current.courseId())
                 && java.util.Objects.equals(earlier.subject(), current.subject())
                 && java.util.Objects.equals(earlier.gradeLevel(), current.gradeLevel())
-                && java.util.Objects.equals(earlier.curriculumVersion(), current.curriculumVersion());
+                && java.util.Objects.equals(earlier.curriculumVersion(), current.curriculumVersion())
+                && java.util.Objects.equals(earlier.learningAssignmentId(), current.learningAssignmentId());
         if (!same) {
             throw new BusinessException(HttpStatus.CONFLICT, "CONVERSATION_EDUCATION_CONTEXT_MISMATCH",
                     "当前对话已绑定另一份学习者或课程约束；请新建学习对话后再继续学习");
         }
+    }
+
+    /**
+     * 作业入口创建的第一轮 Run 已经冻结了作业上下文。后续消息即使来自旧版客户端、
+     * 没有再次提交 learningAssignmentId，也必须继承同一作业，否则形成性证据会脱离作业。
+     */
+    private EducationRunOptions inheritConversationAssignment(String conversationId,
+                                                               EducationRunOptions requested) {
+        if (requested == null || !requested.isEnabled()
+                || (requested.learningAssignmentId() != null
+                && !requested.learningAssignmentId().isBlank())) {
+            return requested;
+        }
+        Optional<Run> previous = runRepository
+                .findTopByConversationIdAndEducationModeTrueOrderByCreatedAtDesc(conversationId);
+        if (previous.isEmpty()) return requested;
+        EducationRunConfiguration earlier = previous.get().educationConfiguration();
+        if (!earlier.enabled() || earlier.learningAssignmentId() == null
+                || earlier.learningAssignmentId().isBlank()) return requested;
+        return new EducationRunOptions(
+                true,
+                prefer(requested.learnerProfileId(), earlier.learnerProfileId()),
+                prefer(requested.learningGoalId(), earlier.learningGoalId()),
+                earlier.learningAssignmentId(),
+                prefer(requested.reviewPlanId(), earlier.reviewPlanId()),
+                prefer(requested.subject(), earlier.subject()),
+                prefer(requested.gradeLevel(), earlier.gradeLevel()),
+                prefer(requested.curriculumVersion(), earlier.curriculumVersion()),
+                prefer(requested.conceptKey(), earlier.conceptKey()),
+                requested.minDifficulty() == null ? earlier.minDifficulty() : requested.minDifficulty(),
+                requested.maxDifficulty() == null ? earlier.maxDifficulty() : requested.maxDifficulty(),
+                prefer(requested.pedagogicalMode(), earlier.pedagogicalMode()),
+                prefer(requested.courseId(), earlier.courseId()));
+    }
+
+    private String prefer(String requested, String fallback) {
+        return requested == null || requested.isBlank() ? fallback : requested;
     }
 
     private boolean sameRequestedModel(Run run, String requestedModel) {
