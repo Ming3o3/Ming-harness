@@ -320,6 +320,9 @@ const chatFolderInput = ref(null)
 const showChatRun = ref(false)
 // 教学依据是需要时展开的解释层；默认把可用宽度留给课程、学习目标和对话本身。
 const showLearningTrace = ref(false)
+// 学习概览默认折叠，避免课程契约和决策板挤占连续对话；用户的选择会保存在当前浏览器中。
+const LEARNING_OVERVIEW_COLLAPSED_STORAGE_KEY = 'mingHarnessLearningOverviewCollapsed'
+const learningOverviewCollapsed = ref(readLearningOverviewCollapsed())
 const showRejectDialog = ref(false)
 const rejectReason = ref('')
 const rejectReasonInputRef = ref(null)
@@ -446,6 +449,25 @@ function applyTheme(nextTheme) {
 function toggleTheme() {
   theme.value = theme.value === 'dark' ? 'light' : 'dark'
   applyTheme(theme.value)
+}
+
+function readLearningOverviewCollapsed() {
+  if (typeof window === 'undefined') return true
+  try {
+    const stored = window.localStorage.getItem(LEARNING_OVERVIEW_COLLAPSED_STORAGE_KEY)
+    return stored == null ? true : stored === 'true'
+  } catch {
+    return true
+  }
+}
+
+function toggleLearningOverview() {
+  learningOverviewCollapsed.value = !learningOverviewCollapsed.value
+  try {
+    window.localStorage.setItem(LEARNING_OVERVIEW_COLLAPSED_STORAGE_KEY, String(learningOverviewCollapsed.value))
+  } catch {
+    // 浏览器禁用本地存储时仍允许当前页面内折叠和展开。
+  }
 }
 
 function setActiveConsoleSection(section) {
@@ -6147,7 +6169,30 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <section class="chat-learning-overview" aria-label="本轮学习概览">
+          <section class="chat-learning-overview" :class="{ 'is-collapsed': learningOverviewCollapsed && activeLearnerProfile }" aria-label="本轮学习概览">
+          <div v-if="activeLearnerProfile" class="learning-overview-collapse-bar">
+            <div class="learning-overview-collapse-copy">
+              <p class="eyebrow">CURRENT LEARNING PLAN</p>
+              <strong>{{ activeLearningGoal?.title || '本轮学习计划' }}</strong>
+              <span>{{ activeChatCourse?.title || `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` }} · {{ educationAgentReady ? '课程与学情已接入' : '还缺少课程资料' }}</span>
+            </div>
+            <div class="learning-overview-collapse-actions">
+              <span class="learning-overview-collapse-status" :class="{ ready: educationAgentReady }"><i></i>{{ educationAgentReady ? '已就绪' : '待配置' }}</span>
+              <button
+                class="learning-overview-toggle"
+                type="button"
+                aria-controls="learning-overview-content"
+                :aria-expanded="!learningOverviewCollapsed"
+                :aria-label="learningOverviewCollapsed ? '展开本轮学习概览' : '收起本轮学习概览'"
+                @click="toggleLearningOverview"
+              >
+                {{ learningOverviewCollapsed ? '展开学习计划' : '收起学习计划' }}
+                <ArrowDown v-if="learningOverviewCollapsed" :size="13" aria-hidden="true" />
+                <ArrowUp v-else :size="13" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+          <div id="learning-overview-content" v-show="!learningOverviewCollapsed || !activeLearnerProfile" class="learning-overview-content">
           <section v-if="!activeLearnerProfile" class="learning-onboarding" aria-label="建立教育 Agent 学习上下文">
             <div class="learning-onboarding-intro">
               <div class="learning-onboarding-mark" aria-hidden="true"><Sparkles :size="20" /></div>
@@ -6354,6 +6399,7 @@ onBeforeUnmount(() => {
               <span v-else><PenLine :size="13" />尚未提交作业内容</span>
             </footer>
           </section>
+          </div>
           </section>
 
           <div class="chat-messages" aria-live="polite" @scroll="updateChatFollowOutput">

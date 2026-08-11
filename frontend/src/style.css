@@ -2173,6 +2173,110 @@ button svg {
   padding: 12px 32px 0;
 }
 
+.learning-overview-collapse-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--panel-soft) 88%, transparent), var(--panel));
+  padding: 9px 11px;
+}
+
+.chat-learning-overview.is-collapsed .learning-overview-collapse-bar {
+  margin-bottom: 0;
+}
+
+.learning-overview-collapse-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.learning-overview-collapse-copy .eyebrow {
+  margin: 0;
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.learning-overview-collapse-copy strong,
+.learning-overview-collapse-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.learning-overview-collapse-copy strong {
+  color: var(--heading);
+  font-size: 11px;
+}
+
+.learning-overview-collapse-copy span {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.learning-overview-collapse-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.learning-overview-collapse-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid color-mix(in srgb, var(--orange) 34%, var(--line));
+  border-radius: 999px;
+  color: var(--orange);
+  padding: 4px 7px;
+  font: 8px "DM Mono", monospace;
+  white-space: nowrap;
+}
+
+.learning-overview-collapse-status.ready {
+  border-color: color-mix(in srgb, var(--cyan) 36%, var(--line));
+  color: var(--cyan);
+}
+
+.learning-overview-collapse-status i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.learning-overview-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--hover-bg);
+  color: var(--soft);
+  padding: 6px 8px;
+  font-size: 9px;
+  white-space: nowrap;
+  transition: border-color .16s ease, background .16s ease, color .16s ease;
+}
+
+.learning-overview-toggle:hover {
+  border-color: var(--heading);
+  background: var(--selected-bg);
+  color: var(--heading);
+}
+
+.learning-overview-toggle svg {
+  color: var(--muted);
+}
+
+.learning-overview-content {
+  min-width: 0;
+}
+
 /* Once a learner has a profile, the plan stays visible but never takes over
  * the whole workspace. Initial profile setup intentionally remains unconstrained. */
 .chat-learning-overview:not(:has(.learning-onboarding)) {
@@ -3523,6 +3627,17 @@ button svg {
   .chat-learning-overview {
     padding-right: 15px;
     padding-left: 15px;
+  }
+
+  .learning-overview-collapse-bar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .learning-overview-collapse-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .learning-agent-workbench-heading,
