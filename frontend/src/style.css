@@ -1453,6 +1453,7 @@ h3 { margin: 0; font-size: 13px; }
 .learning-cockpit-goal i b { display: block; height: 100%; border-radius: inherit; background: var(--heading); }
 .learning-cockpit-action button { justify-self: start; margin-top: 3px; }
 .learning-cockpit-evidence .learning-cockpit-icon { color: var(--cyan); }
+.learning-cockpit-assignment .learning-cockpit-icon { color: var(--orange); }
 
 .learning-goal-quick-form {
   display: grid;

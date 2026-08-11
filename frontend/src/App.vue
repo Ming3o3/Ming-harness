@@ -694,6 +694,15 @@ const visibleLearningAssignments = computed(() => {
   }
   return entries.slice(0, 8)
 })
+const learnerCourseAssignments = computed(() => learningAssignments.value
+  .filter((assignment) => assignment.learnerUserId === form.userId && assignment.status !== 'CANCELLED')
+  .sort((left, right) => {
+    const leftPriority = ['ASSIGNED', 'RETRY_REQUIRED', 'AWAITING_EVIDENCE', 'OVERDUE'].indexOf(left.status)
+    const rightPriority = ['ASSIGNED', 'RETRY_REQUIRED', 'AWAITING_EVIDENCE', 'OVERDUE'].indexOf(right.status)
+    return (leftPriority < 0 ? 10 : leftPriority) - (rightPriority < 0 ? 10 : rightPriority)
+      || new Date(left.dueAt || left.createdAt) - new Date(right.dueAt || right.createdAt)
+  }))
+const nextLearnerCourseAssignment = computed(() => learnerCourseAssignments.value[0] || null)
 
 function toggleAllAllowedTools() {
   selectedAllowedTools.value = allAllowedToolsSelected.value
@@ -3876,6 +3885,16 @@ async function startLearningAssignment(assignment) {
   }
 }
 
+function focusLearnerCourseAssignment(assignment) {
+  if (!assignment?.id) return
+  learningAssignmentCourseFilter.value = assignment.courseId || ''
+  learningAssignmentLearnerFilter.value = assignment.learnerUserId || form.userId
+  chatMode.value = false
+  navigateConsoleSection('education')
+  void nextTick(() => document.getElementById(`learning-assignment-${assignment.id}`)
+    ?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
+}
+
 async function cancelLearningAssignment(assignment) {
   if (!assignment?.id || assignment.teacherUserId !== form.userId) return
   if (!window.confirm(`确认取消课程作业“${assignment.title}”吗？`)) return
@@ -5451,6 +5470,16 @@ onBeforeUnmount(() => {
                   <strong>{{ learningEvidenceSummary }}</strong>
                   <p v-if="activeLearningGoal">每次作答、测评与反馈都会回写到“{{ activeLearningGoal.conceptKey }}”的学习状态。</p>
                   <p v-else>绑定学习目标后，Agent 会把本轮学习转化为可追踪的掌握度证据。</p>
+                </div>
+              </article>
+              <article v-if="nextLearnerCourseAssignment" class="learning-cockpit-card learning-cockpit-assignment">
+                <span class="learning-cockpit-icon"><BookOpen :size="16" /></span>
+                <div class="learning-cockpit-card-copy">
+                  <small>课程作业</small>
+                  <strong>{{ nextLearnerCourseAssignment.title }}</strong>
+                  <p>{{ learningAssignmentStatusLabel(nextLearnerCourseAssignment.status) }} · {{ nextLearnerCourseAssignment.conceptKey }}<span v-if="nextLearnerCourseAssignment.dueAt"> · 截止 {{ formatDate(nextLearnerCourseAssignment.dueAt) }}</span></p>
+                  <button v-if="['ASSIGNED', 'RETRY_REQUIRED'].includes(nextLearnerCourseAssignment.status)" type="button" :disabled="learningAssignmentAcceptingId === nextLearnerCourseAssignment.id || chatSending || chatUploading" @click="startLearningAssignment(nextLearnerCourseAssignment)">{{ learningAssignmentAcceptingId === nextLearnerCourseAssignment.id ? '启动中…' : (nextLearnerCourseAssignment.status === 'ASSIGNED' ? '接受并开始' : '重试作业') }}</button>
+                  <button v-else type="button" @click="focusLearnerCourseAssignment(nextLearnerCourseAssignment)">{{ nextLearnerCourseAssignment.status === 'COMPLETED' && nextLearnerCourseAssignment.reviewStatus === 'PENDING' ? '查看教师确认' : '打开作业与提交物' }}</button>
                 </div>
               </article>
             </div>
