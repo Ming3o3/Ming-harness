@@ -229,6 +229,32 @@ class HarnessIdentityInterceptorTests {
         interceptor.afterCompletion(cancel, new MockHttpServletResponse(), null, null);
     }
 
+    @Test
+    void educationCourseRoutesShouldRequireReadOrAssignPermission() throws Exception {
+        HarnessAuthProperties properties = new HarnessAuthProperties();
+        properties.setMode("api-key");
+        properties.setApiKeys("teacher-key|tenant-a|teacher|education.assign;student-key|tenant-a|student|education.read");
+        HarnessIdentityInterceptor interceptor = interceptor(properties);
+
+        MockHttpServletRequest list = request("GET", "/api/education/courses/course-1/progress");
+        list.addHeader("X-Api-Key", "student-key");
+        assertTrue(interceptor.preHandle(list, new MockHttpServletResponse(), null));
+        assertTrue(HarnessIdentityContext.require().hasPermission("education.read"));
+        interceptor.afterCompletion(list, new MockHttpServletResponse(), null, null);
+
+        MockHttpServletRequest assign = request("POST", "/api/education/courses/course-1/assignments");
+        assign.addHeader("X-Api-Key", "teacher-key");
+        assertTrue(interceptor.preHandle(assign, new MockHttpServletResponse(), null));
+        assertTrue(HarnessIdentityContext.require().hasPermission("education.assign"));
+        interceptor.afterCompletion(assign, new MockHttpServletResponse(), null, null);
+
+        MockHttpServletRequest denied = request("POST", "/api/education/courses");
+        denied.addHeader("X-Api-Key", "student-key");
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> interceptor.preHandle(denied, new MockHttpServletResponse(), null));
+        assertEquals("PERMISSION_DENIED", exception.getCode());
+    }
+
     private MockHttpServletRequest request(String method, String uri) {
         MockHttpServletRequest request = new MockHttpServletRequest(method, uri);
         request.setRequestURI(uri);
