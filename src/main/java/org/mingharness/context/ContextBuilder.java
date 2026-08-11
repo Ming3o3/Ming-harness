@@ -232,7 +232,12 @@ public class ContextBuilder {
 
     private String[] splitConcepts(String values) {
         if (values == null || values.isBlank()) return new String[0];
-        return values.split(",");
+        // 与 EducationRetrievalFilter 使用相同的标签语法。课程资料由教师以中文为主录入，
+        // 不能让“集合；定义域”在重排时变成一个无法匹配掌握度的伪知识点。
+        return java.util.Arrays.stream(values.split("[,，;；\\n]+"))
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .toArray(String[]::new);
     }
 
     private boolean matchesEducationFilter(String tenantId, KnowledgeDocument document,

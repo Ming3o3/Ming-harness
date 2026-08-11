@@ -198,4 +198,48 @@ class ContextBuilderTests {
         assertEquals(easy.getId(), result.evidences().get(0).documentId());
         assertEquals(hard.getId(), result.evidences().get(1).documentId());
     }
+
+    @Test
+    void shouldUseChinesePrerequisiteDelimitersWhenRerankingByMastery() {
+        KnowledgeDocumentRepository documentRepository = mock(KnowledgeDocumentRepository.class);
+        MemoryEntryRepository memoryRepository = mock(MemoryEntryRepository.class);
+        VectorContextRetriever vectorRetriever = mock(VectorContextRetriever.class);
+        EducationKnowledgeSourceRepository sourceRepository = mock(EducationKnowledgeSourceRepository.class);
+        HarnessMetrics metrics = new HarnessMetrics(new SimpleMeterRegistry());
+        ContextBuilder builder = new ContextBuilder(documentRepository, memoryRepository, vectorRetriever,
+                metrics, new ContextRetrievalProperties(20, 5, 1, 0.2), sourceRepository);
+
+        KnowledgeDocument broaderGap = new KnowledgeDocument("tenant-a", "teacher", "函数前置补强",
+                "集合与定义域", "INTERNAL", "student");
+        KnowledgeDocument narrowerGap = new KnowledgeDocument("tenant-a", "teacher", "函数基础回顾",
+                "集合复习", "INTERNAL", "student");
+        EducationKnowledgeSource broaderGapSource = new EducationKnowledgeSource("tenant-a", broaderGap.getId(),
+                "数学", "高中一年级", "人教A版", "函数", "函数前置补强",
+                "函数", "集合；定义域", 4, "TEXTBOOK");
+        EducationKnowledgeSource narrowerGapSource = new EducationKnowledgeSource("tenant-a", narrowerGap.getId(),
+                "数学", "高中一年级", "人教A版", "函数", "函数基础回顾",
+                "函数", "集合", 4, "TEXTBOOK");
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "数学", "高中一年级", "人教A版", "函数", null, null,
+                Map.of("函数", 0.80, "集合", 0.50, "定义域", 0.0));
+        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 4_000, filter))
+                .thenReturn(new ContextResult("vector-context", List.of(
+                        new ContextEvidence(narrowerGap.getId(), "函数基础回顾",
+                                "document:" + narrowerGap.getId(), "集合"),
+                        new ContextEvidence(broaderGap.getId(), "函数前置补强",
+                                "document:" + broaderGap.getId(), "集合与定义域"))));
+        when(documentRepository.findTop100ByTenantIdAndDeletedAtIsNullOrderByCreatedAtDesc("tenant-a"))
+                .thenReturn(List.of());
+        when(memoryRepository.findTop100ByTenantIdAndUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(
+                "tenant-a", "student")).thenReturn(List.of());
+        when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", broaderGap.getId()))
+                .thenReturn(Optional.of(broaderGapSource));
+        when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", narrowerGap.getId()))
+                .thenReturn(Optional.of(narrowerGapSource));
+
+        ContextResult result = builder.build("tenant-a", "student", "函数", 4_000, filter);
+
+        assertEquals(broaderGap.getId(), result.evidences().get(0).documentId());
+        assertEquals(narrowerGap.getId(), result.evidences().get(1).documentId());
+    }
 }
