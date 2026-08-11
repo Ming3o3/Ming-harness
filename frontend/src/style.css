@@ -564,8 +564,8 @@ h3 { margin: 0; font-size: 13px; }
 .education-difficulty-range { display: flex; align-items: center; gap: 6px; }
 .education-difficulty-range input { min-width: 0; width: 100%; }
 .chat-education-settings { display: grid; gap: 9px; margin-top: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
-.chat-education-toggle { display: flex; align-items: flex-start; gap: 8px; color: var(--soft); cursor: pointer; }
-.chat-education-toggle input { margin-top: 2px; accent-color: var(--cyan); }
+.chat-education-toggle { display: flex; align-items: flex-start; gap: 8px; border: 1px solid rgba(76,226,213,.24); border-radius: 8px; background: rgba(76,226,213,.055); color: var(--soft); padding: 8px; }
+.chat-education-toggle-state { display: grid !important; width: 23px; height: 23px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(76,226,213,.3); border-radius: 7px; background: rgba(76,226,213,.1); color: var(--cyan); }
 .chat-education-toggle span { display: grid; gap: 3px; }
 .chat-education-toggle strong { font-size: 10px; }
 .chat-education-toggle small, .chat-education-context { color: var(--muted); font: 8px "DM Mono", monospace; }

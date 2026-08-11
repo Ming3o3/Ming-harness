@@ -893,7 +893,7 @@ const currentChatLearningGoal = computed(() => {
 })
 const currentEducationRetrievalScope = computed(() => {
   const profile = activeLearnerProfile.value
-  if (!chatEducation.enabled || !profile) {
+  if (!profile) {
     return { configured: false, sourceCount: 0, courseSourceCount: 0, filterSummary: '' }
   }
   const course = activeChatCourse.value
@@ -932,7 +932,6 @@ const currentEducationRetrievalScope = computed(() => {
 })
 const currentEducationSourceCount = computed(() => currentEducationRetrievalScope.value.sourceCount)
 const educationSendBlockReason = computed(() => {
-  if (!chatEducation.enabled) return ''
   if (!activeLearnerProfile.value) {
     return '教育 Agent 尚未绑定学习者画像。画像提供学科、年级、课程版本和当前学习状态。'
   }
@@ -948,21 +947,19 @@ const educationSendBlockReason = computed(() => {
   }
   return ''
 })
-const educationAgentReady = computed(() => chatEducation.enabled && !educationSendBlockReason.value)
+const educationAgentReady = computed(() => !educationSendBlockReason.value)
 const educationComposerPlaceholder = computed(() => {
   if (educationSendBlockReason.value) return '先完成课程资料配置，再提交学习任务…'
   return '提交一个学习任务：题目、知识点、学习困难或目标…'
 })
 const currentEducationSourceLabel = computed(() => {
   const scope = currentEducationRetrievalScope.value
-  if (!chatEducation.enabled) return '教育 Agent 未启用'
   if (!scope.configured) return '待配置学习上下文'
   if (scope.sourceCount) return `${scope.sourceCount} 个当前可检索来源`
   return scope.conceptKey ? '当前知识点暂无匹配来源' : '当前约束下暂无匹配来源'
 })
 const currentEducationRetrievalDetail = computed(() => {
   const scope = currentEducationRetrievalScope.value
-  if (!chatEducation.enabled) return '启用教育 Agent 后，才会按课程元数据限制知识检索范围'
   if (!scope.configured) return '先配置学习者画像，Agent 才能锁定课程知识范围'
   const base = `${scope.subject} · ${scope.gradeLevel} · ${scope.curriculumVersion}`
   const available = `课程版本下 ${scope.courseSourceCount} 个来源`
@@ -1699,7 +1696,10 @@ function readChatEducation() {
     return {
       ...fallback,
       ...parsed,
-      enabled: Boolean(parsed.enabled),
+      // 旧版会把开关状态保存在本地，曾关闭过开关的浏览器会让“学习对话”悄悄
+      // 退回通用聊天。聊天工作台现在是教育 Agent 的固定入口，通用 Run 仍可在
+      // 运行控制台创建，因此这里始终恢复教育模式。
+      enabled: true,
       minDifficulty: parsed.minDifficulty == null ? null : Number(parsed.minDifficulty),
       maxDifficulty: parsed.maxDifficulty == null ? null : Number(parsed.maxDifficulty),
     }
@@ -2030,7 +2030,7 @@ async function recordRunFeedback(message, rating) {
   try {
     const feedback = await api.saveRunFeedback(message.runId, {
       rating,
-      reasonCode: chatEducation.enabled ? 'EDUCATION' : 'GENERAL',
+      reasonCode: 'EDUCATION',
       messageId: message.id,
     })
     chatFeedbackByRun.value = { ...chatFeedbackByRun.value, [message.runId]: feedback }
@@ -2926,7 +2926,7 @@ function scrollChatToBottom(force = false) {
 
 async function sendChatMessage() {
   if (!canSendChat.value) return
-  if (chatEducation.enabled && !chatEducation.learnerProfileId) {
+  if (!chatEducation.learnerProfileId) {
     errorMessage.value = '教育 Agent 需要先绑定学习者画像；请打开教育工作台创建或选择画像。'
     return
   }
@@ -2995,11 +2995,12 @@ async function sendChatMessage() {
       uploadedAttachments = await api.uploadConversationAttachments(conversationId, files)
       chatUploading.value = false
     }
-    const education = chatEducation.enabled ? {
+    const education = {
       ...chatEducation,
+      enabled: true,
       minDifficulty: chatEducation.minDifficulty == null ? null : Number(chatEducation.minDifficulty),
       maxDifficulty: chatEducation.maxDifficulty == null ? null : Number(chatEducation.maxDifficulty),
-    } : null
+    }
     const detail = await api.sendConversationMessage(conversationId, {
       content,
       maxTurns: chatMaxTurns.value,
@@ -5752,7 +5753,7 @@ onBeforeUnmount(() => {
                 <Sparkles :size="14" />
                 <span><small>当前学习上下文</small><strong>{{ activeChatCourse ? `${activeChatCourse.code} · ${activeChatCourse.title}` : (activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` : '待配置学习者画像') }}</strong></span>
               </button>
-              <div class="chat-workspace-chip chat-course-knowledge-chip" :class="!chatEducation.enabled ? 'workspace-idle' : (currentEducationSourceCount ? 'workspace-ready' : 'workspace-warning')" :title="currentEducationRetrievalDetail">
+              <div class="chat-workspace-chip chat-course-knowledge-chip" :class="currentEducationSourceCount ? 'workspace-ready' : 'workspace-warning'" :title="currentEducationRetrievalDetail">
                 <i></i>
                 <span><small>CURRENT RETRIEVAL SCOPE</small><strong>{{ currentEducationSourceLabel }}</strong></span>
               </div>
@@ -5792,7 +5793,7 @@ onBeforeUnmount(() => {
                 <span>先锁定课程资料，再读取学习状态；两者共同决定本轮教学与后续证据回写。</span>
               </div>
               <span class="education-agent-context-state" :class="{ ready: educationAgentReady }">
-                <i></i>{{ educationAgentReady ? '本轮可启动' : (chatEducation.enabled ? '等待课程资料' : '教育路径已关闭') }}
+                <i></i>{{ educationAgentReady ? '本轮可启动' : '等待课程资料' }}
               </span>
             </div>
             <div class="education-agent-context-grid">
@@ -6011,7 +6012,7 @@ onBeforeUnmount(() => {
                 <div v-if="activeLearnerProfile" class="chat-learning-context-body">
                   <div class="chat-learning-profile-mark"><Sparkles :size="15" /></div>
                   <div><strong>{{ activeLearnerProfile.subject }} · {{ activeLearnerProfile.gradeLevel }}</strong><small>{{ activeLearnerProfile.curriculumVersion }}<span v-if="activeChatCourse"> · 课程：{{ activeChatCourse.title }}</span><span v-if="activeLearningGoal"> · 目标：{{ activeLearningGoal.title }}</span></small></div>
-                  <span class="chat-learning-context-state" :class="{ ready: educationAgentReady }">{{ educationAgentReady ? '课程资料已锁定' : (chatEducation.enabled ? '等待课程资料' : '通用模式') }}</span>
+                  <span class="chat-learning-context-state" :class="{ ready: educationAgentReady }">{{ educationAgentReady ? '课程资料已锁定' : '等待课程资料' }}</span>
                 </div>
                 <div v-else class="chat-learning-context-empty">还没有学习者画像；完成配置后会自动带入学科、年级、课程版本和掌握度。</div>
               </div>
@@ -6159,11 +6160,11 @@ onBeforeUnmount(() => {
                 </div>
               </div>
               <div class="chat-education-settings">
-                <label class="chat-education-toggle">
-                  <input v-model="chatEducation.enabled" type="checkbox" :disabled="chatSending || chatUploading" />
-                  <span><strong>启用教育知识库 Agent</strong><small>按课程版本、前置知识和学习者掌握度组织回答，并在结束后形成测评证据</small></span>
-                </label>
-                <div v-if="chatEducation.enabled" class="chat-education-grid">
+                <div class="chat-education-toggle" role="status">
+                  <span class="chat-education-toggle-state"><ShieldCheck :size="13" /></span>
+                  <span><strong>教育知识库 Agent 已启用</strong><small>学习对话始终按课程版本、课程来源和学习者掌握度组织回答，并在结束后形成测评证据。</small></span>
+                </div>
+                <div class="chat-education-grid">
                   <label><span>学习者画像</span><select v-model="chatEducation.learnerProfileId" :disabled="chatSending || chatUploading" @change="selectChatLearnerProfile"><option value="">请选择画像</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>
                   <label><span>当前课程</span><select v-model="chatEducation.courseId" :disabled="chatSending || chatUploading || !chatEducation.learnerProfileId" @change="selectChatCourse"><option value="">仅使用画像课程约束</option><option v-for="course in availableChatCourses" :key="course.id" :value="course.id">{{ course.code }} · {{ course.title }}</option></select></label>
                   <label><span>学习目标</span><select v-model="chatEducation.learningGoalId" :disabled="chatSending || chatUploading" @change="selectLearningGoal(learningGoals.find((goal) => goal.id === chatEducation.learningGoalId), false)"><option value="">不绑定目标</option><option v-for="goal in learningGoals.filter((item) => item.status === 'ACTIVE')" :key="goal.id" :value="goal.id">{{ goal.title }} · {{ goal.conceptKey }}</option></select></label>
@@ -6195,7 +6196,7 @@ onBeforeUnmount(() => {
             <div class="chat-composer-footer">
               <span class="chat-composer-hint">
                 <span class="chat-composer-hint-primary"><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行<span v-if="canCancelChat"> · <kbd>Esc</kbd> 停止</span></span>
-                <span class="chat-composer-hint-context">{{ desktopWorkspaceDropping ? '正在导入知识材料…' : (educationSendBlockReason || (chatEducation.enabled ? (activeChatCourse ? `已锁定课程「${activeChatCourse.title}」、知识库范围与学习者掌握度` : '已应用画像课程约束、知识库范围与学习者掌握度') : '当前为通用问答模式，可在教学设置中启用教育 Agent')) }}</span>
+                <span class="chat-composer-hint-context">{{ desktopWorkspaceDropping ? '正在导入知识材料…' : (educationSendBlockReason || (activeChatCourse ? `已锁定课程「${activeChatCourse.title}」、知识库范围与学习者掌握度` : '已应用画像课程约束、知识库范围与学习者掌握度')) }}</span>
               </span>
               <div class="chat-composer-actions">
                 <button class="secondary-button chat-agent-settings-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="showChatAgentSettings = !showChatAgentSettings"><Settings2 :size="14" /><span>教学设置 · {{ activeLearnerProfile ? activeLearnerProfile.subject : '未配置' }}</span></button>
