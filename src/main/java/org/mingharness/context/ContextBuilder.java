@@ -125,16 +125,20 @@ public class ContextBuilder {
             }
         }
 
-        Instant now = Instant.now();
-        for (MemoryEntry memory : memoryRepository
-                .findTop100ByTenantIdAndUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(tenantId, userId)) {
-            if (!memory.isActive(now)) {
-                continue;
-            }
-            String searchable = (memory.getMemoryType() + "\n" + memory.getContent()).toLowerCase(Locale.ROOT);
-            int score = score(searchable, terms);
-            if (score > 0) {
-                candidates.add(ScoredContext.memory(memory, score));
+        // 学习者掌握度已经冻结在 EducationRunConfiguration；课程知识检索不能让任意
+        // 私人记忆绕过学科、年级、版本和知识点的硬过滤。
+        if (educationFilter == null || !educationFilter.active()) {
+            Instant now = Instant.now();
+            for (MemoryEntry memory : memoryRepository
+                    .findTop100ByTenantIdAndUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(tenantId, userId)) {
+                if (!memory.isActive(now)) {
+                    continue;
+                }
+                String searchable = (memory.getMemoryType() + "\n" + memory.getContent()).toLowerCase(Locale.ROOT);
+                int score = score(searchable, terms);
+                if (score > 0) {
+                    candidates.add(ScoredContext.memory(memory, score));
+                }
             }
         }
 
@@ -164,10 +168,13 @@ public class ContextBuilder {
      */
     private ContextResult rerankEducation(ContextResult result, String tenantId,
                                           EducationRetrievalFilter filter, int maxChars) {
-        if (result == null || result.isEmpty() || educationSourceRepository == null) return result;
+        if (result == null || result.isEmpty()) return result;
+        // 无法确认来源课程元数据时宁可不给上下文，也不能退回通用知识库结果。
+        if (educationSourceRepository == null) return new ContextResult("", List.of());
         List<RankedEducationEvidence> ranked = result.evidences().stream()
                 .map(evidence -> new RankedEducationEvidence(evidence,
                         educationScore(tenantId, evidence, filter)))
+                .filter(item -> Double.isFinite(item.score()))
                 .sorted(Comparator.comparingDouble(RankedEducationEvidence::score).reversed())
                 .toList();
         List<ContextEvidence> evidences = new ArrayList<>();
@@ -185,13 +192,13 @@ public class ContextBuilder {
     private double educationScore(String tenantId, ContextEvidence evidence,
                                   EducationRetrievalFilter filter) {
         if (evidence == null || evidence.citation() == null
-                || !evidence.citation().startsWith("document:")) return 0.0;
+                || !evidence.citation().startsWith("document:")) return Double.NEGATIVE_INFINITY;
         String documentId = evidence.documentId();
-        if (documentId == null || documentId.isBlank()) return 0.0;
+        if (documentId == null || documentId.isBlank()) return Double.NEGATIVE_INFINITY;
         EducationKnowledgeSource source = educationSourceRepository
                 .findByTenantIdAndDocumentIdAndDeletedAtIsNull(tenantId, documentId)
                 .orElse(null);
-        if (source == null) return 0.0;
+        if (source == null || !filter.matches(source)) return Double.NEGATIVE_INFINITY;
 
         double score = 0.0;
         if (filter.conceptKeyOrNull() != null

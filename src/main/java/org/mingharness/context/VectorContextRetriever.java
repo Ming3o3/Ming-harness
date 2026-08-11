@@ -55,8 +55,7 @@ public class VectorContextRetriever {
                    AND c.embedding_model = :embeddingSignature
                    AND (
                         :educationFilterEnabled = FALSE
-                        OR c.parent_type = 'MEMORY'
-                        OR EXISTS (
+                        OR (c.parent_type = 'DOCUMENT' AND EXISTS (
                             SELECT 1
                               FROM harness_education_sources es
                              WHERE es.tenant_id = c.tenant_id
@@ -73,7 +72,7 @@ public class VectorContextRetriever {
                                     OR es.difficulty_level >= :educationMinDifficulty)
                                AND (:educationMaxDifficulty IS NULL
                                     OR es.difficulty_level <= :educationMaxDifficulty)
-                        )
+                        ))
                    )
                    AND (
                         (c.parent_type = 'DOCUMENT'

@@ -10,6 +10,7 @@ import org.mingharness.education.EducationKnowledgeSourceRepository;
 import org.mingharness.education.EducationRetrievalFilter;
 import org.mingharness.observability.HarnessMetrics;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -127,6 +128,32 @@ class ContextBuilderTests {
 
         assertEquals(1, result.evidences().size());
         assertEquals(math.getId(), result.evidences().get(0).documentId());
+    }
+
+    @Test
+    void shouldNotUsePersonalMemoryAsEducationKnowledge() {
+        KnowledgeDocumentRepository documentRepository = mock(KnowledgeDocumentRepository.class);
+        MemoryEntryRepository memoryRepository = mock(MemoryEntryRepository.class);
+        VectorContextRetriever vectorRetriever = mock(VectorContextRetriever.class);
+        EducationKnowledgeSourceRepository sourceRepository = mock(EducationKnowledgeSourceRepository.class);
+        HarnessMetrics metrics = new HarnessMetrics(new SimpleMeterRegistry());
+        ContextBuilder builder = new ContextBuilder(documentRepository, memoryRepository, vectorRetriever,
+                metrics, new ContextRetrievalProperties(20, 5, 1, 0.2), sourceRepository);
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "数学", "高中一年级", "人教A版", "函数", null, null);
+        MemoryEntry memory = new MemoryEntry("tenant-a", "student", "note",
+                "函数练习的私人笔记", "run-1", Instant.now().plusSeconds(3600));
+
+        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 4_000, filter))
+                .thenReturn(new ContextResult("", List.of()));
+        when(documentRepository.findTop100ByTenantIdAndDeletedAtIsNullOrderByCreatedAtDesc("tenant-a"))
+                .thenReturn(List.of());
+        when(memoryRepository.findTop100ByTenantIdAndUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(
+                "tenant-a", "student")).thenReturn(List.of(memory));
+
+        ContextResult result = builder.build("tenant-a", "student", "函数", 4_000, filter);
+
+        assertTrue(result.isEmpty());
     }
 
     @Test
