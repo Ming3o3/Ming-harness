@@ -57,10 +57,6 @@ public class EducationCourseProgressService {
                                            int requestedLimit) {
         EducationCourse course = courseService.requireOwnerCourse(tenantId, teacherUserId, courseId);
         int limit = Math.max(1, Math.min(MAX_ASSIGNMENTS, requestedLimit <= 0 ? MAX_ASSIGNMENTS : requestedLimit));
-        List<LearningAssignment> allAssignments = assignmentRepository
-                .findByTenantIdAndCourseIdOrderByCreatedAtDesc(tenantId, course.getId());
-        boolean truncated = allAssignments.size() > limit;
-        List<LearningAssignment> assignments = allAssignments.stream().limit(limit).toList();
         List<EducationEnrollment> enrollments = enrollmentRepository
                 .findByTenantIdAndCourseIdOrderByEnrolledAtAsc(tenantId, course.getId());
         List<EducationEnrollment> activeEnrollments = enrollments.stream()
@@ -68,7 +64,15 @@ public class EducationCourseProgressService {
                 .toList();
         Set<String> activeLearnerIds = activeEnrollments.stream()
                 .map(EducationEnrollment::getLearnerUserId).collect(java.util.stream.Collectors.toSet());
-        List<LearningAssignment> effectiveAssignments = allAssignments.stream()
+        // 名单移除不会删除学习证据或作业历史；但被移除学习者不再属于当前课程
+        // 运营边界，不能继续阻塞活跃班级的干预队列、结课条件或统计口径。
+        List<LearningAssignment> activeRosterAssignments = assignmentRepository
+                .findByTenantIdAndCourseIdOrderByCreatedAtDesc(tenantId, course.getId()).stream()
+                .filter(item -> activeLearnerIds.contains(item.getLearnerUserId()))
+                .toList();
+        boolean truncated = activeRosterAssignments.size() > limit;
+        List<LearningAssignment> assignments = activeRosterAssignments.stream().limit(limit).toList();
+        List<LearningAssignment> effectiveAssignments = activeRosterAssignments.stream()
                 .filter(item -> item.getStatus() != LearningAssignmentStatus.CANCELLED)
                 .toList();
         Set<String> learnersWithAssignments = effectiveAssignments.stream()
@@ -100,7 +104,7 @@ public class EducationCourseProgressService {
         }
 
         long effectiveAssignmentTotal = effectiveAssignments.size();
-        long completionBlockers = allAssignments.stream()
+        long completionBlockers = activeRosterAssignments.stream()
                 .filter(item -> item.getStatus() != LearningAssignmentStatus.CANCELLED)
                 .filter(item -> item.getStatus() != LearningAssignmentStatus.COMPLETED
                         || item.getReviewStatus() != LearningAssignmentReviewStatus.VERIFIED)

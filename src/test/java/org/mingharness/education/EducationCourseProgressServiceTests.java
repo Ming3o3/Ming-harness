@@ -69,6 +69,51 @@ class EducationCourseProgressServiceTests {
         assertEquals(0, emptyLearner.assignmentTotal());
     }
 
+    @Test
+    void shouldExcludeRemovedLearnerAssignmentsFromActiveCourseCompletionBoundary() {
+        EducationCourseService courses = mock(EducationCourseService.class);
+        EducationEnrollmentRepository enrollments = mock(EducationEnrollmentRepository.class);
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        LearningAssignmentProgressService progress = mock(LearningAssignmentProgressService.class);
+        LearningAssignmentFeedbackRepository feedbacks = mock(LearningAssignmentFeedbackRepository.class);
+        EducationCourse course = new EducationCourse("tenant-a", "teacher-1", "math-g1", "高一数学",
+                "数学", "高中一年级", "人教A版");
+        LearningAssignment activeAssignment = new LearningAssignment("tenant-a", "teacher-1", "student-1",
+                "函数作业", "完成练习", "数学", "高中一年级", "人教A版", "函数定义域", 0.8,
+                Instant.now().plusSeconds(3600), course.getId(), "batch-1");
+        activeAssignment.accept("profile-1", "goal-1", Instant.now());
+        activeAssignment.complete(Instant.now());
+        activeAssignment.verifyByTeacher("teacher-1", "已确认", Instant.now());
+        LearningAssignment removedAssignment = new LearningAssignment("tenant-a", "teacher-1", "student-2",
+                "函数作业", "完成练习", "数学", "高中一年级", "人教A版", "函数定义域", 0.8,
+                Instant.now().plusSeconds(3600), course.getId(), "batch-1");
+        EducationEnrollment removedEnrollment = new EducationEnrollment(
+                "tenant-a", course.getId(), "student-2", Instant.now());
+        removedEnrollment.remove(Instant.now());
+        when(courses.requireOwnerCourse("tenant-a", "teacher-1", course.getId())).thenReturn(course);
+        when(enrollments.findByTenantIdAndCourseIdOrderByEnrolledAtAsc(
+                "tenant-a", course.getId())).thenReturn(List.of(
+                new EducationEnrollment("tenant-a", course.getId(), "student-1", Instant.now()),
+                removedEnrollment));
+        when(assignments.findByTenantIdAndCourseIdOrderByCreatedAtDesc(
+                "tenant-a", course.getId())).thenReturn(List.of(activeAssignment, removedAssignment));
+        when(progress.get(eq("tenant-a"), eq("teacher-1"), anyString())).thenAnswer(invocation ->
+                progress(invocation.getArgument(2)));
+        when(feedbacks.findByTenantIdAndLearningAssignmentIdOrderByCreatedAtDesc(
+                anyString(), anyString(), any())).thenReturn(List.of());
+
+        var result = new EducationCourseProgressService(courses, enrollments, assignments, progress, feedbacks)
+                .get("tenant-a", "teacher-1", course.getId(), 500);
+
+        assertEquals(1, result.activeLearnerTotal());
+        assertEquals(1, result.assignmentTotal());
+        assertEquals(1, result.completed());
+        assertEquals(0, result.completionBlockerCount());
+        assertEquals(true, result.readyToComplete());
+        assertEquals(List.of("student-1"), result.learners().stream()
+                .map(EducationCourseLearnerProgressView::learnerUserId).toList());
+    }
+
     private LearningAssignmentProgressView progress(String assignmentId) {
         return new LearningAssignmentProgressView(assignmentId, "函数作业", "teacher-1", "student-1",
                 "COMPLETED", Instant.now().plusSeconds(3600), "goal-1", 0.2, 0.7, 0.8, 0.83,

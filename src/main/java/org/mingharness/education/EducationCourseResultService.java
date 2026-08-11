@@ -71,6 +71,9 @@ public class EducationCourseResultService {
 
         List<LearningAssignment> effectiveAssignments = assignmentRepository
                 .findByTenantIdAndCourseIdOrderByCreatedAtDesc(tenantId, course.getId()).stream()
+                // 结课快照与实时进度使用同一份活跃名单边界。被移除成员的
+                // 历史作业和学习证据仍保留，但不再进入当前班级的结课结果。
+                .filter(item -> activeLearnerIds.contains(item.getLearnerUserId()))
                 .filter(item -> item.getStatus() != LearningAssignmentStatus.CANCELLED)
                 .toList();
         long assignmentCompleted = 0;

@@ -73,6 +73,57 @@ class EducationCourseResultServiceTests {
     }
 
     @Test
+    void shouldKeepRemovedLearnerHistoryOutOfActiveCourseResultSnapshot() {
+        EducationCourseResultRepository results = mock(EducationCourseResultRepository.class);
+        EducationCourseLearnerResultRepository learnerResults = mock(EducationCourseLearnerResultRepository.class);
+        EducationCourseService courses = mock(EducationCourseService.class);
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        EducationEnrollmentRepository enrollments = mock(EducationEnrollmentRepository.class);
+        LearningAssignmentSubmissionRepository submissions = mock(LearningAssignmentSubmissionRepository.class);
+        LearningAssignmentProgressService progress = mock(LearningAssignmentProgressService.class);
+        EducationCourse course = new EducationCourse("tenant-a", "teacher-1", "math-g1", "高一数学",
+                "数学", "高中一年级", "人教A版");
+        LearningAssignment activeAssignment = new LearningAssignment("tenant-a", "teacher-1", "student-1",
+                "函数作业", "完成练习", "数学", "高中一年级", "人教A版", "函数定义域", 0.8,
+                Instant.now().plusSeconds(3600), course.getId(), "batch-1");
+        activeAssignment.accept("profile-1", "goal-1", Instant.now());
+        activeAssignment.complete(Instant.now());
+        activeAssignment.verifyByTeacher("teacher-1", "已核验", Instant.now());
+        LearningAssignment removedAssignment = new LearningAssignment("tenant-a", "teacher-1", "student-2",
+                "函数作业", "完成练习", "数学", "高中一年级", "人教A版", "函数定义域", 0.8,
+                Instant.now().plusSeconds(3600), course.getId(), "batch-1");
+        course.complete("teacher-1", "结课", Instant.parse("2026-08-10T12:00:00Z"));
+        when(results.findByTenantIdAndCourseId("tenant-a", course.getId())).thenReturn(Optional.empty());
+        when(assignments.findByTenantIdAndCourseIdOrderByCreatedAtDesc(
+                "tenant-a", course.getId())).thenReturn(List.of(activeAssignment, removedAssignment));
+        when(enrollments.findByTenantIdAndCourseIdAndStatus(
+                "tenant-a", course.getId(), EducationEnrollmentStatus.ACTIVE)).thenReturn(List.of(
+                new EducationEnrollment("tenant-a", course.getId(), "student-1", Instant.now())));
+        when(submissions.existsByTenantIdAndLearningAssignmentId("tenant-a", activeAssignment.getId()))
+                .thenReturn(true);
+        when(progress.get("tenant-a", "teacher-1", activeAssignment.getId())).thenReturn(progress(activeAssignment));
+        when(results.save(any(EducationCourseResult.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(learnerResults.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(learnerResults.findByTenantIdAndCourseResultIdOrderByLearnerUserIdAsc(
+                eq("tenant-a"), anyString())).thenReturn(List.of(new EducationCourseLearnerResult(
+                "tenant-a", "result-1", course.getId(), "student-1", 1, 1, 1, 1,
+                1.0, 0.2, Instant.now())));
+        when(enrollments.countByTenantIdAndCourseIdAndStatus(
+                "tenant-a", course.getId(), EducationEnrollmentStatus.ACTIVE)).thenReturn(1L);
+
+        var result = new EducationCourseResultService(results, learnerResults, courses, assignments,
+                enrollments, submissions, progress).capture("tenant-a", "teacher-1", course);
+
+        assertEquals(1, result.activeLearnerTotal());
+        assertEquals(1, result.learnersWithAssignments());
+        assertEquals(1, result.effectiveAssignmentTotal());
+        assertEquals(1, result.assignmentCompleted());
+        assertEquals(1, result.learners().size());
+        assertEquals("student-1", result.learners().get(0).learnerUserId());
+    }
+
+    @Test
     void shouldRejectSnapshotCaptureBeforeCourseCompletion() {
         EducationCourseResultRepository results = mock(EducationCourseResultRepository.class);
         EducationCourseLearnerResultRepository learnerResults = mock(EducationCourseLearnerResultRepository.class);

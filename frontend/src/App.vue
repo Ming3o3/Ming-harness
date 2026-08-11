@@ -3602,7 +3602,7 @@ async function removeEducationLearner(enrollment) {
     await api.removeEducationLearner(course.id, enrollment.learnerUserId)
     await loadEducationCourseWorkspace(course.id)
     await loadEducationData()
-    noticeMessage.value = `已将 ${enrollment.learnerUserId} 移出课程名单。`
+    noticeMessage.value = `已将 ${enrollment.learnerUserId} 移出课程名单；历史作业与证据会保留，但不再计入当前班级进度和结课判定。`
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
