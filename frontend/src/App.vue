@@ -5,6 +5,9 @@ import {
   Bot,
   ArrowDown,
   ArrowUp,
+  BookOpen,
+  Brain,
+  CalendarClock,
   CircleAlert,
   Check,
   CircleDot,
@@ -25,6 +28,7 @@ import {
   Square,
   Sparkles,
   Sun,
+  Target,
   X,
 } from '@lucide/vue'
 import { api } from './api'
@@ -43,6 +47,8 @@ const memories = ref([])
 const educationSources = ref([])
 const learnerProfiles = ref([])
 const activeLearnerProfile = ref(null)
+const learnerMastery = ref([])
+const learnerMasteryLoading = ref(false)
 const learningGoals = ref([])
 const activeLearningGoal = ref(null)
 const learningGoalAssessments = ref([])
@@ -686,6 +692,41 @@ const stats = computed(() => ({
 }))
 
 const selectedStatus = computed(() => selectedRun.value?.run?.status || 'NONE')
+const activeLearningRecommendation = computed(() => {
+  const goalId = activeLearningGoal.value?.id
+  if (!goalId) return null
+  return learningGoalRecommendationMap.value[goalId]
+    || (learningRecommendation.value?.learningGoalId === goalId ? learningRecommendation.value : null)
+})
+const activeLearningProgress = computed(() => {
+  const progress = Number(activeLearningRecommendation.value?.progressRatio)
+  if (Number.isFinite(progress)) return Math.max(0, Math.min(1, progress))
+  const current = Number(activeLearningRecommendation.value?.currentMastery)
+  const target = Number(activeLearningRecommendation.value?.targetMastery)
+  if (Number.isFinite(current) && Number.isFinite(target) && target > 0) {
+    return Math.max(0, Math.min(1, current / target))
+  }
+  return 0
+})
+const activeLearningTask = computed(() => {
+  const goalId = activeLearningGoal.value?.id
+  if (!goalId) return null
+  const activeStatuses = new Set(['OPEN', 'IN_PROGRESS', 'AWAITING_EVIDENCE', 'DEFERRED', 'FAILED'])
+  return learningTasks.value
+    .filter((task) => task.learningGoalId === goalId && activeStatuses.has(task.status))
+    .sort((left, right) => new Date(left.scheduledAt || left.createdAt) - new Date(right.scheduledAt || right.createdAt))[0] || null
+})
+const matchingEducationSourceCount = computed(() => {
+  const profile = activeLearnerProfile.value
+  if (!profile) return 0
+  return educationSources.value.filter((source) => source.subject === profile.subject
+    && source.gradeLevel === profile.gradeLevel
+    && source.curriculumVersion === profile.curriculumVersion).length
+})
+const learnerMasteryPreview = computed(() => [...learnerMastery.value]
+  .sort((left, right) => Number(left.masteryScore) - Number(right.masteryScore)
+    || String(left.conceptKey || '').localeCompare(String(right.conceptKey || ''), 'zh-CN'))
+  .slice(0, 3))
 const manualAssessmentSteps = computed(() => (selectedRun.value?.steps || [])
   .filter((step) => step.status === 'SUCCEEDED'))
 const manualAssessmentGoal = computed(() => {
@@ -1694,6 +1735,7 @@ async function submitManualAssessment() {
       ...learningGoalRecommendationMap.value,
       [run.educationLearningGoalId]: recommendation,
     }
+    await refreshLearnerMastery(run.educationLearnerProfileId)
     manualAssessmentForm.correct = ''
     manualAssessmentForm.observedMastery = ''
     manualAssessmentForm.evidenceText = ''
@@ -2737,6 +2779,22 @@ async function loadDashboard() {
   }
 }
 
+async function refreshLearnerMastery(profileId = activeLearnerProfile.value?.id) {
+  if (!profileId) {
+    learnerMastery.value = []
+    return
+  }
+  learnerMasteryLoading.value = true
+  try {
+    learnerMastery.value = await api.listLearnerMastery(profileId)
+  } catch {
+    // 学习主界面仍应可用；画像不存在或权限不足时只隐藏掌握度明细。
+    learnerMastery.value = []
+  } finally {
+    learnerMasteryLoading.value = false
+  }
+}
+
 async function loadEducationData() {
   try {
     const [sources, profiles, goals, tasks, assignments, metrics, courses] = await Promise.all([
@@ -2810,9 +2868,13 @@ async function loadEducationData() {
       }
     }))
     learningGoalRecommendationMap.value = Object.fromEntries(recommendationEntries.filter(([, value]) => value))
-    activeLearnerProfile.value = profiles.find((profile) => profile.active) || profiles[0] || null
-    if (activeLearnerProfile.value) {
-      applyLearnerProfileToEducationRun(activeLearnerProfile.value)
+    const nextProfile = profiles.find((profile) => profile.active) || profiles[0] || null
+    activeLearnerProfile.value = nextProfile
+    if (nextProfile) {
+      applyLearnerProfileToEducationRun(nextProfile)
+      await refreshLearnerMastery(nextProfile.id)
+    } else {
+      learnerMastery.value = []
     }
     const rememberedGoalId = form.education.learningGoalId || chatEducation.learningGoalId
     const nextGoal = goals.find((goal) => goal.id === rememberedGoalId)
@@ -3478,6 +3540,21 @@ function applyLearnerProfileToChat(profile) {
   chatEducation.curriculumVersion = profile.curriculumVersion || ''
 }
 
+async function selectLearnerProfile(profile, notify = true) {
+  if (!profile) return
+  activeLearnerProfile.value = profile
+  applyLearnerProfileToEducationRun(profile)
+  applyLearnerProfileToChat(profile)
+  await refreshLearnerMastery(profile.id)
+  const nextGoal = learningGoals.value.find((goal) => goal.learnerProfileId === profile.id
+    && goal.status === 'ACTIVE')
+    || learningGoals.value.find((goal) => goal.learnerProfileId === profile.id)
+  if (nextGoal && activeLearningGoal.value?.id !== nextGoal.id) {
+    await selectLearningGoal(nextGoal, false)
+  }
+  if (notify) noticeMessage.value = `已切换学习上下文：${profile.subject} · ${profile.gradeLevel}`
+}
+
 async function selectLearningGoal(goal, notify = true) {
   if (!goal) return
   activeLearningGoal.value = goal
@@ -3489,6 +3566,7 @@ async function selectLearningGoal(goal, notify = true) {
   chatEducation.conceptKey = goal.conceptKey
   const profile = learnerProfiles.value.find((item) => item.id === goal.learnerProfileId)
   if (profile) {
+    const profileChanged = activeLearnerProfile.value?.id !== profile.id
     activeLearnerProfile.value = profile
     form.education.subject = profile.subject || ''
     form.education.gradeLevel = profile.gradeLevel || ''
@@ -3496,6 +3574,7 @@ async function selectLearningGoal(goal, notify = true) {
     applyLearnerProfileToChat(profile)
     chatEducation.learningGoalId = goal.id
     chatEducation.conceptKey = goal.conceptKey
+    if (profileChanged) await refreshLearnerMastery(profile.id)
   }
   try {
     const [assessments, recommendation] = await Promise.all([
@@ -3714,9 +3793,9 @@ async function deferLearningTask(task) {
   }
 }
 
-function selectChatLearnerProfile() {
+async function selectChatLearnerProfile() {
   const profile = learnerProfiles.value.find((item) => item.id === chatEducation.learnerProfileId)
-  if (profile) applyLearnerProfileToChat(profile)
+  if (profile) await selectLearnerProfile(profile, false)
 }
 
 async function loadContextConfiguration() {
@@ -4372,6 +4451,8 @@ async function saveLearnerProfile() {
     learnerProfiles.value = [profile, ...learnerProfiles.value.filter((item) => item.id !== profile.id)]
     activeLearnerProfile.value = profile
     applyLearnerProfileToEducationRun(profile)
+    chatEducation.enabled = true
+    await refreshLearnerMastery(profile.id)
     noticeMessage.value = '学习者画像已保存；教育 Agent 会按该画像选择课程内容和教学策略。'
     educationError.value = ''
   } catch (error) {
@@ -5028,6 +5109,56 @@ onBeforeUnmount(() => {
               <button v-if="latestConversationRun(activeConversation)" class="secondary-button" type="button" @click="toggleRunPanel">{{ showChatRun ? '隐藏运行' : '查看运行' }}</button>
             </div>
           </div>
+
+          <section v-if="activeLearnerProfile" class="learning-cockpit" aria-label="当前学习状态">
+            <div class="learning-cockpit-heading">
+              <div>
+                <p>LEARNING CONTROL CENTER</p>
+                <strong>当前学习状态</strong>
+              </div>
+              <button type="button" @click="chatMode = false; navigateConsoleSection('education')">管理课程与目标 <ArrowUp :size="13" /></button>
+            </div>
+            <div class="learning-cockpit-grid">
+              <article class="learning-cockpit-card learning-cockpit-context">
+                <span class="learning-cockpit-icon"><BookOpen :size="16" /></span>
+                <div><small>课程约束</small><strong>{{ activeLearnerProfile.subject }} · {{ activeLearnerProfile.gradeLevel }}</strong><p>{{ activeLearnerProfile.curriculumVersion }} · {{ matchingEducationSourceCount }} 个适用课程来源</p></div>
+              </article>
+              <article class="learning-cockpit-card learning-cockpit-goal" :class="{ empty: !activeLearningGoal }">
+                <span class="learning-cockpit-icon"><Target :size="16" /></span>
+                <div v-if="activeLearningGoal" class="learning-cockpit-card-copy">
+                  <small>当前学习目标</small><strong>{{ activeLearningGoal.title }}</strong><p>{{ activeLearningGoal.conceptKey }} · {{ Math.round(activeLearningProgress * 100) }}% 已推进</p>
+                  <i><b :style="{ width: `${activeLearningProgress * 100}%` }"></b></i>
+                </div>
+                <div v-else><small>当前学习目标</small><strong>还没有结构化目标</strong><p>先创建目标，Agent 才能持续追踪学习进展。</p></div>
+              </article>
+              <article class="learning-cockpit-card learning-cockpit-mastery">
+                <span class="learning-cockpit-icon"><Brain :size="16" /></span>
+                <div class="learning-cockpit-card-copy">
+                  <small>学习者状态</small>
+                  <strong v-if="activeLearningRecommendation">掌握度 {{ formatRate(activeLearningRecommendation.currentMastery) }}</strong>
+                  <strong v-else>{{ learnerMasteryLoading ? '正在读取掌握度…' : `${learnerMastery.length} 个知识点已建档` }}</strong>
+                  <p v-if="activeLearningRecommendation">目标 {{ formatRate(activeLearningRecommendation.targetMastery) }} · 已测评 {{ activeLearningRecommendation.attemptCount }} 次</p>
+                  <p v-else-if="learnerMasteryPreview.length">待加强：{{ learnerMasteryPreview.map((item) => item.conceptKey).join('、') }}</p>
+                  <p v-else>完成一次带证据的测评后，会在这里显示掌握度变化。</p>
+                </div>
+              </article>
+              <article class="learning-cockpit-card learning-cockpit-action">
+                <span class="learning-cockpit-icon"><CalendarClock :size="16" /></span>
+                <div class="learning-cockpit-card-copy">
+                  <small>下一步行动</small>
+                  <strong>{{ activeLearningTask?.title || activeLearningRecommendation?.nextActionTitle || '选择一个学习目标' }}</strong>
+                  <p>{{ activeLearningTask ? (activeLearningTask.status === 'AWAITING_EVIDENCE' ? '需要补充测评证据' : activeLearningTask.prompt) : (activeLearningRecommendation?.rationale || '通过课程目标生成下一步练习、诊断或复习。') }}</p>
+                  <button v-if="activeLearningTask" type="button" :disabled="learningTaskStartingId === activeLearningTask.id || chatSending || chatUploading" @click="startLearningTask(activeLearningTask)">{{ learningTaskStartingId === activeLearningTask.id ? '启动中…' : (activeLearningTask.status === 'FAILED' ? '重试任务' : (activeLearningTask.status === 'IN_PROGRESS' ? '继续学习' : '开始学习')) }}</button>
+                  <button v-else-if="activeLearningRecommendation" type="button" :disabled="chatSending || chatUploading" @click="useLearningRecommendation">按建议开始</button>
+                  <button v-else type="button" @click="chatMode = false; navigateConsoleSection('education')">创建学习目标</button>
+                </div>
+              </article>
+            </div>
+            <div v-if="learnerMasteryPreview.length" class="learning-cockpit-mastery-strip" aria-label="需要关注的知识点">
+              <span>优先关注</span>
+              <button v-for="item in learnerMasteryPreview" :key="item.id || item.conceptKey" type="button" @click="chatInput = `请帮我诊断并练习「${item.conceptKey}」`"><strong>{{ item.conceptKey }}</strong><em>{{ formatRate(item.masteryScore) }}</em></button>
+            </div>
+          </section>
 
           <div class="chat-messages" aria-live="polite" @scroll="updateChatFollowOutput">
             <div v-if="chatLoading && !chatMessages.length" class="chat-empty-state">正在加载会话…</div>
@@ -6044,7 +6175,7 @@ onBeforeUnmount(() => {
               <button class="secondary-button" type="submit" :disabled="educationLoading">{{ educationLoading ? '保存中…' : '保存学习者画像' }}</button>
             </form>
             <div v-if="learnerProfiles.length" class="education-profile-list">
-              <button v-for="profile in learnerProfiles" :key="profile.id" type="button" class="education-profile-chip" :class="{ active: profile.id === activeLearnerProfile?.id }" @click="activeLearnerProfile = profile; applyLearnerProfileToEducationRun(profile)">
+              <button v-for="profile in learnerProfiles" :key="profile.id" type="button" class="education-profile-chip" :class="{ active: profile.id === activeLearnerProfile?.id }" @click="selectLearnerProfile(profile)">
                 <strong>{{ profile.subject }} · {{ profile.gradeLevel }}</strong><small>{{ profile.curriculumVersion }} · {{ profile.learningGoal || '未设置学习目标' }}</small>
               </button>
             </div>

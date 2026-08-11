@@ -1268,13 +1268,97 @@ h3 { margin: 0; font-size: 13px; }
   line-height: 1.55;
 }
 
+.learning-cockpit {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 13px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .08);
+}
+
+.learning-cockpit-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.learning-cockpit-heading > div { display: grid; gap: 2px; }
+.learning-cockpit-heading p { margin: 0; color: var(--muted); font: 8px "DM Mono", monospace; letter-spacing: .12em; }
+.learning-cockpit-heading strong { color: var(--heading); font-size: 13px; }
+.learning-cockpit-heading button,
+.learning-cockpit-action button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--hover-bg);
+  color: var(--soft);
+  padding: 6px 8px;
+  font: 9px "DM Mono", monospace;
+}
+
+.learning-cockpit-heading button:hover,
+.learning-cockpit-action button:hover:not(:disabled) { border-color: var(--heading); background: var(--selected-bg); color: var(--heading); }
+
+.learning-cockpit-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.learning-cockpit-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel-soft);
+  padding: 9px;
+}
+
+.learning-cockpit-card.empty { border-style: dashed; }
+.learning-cockpit-icon { display: grid; width: 28px; height: 28px; place-items: center; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--heading); }
+.learning-cockpit-card > div { display: grid; min-width: 0; gap: 3px; }
+.learning-cockpit-card small { overflow: hidden; color: var(--muted); font: 8px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.learning-cockpit-card strong { overflow: hidden; color: var(--soft); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.learning-cockpit-card p { display: -webkit-box; overflow: hidden; margin: 0; color: var(--muted); font-size: 8px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.learning-cockpit-goal i { display: block; height: 4px; overflow: hidden; margin-top: 2px; border-radius: 4px; background: rgba(153, 174, 218, .16); }
+.learning-cockpit-goal i b { display: block; height: 100%; border-radius: inherit; background: var(--heading); }
+.learning-cockpit-action button { justify-self: start; margin-top: 3px; }
+
+.learning-cockpit-mastery-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px solid var(--line);
+  padding-top: 9px;
+}
+
+.learning-cockpit-mastery-strip > span { margin-right: 2px; color: var(--muted); font: 8px "DM Mono", monospace; }
+.learning-cockpit-mastery-strip button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--soft); padding: 4px 7px; font: 8px "DM Mono", monospace; }
+.learning-cockpit-mastery-strip button:hover { border-color: var(--heading); color: var(--heading); }
+.learning-cockpit-mastery-strip em { color: var(--muted); font-style: normal; }
+
 @media (max-width: 1080px) {
   .chat-education-status-chip { min-width: 150px; }
+  .learning-cockpit-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 720px) {
   .chat-education-status-chip { width: 100%; }
   .chat-learning-context-state { display: none; }
+  .learning-cockpit { padding: 11px; }
+  .learning-cockpit-heading { align-items: flex-start; flex-direction: column; }
+  .learning-cockpit-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
 :root[data-theme="light"] .chat-bubble { box-shadow: 0 8px 24px rgba(45,62,90,.06); }
