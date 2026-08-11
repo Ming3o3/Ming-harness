@@ -72,6 +72,9 @@ const learningAssignmentFeedbackMap = ref({})
 const learningAssignmentSubmissionMap = ref({})
 const learningAssignmentEvaluationMap = ref({})
 const educationChatRefreshes = new Map()
+// 课程作业首屏只加载少量详情；筛选或聚焦大班作业时按需补齐证据链，避免
+// 结课阻塞清单指向未加载的提交物、测评、反馈或量规评价。
+const educationAssignmentDetailRequests = new Map()
 const educationCourses = ref([])
 const activeEducationCourseId = ref('')
 const educationCourseEnrollments = ref([])
@@ -829,6 +832,17 @@ const visibleLearningAssignments = computed(() => {
   }
   return entries.slice(0, 8)
 })
+
+function learningAssignmentDetailsLoaded(assignmentId) {
+  if (!assignmentId) return false
+  return [
+    learningAssignmentProgressMap.value,
+    learningAssignmentEvidenceMap.value,
+    learningAssignmentSubmissionMap.value,
+    learningAssignmentFeedbackMap.value,
+    learningAssignmentEvaluationMap.value,
+  ].every((map) => Object.prototype.hasOwnProperty.call(map, assignmentId))
+}
 const learningAssignmentIssueLabel = computed(() => ({
   completion: '结课待处理',
   evidence: '待补证据',
@@ -1947,6 +1961,13 @@ watch(() => selectedRun.value?.run?.id, () => {
   manualAssessmentForm.feedback = ''
   manualAssessmentError.value = ''
 })
+
+watch(
+  [learningAssignmentCourseFilter, learningAssignmentLearnerFilter, learningAssignmentIssueFilter],
+  () => {
+    void nextTick(() => ensureVisibleLearningAssignmentDetails())
+  },
+)
 
 function activeConversationStorageScope() {
   return `${form.tenantId}:${form.userId}`
@@ -3602,6 +3623,35 @@ async function refreshLearnerMastery(profileId = activeLearnerProfile.value?.id)
   } finally {
     learnerMasteryLoading.value = false
   }
+}
+
+async function ensureLearningAssignmentDetails(assignmentId) {
+  if (!assignmentId || learningAssignmentDetailsLoaded(assignmentId)) return
+  const existing = educationAssignmentDetailRequests.get(assignmentId)
+  if (existing) return existing
+  const request = (async () => {
+    const assignment = learningAssignments.value.find((item) => item.id === assignmentId)
+    if (!assignment) return
+    const [progress, evidence, submissions, feedback, evaluations] = await Promise.all([
+      api.getLearningAssignmentProgress(assignmentId).catch(() => null),
+      api.getLearningAssignmentEvidence(assignmentId).catch(() => null),
+      api.listLearningAssignmentSubmissions(assignmentId).catch(() => null),
+      api.listLearningAssignmentFeedback(assignmentId).catch(() => null),
+      api.listLearningAssignmentEvaluations(assignmentId).catch(() => null),
+    ])
+    if (progress) learningAssignmentProgressMap.value = { ...learningAssignmentProgressMap.value, [assignmentId]: progress }
+    if (evidence) learningAssignmentEvidenceMap.value = { ...learningAssignmentEvidenceMap.value, [assignmentId]: evidence }
+    if (submissions) learningAssignmentSubmissionMap.value = { ...learningAssignmentSubmissionMap.value, [assignmentId]: submissions }
+    if (feedback) learningAssignmentFeedbackMap.value = { ...learningAssignmentFeedbackMap.value, [assignmentId]: feedback }
+    if (evaluations) learningAssignmentEvaluationMap.value = { ...learningAssignmentEvaluationMap.value, [assignmentId]: evaluations }
+  })()
+  educationAssignmentDetailRequests.set(assignmentId, request)
+  return request.finally(() => educationAssignmentDetailRequests.delete(assignmentId))
+}
+
+async function ensureVisibleLearningAssignmentDetails() {
+  await Promise.all(visibleLearningAssignments.value.map((assignment) =>
+    ensureLearningAssignmentDetails(assignment.id)))
 }
 
 async function loadEducationData() {
@@ -7934,6 +7984,7 @@ onBeforeUnmount(() => {
                     <small v-if="assignment.reviewStatus !== 'NOT_REQUIRED'" class="learning-assignment-progress">业务结果：{{ learningAssignmentReviewStatusLabel(assignment.reviewStatus) }}<span v-if="assignment.teacherReviewedAt"> · {{ formatDate(assignment.teacherReviewedAt) }}</span></small>
                     <p>{{ assignment.instructions }}</p>
                     <div v-if="assignment.teacherReviewNote" class="learning-assignment-review-note" :class="{ revision: assignment.reviewStatus === 'REVISION_REQUIRED' }"><CircleAlert :size="13" /><div><strong>{{ learningAssignmentReviewNoteLabel(assignment) }}</strong><span>{{ assignment.teacherReviewNote }}</span></div></div>
+                    <small v-if="!learningAssignmentDetailsLoaded(assignment.id)" class="learning-assignment-progress">正在补齐提交物、测评和反馈证据…</small>
                     <small v-if="learningAssignmentProgressMap[assignment.id]" class="learning-assignment-progress">掌握度 {{ formatRate(learningAssignmentProgressMap[assignment.id].currentMastery) }} / {{ formatRate(learningAssignmentProgressMap[assignment.id].targetMastery) }} · 提升 {{ learningAssignmentProgressMap[assignment.id].masteryGain >= 0 ? '+' : '' }}{{ formatRate(learningAssignmentProgressMap[assignment.id].masteryGain) }} · 目标进度 {{ formatRate(learningAssignmentProgressMap[assignment.id].masteryProgress) }} · 测评 {{ learningAssignmentProgressMap[assignment.id].assessmentTotal }} 次 · 任务 {{ learningAssignmentProgressMap[assignment.id].taskCompleted }} / {{ learningAssignmentProgressMap[assignment.id].taskTotal }}</small>
                     <small v-if="learningAssignmentProgressMap[assignment.id]" class="learning-assignment-progress">Run 证据覆盖 {{ formatRate(learningAssignmentProgressMap[assignment.id].runEvidenceCoverageRate) }}（{{ learningAssignmentProgressMap[assignment.id].runWithAssessmentEvidence }} / {{ learningAssignmentProgressMap[assignment.id].runTotal }}） · 教师反馈确认 {{ formatRate(learningAssignmentProgressMap[assignment.id].feedbackAcknowledgementRate) }}（{{ learningAssignmentProgressMap[assignment.id].feedbackAcknowledged }} / {{ learningAssignmentProgressMap[assignment.id].feedbackTotal }}）</small>
                     <details v-if="learningAssignmentEvidenceMap[assignment.id]?.length" class="learning-assessment-history"><summary>查看测评证据（{{ learningAssignmentEvidenceMap[assignment.id].length }}）</summary><div v-for="attempt in learningAssignmentEvidenceMap[assignment.id].slice().reverse().slice(0, 5)" :key="attempt.id"><span :class="attempt.correct ? 'assessment-correct' : 'assessment-wrong'">{{ attempt.correct ? '正确' : '错误' }}</span><span><b v-if="attempt.learnerEvidenceQuote">学习者原话：{{ attempt.learnerEvidenceQuote }} · </b>{{ attempt.evidenceText || '未填写证据文本' }}<small v-if="attempt.feedback"> · {{ attempt.feedback }}</small></span><small>{{ attempt.evidenceSource === 'MANUAL_REVIEW' ? '人工复核' : (attempt.assessmentType === 'REVIEW' ? '保持度复习' : 'Agent观察') }} · {{ formatDate(attempt.createdAt) }}</small><small v-if="assessmentRetrievalEvidenceLabel(attempt)">知识源：{{ assessmentRetrievalEvidenceLabel(attempt) }}</small></div></details>
