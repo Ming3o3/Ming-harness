@@ -2097,7 +2097,7 @@ button svg {
 
 .education-agent-context-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 7px;
 }
 
@@ -2125,8 +2125,9 @@ button svg {
 }
 
 .education-agent-context-grid > article:nth-child(2) .education-agent-context-icon { color: var(--cyan); }
-.education-agent-context-grid > article:nth-child(3) .education-agent-context-icon { color: var(--orange); }
-.education-agent-context-grid > article:nth-child(4) .education-agent-context-icon { color: var(--cyan); }
+.education-agent-context-grid > article:nth-child(3) .education-agent-context-icon { color: var(--cyan); }
+.education-agent-context-grid > article:nth-child(4) .education-agent-context-icon { color: var(--orange); }
+.education-agent-context-grid > article:nth-child(5) .education-agent-context-icon { color: var(--cyan); }
 .education-agent-context-grid > article > div { display: grid; min-width: 0; gap: 2px; }
 .education-agent-context-grid small { overflow: hidden; color: var(--muted); font: 8px "DM Mono", monospace; letter-spacing: .03em; text-overflow: ellipsis; white-space: nowrap; }
 .education-agent-context-grid strong { overflow: hidden; color: var(--heading); font-size: 10px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
@@ -2134,6 +2135,7 @@ button svg {
 
 .chat-course-knowledge-chip.workspace-ready > i { background: var(--cyan); box-shadow: 0 0 0 3px color-mix(in srgb, var(--cyan) 14%, transparent); }
 .chat-course-knowledge-chip.workspace-warning > i { background: var(--orange); }
+.chat-course-knowledge-chip.workspace-idle > i { background: var(--muted); }
 
 /* Course work lives beside the learning conversation so that a learner can
  * complete the evidence and feedback loop without detouring into operations. */
@@ -2497,6 +2499,40 @@ button svg {
   box-shadow: 0 0 0 3px var(--selected-bg), 0 10px 30px rgba(0, 0, 0, .08);
 }
 
+.chat-composer-blocked {
+  border-color: rgba(255, 182, 95, .42);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--panel) 92%, rgba(255, 182, 95, .14)), var(--panel));
+}
+
+.education-source-gate {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 10px;
+  border: 1px solid rgba(255, 182, 95, .38);
+  border-radius: 10px;
+  background: rgba(255, 182, 95, .08);
+  padding: 9px;
+}
+
+.education-source-gate-icon {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border: 1px solid rgba(255, 182, 95, .38);
+  border-radius: 8px;
+  background: rgba(255, 182, 95, .11);
+  color: var(--orange);
+}
+
+.education-source-gate > div { display: grid; min-width: 0; gap: 3px; }
+.education-source-gate strong { color: var(--heading); font-size: 10px; }
+.education-source-gate p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.education-source-gate .secondary-button { align-self: center; gap: 4px; border-color: rgba(255, 182, 95, .4); color: var(--heading); white-space: nowrap; }
+.education-source-gate .secondary-button:hover:not(:disabled) { border-color: var(--orange); background: rgba(255, 182, 95, .12); }
+
 .chat-composer textarea {
   min-height: 72px;
   padding: 5px 2px 11px;
@@ -2844,6 +2880,16 @@ button svg {
   .chat-composer {
     width: calc(100% - 28px);
     border-radius: 14px;
+  }
+
+  .education-source-gate {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .education-source-gate .secondary-button {
+    grid-column: 2;
+    justify-self: start;
   }
 
   .chat-composer-actions {

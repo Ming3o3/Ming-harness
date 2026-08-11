@@ -29,13 +29,14 @@ public class EducationRunConfigurationService {
     private final LearningReviewPlanService reviewPlanService;
     private final EducationCourseRepository courseRepository;
     private final EducationEnrollmentRepository enrollmentRepository;
+    private final EducationKnowledgeService knowledgeService;
     private final SensitiveDataSanitizer sanitizer;
 
     /** 兼容旧组件测试和扩展调用方；未启用结构化学习目标解析。 */
     public EducationRunConfigurationService(LearnerProfileRepository profileRepository,
                                             LearnerMasteryRepository masteryRepository,
                                             SensitiveDataSanitizer sanitizer) {
-        this(profileRepository, masteryRepository, null, null, null, null, null, null, sanitizer);
+        this(profileRepository, masteryRepository, null, null, null, null, null, null, null, sanitizer);
     }
 
     /** 兼容已启用学习目标但尚未使用保持度复习的测试和扩展调用方。 */
@@ -43,7 +44,7 @@ public class EducationRunConfigurationService {
                                             LearnerMasteryRepository masteryRepository,
                                             LearningGoalRepository goalRepository,
                                             SensitiveDataSanitizer sanitizer) {
-        this(profileRepository, masteryRepository, goalRepository, null, null, null, null, null, sanitizer);
+        this(profileRepository, masteryRepository, goalRepository, null, null, null, null, null, null, sanitizer);
     }
 
     /** 兼容已接入保持度复习但尚未绑定课程作业的扩展调用方。 */
@@ -53,7 +54,7 @@ public class EducationRunConfigurationService {
                                             LearningReviewPlanService reviewPlanService,
                                             SensitiveDataSanitizer sanitizer) {
         this(profileRepository, masteryRepository, goalRepository, reviewPlanService, null, null,
-                null, null, sanitizer);
+                null, null, null, sanitizer);
     }
 
     /** 兼容已绑定课程作业但尚未接入教师干预的扩展调用方。 */
@@ -64,7 +65,7 @@ public class EducationRunConfigurationService {
                                             LearningAssignmentRepository assignmentRepository,
                                             SensitiveDataSanitizer sanitizer) {
         this(profileRepository, masteryRepository, goalRepository, reviewPlanService,
-                assignmentRepository, null, null, null, sanitizer);
+                assignmentRepository, null, null, null, null, sanitizer);
     }
 
     /** 兼容课程实例作为 Run 约束前的完整组件构造方式。 */
@@ -76,7 +77,22 @@ public class EducationRunConfigurationService {
                                             LearningAssignmentFeedbackRepository feedbackRepository,
                                             SensitiveDataSanitizer sanitizer) {
         this(profileRepository, masteryRepository, goalRepository, reviewPlanService,
-                assignmentRepository, feedbackRepository, null, null, sanitizer);
+                assignmentRepository, feedbackRepository, null, null, null, sanitizer);
+    }
+
+    /** 兼容课程实例已作为 Run 约束、但尚未接入知识源前置校验的扩展调用方。 */
+    public EducationRunConfigurationService(LearnerProfileRepository profileRepository,
+                                            LearnerMasteryRepository masteryRepository,
+                                            LearningGoalRepository goalRepository,
+                                            LearningReviewPlanService reviewPlanService,
+                                            LearningAssignmentRepository assignmentRepository,
+                                            LearningAssignmentFeedbackRepository feedbackRepository,
+                                            EducationCourseRepository courseRepository,
+                                            EducationEnrollmentRepository enrollmentRepository,
+                                            SensitiveDataSanitizer sanitizer) {
+        this(profileRepository, masteryRepository, goalRepository, reviewPlanService,
+                assignmentRepository, feedbackRepository, courseRepository, enrollmentRepository,
+                null, sanitizer);
     }
 
     @Autowired
@@ -88,6 +104,7 @@ public class EducationRunConfigurationService {
                                             LearningAssignmentFeedbackRepository feedbackRepository,
                                             EducationCourseRepository courseRepository,
                                             EducationEnrollmentRepository enrollmentRepository,
+                                            EducationKnowledgeService knowledgeService,
                                             SensitiveDataSanitizer sanitizer) {
         this.profileRepository = profileRepository;
         this.masteryRepository = masteryRepository;
@@ -97,6 +114,7 @@ public class EducationRunConfigurationService {
         this.reviewPlanService = reviewPlanService;
         this.courseRepository = courseRepository;
         this.enrollmentRepository = enrollmentRepository;
+        this.knowledgeService = knowledgeService;
         this.sanitizer = sanitizer;
     }
 
@@ -208,7 +226,7 @@ public class EducationRunConfigurationService {
                     + "\n教师当前干预（"
                     + intervention.getAction().name() + "）：" + intervention.getMessage();
         }
-        return new EducationRunConfiguration(true, profile.getId(),
+        EducationRunConfiguration configuration = new EducationRunConfiguration(true, profile.getId(),
                 goal == null ? null : goal.getId(), assignment == null ? null : assignment.getId(),
                 assignment == null ? null : assignment.getTitle(),
                 assignmentInstructions,
@@ -222,6 +240,20 @@ public class EducationRunConfigurationService {
                 course == null ? null : course.getId(),
                 course == null ? null : course.getCode(),
                 course == null ? null : course.getTitle());
+        requireKnowledgeSource(tenantId, userId, configuration.retrievalFilter());
+        return configuration;
+    }
+
+    /**
+     * 教育 Run 不能在没有课程证据的情况下退化为通用聊天。
+     * 旧的轻量构造器保留给组件测试和历史扩展调用方，Spring 运行时始终会注入知识服务。
+     */
+    private void requireKnowledgeSource(String tenantId, String userId, EducationRetrievalFilter filter) {
+        if (knowledgeService == null || knowledgeService.hasVisibleMatchingSource(tenantId, userId, filter)) {
+            return;
+        }
+        throw new BusinessException(HttpStatus.CONFLICT, "EDUCATION_KNOWLEDGE_SOURCE_REQUIRED",
+                "当前课程约束下没有可检索的课程知识来源，请先绑定匹配课程版本、知识点和难度的资料");
     }
 
     private EducationCourse resolveCourse(String tenantId, String userId, String requestedCourseId,

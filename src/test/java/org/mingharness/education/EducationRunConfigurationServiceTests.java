@@ -18,6 +18,34 @@ import static org.mockito.Mockito.when;
 class EducationRunConfigurationServiceTests {
 
     @Test
+    void shouldRejectEducationRunWithoutAVisibleMatchingCourseSource() {
+        LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        EducationKnowledgeService knowledge = mock(EducationKnowledgeService.class);
+        LearnerProfile profile = new LearnerProfile("tenant-a", "student-1", "数学",
+                "高中一年级", "人教A版", null, "zh-CN");
+        when(profiles.findByIdAndTenantIdAndUserId(profile.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(profile));
+        when(mastery.findByTenantIdAndLearnerProfileIdOrderByConceptKeyAsc("tenant-a", profile.getId()))
+                .thenReturn(List.of());
+        when(knowledge.hasVisibleMatchingSource(
+                org.mockito.ArgumentMatchers.eq("tenant-a"),
+                org.mockito.ArgumentMatchers.eq("student-1"),
+                org.mockito.ArgumentMatchers.any(EducationRetrievalFilter.class)))
+                .thenReturn(false);
+
+        EducationRunConfigurationService service = new EducationRunConfigurationService(
+                profiles, mastery, null, null, null, null, null, null, knowledge,
+                new SensitiveDataSanitizer());
+
+        var exception = assertThrows(org.mingharness.common.BusinessException.class, () -> service.resolve(
+                "tenant-a", "student-1", new EducationRunOptions(true, profile.getId(), null, null, null,
+                        "函数", 2, 4, "PRACTICE")));
+
+        assertEquals("EDUCATION_KNOWLEDGE_SOURCE_REQUIRED", exception.getCode());
+    }
+
+    @Test
     void shouldFreezeProfileDefaultsAndLearnerMasteryIntoRunConfiguration() {
         LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
         LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);

@@ -67,6 +67,19 @@ public class EducationKnowledgeService {
                 .toList();
     }
 
+    /**
+     * 判断当前学习者是否真的能检索到满足本次课程约束的资料。
+     *
+     * <p>这里复用展示给学习者的可见性规则，而不是仅检查教育元数据是否存在：资料被删除、
+     * 未授权给该学习者，或不满足知识点、难度过滤时，都不能支撑一次教育 Run。</p>
+     */
+    @Transactional(readOnly = true)
+    public boolean hasVisibleMatchingSource(String tenantId, String userId,
+                                            EducationRetrievalFilter filter) {
+        if (filter == null || !filter.requiresEducationMetadata()) return false;
+        return listSources(tenantId, userId).stream().anyMatch(filter::matches);
+    }
+
     @Transactional
     public void deleteSource(String tenantId, String userId, String documentId) {
         EducationKnowledgeSource source = sourceRepository

@@ -7,6 +7,10 @@ import org.mingharness.audit.AuditEventRepository;
 import org.mingharness.conversation.api.ConversationDetail;
 import org.mingharness.conversation.api.CreateConversationRequest;
 import org.mingharness.conversation.api.SendConversationMessageRequest;
+import org.mingharness.context.KnowledgeDocument;
+import org.mingharness.context.KnowledgeDocumentRepository;
+import org.mingharness.education.EducationKnowledgeSource;
+import org.mingharness.education.EducationKnowledgeSourceRepository;
 import org.mingharness.education.LearnerMasteryRepository;
 import org.mingharness.education.LearnerProfile;
 import org.mingharness.education.LearnerProfileRepository;
@@ -63,6 +67,10 @@ class ConversationServiceTests {
     private LearningGoalRepository learningGoalRepository;
     @Autowired
     private LearningAssignmentRepository learningAssignmentRepository;
+    @Autowired
+    private EducationKnowledgeSourceRepository educationKnowledgeSourceRepository;
+    @Autowired
+    private KnowledgeDocumentRepository knowledgeDocumentRepository;
 
     @DynamicPropertySource
     static void configureWorkspace(DynamicPropertyRegistry registry) {
@@ -81,7 +89,17 @@ class ConversationServiceTests {
         learningGoalRepository.deleteAll();
         learnerMasteryRepository.deleteAll();
         learnerProfileRepository.deleteAll();
+        educationKnowledgeSourceRepository.deleteAll();
         conversationRepository.deleteAll();
+    }
+
+    private void saveCourseSource(String tenantId, String learnerUserId, String subject,
+                                  String gradeLevel, String curriculumVersion, String conceptKey) {
+        KnowledgeDocument document = knowledgeDocumentRepository.save(new KnowledgeDocument(
+                tenantId, "teacher", conceptKey + "课程资料", conceptKey + "课程正文", "INTERNAL", learnerUserId));
+        educationKnowledgeSourceRepository.save(new EducationKnowledgeSource(
+                tenantId, document.getId(), subject, gradeLevel, curriculumVersion, "第一章",
+                "掌握" + conceptKey, conceptKey, "", 3, "TEXTBOOK"));
     }
 
     @Test
@@ -164,6 +182,7 @@ class ConversationServiceTests {
     void shouldSnapshotEducationConfigurationForConversationRun() {
         LearnerProfile profile = learnerProfileRepository.save(new LearnerProfile(
                 "tenant-chat", "operator", "数学", "高中一年级", "人教A版", "掌握函数基础", "zh-CN"));
+        saveCourseSource("tenant-chat", "operator", "数学", "高中一年级", "人教A版", "函数");
         ConversationDetail created = conversationService.create(
                 "tenant-chat", "operator", new CreateConversationRequest("教育对话"));
 
@@ -197,6 +216,7 @@ class ConversationServiceTests {
     void shouldKeepCourseAssignmentBoundAcrossConversationMessages() {
         LearnerProfile profile = learnerProfileRepository.save(new LearnerProfile(
                 "tenant-chat", "operator", "数学", "高中一年级", "人教A版", null, "zh-CN"));
+        saveCourseSource("tenant-chat", "operator", "数学", "高中一年级", "人教A版", "函数定义域");
         LearningGoal goal = learningGoalRepository.save(new LearningGoal(
                 "tenant-chat", "operator", profile.getId(), "掌握函数定义域", "函数定义域", 0.0, 0.8));
         LearningAssignment assignment = new LearningAssignment(
@@ -259,11 +279,30 @@ class ConversationServiceTests {
     }
 
     @Test
+    void shouldRejectEducationConversationWithoutMatchingCourseSource() {
+        LearnerProfile profile = learnerProfileRepository.save(new LearnerProfile(
+                "tenant-chat", "operator", "数学", "高中一年级", "人教A版", null, "zh-CN"));
+        ConversationDetail created = conversationService.create(
+                "tenant-chat", "operator", new CreateConversationRequest("缺少课程资料"));
+        EducationRunOptions education = new EducationRunOptions(
+                true, profile.getId(), null, null, null, "函数", null, null, "AUTO");
+
+        BusinessException error = assertThrows(BusinessException.class, () -> conversationService.send(
+                created.conversation().id(), "tenant-chat", "operator",
+                new SendConversationMessageRequest("请讲解函数", null, 2, List.of(), education),
+                "chat-education-source", "run.create,run.execute,education.read,education.write"));
+
+        assertEquals("EDUCATION_KNOWLEDGE_SOURCE_REQUIRED", error.getCode());
+    }
+
+    @Test
     void shouldRequireNewConversationWhenLearnerEducationContextChanges() {
         LearnerProfile firstProfile = learnerProfileRepository.save(new LearnerProfile(
                 "tenant-chat", "operator", "数学", "高中一年级", "人教A版", null, "zh-CN"));
         LearnerProfile secondProfile = learnerProfileRepository.save(new LearnerProfile(
                 "tenant-chat", "operator", "物理", "高中一年级", "人教版", null, "zh-CN"));
+        saveCourseSource("tenant-chat", "operator", "数学", "高中一年级", "人教A版", "函数");
+        saveCourseSource("tenant-chat", "operator", "物理", "高中一年级", "人教版", "力学");
         ConversationDetail created = conversationService.create(
                 "tenant-chat", "operator", new CreateConversationRequest("课程上下文边界"));
         EducationRunOptions firstContext = new EducationRunOptions(

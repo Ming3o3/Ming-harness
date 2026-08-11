@@ -249,10 +249,11 @@ public class ConversationService {
         conversation.autoTitleFromFirstMessage(content);
         EducationRunOptions effectiveEducation = inheritConversationAssignment(
                 conversation.getId(), request.education());
+        // 权限校验应先于课程资料存在性校验，避免未授权调用方借由错误码探测课程知识源。
+        requireEducationPermissions(effectiveEducation != null && effectiveEducation.isEnabled(), permissions);
         EducationRunConfiguration educationConfiguration = educationRunConfigurationService.resolve(
                 tenantId, userId, effectiveEducation);
         ensureEducationConversationBoundary(conversation, educationConfiguration);
-        requireEducationPermissions(educationConfiguration, permissions);
         List<String> attachmentIds = request.effectiveAttachmentIds();
         String effectiveIdempotencyKey = normalizeIdempotencyKey(idempotencyKey);
         if (sanitizer.containsSensitiveData(effectiveIdempotencyKey)) {
@@ -325,9 +326,8 @@ public class ConversationService {
         return detail(conversation);
     }
 
-    private void requireEducationPermissions(EducationRunConfiguration educationConfiguration,
-                                             String permissions) {
-        if (educationConfiguration == null || !educationConfiguration.enabled()) return;
+    private void requireEducationPermissions(boolean educationEnabled, String permissions) {
+        if (!educationEnabled) return;
         Set<String> granted = Set.of(normalizePermissions(permissions).split(",")).stream()
                 .filter(value -> !value.isBlank())
                 .collect(java.util.stream.Collectors.toSet());
