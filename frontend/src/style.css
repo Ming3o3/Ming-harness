@@ -1412,7 +1412,7 @@ h3 { margin: 0; font-size: 13px; }
   margin: 0 0 12px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--panel);
+  background: linear-gradient(135deg, var(--panel-soft), var(--panel));
   padding: 13px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, .08);
 }
@@ -1446,7 +1446,7 @@ h3 { margin: 0; font-size: 13px; }
 
 .learning-cockpit-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -1463,6 +1463,12 @@ h3 { margin: 0; font-size: 13px; }
 }
 
 .learning-cockpit-card.empty { border-style: dashed; }
+.learning-cockpit-context,
+.learning-cockpit-goal,
+.learning-cockpit-action { grid-column: span 2; }
+.learning-cockpit-context { border-color: color-mix(in srgb, var(--cyan) 28%, var(--line)); }
+.learning-cockpit-goal { border-color: color-mix(in srgb, var(--accent-light) 28%, var(--line)); }
+.learning-cockpit-action { border-color: color-mix(in srgb, var(--orange) 28%, var(--line)); }
 .learning-cockpit-icon { display: grid; width: 28px; height: 28px; place-items: center; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--heading); }
 .learning-cockpit-card > div { display: grid; min-width: 0; gap: 3px; }
 .learning-cockpit-card small { overflow: hidden; color: var(--muted); font: 8px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
@@ -2027,6 +2033,32 @@ button svg {
 
 .chat-main {
   background: var(--bg);
+  /* Header → learning plan → conversation → composer. Keeping the plan in a
+   * dedicated row prevents its cards from competing with the message scroller. */
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+.chat-learning-overview {
+  min-width: 0;
+  padding: 12px 32px 0;
+}
+
+/* Once a learner has a profile, the plan stays visible but never takes over
+ * the whole workspace. Initial profile setup intentionally remains unconstrained. */
+.chat-learning-overview:not(:has(.learning-onboarding)) {
+  max-height: min(43vh, 315px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.chat-learning-overview .learning-cockpit {
+  margin-bottom: 12px;
+}
+
+.chat-learning-overview .chat-course-assignment-panel {
+  max-width: none;
+  margin: 0 0 12px;
 }
 
 .chat-heading {
@@ -3086,6 +3118,12 @@ select:focus-visible,
 }
 
 @media (max-width: 720px) {
+  .chat-learning-overview { padding: 10px 14px 0; }
+  .chat-learning-overview:not(:has(.learning-onboarding)) { max-height: min(48vh, 360px); }
+  .chat-learning-overview .chat-course-assignment-panel { margin-bottom: 10px; }
+  .learning-cockpit-context,
+  .learning-cockpit-goal,
+  .learning-cockpit-action { grid-column: auto; }
   .education-agent-context-strip { margin: 0 14px 4px; padding: 11px; }
   .education-agent-context-heading { flex-direction: column; gap: 8px; }
   .education-agent-context-grid { grid-template-columns: minmax(0, 1fr); }
