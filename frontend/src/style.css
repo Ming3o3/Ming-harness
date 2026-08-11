@@ -2061,6 +2061,180 @@ button svg {
   margin: 0 0 12px;
 }
 
+/* The task surface explains the Agent's decision contract before the learner
+ * starts a conversation: course evidence → goal → learner state → action →
+ * evidence writeback. This keeps the product legible as an education Agent,
+ * instead of a generic chat screen decorated with settings. */
+.learning-agent-workbench {
+  display: grid;
+  gap: 11px;
+  margin: 0 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: linear-gradient(135deg, var(--panel-soft), var(--panel));
+  padding: 13px;
+}
+
+.learning-agent-workbench-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.learning-agent-workbench-heading > div:first-child { display: grid; min-width: 0; gap: 3px; }
+.learning-agent-workbench-heading p { margin: 0; color: var(--muted); font: 8px "DM Mono", monospace; letter-spacing: .12em; }
+.learning-agent-workbench-heading strong { color: var(--heading); font-size: 13px; letter-spacing: -.02em; }
+.learning-agent-workbench-heading span { color: var(--muted); font-size: 9px; line-height: 1.5; }
+
+.learning-agent-workbench-state {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 182, 95, .35);
+  border-radius: 999px;
+  background: rgba(255, 182, 95, .08);
+  color: var(--orange);
+  padding: 5px 8px;
+  font: 8px "DM Mono", monospace;
+  white-space: nowrap;
+}
+
+.learning-agent-workbench-state i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.learning-agent-workbench-state.ready { border-color: color-mix(in srgb, var(--cyan) 42%, var(--line)); background: color-mix(in srgb, var(--cyan) 8%, var(--panel)); color: var(--cyan); }
+
+.learning-agent-decision-flow {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.learning-agent-decision-card {
+  display: grid;
+  position: relative;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+  min-width: 0;
+  min-height: 104px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 84%, transparent);
+  padding: 9px 8px;
+}
+
+.learning-agent-decision-card:not(:last-child)::after {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  right: -12px;
+  width: 16px;
+  height: 16px;
+  transform: translateY(-50%);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--muted);
+  content: "›";
+  font: 15px/13px Georgia, serif;
+  text-align: center;
+}
+
+.learning-agent-decision-card.empty { border-style: dashed; }
+.learning-agent-decision-card:nth-child(1) { border-color: color-mix(in srgb, var(--cyan) 35%, var(--line)); }
+.learning-agent-decision-card:nth-child(2) { border-color: color-mix(in srgb, #8d7cff 35%, var(--line)); }
+.learning-agent-decision-card:nth-child(3) { border-color: color-mix(in srgb, #6f8fe5 35%, var(--line)); }
+.learning-agent-decision-action { border-color: color-mix(in srgb, var(--orange) 42%, var(--line)); }
+.learning-agent-decision-evidence { border-color: color-mix(in srgb, var(--green) 38%, var(--line)); }
+
+.learning-agent-decision-step {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  color: var(--muted);
+  font: 7px "DM Mono", monospace;
+  letter-spacing: .06em;
+}
+
+.learning-agent-decision-icon {
+  display: grid;
+  width: 27px;
+  height: 27px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--heading);
+}
+
+.learning-agent-decision-card:nth-child(1) .learning-agent-decision-icon { color: var(--cyan); }
+.learning-agent-decision-card:nth-child(2) .learning-agent-decision-icon { color: #7c6af2; }
+.learning-agent-decision-card:nth-child(3) .learning-agent-decision-icon { color: #5c7ed5; }
+.learning-agent-decision-action .learning-agent-decision-icon { color: var(--orange); }
+.learning-agent-decision-evidence .learning-agent-decision-icon { color: var(--green); }
+.learning-agent-decision-card > div { display: grid; min-width: 0; gap: 3px; padding-right: 10px; }
+.learning-agent-decision-card small { overflow: hidden; color: var(--muted); font: 8px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.learning-agent-decision-card strong { display: block; overflow: hidden; color: var(--heading); font-size: 10px; font-weight: 650; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.learning-agent-decision-card p { display: -webkit-box; overflow: hidden; margin: 0; color: var(--muted); font-size: 8px; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.learning-agent-decision-card i { display: block; height: 3px; overflow: hidden; margin-top: 1px; border-radius: 4px; background: color-mix(in srgb, #8d7cff 20%, transparent); }
+.learning-agent-decision-card i b { display: block; height: 100%; border-radius: inherit; background: #7c6af2; }
+.learning-agent-decision-card button { justify-self: start; border: 0; background: transparent; color: var(--cyan); padding: 2px 0 0; font: 8px "DM Mono", monospace; }
+.learning-agent-decision-card button:hover { color: var(--heading); text-decoration: underline; text-underline-offset: 3px; }
+
+.learning-agent-next-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.learning-agent-next-action > div:first-child { display: grid; min-width: 0; gap: 3px; }
+.learning-agent-next-action small { color: var(--orange); font: 8px "DM Mono", monospace; letter-spacing: .08em; }
+.learning-agent-next-action strong { overflow: hidden; color: var(--heading); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.learning-agent-next-action p { overflow: hidden; max-width: 640px; margin: 0; color: var(--muted); font-size: 9px; line-height: 1.5; text-overflow: ellipsis; white-space: nowrap; }
+.learning-agent-next-action-buttons { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 7px; }
+.learning-agent-next-action-buttons .primary-button,
+.learning-agent-next-action-buttons .secondary-button { min-height: 32px; padding: 6px 9px; font-size: 9px; white-space: nowrap; }
+.learning-agent-next-action-buttons .text-button { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 9px; white-space: nowrap; }
+.learning-agent-next-action-buttons .text-button:hover { color: var(--heading); }
+
+.learning-agent-assignment-inline {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--orange) 30%, var(--line));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--orange) 6%, var(--panel));
+  padding: 8px 9px;
+}
+
+.learning-agent-assignment-inline > span { display: grid; width: 26px; height: 26px; place-items: center; border: 1px solid color-mix(in srgb, var(--orange) 32%, var(--line)); border-radius: 7px; color: var(--orange); }
+.learning-agent-assignment-inline > div { display: grid; min-width: 0; gap: 2px; }
+.learning-agent-assignment-inline small { color: var(--orange); font: 8px "DM Mono", monospace; }
+.learning-agent-assignment-inline strong { overflow: hidden; color: var(--heading); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.learning-agent-assignment-inline p { overflow: hidden; margin: 0; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.learning-agent-assignment-inline .secondary-button { min-height: 30px; padding: 6px 8px; font-size: 9px; }
+.learning-agent-assignment-inline .text-button { color: var(--muted); font-size: 9px; }
+.learning-agent-assignment-inline .text-button:hover { color: var(--heading); }
+
+.learning-agent-mastery-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px solid var(--line);
+  padding-top: 9px;
+}
+
+.learning-agent-mastery-strip > span { margin-right: 2px; color: var(--muted); font: 8px "DM Mono", monospace; }
+.learning-agent-mastery-strip button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--soft); padding: 4px 7px; font: 8px "DM Mono", monospace; }
+.learning-agent-mastery-strip button:hover { border-color: var(--heading); color: var(--heading); }
+.learning-agent-mastery-strip em { color: var(--muted); font-style: normal; }
+
 .chat-heading {
   min-height: 76px;
   padding: 17px 32px 15px;
@@ -2850,6 +3024,23 @@ button svg {
   .chat-composer-actions button {
     white-space: nowrap;
   }
+
+  .learning-agent-decision-flow {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .learning-agent-decision-card::after {
+    display: none;
+  }
+
+  .learning-agent-next-action {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .learning-agent-next-action-buttons {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 720px) {
@@ -2948,6 +3139,35 @@ button svg {
 
   .chat-send-label {
     display: none;
+  }
+
+  .learning-agent-workbench {
+    padding: 11px;
+  }
+
+  .learning-agent-workbench-heading {
+    flex-direction: column;
+  }
+
+  .learning-agent-decision-flow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .learning-agent-decision-card {
+    min-height: 0;
+  }
+
+  .learning-agent-next-action p {
+    white-space: normal;
+  }
+
+  .learning-agent-assignment-inline {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .learning-agent-assignment-inline > button {
+    grid-column: 2;
+    justify-self: start;
   }
 }
 
