@@ -40,7 +40,7 @@ npm install
 npm run dev
 ```
 
-开发服务器默认运行在 `http://localhost:5173`，`/api` 请求会代理到 Spring Boot 的 `8080` 端口。
+开发服务器默认运行在 `http://localhost:5173`。未指定运行时地址时，`/api` 请求会代理到 Spring Boot 的 `8080` 端口；通过 `npm run desktop:dev` 启动时，代理会自动使用该脚本为当前源码 Runtime 选择的端口，避免在 `8080` 已被旧实例占用时误连旧版本。
 
 ## 本地代码 Agent 桌面模式
 
