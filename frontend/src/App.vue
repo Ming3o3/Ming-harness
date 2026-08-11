@@ -5767,10 +5767,12 @@ function refreshEducationAfterChatRun(runId, runSnapshot = selectedRun.value?.ru
 
     learningAssignments.value = assignments
     const assignment = assignments.find((item) => item.id === assignmentId)
-    if (!assignment || ['COMPLETED', 'CANCELLED'].includes(assignment.status)) {
+    if (!assignment) {
       if (chatEducation.learningAssignmentId === assignmentId) chatEducation.learningAssignmentId = ''
       return
     }
+    // 终态作业同样需要读取最后一轮证据和提交物；否则列表虽显示“已完成”，
+    // 但用户仍看不到刚刚产生的测评、掌握度和教师反馈。
     const [progress, evidence, submissions, feedback] = await Promise.all([
       api.getLearningAssignmentProgress(assignmentId).catch(() => null),
       api.getLearningAssignmentEvidence(assignmentId).catch(() => null),
@@ -5800,6 +5802,10 @@ function refreshEducationAfterChatRun(runId, runSnapshot = selectedRun.value?.ru
         ...learningAssignmentFeedbackMap.value,
         [assignmentId]: feedback,
       }
+    }
+    if (['COMPLETED', 'CANCELLED'].includes(assignment.status)
+      && chatEducation.learningAssignmentId === assignmentId) {
+      chatEducation.learningAssignmentId = ''
     }
   })()
   educationChatRefreshes.set(runId, refresh)
