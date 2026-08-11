@@ -1375,15 +1375,16 @@ const chatMessagePresentations = computed(() => new Map(chatMessages.value.map((
     : { content: message.content || '', sources: [] },
 ])))
 const activeConversationId = computed(() => activeConversation.value?.conversation?.id || '')
-// 学习入口不再把历史的通用工作区会话伪装成“学习会话”。保留当前会话（即使它
-// 还没有提交第一条教育消息）和服务端已标记为教育模式的会话，避免学习轨迹被
-// 代码/运维类历史记录淹没。
+// 学习入口只展示教育会话和当前尚未开始的空学习会话。通用工作区历史仍保留在
+// 运行控制台中，避免页面标题是教育 Agent、首条内容却变成普通问答。
 const learningConversations = computed(() => {
   const activeId = activeConversationId.value
   const active = conversations.value.find((conversation) => conversation.id === activeId)
   const educationSessions = conversations.value.filter((conversation) => conversation.educationMode)
   const unique = new Map()
-  if (active) unique.set(active.id, active)
+  if (active && !active.educationMode && !active.messageCount && !active.lastMessagePreview) {
+    unique.set(active.id, active)
+  }
   educationSessions.forEach((conversation) => unique.set(conversation.id, conversation))
   return [...unique.values()]
 })
@@ -2643,11 +2644,30 @@ async function loadConversations(preferredId = '') {
       focusChatComposer()
       return
     }
+    const educationSessions = conversations.value.filter((conversation) => conversation.educationMode)
     const requestedId = preferredId || activeConversationId.value || readRememberedConversationId()
-    const targetId = conversations.value.some((item) => item.id === requestedId)
-      ? requestedId
-      : conversations.value[0].id
-    await selectConversation(targetId, false)
+    const requested = conversations.value.find((conversation) => conversation.id === requestedId)
+    const targetEducation = requested?.educationMode
+      ? requested
+      : educationSessions[0]
+    if (targetEducation) {
+      await selectConversation(targetEducation.id, false)
+      return
+    }
+    // 历史数据可能只有通用会话。保留它们，但给教育 Agent 建立一个清晰的空入口，
+    // 让首屏直接进入画像、课程约束和学习证据闭环。
+    const blankConversation = conversations.value.find((conversation) =>
+      !conversation.educationMode && !conversation.messageCount && !conversation.lastMessagePreview)
+    if (blankConversation) {
+      await selectConversation(blankConversation.id, false)
+      return
+    }
+    const created = await api.createConversation(newConversationPayload())
+    if (requestToken !== conversationListRequestToken) return
+    conversations.value = [created.conversation, ...conversations.value]
+    activeConversation.value = created
+    rememberConversation(created.conversation.id)
+    focusChatComposer()
   } catch (error) {
     if (requestToken === conversationListRequestToken) errorMessage.value = errorText(error)
   } finally {
