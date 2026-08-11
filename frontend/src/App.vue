@@ -54,6 +54,9 @@ const activeLearningGoal = ref(null)
 const learningGoalAssessments = ref([])
 // 对话中的证据按 Run 保存，切换学习目标后仍能看见该轮回答如何改变学习状态。
 const chatAssessmentEvidenceByRun = ref({})
+// Run 步骤里的授权检索证据按 Run 保存，聊天来源卡片不再只依赖模型是否输出
+// 规范化 citation；即使模型漏写来源，学习者仍能核对 Agent 实际使用的课程摘录。
+const chatRuntimeEvidenceByRun = ref({})
 const learningRecommendation = ref(null)
 const learningGoalRecommendationMap = ref({})
 const learningTasks = ref([])
@@ -1479,7 +1482,7 @@ const chatMessages = computed(() => activeConversation.value?.messages || [])
 const chatMessagePresentations = computed(() => new Map(chatMessages.value.map((message) => [
   message.id,
   message.role === 'ASSISTANT'
-    ? presentChatCitations(message.content)
+    ? presentChatCitations(message.content, runtimeEvidenceForRun(message.runId))
     : { content: message.content || '', sources: [] },
 ])))
 const activeConversationId = computed(() => activeConversation.value?.conversation?.id || '')
@@ -2267,14 +2270,56 @@ function chatSourceMetadata(citation, fallbackTitle = '') {
   }
 }
 
-function presentChatCitations(content) {
+function runtimeEvidenceForRun(runId) {
+  if (!runId) return []
+  if (selectedRun.value?.run?.id === runId) {
+    return selectedRun.value.steps
+      ?.flatMap((step) => step.contextEvidence || [])
+      || chatRuntimeEvidenceByRun.value[runId]
+      || []
+  }
+  return chatRuntimeEvidenceByRun.value[runId] || []
+}
+
+function cacheRunContextEvidence(detail) {
+  const runId = detail?.run?.id
+  if (!runId) return
+  const evidence = (detail.steps || []).flatMap((step) => (step.contextEvidence || [])
+    .map((item) => ({
+      ...item,
+      stepName: step.name || '',
+      stepSequence: step.sequence,
+    })))
+  chatRuntimeEvidenceByRun.value = {
+    ...chatRuntimeEvidenceByRun.value,
+    [runId]: evidence,
+  }
+}
+
+function mergeChatSourceProvenance(source, provenance, evidence = null) {
+  const current = source.provenance || ''
+  source.provenance = !current || current === provenance || current === 'BOTH' ? (current || provenance) : 'BOTH'
+  source.provenanceLabel = source.provenance === 'BOTH'
+    ? '模型引用 · Runtime 授权'
+    : provenance === 'RUNTIME' ? 'Runtime 授权证据' : '模型引用'
+  if (evidence) {
+    source.runtimeEvidence = true
+    source.excerpt = evidence.excerpt || source.excerpt || ''
+    source.citation = evidence.citation || source.citation || ''
+    source.stepName = evidence.stepName || source.stepName || ''
+  }
+  return source
+}
+
+function presentChatCitations(content, runtimeEvidence = []) {
   const sources = []
   const sourceByKey = new Map()
-  const addSource = (citation, fallbackTitle = '') => {
+  const addSource = (citation, fallbackTitle = '', provenance = 'MODEL', evidence = null) => {
     const metadata = chatSourceMetadata(citation, fallbackTitle)
     const existing = sourceByKey.get(metadata.key)
-    if (existing) return existing
-    const source = { ...metadata, index: sources.length + 1 }
+      || sources.find((item) => item.title && metadata.title && item.title === metadata.title)
+    if (existing) return mergeChatSourceProvenance(existing, provenance, evidence)
+    const source = mergeChatSourceProvenance({ ...metadata, index: sources.length + 1 }, provenance, evidence)
     sourceByKey.set(metadata.key, source)
     sources.push(source)
     return source
@@ -2296,6 +2341,10 @@ function presentChatCitations(content) {
   displayContent = displayContent.replace(chatCitationPattern, (match, citation) => {
     const source = addSource(citation)
     return `[来源 ${source.index}]`
+  })
+  ;(runtimeEvidence || []).forEach((evidence) => {
+    if (!evidence?.citation && !evidence?.title) return
+    addSource(evidence.citation, evidence.title, 'RUNTIME', evidence)
   })
   return { content: displayContent, sources }
 }
@@ -2364,6 +2413,32 @@ async function loadConversationFeedback(detail) {
   chatFeedbackByRun.value = {
     ...chatFeedbackByRun.value,
     ...Object.fromEntries(entries),
+  }
+  void loadConversationRunEvidence(detail)
+}
+
+// 打开历史教育会话时补读最近回答的 Run 详情。请求失败只影响来源卡片，不影响
+// 聊天正文；已从当前 Run 或 SSE 缓存过的证据不会重复请求。
+async function loadConversationRunEvidence(detail) {
+  const runIds = [...new Set((detail?.messages || [])
+    .filter((message) => message.role === 'ASSISTANT' && message.runId)
+    .map((message) => message.runId))]
+    .filter((runId) => !chatRuntimeEvidenceByRun.value[runId])
+    .slice(-20)
+  if (!runIds.length) return
+  const entries = await Promise.all(runIds.map(async (runId) => {
+    try {
+      const runDetail = await api.getRun(runId)
+      cacheRunContextEvidence(runDetail)
+      return [runId, runtimeEvidenceForRun(runId)]
+    } catch {
+      return [runId, null]
+    }
+  }))
+  if (activeConversationId.value !== detail?.conversation?.id) return
+  chatRuntimeEvidenceByRun.value = {
+    ...chatRuntimeEvidenceByRun.value,
+    ...Object.fromEntries(entries.filter(([, value]) => value)),
   }
 }
 
@@ -3425,6 +3500,7 @@ async function cancelChatRun() {
 function syncSelectedRunAfterAction(detail) {
   if (!detail?.run?.id) return
   selectedRun.value = detail
+  cacheRunContextEvidence(detail)
   if (isTerminal(detail.run.status)) stopRunEventStream()
   else startRunEventStream(detail.run.id)
   void api.listAuditEvents(detail.run.id).then((events) => {
@@ -5620,6 +5696,7 @@ async function selectRun(runId, announce = true, showLoading = true) {
     const [detail, events] = await Promise.all([api.getRun(runId), api.listAuditEvents(runId)])
     if (requestToken !== runDetailRequestToken) return
     selectedRun.value = detail
+    cacheRunContextEvidence(detail)
     syncActiveConversationEducationContext(detail.run)
     auditEvents.value = events
     startRunEventStream(runId)
@@ -5746,6 +5823,7 @@ function startRunEventStream(runId, reconnecting = false) {
       runEventConnectionState.value = 'connected'
       runEventReconnectAttempt = 0
       selectedRun.value = data
+      cacheRunContextEvidence(data)
       applyStreamingAssistantContent(runId, data)
       if (latestStreamingModelContent(data)) scrollChatToBottom()
       // 审计记录不放入 SSE 正文，按快照变化增量刷新，避免把额外敏感字段扩大到新接口。
@@ -6566,15 +6644,18 @@ onBeforeUnmount(() => {
                   </template>
                   <template v-else>
                     <div v-if="message.content" class="chat-markdown" v-html="renderMarkdown(chatMessagePresentations.get(message.id)?.content || message.content)" @click="handleChatMarkdownClick"></div>
-                    <section v-if="message.role === 'ASSISTANT' && chatMessagePresentations.get(message.id)?.sources?.length" class="chat-source-section" aria-label="参考来源">
-                      <div class="chat-source-heading"><span>参考来源</span><small>{{ chatMessagePresentations.get(message.id).sources.length }} 个</small></div>
+                    <section v-if="message.role === 'ASSISTANT' && chatMessagePresentations.get(message.id)?.sources?.length" class="chat-source-section" aria-label="课程证据来源">
+                      <div class="chat-source-heading"><span>课程证据来源</span><small>{{ chatMessagePresentations.get(message.id).sources.length }} 个</small></div>
                       <div class="chat-source-list">
                         <article v-for="source in chatMessagePresentations.get(message.id).sources" :key="`${message.id}-${source.key}`" class="chat-source-card">
                           <div class="chat-source-card-heading">
-                            <span class="chat-source-kind">{{ source.kindLabel }}</span>
+                            <span class="chat-source-kind" :class="{ 'is-runtime': source.runtimeEvidence }">{{ source.provenanceLabel }}</span>
                             <strong>{{ source.title }}</strong>
                           </div>
-                          <small v-if="source.updatedAt">更新于 {{ formatDate(source.updatedAt) }}</small>
+                          <code v-if="source.citation">{{ source.citation }}</code>
+                          <p v-if="source.excerpt">{{ source.excerpt }}</p>
+                          <small v-if="source.runtimeEvidence">Agent 已从该来源读取本轮摘录{{ source.stepName ? ` · ${source.stepName}` : '' }}</small>
+                          <small v-else-if="source.updatedAt">更新于 {{ formatDate(source.updatedAt) }}</small>
                         </article>
                       </div>
                     </section>

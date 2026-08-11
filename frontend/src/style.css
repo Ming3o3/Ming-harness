@@ -930,8 +930,11 @@ h3 { margin: 0; font-size: 13px; }
 .chat-source-list { display: grid; gap: 5px; }
 .chat-source-card { display: grid; gap: 4px; border: 1px solid rgba(153,174,218,.16); border-radius: 7px; background: var(--input-bg); padding: 8px 9px; }
 .chat-source-card-heading { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.chat-source-kind { flex: 0 0 auto; border-radius: 4px; background: rgba(76,226,213,.1); color: var(--cyan); padding: 3px 5px; font: 8px "DM Mono", monospace; }
+.chat-source-kind { flex: 0 0 auto; border-radius: 4px; background: rgba(153,174,218,.12); color: var(--muted); padding: 3px 5px; font: 8px "DM Mono", monospace; }
+.chat-source-kind.is-runtime { background: rgba(76,226,213,.1); color: var(--cyan); }
 .chat-source-card strong { overflow: hidden; color: var(--soft); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.chat-source-card > code { overflow: hidden; color: var(--muted); font: 8px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.chat-source-card > p { display: -webkit-box; overflow: hidden; margin: 0; color: var(--muted); font-size: 9px; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .chat-source-card > small { color: var(--muted); font: 8px "DM Mono", monospace; }
 .chat-assessment-evidence { display: grid; gap: 7px; margin-top: 9px; border: 1px solid rgba(76,226,213,.18); border-radius: 8px; background: rgba(76,226,213,.035); padding: 9px 10px; text-align: left; }
 .chat-assessment-evidence-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
