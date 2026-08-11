@@ -26,4 +26,14 @@ class EducationRetrievalFilterTests {
         assertEquals(0.35, filter.masteryFor("FUNCTIONS"));
         assertEquals(0.10, filter.masteryFor("SETS"));
     }
+
+    @Test
+    void shouldTreatCommonChineseConceptDelimitersAsEquivalent() {
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "数学", "高中一年级", "人教A版", "定义域", null, null);
+
+        assertTrue(filter.matches(new EducationKnowledgeSource(
+                "tenant-a", "doc-1", "数学", "高中一年级", "人教A版", "第一章",
+                "理解定义域", "函数，定义域；值域", "集合\n不等式", 3, "TEXTBOOK")));
+    }
 }

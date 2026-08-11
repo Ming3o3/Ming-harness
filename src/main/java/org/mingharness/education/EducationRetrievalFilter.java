@@ -87,7 +87,7 @@ public record EducationRetrievalFilter(
     private static boolean containsConcept(String expected, String values) {
         if (expected == null) return true;
         if (values == null || values.isBlank()) return false;
-        Set<String> normalized = Arrays.stream(values.split(","))
+        Set<String> normalized = Arrays.stream(values.split("[,，;；\\n]+"))
                 .map(EducationRetrievalFilter::normalizeConcept)
                 .filter(value -> value != null)
                 .collect(Collectors.toSet());

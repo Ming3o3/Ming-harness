@@ -545,6 +545,7 @@ h3 { margin: 0; font-size: 13px; }
 .learning-recommendation { display: grid; gap: 7px; border: 1px solid rgba(76,226,213,.22); border-radius: 8px; background: rgba(76,226,213,.045); padding: 11px; }
 .learning-recommendation-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .learning-recommendation-heading div { display: grid; gap: 3px; }
+.learning-recommendation-heading > div:last-child { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .learning-recommendation-heading span { color: var(--muted); font-size: 9px; }
 .learning-recommendation-heading strong { color: var(--soft); font-size: 12px; }
 .learning-recommendation p { margin: 0; color: var(--soft); font-size: 10px; line-height: 1.55; }
