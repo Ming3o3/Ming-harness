@@ -1938,6 +1938,29 @@ button svg {
   font: 8px "DM Mono", monospace;
 }
 
+.chat-teaching-brief {
+  display: grid;
+  gap: 9px;
+  margin: 0 2px 17px;
+  border: 1px solid rgba(255, 182, 95, .25);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(255, 182, 95, .08), var(--panel));
+  padding: 10px;
+}
+
+.chat-teaching-brief-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 7px; }
+.chat-teaching-brief-heading > div { display: grid; gap: 3px; }
+.chat-teaching-brief-heading .eyebrow { margin: 0; color: var(--orange); font-size: 7px; }
+.chat-teaching-brief-heading strong { color: var(--heading); font-size: 10px; }
+.chat-teaching-brief-heading > span { color: var(--muted); font: 8px "DM Mono", monospace; white-space: nowrap; }
+.chat-teaching-brief-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+.chat-teaching-brief-stats > div { display: grid; gap: 2px; border: 1px solid rgba(153, 174, 218, .12); border-radius: 6px; background: var(--input-bg); padding: 6px 7px; }
+.chat-teaching-brief-stats strong { color: var(--soft); font: 16px "DM Mono", monospace; }
+.chat-teaching-brief-stats small { color: var(--muted); font: 8px "DM Mono", monospace; }
+.chat-teaching-brief > p { margin: 0; color: var(--muted); font-size: 8px; line-height: 1.5; }
+.chat-teaching-brief > button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; border: 1px solid rgba(255, 182, 95, .28); border-radius: 6px; background: rgba(255, 182, 95, .07); color: var(--orange); padding: 6px 7px; font: 8px "DM Mono", monospace; }
+.chat-teaching-brief > button:hover { border-color: rgba(255, 182, 95, .56); background: rgba(255, 182, 95, .13); color: var(--heading); }
+
 .conversation-sidebar-heading {
   padding: 0 8px 12px;
 }

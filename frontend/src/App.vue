@@ -658,6 +658,18 @@ const selectedAllowedToolsSummary = computed(() => {
 
 const activeEducationCourse = computed(() => educationCourses.value
   .find((course) => course.id === activeEducationCourseId.value) || null)
+const teacherEducationCourses = computed(() => educationCourses.value
+  .filter((course) => course.ownerUserId === form.userId))
+const teacherActiveLearnerCount = computed(() => teacherEducationCourses.value
+  .reduce((total, course) => total + Number(course.activeEnrollmentCount || 0), 0))
+const teacherCoursePendingCount = computed(() => {
+  const metrics = educationMetrics.value || {}
+  return Number(metrics.assignmentReviewPending || 0)
+    + Number(metrics.assignmentReviewRevisionRequired || 0)
+    + Number(metrics.assignmentRetryRequired || 0)
+    + Number(metrics.taskAwaitingEvidence || 0)
+    + learningEvaluationQueue.value.length
+})
 const activeChatCourse = computed(() => educationCourses.value
   .find((course) => course.id === chatEducation.courseId) || null)
 const availableChatCourses = computed(() => {
@@ -5221,6 +5233,18 @@ onBeforeUnmount(() => {
               <Check :size="15" /><span>证据审计</span>
             </button>
           </nav>
+          <section v-if="teacherEducationCourses.length" class="chat-teaching-brief" aria-label="教师课程待办">
+            <div class="chat-teaching-brief-heading">
+              <div><p class="eyebrow">TEACHING CONTROL</p><strong>教师课程待办</strong></div>
+              <span>{{ teacherEducationCourses.length }} 门课程</span>
+            </div>
+            <div class="chat-teaching-brief-stats">
+              <div><strong>{{ teacherCoursePendingCount }}</strong><small>待处理</small></div>
+              <div><strong>{{ teacherActiveLearnerCount }}</strong><small>活跃学习者</small></div>
+            </div>
+            <p>{{ teacherCoursePendingCount ? '有证据、返工或第二评分待处理，建议先处理干预队列。' : '课程状态正常；可以继续布置下一项学习任务。' }}</p>
+            <button type="button" @click="chatMode = false; navigateConsoleSection('education')">打开课程工作台 <ArrowUp :size="13" /></button>
+          </section>
           <div class="conversation-sidebar-heading">
             <div><p class="eyebrow">RECENT LEARNING</p><h2>最近学习对话</h2></div>
           </div>
