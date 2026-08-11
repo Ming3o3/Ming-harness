@@ -696,6 +696,27 @@ const activeEducationCourseLearnerResult = computed(() => {
   return educationCourseResult.value?.learners
     ?.find((learner) => learner.learnerUserId === form.userId) || null
 })
+const activeEducationCourseLearnerProgress = computed(() => {
+  const course = activeEducationCourse.value
+  if (!course || course.ownerUserId === form.userId) return null
+  const assignments = learningAssignments.value
+    .filter((assignment) => assignment.courseId === course.id
+      && assignment.learnerUserId === form.userId
+      && assignment.status !== 'CANCELLED')
+  if (!assignments.length) return { total: 0, completed: 0, attention: 0, averageMasteryProgress: null }
+  const progressValues = assignments
+    .map((assignment) => Number(learningAssignmentProgressMap.value[assignment.id]?.masteryProgress))
+    .filter((value) => Number.isFinite(value))
+  return {
+    total: assignments.length,
+    completed: assignments.filter((assignment) => assignment.status === 'COMPLETED').length,
+    attention: assignments.filter((assignment) => ['AWAITING_EVIDENCE', 'RETRY_REQUIRED', 'OVERDUE'].includes(assignment.status)
+      || ['PENDING', 'REVISION_REQUIRED'].includes(assignment.reviewStatus)).length,
+    averageMasteryProgress: progressValues.length
+      ? progressValues.reduce((sum, value) => sum + value, 0) / progressValues.length
+      : null,
+  }
+})
 const visibleLearningAssignments = computed(() => {
   let entries = learningAssignments.value
   if (learningAssignmentCourseFilter.value) {
@@ -7484,6 +7505,11 @@ onBeforeUnmount(() => {
                 </div>
                 <div v-else class="education-course-learner-state">
                   <div><strong>{{ activeEducationCourse.status === 'ACTIVE' ? '课程进行中' : '结课结果尚未读取' }}</strong><small>{{ activeEducationCourse.status === 'ACTIVE' ? 'Agent 正在依据你的作业、提交物与对话证据更新学习状态；结课后这里会出现个人结果。' : '请刷新课程工作台；若仍不可用，请联系课程负责人确认结课快照。' }}</small></div>
+                  <div v-if="activeEducationCourse.status === 'ACTIVE' && activeEducationCourseLearnerProgress" class="education-course-learner-live">
+                    <div><small>课程作业</small><strong>{{ activeEducationCourseLearnerProgress.completed }} / {{ activeEducationCourseLearnerProgress.total }} 已完成</strong></div>
+                    <div><small>待处理</small><strong>{{ activeEducationCourseLearnerProgress.attention }} 项</strong></div>
+                    <div><small>目标进度</small><strong>{{ activeEducationCourseLearnerProgress.averageMasteryProgress === null ? '待测评' : formatRate(activeEducationCourseLearnerProgress.averageMasteryProgress) }}</strong></div>
+                  </div>
                   <button v-if="activeEducationCourse.status === 'ACTIVE'" class="secondary-button" type="button" @click="focusMyCourseAssignments">查看我的作业</button>
                   <button v-else class="text-button" type="button" :disabled="educationCourseLoading" @click="loadEducationCourseWorkspace(activeEducationCourse.id)">{{ educationCourseLoading ? '刷新中…' : '刷新结果' }}</button>
                 </div>
