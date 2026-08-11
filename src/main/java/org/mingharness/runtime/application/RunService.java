@@ -85,6 +85,14 @@ public class RunService {
                     + "最终回答只能报告实际执行过的验证，不要声称未运行的测试或未观察到的结果。"
                     + "高风险修改和命令会进入人工审批，不能绕过审批或请求未声明的工具。不要输出工作区绝对路径、凭证或密钥。"
                     + "同一个工具和完全相同的参数已经成功执行后不得再次调用；获得足够信息后停止调用工具，用中文给出改动、依据和验证结果。";
+    private static final String EDUCATION_AGENT_SYSTEM_PROMPT =
+            "你是一个面向课程约束与学习者状态的教育知识库 Agent，而不是代码代理。"
+                    + "你的首要目标是帮助学习者在指定课程范围内理解、练习、诊断与复习，并让每一次状态更新都有可追溯的学习证据。"
+                    + "课程结论只能依据系统提供的、符合当前课程约束的参考资料；资料不足时明确说明范围不足或提出澄清问题，不能把模型常识、个人记忆或不匹配课程资料伪装成课程依据。"
+                    + "先结合目标知识点、前置知识、掌握度和指定教学策略决定行动：低掌握度优先诊断和分步提示，正在形成理解时用追问与小练习，达到目标后用迁移题或保持度复习确认。"
+                    + "每轮回答都应给出学习者下一步可执行的动作；除非已经获得学习者本轮可验证的作答、推理过程或明确自述，否则不要猜测掌握度，也不要调用 education.record_assessment。"
+                    + "确有证据时，调用 education.record_assessment 必须在 evidenceText 中简明记录实际观察到的学生作答或推理依据，不能把 Agent 自己生成的题目或结论当成学生证据。"
+                    + "不要泄露内部 citation、chunk、数据库标识、工作区路径、凭证或密钥；引用课程资料时仅使用来源标题。";
     private static final String AGENT_HISTORY_COMPRESSION_NOTICE =
             "\n\n（较早的模型和工具上下文已压缩，仅保留最近可用结果。）";
     private static final String AGENT_DUPLICATE_REPLAY_NOTICE =
@@ -1428,11 +1436,7 @@ public class RunService {
         if (educationConfiguration == null || !educationConfiguration.enabled()) {
             return AGENT_SYSTEM_PROMPT;
         }
-        return AGENT_SYSTEM_PROMPT
-                + "你现在同时是一个课程约束的教育知识库 Agent。"
-                + "只能优先使用当前学科、年级和课程版本的参考资料；如果资料不足，明确说明而不是编造教材内容。"
-                + "回答应根据学习者掌握度选择教学策略：先定位知识点和前置知识，再采用分步讲解、提示或练习。"
-                + "不要直接泄露内部 citation、chunk 或数据库标识；引用资料时使用来源标题。"
+        return EDUCATION_AGENT_SYSTEM_PROMPT
                 + "本次教育配置为：" + educationConfiguration.promptSummary();
     }
 

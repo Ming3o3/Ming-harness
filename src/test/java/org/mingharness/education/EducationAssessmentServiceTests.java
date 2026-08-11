@@ -13,6 +13,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -51,12 +52,34 @@ class EducationAssessmentServiceTests {
         EducationAssessmentService service = new EducationAssessmentService(attempts, runs, goals, mastery,
                 learnerService, new SensitiveDataSanitizer());
         AssessmentAttempt result = service.record("tenant-a", "student-1", run.getId(), "step-1",
-                "profile-1", "函数", true, 1.0, "答题正确");
+                "profile-1", "函数", true, 1.0, "MODEL_TOOL",
+                "学生正确说明了函数自变量的取值范围", "答题正确");
 
         assertSame(saved, result);
         assertEquals(0.2, result.getMasteryBefore());
         assertEquals(0.65, result.getMasteryAfter());
         assertEquals(LearningGoalStatus.COMPLETED, goal.getStatus());
+    }
+
+    @Test
+    void shouldRejectModelAssessmentWithoutLearnerEvidence() {
+        AssessmentAttemptRepository attempts = mock(AssessmentAttemptRepository.class);
+        RunRepository runs = mock(RunRepository.class);
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        EducationLearnerService learnerService = mock(EducationLearnerService.class);
+        Run run = new Run("tenant-a", "student-1", "函数学习", "请帮助我掌握函数",
+                BigDecimal.ONE, "demo-model", "prompt-v1", "policy-v1");
+        when(runs.findById(run.getId())).thenReturn(Optional.of(run));
+
+        EducationAssessmentService service = new EducationAssessmentService(attempts, runs, goals, mastery,
+                learnerService, new SensitiveDataSanitizer());
+
+        var error = assertThrows(org.mingharness.common.BusinessException.class, () -> service.record(
+                "tenant-a", "student-1", run.getId(), "step-1", "profile-1", "函数", true,
+                1.0, "MODEL_TOOL", null, "模型推断正确"));
+
+        assertEquals("ASSESSMENT_EVIDENCE_REQUIRED", error.getCode());
     }
 
     @Test

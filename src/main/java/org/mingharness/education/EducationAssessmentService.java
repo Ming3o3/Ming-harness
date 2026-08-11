@@ -141,11 +141,12 @@ public class EducationAssessmentService {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "ASSESSMENT_EVIDENCE_SOURCE_INVALID",
                     "测评证据来源只支持 MODEL_TOOL 或 MANUAL_REVIEW");
         }
+        String normalizedEvidenceText = cleanEvidence(evidenceText);
+        if (normalizedEvidenceText == null) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "ASSESSMENT_EVIDENCE_REQUIRED",
+                    "更新学习者掌握度必须提供学生作答、推理过程或评分依据");
+        }
         if ("MANUAL_REVIEW".equals(normalizedEvidenceSource)) {
-            if (cleanEvidence(evidenceText) == null) {
-                throw new BusinessException(HttpStatus.BAD_REQUEST, "ASSESSMENT_EVIDENCE_REQUIRED",
-                        "人工复核必须提供作答或评分依据");
-            }
             if (run.getStatus() != RunStatus.SUCCEEDED) {
                 throw new BusinessException(HttpStatus.CONFLICT, "ASSESSMENT_RUN_NOT_FINISHED",
                         "人工复核只能提交已完成的教育 Run");
@@ -214,7 +215,7 @@ public class EducationAssessmentService {
         AssessmentAttempt attempt = new AssessmentAttempt(tenantId, userId, runId, stepId,
                 goal.getId(), profileId, normalizedConcept, correct, boundedObserved, before,
                 updated.getMasteryScore(), attemptType, reviewPlanId, normalizedEvidenceSource,
-                cleanEvidence(evidenceText),
+                normalizedEvidenceText,
                 cleanFeedback(feedback), run.getEducationLearningAssignmentId(),
                 EducationRetrievalEvidence.snapshot(run));
         AssessmentAttempt saved = attemptRepository.save(attempt);

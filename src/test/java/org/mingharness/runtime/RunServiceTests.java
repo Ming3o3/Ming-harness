@@ -4,6 +4,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mingharness.audit.AuditEventRepository;
 import org.mingharness.common.BusinessException;
+import org.mingharness.education.EducationRunConfiguration;
 import org.mingharness.runtime.api.CreateRunRequest;
 import org.mingharness.runtime.api.RunDetail;
 import org.mingharness.runtime.api.RunPage;
@@ -31,6 +32,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.util.AopTestUtils;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.lang.reflect.Constructor;
@@ -99,6 +101,22 @@ class RunServiceTests {
         assertNotNull(firstResult.run().traceId());
         assertEquals(firstResult.run().traceId(), traceEvent.getTraceId());
         assertEquals("tenant-demo", traceEvent.getTenantId());
+    }
+
+    @Test
+    void shouldUseDedicatedTeachingPromptForEducationAgent() {
+        EducationRunConfiguration education = new EducationRunConfiguration(
+                true, "profile-1", "goal-1", null, null, null, null, null,
+                "掌握函数", 0.2, 0.8, "数学", "高中一年级", "人教A版", "函数",
+                null, null, "PRACTICE", "函数=0.20", null, null, null);
+
+        String prompt = ReflectionTestUtils.invokeMethod(runService, "systemPrompt", education);
+
+        assertTrue(prompt.contains("课程约束与学习者状态的教育知识库 Agent"));
+        assertTrue(prompt.contains("education.record_assessment"));
+        assertTrue(prompt.contains("evidenceText"));
+        assertTrue(prompt.contains("学科=数学"));
+        assertFalse(prompt.contains("受控代码 Agent"));
     }
 
     @Test
