@@ -666,6 +666,8 @@ const teacherEducationCourses = computed(() => educationCourses.value
   .filter((course) => course.ownerUserId === form.userId))
 const enrolledEducationCourses = computed(() => educationCourses.value
   .filter((course) => course.ownerUserId !== form.userId))
+const ownedKnowledgeDocuments = computed(() => documents.value
+  .filter((document) => document.ownerUserId === form.userId))
 const teacherActiveLearnerCount = computed(() => teacherEducationCourses.value
   .reduce((total, course) => total + Number(course.activeEnrollmentCount || 0), 0))
 const teacherCoursePendingCount = computed(() => {
@@ -717,6 +719,11 @@ const activeEducationCourseLearnerProgress = computed(() => {
       : null,
   }
 })
+function canEditEducationSource(source) {
+  return Boolean(source && ownedKnowledgeDocuments.value.some(
+    (document) => document.id === source.documentId,
+  ))
+}
 const visibleLearningAssignments = computed(() => {
   let entries = learningAssignments.value
   if (learningAssignmentCourseFilter.value) {
@@ -3387,6 +3394,10 @@ async function loadDashboard() {
     tools.value = toolData
     summary.value = summaryData
     documents.value = documentData
+    if (!documentData.some((document) => document.ownerUserId === form.userId
+      && document.id === educationSourceForm.documentId)) {
+      educationSourceForm.documentId = ''
+    }
     memories.value = memoryData
     contextConfiguration.value = contextConfigurationData
     await loadEducationData()
@@ -5285,6 +5296,7 @@ async function deleteDocument(document) {
   try {
     await api.deleteDocument(document.id)
     documents.value = documents.value.filter((item) => item.id !== document.id)
+    if (educationSourceForm.documentId === document.id) educationSourceForm.documentId = ''
     noticeMessage.value = `知识文档“${document.title}”已删除`
   } catch (error) {
     errorMessage.value = errorText(error)
@@ -7654,8 +7666,8 @@ onBeforeUnmount(() => {
             </div>
             <div class="education-source-editor">
               <div class="subsection-title"><h4>绑定知识文档课程元数据</h4><span>{{ educationSources.length }} 个课程来源</span></div>
-              <form class="education-source-form" @submit.prevent="saveEducationSource">
-                <label class="field field-wide"><span>知识文档</span><select v-model="educationSourceForm.documentId" required><option value="">选择已上传文档</option><option v-for="document in documents" :key="document.id" :value="document.id">{{ document.title }}</option></select></label>
+              <form v-if="ownedKnowledgeDocuments.length" class="education-source-form" @submit.prevent="saveEducationSource">
+                <label class="field field-wide"><span>知识文档</span><select v-model="educationSourceForm.documentId" required><option value="">选择你拥有的知识文档</option><option v-for="document in ownedKnowledgeDocuments" :key="document.id" :value="document.id">{{ document.title }}</option></select></label>
                 <label class="field"><span>学科</span><input v-model="educationSourceForm.subject" required /></label>
                 <label class="field"><span>年级</span><input v-model="educationSourceForm.gradeLevel" required /></label>
                 <label class="field"><span>课程版本</span><input v-model="educationSourceForm.curriculumVersion" required /></label>
@@ -7666,11 +7678,13 @@ onBeforeUnmount(() => {
                 <label class="field field-wide"><span>学习目标</span><textarea v-model="educationSourceForm.learningObjectives" rows="2" maxlength="4000"></textarea></label>
                 <button class="secondary-button" type="submit" :disabled="educationLoading || !educationSourceForm.documentId">保存课程元数据</button>
               </form>
+              <div v-else class="context-preview-empty">当前没有你拥有的知识文档；可以先上传课程资料，或请资料所有者维护课程元数据。</div>
               <div v-if="educationSources.length" class="education-source-list">
                 <div v-for="source in educationSources" :key="source.id" class="education-source-row">
                   <div><strong>{{ documents.find((document) => document.id === source.documentId)?.title || source.documentId }}</strong><small>{{ source.subject }} · {{ source.gradeLevel }} · {{ source.curriculumVersion }} · 难度 {{ source.difficultyLevel }}</small></div>
-                  <button class="text-button" type="button" @click="educationSourceForm.documentId = source.documentId; educationSourceForm.subject = source.subject; educationSourceForm.gradeLevel = source.gradeLevel; educationSourceForm.curriculumVersion = source.curriculumVersion; educationSourceForm.chapter = source.chapter || ''; educationSourceForm.conceptTags = source.conceptTags || ''; educationSourceForm.prerequisiteConcepts = source.prerequisiteConcepts || ''; educationSourceForm.learningObjectives = source.learningObjectives || ''; educationSourceForm.difficultyLevel = source.difficultyLevel">编辑</button>
-                    </div>
+                  <button v-if="canEditEducationSource(source)" class="text-button" type="button" @click="educationSourceForm.documentId = source.documentId; educationSourceForm.subject = source.subject; educationSourceForm.gradeLevel = source.gradeLevel; educationSourceForm.curriculumVersion = source.curriculumVersion; educationSourceForm.chapter = source.chapter || ''; educationSourceForm.conceptTags = source.conceptTags || ''; educationSourceForm.prerequisiteConcepts = source.prerequisiteConcepts || ''; educationSourceForm.learningObjectives = source.learningObjectives || ''; educationSourceForm.difficultyLevel = source.difficultyLevel">编辑</button>
+                  <small v-else class="document-owner-hint">仅资料所有者可维护</small>
+                </div>
                   </div>
                 </div>
           </section>
