@@ -475,6 +475,9 @@ class HarnessAuthWebTests {
         assertTrue(health.body().contains("\"status\""));
         assertTrue(health.body().contains("\"db\""));
         assertTrue(health.body().contains("\"model\""));
+        assertTrue(health.body().contains("\"education\""));
+        assertTrue(health.body().contains("\"apiVersion\":\"education-agent/v1\""));
+        assertTrue(health.body().contains("\"courseBoundRunsEnabled\":true"));
         assertTrue(!health.body().contains("jdbc:h2"));
 
         HttpResponse<String> metrics = httpClient.send(

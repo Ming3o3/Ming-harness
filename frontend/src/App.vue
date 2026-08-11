@@ -838,6 +838,12 @@ const canApprove = computed(() => selectedStatus.value === 'WAITING_APPROVAL')
 const canRetry = computed(() => ['FAILED', 'TIMED_OUT'].includes(selectedStatus.value))
 const cancelActionLabel = computed(() => selectedStatus.value === 'WAITING_APPROVAL' ? '撤回审批' : '取消')
 const infraOnline = computed(() => health.value?.status === 'UP')
+const educationRuntimeDiagnostic = computed(() => {
+  const currentHealth = health.value
+  if (!currentHealth || currentHealth.error) return ''
+  if (currentHealth.education?.courseBoundRunsEnabled === true) return ''
+  return '当前连接的 Runtime 未包含教育知识库 Agent；请使用 npm run desktop:dev 启动当前源码。'
+})
 const infraLabel = computed(() => {
   if (!health.value) return '检查基础设施'
   if (health.value.error) return health.value.error
@@ -3000,8 +3006,30 @@ async function loadEducationData() {
     educationError.value = ''
   } catch (error) {
     // 教育权限是可选的；不应让没有教育权限的通用 Agent 用户无法打开控制台。
-    educationError.value = errorText(error)
+    educationError.value = await educationLoadErrorText(error)
   }
+}
+
+/**
+ * 旧版桌面 Runtime 可能仍能返回基础页面，但不认识教育接口，最终只给出泛化的 500。
+ * 复用健康摘要中的能力标记，把这个部署问题转成用户可以直接执行的修复提示。
+ */
+async function educationLoadErrorText(error) {
+  let currentHealth = health.value
+  if (!currentHealth || currentHealth.error) {
+    try {
+      currentHealth = await api.health()
+      health.value = currentHealth
+    } catch {
+      // 健康接口本身不可用时保留原始教育接口错误，避免误判部署状态。
+    }
+  }
+  if (currentHealth && !currentHealth.error
+    && currentHealth.education?.courseBoundRunsEnabled !== true) {
+    return educationRuntimeDiagnostic.value
+      || '当前连接的 Runtime 未包含教育知识库 Agent；请使用 npm run desktop:dev 启动当前源码。'
+  }
+  return errorText(error)
 }
 
 async function loadEducationCourseWorkspace(courseId) {
@@ -5173,6 +5201,7 @@ onBeforeUnmount(() => {
 
       <div v-if="errorMessage" :key="`error-${errorMessage}`" class="message error-message chat-message-banner">{{ errorMessage }}</div>
       <div v-if="noticeMessage" :key="`notice-${noticeMessage}`" class="message notice-message chat-message-banner">{{ noticeMessage }}</div>
+      <div v-if="educationRuntimeDiagnostic" class="message education-runtime-message chat-message-banner" role="alert">{{ educationRuntimeDiagnostic }}</div>
 
       <div class="chat-layout">
         <aside class="conversation-sidebar">
@@ -5919,6 +5948,7 @@ onBeforeUnmount(() => {
     <main class="main-content" id="runtime">
       <div v-if="errorMessage" :key="`error-${errorMessage}`" class="message error-message console-message-banner">{{ errorMessage }}</div>
       <div v-if="noticeMessage" :key="`notice-${noticeMessage}`" class="message notice-message console-message-banner">{{ noticeMessage }}</div>
+      <div v-if="educationRuntimeDiagnostic" class="message education-runtime-message console-message-banner" role="alert">{{ educationRuntimeDiagnostic }}</div>
 
       <section class="infra-strip panel" aria-label="基础设施状态">
         <div><p class="eyebrow">INFRASTRUCTURE</p><h2>本地依赖状态</h2></div>

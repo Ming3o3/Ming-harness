@@ -79,6 +79,7 @@ h3 { margin: 0; font-size: 13px; }
 .message { margin: -10px 0 22px; border-radius: 8px; padding: 10px 14px; font-size: 12px; }
 .error-message { border: 1px solid rgba(255,114,123,.25); background: rgba(255,114,123,.08); color: #ff9ca3; }
 .notice-message { border: 1px solid rgba(85,214,138,.25); background: rgba(85,214,138,.08); color: #84eaae; }
+.education-runtime-message { border: 1px solid rgba(255,182,95,.34); background: rgba(255,182,95,.1); color: var(--orange); }
 .infra-strip { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-bottom: 24px; padding: 15px 18px; }
 .infra-strip .eyebrow { margin-bottom: 4px; }
 .infra-status { display: grid; justify-items: end; gap: 8px; }

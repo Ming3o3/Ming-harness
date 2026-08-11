@@ -47,7 +47,12 @@ public class OperationalHealthController {
                 metrics.operationalSnapshot(),
                 new ModelHealthView(modelConfig.enabled(),
                         modelConfig.enabled() ? "external" : "demo",
-                        modelConfig.enabled() ? modelConfig.name() : "demo-model")
+                        modelConfig.enabled() ? modelConfig.name() : "demo-model"),
+                new EducationCapabilityView(
+                        "education-agent/v1",
+                        true,
+                        true,
+                        true)
         );
     }
 
@@ -55,10 +60,23 @@ public class OperationalHealthController {
     public record OperationalHealthView(String status,
                                         Map<String, String> components,
                                         HarnessMetrics.OperationalSnapshot runtime,
-                                        ModelHealthView model) {
+                                        ModelHealthView model,
+                                        EducationCapabilityView education) {
     }
 
     /** 只返回模型模式和名称，不返回供应商地址、API Key 或其他连接细节。 */
     public record ModelHealthView(boolean enabled, String mode, String modelName) {
+    }
+
+    /**
+     * 前端据此确认当前连接的 Runtime 是否包含教育 Agent 能力。
+     *
+     * <p>旧版桌面 Runtime 仍可能返回基础健康摘要，但无法识别课程绑定 Run；
+     * 这些字段不包含租户、课程或学习者数据，只用于兼容性诊断。</p>
+     */
+    public record EducationCapabilityView(String apiVersion,
+                                          boolean courseBoundRunsEnabled,
+                                          boolean learnerStateEnabled,
+                                          boolean formativeEvidenceEnabled) {
     }
 }
