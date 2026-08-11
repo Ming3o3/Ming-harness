@@ -184,6 +184,13 @@ class ConversationServiceTests {
         assertEquals("函数", run.getEducationConceptKey());
         assertEquals(2, run.getEducationMinDifficulty());
         assertEquals(4, run.getEducationMaxDifficulty());
+
+        var summary = conversationService.list("tenant-chat", "operator").get(0);
+        assertTrue(summary.educationMode());
+        assertEquals("数学", summary.educationSubject());
+        assertEquals("高中一年级", summary.educationGradeLevel());
+        assertEquals("人教A版", summary.educationCurriculumVersion());
+        assertEquals("函数", summary.educationConceptKey());
     }
 
     @Test

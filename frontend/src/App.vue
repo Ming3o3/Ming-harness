@@ -979,7 +979,11 @@ const activeConversationId = computed(() => activeConversation.value?.conversati
 const filteredConversations = computed(() => {
   const query = conversationQuery.value.trim().toLowerCase()
   if (!query) return conversations.value
-  return conversations.value.filter((conversation) => [conversation.title, conversation.lastMessagePreview]
+  return conversations.value.filter((conversation) => [
+    conversation.title,
+    conversation.lastMessagePreview,
+    conversationLearningContext(conversation),
+  ]
     .some((value) => String(value || '').toLowerCase().includes(query)))
 })
 const pendingChatMessage = computed(() => chatMessages.value
@@ -1799,6 +1803,18 @@ function messageNavigationLabel(message) {
     : rawContent
   if (content) return content.length > 30 ? `${content.slice(0, 30)}…` : content
   return attachmentLabel(message?.attachments?.[0])
+}
+
+function conversationLearningContext(conversation) {
+  if (!conversation?.educationMode) return ''
+  const course = [conversation.educationCourseCode, conversation.educationCourseTitle]
+    .filter(Boolean).join(' · ')
+  const curriculum = [conversation.educationSubject, conversation.educationGradeLevel,
+    conversation.educationCurriculumVersion].filter(Boolean).join(' · ')
+  const goal = conversation.educationLearningAssignmentTitle
+    || conversation.educationLearningGoalTitle
+    || conversation.educationConceptKey
+  return [course || curriculum, goal].filter(Boolean).join(' / ')
 }
 
 async function loadConversationFeedback(detail) {
@@ -5499,6 +5515,7 @@ onBeforeUnmount(() => {
               <span class="conversation-row-icon" aria-hidden="true"><Bot :size="15" /></span>
               <span class="conversation-row-body">
                 <strong>{{ conversation.title }}</strong>
+                <small v-if="conversationLearningContext(conversation)" class="conversation-learning-context"><BookOpen :size="11" />{{ conversationLearningContext(conversation) }}</small>
                 <small>{{ conversation.lastMessagePreview || '开始一轮新的学习对话' }}</small>
                 <em>{{ conversation.messageCount }} 条消息 · {{ formatDate(conversation.updatedAt) }}</em>
               </span>

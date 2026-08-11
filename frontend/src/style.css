@@ -726,6 +726,8 @@ h3 { margin: 0; font-size: 13px; }
 .conversation-row-body strong { display: block; overflow: hidden; color: var(--soft); font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .conversation-row.active .conversation-row-body strong { color: var(--heading); }
 .conversation-row-body small { display: block; overflow: hidden; margin-top: 4px; color: var(--muted); font-size: 9px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-row-body .conversation-learning-context { display: flex; align-items: center; gap: 4px; color: var(--cyan); font: 8px "DM Mono", monospace; }
+.conversation-learning-context svg { flex: 0 0 auto; }
 .conversation-row-body em { display: block; margin-top: 5px; color: var(--muted); font: 8px "DM Mono", monospace; font-style: normal; }
 .conversation-running-dot { align-self: start; width: 6px; height: 6px; margin-top: 3px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 10px rgba(76,226,213,.8); }
 .chat-sidebar-empty { display: grid; min-height: 150px; place-items: center; color: var(--muted); font-size: 10px; text-align: center; }

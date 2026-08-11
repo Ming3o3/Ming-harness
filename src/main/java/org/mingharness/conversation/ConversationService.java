@@ -871,8 +871,21 @@ public class ConversationService {
                 .reduce((first, second) -> second).orElse(null);
         String preview = last == null ? "" : last.getContent();
         if (preview != null && preview.length() > 80) preview = preview.substring(0, 80) + "…";
+        // 从 Run 冻结的教育配置投影会话标签，而不是从浏览器当前选择推断，
+        // 保证历史会话仍能准确指出它遵循的课程、目标与作业约束。
+        Run educationRun = runRepository.findTopByConversationIdAndEducationModeTrueOrderByCreatedAtDesc(
+                conversation.getId()).orElse(null);
         return new ConversationSummary(conversation.getId(), conversation.getTenantId(), conversation.getUserId(),
                 conversation.getTitle(), conversation.getWorkspaceId(), conversation.getCreatedAt(), conversation.getUpdatedAt(),
-                messages.size(), preview, activeRunId);
+                messages.size(), preview, activeRunId,
+                educationRun != null,
+                educationRun == null ? null : educationRun.getEducationCourseCode(),
+                educationRun == null ? null : educationRun.getEducationCourseTitle(),
+                educationRun == null ? null : educationRun.getEducationSubject(),
+                educationRun == null ? null : educationRun.getEducationGradeLevel(),
+                educationRun == null ? null : educationRun.getEducationCurriculumVersion(),
+                educationRun == null ? null : educationRun.getEducationLearningGoalTitle(),
+                educationRun == null ? null : educationRun.getEducationConceptKey(),
+                educationRun == null ? null : educationRun.getEducationLearningAssignmentTitle());
     }
 }
