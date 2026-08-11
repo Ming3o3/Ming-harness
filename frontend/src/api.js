@@ -424,6 +424,14 @@ export const api = {
     }),
   listLearningAssignmentEvaluations: (assignmentId) => request(
     `/education/assignments/${encodeURIComponent(assignmentId)}/evaluations`),
+  listLearningEvaluationQueue: () => request('/education/evaluation-queue'),
+  submitIndependentLearningEvaluation: (assignmentId, payload) => request(
+    `/education/assignments/${encodeURIComponent(assignmentId)}/evaluations`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  getLearningEvaluationConsensus: (assignmentId) => request(
+    `/education/assignments/${encodeURIComponent(assignmentId)}/evaluations/consensus`),
   cancelLearningAssignment: (assignmentId) => request(
     `/education/assignments/${encodeURIComponent(assignmentId)}/cancel`, {
       method: 'POST',

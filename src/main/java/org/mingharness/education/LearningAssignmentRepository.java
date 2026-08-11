@@ -26,6 +26,9 @@ public interface LearningAssignmentRepository extends JpaRepository<LearningAssi
     List<LearningAssignment> findByTenantIdAndCourseIdOrderByCreatedAtDesc(
             String tenantId, String courseId);
 
+    List<LearningAssignment> findByTenantIdAndStatusOrderByCreatedAtDesc(
+            String tenantId, LearningAssignmentStatus status);
+
     List<LearningAssignment> findByTenantIdAndLearningGoalId(String tenantId, String learningGoalId);
 
     List<LearningAssignment> findByTenantIdAndLearnerUserIdAndLearningGoalIdOrderByCreatedAtDesc(

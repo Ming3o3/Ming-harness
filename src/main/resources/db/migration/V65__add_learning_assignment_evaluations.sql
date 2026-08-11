@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS harness_learning_assignment_evaluations (
     note TEXT,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     CONSTRAINT ck_harness_learning_assignment_evaluation_decision
-        CHECK (decision IN ('VERIFY', 'RETURN')),
+        CHECK (decision IN ('VERIFY', 'RETURN', 'INDEPENDENT')),
     CONSTRAINT ck_harness_learning_assignment_evaluation_scores
         CHECK (content_correctness_score BETWEEN 1 AND 5
             AND evidence_quality_score BETWEEN 1 AND 5

@@ -54,6 +54,7 @@ const learningNotificationUnreadCount = ref(0)
 const learningAssignmentNotifications = ref([])
 const learningAssignmentNotificationUnreadCount = ref(0)
 const learningAssignments = ref([])
+const learningEvaluationQueue = ref([])
 const learningAssignmentProgressMap = ref({})
 const learningAssignmentEvidenceMap = ref({})
 const learningAssignmentFeedbackMap = ref({})
@@ -78,6 +79,7 @@ const learningTaskDeferringId = ref('')
 const learningAssignmentSaving = ref(false)
 const learningAssignmentAcceptingId = ref('')
 const learningAssignmentReviewSavingId = ref('')
+const learningIndependentEvaluationSavingId = ref('')
 const learningAssignmentFeedbackSavingId = ref('')
 const learningAssignmentFeedbackAcknowledgingId = ref('')
 const learningAssignmentSubmissionSavingId = ref('')
@@ -241,6 +243,7 @@ const apiKeyPermissionOptions = [
   { value: 'education.read', label: '读取教育知识与画像' },
   { value: 'education.write', label: '记录形成性评价' },
   { value: 'education.assign', label: '布置课程作业' },
+  { value: 'education.evaluate', label: '独立评价课程作业' },
 ]
 const defaultApiKeyPermissions = [
   'run.read', 'run.create', 'run.execute', 'run.approve', 'run.cancel',
@@ -249,7 +252,7 @@ const defaultApiKeyPermissions = [
   'model.configure', 'tenant.policy.read', 'tenant.policy.write',
   'auth.key.read', 'auth.key.manage',
   'education.read', 'education.write',
-  'education.assign',
+  'education.assign', 'education.evaluate',
 ]
 // 工作区状态用于告知用户 Agent 是否直接连接到本地项目；接口不会返回绝对路径。
 const workspace = ref(null)
@@ -528,6 +531,7 @@ const permissionDescriptions = {
   'education.read': { label: '读取教育画像', description: '读取课程元数据和学习者掌握度' },
   'education.write': { label: '更新教育状态', description: '记录形成性评价并更新学习者画像' },
   'education.assign': { label: '布置课程作业', description: '向组织内指定学习者创建课程作业' },
+  'education.evaluate': { label: '独立评价作业', description: '作为第二评分者提交独立量规评价' },
 }
 
 function permissionList(value) {
@@ -2751,6 +2755,7 @@ async function loadEducationData() {
     learningAssignments.value = assignments
     educationMetrics.value = metrics
     educationCourses.value = courses || []
+    learningEvaluationQueue.value = await api.listLearningEvaluationQueue().catch(() => [])
     const progressEntries = await Promise.all(assignments.slice(0, 20).map(async (assignment) => {
       try {
         return [assignment.id, await api.getLearningAssignmentProgress(assignment.id)]
@@ -3234,6 +3239,32 @@ function collectLearningAssignmentRubric() {
     rubric[key] = score
   }
   return rubric
+}
+
+async function submitIndependentLearningEvaluation(assignment) {
+  if (!assignment?.id || learningIndependentEvaluationSavingId.value) return
+  const rubric = collectLearningAssignmentRubric()
+  if (!rubric) return
+  const note = window.prompt('可填写独立评价说明（可选）：', '')
+  if (note === null) return
+  learningIndependentEvaluationSavingId.value = assignment.id
+  clearMessages()
+  try {
+    const evaluation = await api.submitIndependentLearningEvaluation(assignment.id, {
+      ...rubric, note: note.trim() || null,
+    })
+    learningEvaluationQueue.value = learningEvaluationQueue.value
+      .filter((item) => item.id !== assignment.id)
+    learningAssignmentEvaluationMap.value = {
+      ...learningAssignmentEvaluationMap.value,
+      [assignment.id]: [evaluation, ...(learningAssignmentEvaluationMap.value[assignment.id] || [])],
+    }
+    noticeMessage.value = `已提交“${assignment.title}”的独立评价。`
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    learningIndependentEvaluationSavingId.value = ''
+  }
 }
 
 function startLearningAssignmentSubmission(assignment) {
@@ -6113,6 +6144,16 @@ onBeforeUnmount(() => {
                     </div>
                   </div>
                 </div>
+              </div>
+            </section>
+            <section v-if="learningEvaluationQueue.length" class="learning-assignment-workbench" aria-label="独立评价队列">
+              <div class="subsection-title"><div><h4>独立评价队列</h4><span>{{ learningEvaluationQueue.length }} 份已完成作业待第二评分者评价</span></div><span class="context-mode-chip">education.evaluate</span></div>
+              <p class="learning-task-help">独立评价不会改变教师确认状态；系统会将两个评分者的三维分数用于共识判定和实验审计。</p>
+              <div class="learning-assignment-list">
+                <article v-for="assignment in learningEvaluationQueue" :key="assignment.id" class="learning-assignment-row">
+                  <div class="learning-assignment-main"><div class="learning-assignment-meta"><strong>{{ assignment.title }}</strong><span>待独立评价</span></div><small>{{ assignment.teacherUserId }} → {{ assignment.learnerUserId }} · {{ assignment.subject }} · {{ assignment.gradeLevel }} · {{ assignment.curriculumVersion }}</small><p>{{ assignment.instructions }}</p></div>
+                  <div class="learning-assignment-actions"><button class="secondary-button" type="button" :disabled="learningIndependentEvaluationSavingId === assignment.id" @click="submitIndependentLearningEvaluation(assignment)">{{ learningIndependentEvaluationSavingId === assignment.id ? '提交中…' : '提交独立评价' }}</button></div>
+                </article>
               </div>
             </section>
             <section class="learning-assignment-workbench" aria-label="课程作业入口">

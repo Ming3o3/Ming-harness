@@ -29,6 +29,8 @@ import org.mingharness.education.api.LearningAssignmentNotificationView;
 import org.mingharness.education.api.LearningAssignmentFeedbackRequest;
 import org.mingharness.education.api.LearningAssignmentFeedbackView;
 import org.mingharness.education.api.LearningAssignmentEvaluationView;
+import org.mingharness.education.api.LearningAssignmentEvaluationRequest;
+import org.mingharness.education.api.LearningAssignmentEvaluationConsensusView;
 import org.mingharness.education.api.LearningAssignmentSubmissionRequest;
 import org.mingharness.education.api.LearningAssignmentSubmissionView;
 import org.mingharness.education.api.EducationMetricsView;
@@ -89,6 +91,7 @@ public class EducationController {
     private final EducationCourseCompletionService courseCompletionService;
     private final LearningAssignmentSubmissionService submissionService;
     private final EducationCourseResultService courseResultService;
+    private final LearningAssignmentIndependentEvaluationService independentEvaluationService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
@@ -111,7 +114,8 @@ public class EducationController {
                                EducationCourseProgressService courseProgressService,
                                EducationCourseCompletionService courseCompletionService,
                                LearningAssignmentSubmissionService submissionService,
-                               EducationCourseResultService courseResultService) {
+                               EducationCourseResultService courseResultService,
+                               LearningAssignmentIndependentEvaluationService independentEvaluationService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
@@ -134,6 +138,7 @@ public class EducationController {
         this.courseCompletionService = courseCompletionService;
         this.submissionService = submissionService;
         this.courseResultService = courseResultService;
+        this.independentEvaluationService = independentEvaluationService;
     }
 
     @PostMapping("/sources")
@@ -461,6 +466,29 @@ public class EducationController {
     public List<LearningAssignmentEvaluationView> assignmentEvaluations(@PathVariable String assignmentId) {
         HarnessIdentity identity = identity();
         return assignmentReviewService.evaluations(identity.tenantId(), identity.userId(), assignmentId);
+    }
+
+    @GetMapping("/evaluation-queue")
+    public List<LearningAssignmentView> independentEvaluationQueue() {
+        HarnessIdentity identity = identity();
+        return independentEvaluationService.queue(identity.tenantId(), identity.userId());
+    }
+
+    @PostMapping("/assignments/{assignmentId}/evaluations")
+    @ResponseStatus(HttpStatus.CREATED)
+    public LearningAssignmentEvaluationView submitIndependentEvaluation(
+            @PathVariable String assignmentId,
+            @Valid @RequestBody LearningAssignmentEvaluationRequest request) {
+        HarnessIdentity identity = identity();
+        return independentEvaluationService.evaluate(identity.tenantId(), identity.userId(),
+                assignmentId, request);
+    }
+
+    @GetMapping("/assignments/{assignmentId}/evaluations/consensus")
+    public LearningAssignmentEvaluationConsensusView evaluationConsensus(
+            @PathVariable String assignmentId) {
+        HarnessIdentity identity = identity();
+        return independentEvaluationService.consensus(identity.tenantId(), identity.userId(), assignmentId);
     }
 
     @PostMapping("/assignments/{assignmentId}/cancel")

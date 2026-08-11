@@ -214,7 +214,7 @@ Embedding 配置按组织保存（知识库向量是组织共享索引），从�
 
 ### API Key / OIDC 认证
 
-生产或共享环境建议设置 `HARNESS_AUTH_MODE=api-key`。调用方使用 `Authorization: Bearer <key>` 或 `X-Api-Key`，服务端根据配置或数据库凭证将请求绑定到固定组织和用户，并按接口校验权限，例如 `run.read`、`run.create`、`run.execute`、`run.approve`、`context.read`、`context.write`、`context.configure`、`audit.read`、`tool.read`、`model.configure`、`education.assign` 和 `ops.read`。工作区读取工具还需要 `workspace.read`，写入工具需要 `workspace.write` 并进入人工审批；`education.assign` 只允许授权的教师/组织操作者创建课程作业，学习者接受作业仍使用 `education.write`；`model.configure` 允许当前用户在控制台保存自己的模型 URL、模型名和加密 API Key；`context.configure` 允许组织内授权操作者保存共享知识库的 Embedding URL、模型和加密 API Key；`ops.read` 用于读取 `/api/health`、Actuator 指标、Prometheus 和应用信息。
+生产或共享环境建议设置 `HARNESS_AUTH_MODE=api-key`。调用方使用 `Authorization: Bearer <key>` 或 `X-Api-Key`，服务端根据配置或数据库凭证将请求绑定到固定组织和用户，并按接口校验权限，例如 `run.read`、`run.create`、`run.execute`、`run.approve`、`context.read`、`context.write`、`context.configure`、`audit.read`、`tool.read`、`model.configure`、`education.assign`、`education.evaluate` 和 `ops.read`。工作区读取工具还需要 `workspace.read`，写入工具需要 `workspace.write` 并进入人工审批；`education.assign` 只允许授权的教师/组织操作者创建课程作业，`education.evaluate` 只允许第二评分者提交独立评价，学习者接受作业仍使用 `education.write`；`model.configure` 允许当前用户在控制台保存自己的模型 URL、模型名和加密 API Key；`context.configure` 允许组织内授权操作者保存共享知识库的 Embedding URL、模型和加密 API Key；`ops.read` 用于读取 `/api/health`、Actuator 指标、Prometheus 和应用信息。
 
 通过具有 `auth.key.manage` 权限的引导 Key 或 OIDC 服务账号，可调用 `POST /api/admin/api-keys` 创建数据库 API Key；明文 `secret` 仅在创建响应中出现一次，数据库只保存 SHA-256 摘要。`GET /api/admin/api-keys` 只返回前缀和元数据，`POST /api/admin/api-keys/{keyId}/rotate` 会在同一事务中创建同权限新 Key 并立即撤销旧 Key，`DELETE /api/admin/api-keys/{keyId}` 可即时撤销，`GET /api/admin/api-keys/audits` 可查看生命周期审计。读取接口需要 `auth.key.read`，跨组织管理还需 `auth.key.cross-tenant`。环境变量 `HARNESS_API_KEYS` 保留为紧急引导兼容方案，变更或撤销需要重启；正式环境应逐步迁移至数据库生命周期 Key。
 
@@ -477,6 +477,9 @@ curl -X POST http://localhost:8080/api/runs \
 - `POST/GET /api/education/assignments/{assignmentId}/submissions`：学习者提交或查询绑定到成功教育 Run 的作业提交物；目标达标后作业虽进入 `COMPLETED`，在教师确认前仍允许补交；同一 Run 重复提交幂等返回原提交，教师可据此查看可审计的原始作答
 - `POST/GET /api/education/assignments/{assignmentId}/feedback`：教师提交普通反馈、补证据、重新学习或重新安排截止时间的干预；学习者可确认反馈，补证据/重新学习干预在下一次教育 Run 成功创建后进入 `RESOLVED`，不再污染后续 Run
 - `GET /api/education/assignments/{assignmentId}/evaluations`：查询该作业不可变的教师量规评价历史；教师和该作业学习者可见，评价记录包含内容正确性、证据质量、迁移准备度（1-5 分）、决定和量规版本
+- `GET /api/education/evaluation-queue`：拥有 `education.evaluate` 权限的第二评分者查询待独立评价的已完成作业
+- `POST /api/education/assignments/{assignmentId}/evaluations`：第二评分者提交独立量规评价；不会改变教师确认状态，同一评分者对同一作业幂等返回原记录
+- `GET /api/education/assignments/{assignmentId}/evaluations/consensus`：查看教师评价与独立评价的共识状态；三个维度的分差均不超过 1 分时为 `AGREED`
 - `POST /api/education/assignments/{assignmentId}/accept`：学习者接受作业，系统幂等创建对应学习者画像和结构化学习目标
 - `POST /api/education/assignments/{assignmentId}/start`：学习者接受（如尚未接受）并直接启动第一步教育 Run；返回绑定的学习会话，作业要求和未完成的“补证据/重新学习”教师干预会冻结到 Run 上下文；失败、超时或取消的 Run 会从该入口进入下一轮重试
 - `POST /api/education/assignments/{assignmentId}/review`：布置者用 `VERIFY` 确认已达标且已有学习者提交物的作业，或用带说明的 `RETURN` 退回返工；请求必须提供内容正确性、证据质量、迁移准备度三个 1-5 分量规，系统把学习者掌握度达标、教师交付确认、量规评价和返工周期分开记录，重复确认幂等返回
