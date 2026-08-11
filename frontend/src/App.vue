@@ -52,6 +52,8 @@ const learnerMasteryLoading = ref(false)
 const learningGoals = ref([])
 const activeLearningGoal = ref(null)
 const learningGoalAssessments = ref([])
+// 对话中的证据按 Run 保存，切换学习目标后仍能看见该轮回答如何改变学习状态。
+const chatAssessmentEvidenceByRun = ref({})
 const learningRecommendation = ref(null)
 const learningGoalRecommendationMap = ref({})
 const learningTasks = ref([])
@@ -66,6 +68,7 @@ const learningAssignmentEvidenceMap = ref({})
 const learningAssignmentFeedbackMap = ref({})
 const learningAssignmentSubmissionMap = ref({})
 const learningAssignmentEvaluationMap = ref({})
+const educationChatRefreshes = new Map()
 const educationCourses = ref([])
 const activeEducationCourseId = ref('')
 const educationCourseEnrollments = ref([])
@@ -2876,6 +2879,8 @@ async function pollConversation() {
     if (!detail.messages.some((message) => message.status === 'PENDING')) {
       await loadConversations(conversationId)
       void loadLearningTasks()
+      // SSE 断线时由轮询兜底，把完成的教育 Run 同样回写为消息级学习证据。
+      if (runId) void refreshEducationAfterChatRun(runId).catch(() => {})
     }
     scrollChatToBottom()
   } catch (error) {
@@ -3455,6 +3460,30 @@ function assessmentRetrievalEvidenceLabel(attempt) {
     .map((evidence) => evidence.title || evidence.citation || evidence.documentId)
     .filter(Boolean)
     .join('、')
+}
+
+function chatAssessmentsForRun(runId) {
+  return runId ? chatAssessmentEvidenceByRun.value[runId] || [] : []
+}
+
+function assessmentObservationLabel(attempt) {
+  if (attempt?.evidenceSource === 'MANUAL_REVIEW') return '人工复核'
+  if (attempt?.assessmentType === 'REVIEW') return '保持度复习'
+  return 'Agent 形成性评价'
+}
+
+function formatMasteryDelta(attempt) {
+  const before = Number(attempt?.masteryBefore)
+  const after = Number(attempt?.masteryAfter)
+  if (!Number.isFinite(before) || !Number.isFinite(after)) return '—'
+  const delta = Math.round((after - before) * 100)
+  return `${delta > 0 ? '+' : ''}${delta} 个百分点`
+}
+
+function learningGoalTitleForAssessment(attempt) {
+  return learningGoals.value.find((goal) => goal.id === attempt?.learningGoalId)?.title
+    || attempt?.conceptKey
+    || '当前学习目标'
 }
 
 function learningAssignmentHasOpenIntervention(assignment) {
@@ -4915,6 +4944,7 @@ async function selectRun(runId, announce = true, showLoading = true) {
     syncActiveConversationEducationContext(detail.run)
     auditEvents.value = events
     startRunEventStream(runId)
+    if (isTerminal(detail.run.status)) void refreshEducationAfterChatRun(runId, detail.run).catch(() => {})
   } catch (error) {
     if (requestToken === runDetailRequestToken) errorMessage.value = errorText(error)
   } finally {
@@ -5071,6 +5101,9 @@ function startRunEventStream(runId, reconnecting = false) {
 async function refreshAfterTerminalRunEvent(runId) {
   const conversationId = activeConversationId.value
   const selectionToken = conversationSelectionToken
+  // 聊天页不只更新回复文本，也要同步本轮形成性评价及课程作业状态。
+  // 这条刷新是异步的，避免证据接口短暂不可用时影响已完成的聊天回复。
+  void refreshEducationAfterChatRun(runId).catch(() => {})
   try {
     const work = [loadRunsPage(), api.dashboardSummary()]
     if (conversationId && latestConversationRun(activeConversation.value) === runId) {
@@ -5088,6 +5121,94 @@ async function refreshAfterTerminalRunEvent(runId) {
   } catch {
     // 下一轮轮询会恢复列表或消息气泡，不覆盖用户当前可见的 Run 详情。
   }
+}
+
+/**
+ * 将一次教育 Run 的评价结果局部回写到聊天页。这里不调用 loadEducationData，
+ * 以免每轮对话重新加载整套课程工作台；只更新学习者此刻能感知到的状态。
+ */
+function refreshEducationAfterChatRun(runId, runSnapshot = selectedRun.value?.run) {
+  if (!runId) return Promise.resolve()
+  const inFlight = educationChatRefreshes.get(runId)
+  if (inFlight) return inFlight
+  const refresh = (async () => {
+    let run = runSnapshot
+    if (!run || run.id !== runId || !isTerminal(run.status)) {
+      const detail = await api.getRun(runId)
+      run = detail?.run
+    }
+    if (!run?.educationMode || !isTerminal(run.status) || !run.educationLearningGoalId) return
+
+    const goalId = run.educationLearningGoalId
+    const profileId = run.educationLearnerProfileId
+    const assignmentId = run.educationLearningAssignmentId
+    const [assessments, recommendation, mastery, tasks, assignments] = await Promise.all([
+      api.listGoalAssessments(goalId),
+      api.getGoalRecommendation(goalId).catch(() => null),
+      profileId ? api.listLearnerMastery(profileId).catch(() => null) : Promise.resolve(null),
+      api.listLearningTasks().catch(() => null),
+      assignmentId ? api.listLearningAssignments().catch(() => null) : Promise.resolve(null),
+    ])
+    const runAttempts = assessments.filter((attempt) => attempt.runId === runId)
+    chatAssessmentEvidenceByRun.value = {
+      ...chatAssessmentEvidenceByRun.value,
+      [runId]: runAttempts,
+    }
+    if (activeLearningGoal.value?.id === goalId) {
+      learningGoalAssessments.value = assessments
+      if (recommendation) learningRecommendation.value = recommendation
+    }
+    if (recommendation) {
+      learningGoalRecommendationMap.value = {
+        ...learningGoalRecommendationMap.value,
+        [goalId]: recommendation,
+      }
+    }
+    if (profileId && activeLearnerProfile.value?.id === profileId && mastery) {
+      learnerMastery.value = mastery
+    }
+    if (tasks) learningTasks.value = tasks
+    if (!assignmentId || !assignments) return
+
+    learningAssignments.value = assignments
+    const assignment = assignments.find((item) => item.id === assignmentId)
+    if (!assignment || ['COMPLETED', 'CANCELLED'].includes(assignment.status)) {
+      if (chatEducation.learningAssignmentId === assignmentId) chatEducation.learningAssignmentId = ''
+      return
+    }
+    const [progress, evidence, submissions, feedback] = await Promise.all([
+      api.getLearningAssignmentProgress(assignmentId).catch(() => null),
+      api.getLearningAssignmentEvidence(assignmentId).catch(() => null),
+      api.listLearningAssignmentSubmissions(assignmentId).catch(() => null),
+      api.listLearningAssignmentFeedback(assignmentId).catch(() => null),
+    ])
+    if (progress) {
+      learningAssignmentProgressMap.value = {
+        ...learningAssignmentProgressMap.value,
+        [assignmentId]: progress,
+      }
+    }
+    if (evidence) {
+      learningAssignmentEvidenceMap.value = {
+        ...learningAssignmentEvidenceMap.value,
+        [assignmentId]: evidence,
+      }
+    }
+    if (submissions) {
+      learningAssignmentSubmissionMap.value = {
+        ...learningAssignmentSubmissionMap.value,
+        [assignmentId]: submissions,
+      }
+    }
+    if (feedback) {
+      learningAssignmentFeedbackMap.value = {
+        ...learningAssignmentFeedbackMap.value,
+        [assignmentId]: feedback,
+      }
+    }
+  })()
+  educationChatRefreshes.set(runId, refresh)
+  return refresh.finally(() => educationChatRefreshes.delete(runId))
 }
 
 async function pollSelectedRun() {
@@ -5734,6 +5855,30 @@ onBeforeUnmount(() => {
                     </span>
                   </div>
                 </div>
+                <section v-if="message.role === 'ASSISTANT' && message.runId && chatAssessmentsForRun(message.runId).length" class="chat-assessment-evidence" aria-label="本轮形成性学习证据">
+                  <div class="chat-assessment-evidence-heading">
+                    <span>FORMATION EVIDENCE</span>
+                    <small>本轮学习证据已回写</small>
+                  </div>
+                  <article v-for="attempt in chatAssessmentsForRun(message.runId)" :key="attempt.id" class="chat-assessment-evidence-card">
+                    <header>
+                      <span :class="attempt.correct ? 'assessment-correct' : 'assessment-wrong'">{{ attempt.correct ? '已掌握' : '需补强' }}</span>
+                      <strong>{{ learningGoalTitleForAssessment(attempt) }}</strong>
+                      <small>{{ assessmentObservationLabel(attempt) }}</small>
+                    </header>
+                    <div class="chat-assessment-mastery">
+                      <span>掌握度 <b>{{ formatRate(attempt.masteryBefore) }} → {{ formatRate(attempt.masteryAfter) }}</b></span>
+                      <em :class="{ 'is-positive': Number(attempt.masteryAfter) >= Number(attempt.masteryBefore) }">{{ formatMasteryDelta(attempt) }}</em>
+                    </div>
+                    <p v-if="attempt.evidenceText">{{ attempt.evidenceText }}</p>
+                    <p v-else-if="attempt.feedback">{{ attempt.feedback }}</p>
+                    <footer>
+                      <span v-if="assessmentRetrievalEvidenceLabel(attempt)"><BookOpen :size="12" />知识源：{{ assessmentRetrievalEvidenceLabel(attempt) }}</span>
+                      <span v-if="attempt.learningAssignmentId"><ListChecks :size="12" />已回写课程作业</span>
+                      <span v-if="attempt.feedback && attempt.evidenceText"><CircleDot :size="12" />{{ attempt.feedback }}</span>
+                    </footer>
+                  </article>
+                </section>
                 <div v-if="message.role === 'ASSISTANT' && (message.content || canRetryChatMessage(message))" class="chat-message-actions">
                   <button v-if="message.content" type="button" :disabled="copyingMessageId === message.id" @click="copyChatMessage(message)">{{ copyingMessageId === message.id ? '复制中…' : '复制回复' }}</button>
                   <button v-if="canRetryChatMessage(message)" type="button" :disabled="retryingMessageId === message.id" @click="retryChatMessage(message)">{{ retryingMessageId === message.id ? '重试中…' : '重试本轮' }}</button>
