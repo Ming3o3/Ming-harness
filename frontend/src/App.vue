@@ -905,10 +905,11 @@ const currentEducationRetrievalScope = computed(() => {
     maxDifficulty = previousMinDifficulty
   }
   const scope = {
-    subject: course?.subject || String(chatEducation.subject || '').trim() || profile.subject,
-    gradeLevel: course?.gradeLevel || String(chatEducation.gradeLevel || '').trim() || profile.gradeLevel,
-    curriculumVersion: course?.curriculumVersion
-      || String(chatEducation.curriculumVersion || '').trim() || profile.curriculumVersion,
+    // 服务端同样以课程实例/学习者画像为权威来源。这里不再使用浏览器残留的可编辑
+    // 字段，避免界面展示的检索范围与实际 Run 快照不一致。
+    subject: course?.subject || profile.subject,
+    gradeLevel: course?.gradeLevel || profile.gradeLevel,
+    curriculumVersion: course?.curriculumVersion || profile.curriculumVersion,
     conceptKey: currentChatLearningGoal.value?.conceptKey || String(chatEducation.conceptKey || '').trim(),
     minDifficulty,
     maxDifficulty,
@@ -2995,9 +2996,14 @@ async function sendChatMessage() {
       uploadedAttachments = await api.uploadConversationAttachments(conversationId, files)
       chatUploading.value = false
     }
+    const educationProfile = activeLearnerProfile.value
+    const educationCourse = activeChatCourse.value
     const education = {
       ...chatEducation,
       enabled: true,
+      subject: educationCourse?.subject || educationProfile?.subject || '',
+      gradeLevel: educationCourse?.gradeLevel || educationProfile?.gradeLevel || '',
+      curriculumVersion: educationCourse?.curriculumVersion || educationProfile?.curriculumVersion || '',
       minDifficulty: chatEducation.minDifficulty == null ? null : Number(chatEducation.minDifficulty),
       maxDifficulty: chatEducation.maxDifficulty == null ? null : Number(chatEducation.maxDifficulty),
     }
@@ -3952,6 +3958,20 @@ function applyLearnerProfileToEducationRun(profile) {
   form.education.gradeLevel = profile.gradeLevel || ''
   form.education.curriculumVersion = profile.curriculumVersion || ''
   applyLearnerProfileToChat(profile)
+}
+
+/** Run 控制台选择画像后冻结同一份课程三元组，和服务端解析规则保持一致。 */
+function syncEducationRunProfile() {
+  const profile = learnerProfiles.value.find((item) => item.id === form.education.learnerProfileId)
+  if (!profile) return
+  form.education.subject = profile.subject || ''
+  form.education.gradeLevel = profile.gradeLevel || ''
+  form.education.curriculumVersion = profile.curriculumVersion || ''
+  const selectedGoal = learningGoals.value.find((goal) => goal.id === form.education.learningGoalId)
+  if (selectedGoal && selectedGoal.learnerProfileId !== profile.id) {
+    form.education.learningGoalId = ''
+    form.education.conceptKey = ''
+  }
 }
 
 function applyLearnerProfileToChat(profile) {
@@ -6171,7 +6191,7 @@ onBeforeUnmount(() => {
                   <label><span>教学策略</span><select v-model="chatEducation.pedagogicalMode" :disabled="chatSending || chatUploading"><option value="AUTO">自动选择</option><option value="EXPLAIN">概念讲解</option><option value="SOCRATIC">启发式引导</option><option value="PRACTICE">练习优先</option><option value="DIAGNOSE">错误诊断</option></select></label>
                   <label><span>目标知识点</span><input v-model="chatEducation.conceptKey" maxlength="255" placeholder="例如：函数定义域" :disabled="chatSending || chatUploading" /></label>
                   <label><span>难度范围</span><div class="chat-education-difficulty"><input v-model.number="chatEducation.minDifficulty" type="number" min="1" max="5" placeholder="1" :disabled="chatSending || chatUploading" /><span>—</span><input v-model.number="chatEducation.maxDifficulty" type="number" min="1" max="5" placeholder="5" :disabled="chatSending || chatUploading" /></div></label>
-                  <small class="chat-education-context">{{ activeChatCourse ? `已锁定 ${activeChatCourse.code} · ${activeChatCourse.title}` : '课程实例未绑定；将按画像与知识源范围运行' }} · {{ chatEducation.subject || '未选择学科' }} · {{ chatEducation.gradeLevel || '未选择年级' }} · {{ chatEducation.curriculumVersion || '未选择课程版本' }}</small>
+                  <small class="chat-education-context">{{ activeChatCourse ? `已锁定 ${activeChatCourse.code} · ${activeChatCourse.title}` : '课程实例未绑定；将按画像与知识源范围运行' }} · {{ currentEducationRetrievalScope.subject || '未选择学科' }} · {{ currentEducationRetrievalScope.gradeLevel || '未选择年级' }} · {{ currentEducationRetrievalScope.curriculumVersion || '未选择课程版本' }}</small>
                 </div>
               </div>
             </div>
@@ -6674,11 +6694,11 @@ onBeforeUnmount(() => {
               </label>
             </div>
             <div v-if="form.education.enabled" class="education-run-grid">
-              <label class="field"><span>学习者画像</span><select v-model="form.education.learnerProfileId"><option value="">请选择画像</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>
+              <label class="field"><span>学习者画像</span><select v-model="form.education.learnerProfileId" @change="syncEducationRunProfile"><option value="">请选择画像</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>
               <label class="field"><span>学习目标</span><select v-model="form.education.learningGoalId" @change="selectLearningGoal(learningGoals.find((goal) => goal.id === form.education.learningGoalId), false)"><option value="">不绑定目标</option><option v-for="goal in learningGoals.filter((item) => item.status === 'ACTIVE')" :key="goal.id" :value="goal.id">{{ goal.title }} · {{ goal.conceptKey }}</option></select></label>
-              <label class="field"><span>学科</span><input v-model="form.education.subject" required /></label>
-              <label class="field"><span>年级</span><input v-model="form.education.gradeLevel" required /></label>
-              <label class="field"><span>课程版本</span><input v-model="form.education.curriculumVersion" required /></label>
+              <label class="field"><span>学科</span><input v-model="form.education.subject" required :readonly="Boolean(form.education.learnerProfileId)" :title="form.education.learnerProfileId ? '由学习者画像锁定' : ''" /></label>
+              <label class="field"><span>年级</span><input v-model="form.education.gradeLevel" required :readonly="Boolean(form.education.learnerProfileId)" :title="form.education.learnerProfileId ? '由学习者画像锁定' : ''" /></label>
+              <label class="field"><span>课程版本</span><input v-model="form.education.curriculumVersion" required :readonly="Boolean(form.education.learnerProfileId)" :title="form.education.learnerProfileId ? '由学习者画像锁定' : ''" /></label>
               <label class="field"><span>目标知识点（可选）</span><input v-model="form.education.conceptKey" placeholder="例如：函数定义域" /></label>
               <label class="field"><span>难度范围（可选）</span><div class="education-difficulty-range"><input v-model.number="form.education.minDifficulty" type="number" min="1" max="5" placeholder="1" /><span>—</span><input v-model.number="form.education.maxDifficulty" type="number" min="1" max="5" placeholder="5" /></div></label>
             </div>
