@@ -1161,10 +1161,22 @@ const chatMessagePresentations = computed(() => new Map(chatMessages.value.map((
     : { content: message.content || '', sources: [] },
 ])))
 const activeConversationId = computed(() => activeConversation.value?.conversation?.id || '')
+// 学习入口不再把历史的通用工作区会话伪装成“学习会话”。保留当前会话（即使它
+// 还没有提交第一条教育消息）和服务端已标记为教育模式的会话，避免学习轨迹被
+// 代码/运维类历史记录淹没。
+const learningConversations = computed(() => {
+  const activeId = activeConversationId.value
+  const active = conversations.value.find((conversation) => conversation.id === activeId)
+  const educationSessions = conversations.value.filter((conversation) => conversation.educationMode)
+  const unique = new Map()
+  if (active) unique.set(active.id, active)
+  educationSessions.forEach((conversation) => unique.set(conversation.id, conversation))
+  return [...unique.values()]
+})
 const filteredConversations = computed(() => {
   const query = conversationQuery.value.trim().toLowerCase()
-  if (!query) return conversations.value
-  return conversations.value.filter((conversation) => [
+  if (!query) return learningConversations.value
+  return learningConversations.value.filter((conversation) => [
     conversation.title,
     conversation.lastMessagePreview,
     conversationLearningContext(conversation),
@@ -5693,6 +5705,25 @@ onBeforeUnmount(() => {
               <Check :size="15" /><span>测评证据与反馈</span>
             </button>
           </nav>
+          <section class="learning-sidebar-contract" :class="{ ready: educationAgentReady }" aria-label="当前学习契约">
+            <div class="learning-sidebar-contract-heading">
+              <div><p class="eyebrow">CURRENT LEARNING CONTRACT</p><strong>当前学习契约</strong></div>
+              <span><i></i>{{ educationAgentReady ? '已生效' : '待补齐' }}</span>
+            </div>
+            <template v-if="activeLearnerProfile">
+              <strong class="learning-sidebar-contract-course">{{ activeChatCourse?.title || `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` }}</strong>
+              <p>{{ activeChatCourse?.code ? `${activeChatCourse.code} · ` : '' }}{{ activeLearnerProfile.curriculumVersion }}</p>
+              <div class="learning-sidebar-contract-metrics">
+                <div><small>课程资料</small><strong>{{ currentEducationSourceCount }} <em>份</em></strong></div>
+                <div><small>学习目标</small><strong>{{ activeLearningGoal ? '已绑定' : '待设定' }}</strong></div>
+              </div>
+              <button type="button" @click="educationAgentReady ? (showChatAgentSettings = true) : (chatMode = false, navigateConsoleSection('education'))">{{ educationAgentReady ? '调整本轮约束' : '配置课程资料' }} <ArrowUp :size="12" /></button>
+            </template>
+            <template v-else>
+              <p class="learning-sidebar-contract-empty">先建立学习者画像，才能把课程版本、资料范围和后续掌握度绑定到同一个学习任务。</p>
+              <button type="button" @click="chatMode = false; navigateConsoleSection('education')">建立学习画像 <ArrowUp :size="12" /></button>
+            </template>
+          </section>
           <section v-if="teacherEducationCourses.length" class="chat-teaching-brief" aria-label="教师课程待办">
             <div class="chat-teaching-brief-heading">
               <div><p class="eyebrow">TEACHING CONTROL</p><strong>教师课程待办</strong></div>
@@ -5706,16 +5737,16 @@ onBeforeUnmount(() => {
             <button type="button" @click="chatMode = false; navigateConsoleSection('education')">打开课程工作台 <ArrowUp :size="13" /></button>
           </section>
           <div class="conversation-sidebar-heading">
-            <div><p class="eyebrow">LEARNING SESSIONS</p><h2>学习会话</h2></div>
+            <div><p class="eyebrow">LEARNING TRAJECTORY</p><h2>学习轨迹</h2></div>
           </div>
           <label class="conversation-search">
-            <span class="sr-only">搜索对话</span>
-            <input v-model="conversationQuery" type="search" placeholder="搜索对话…" aria-label="搜索对话" @keydown.esc="conversationQuery = ''" />
-            <button v-if="conversationQuery" type="button" aria-label="清除对话搜索" @click="conversationQuery = ''"><X :size="14" /></button>
+            <span class="sr-only">搜索学习任务</span>
+            <input v-model="conversationQuery" type="search" placeholder="搜索学习任务…" aria-label="搜索学习任务" @keydown.esc="conversationQuery = ''" />
+            <button v-if="conversationQuery" type="button" aria-label="清除学习任务搜索" @click="conversationQuery = ''"><X :size="14" /></button>
           </label>
-          <div v-if="chatLoading && !conversations.length" class="chat-sidebar-empty">正在读取对话…</div>
-          <div v-else-if="!conversations.length" class="chat-sidebar-empty">还没有学习会话</div>
-          <div v-else-if="!filteredConversations.length" class="chat-sidebar-empty">没有匹配的对话<br /><small>试试标题或最近消息中的关键词</small></div>
+          <div v-if="chatLoading && !learningConversations.length" class="chat-sidebar-empty">正在读取学习任务…</div>
+          <div v-else-if="!learningConversations.length" class="chat-sidebar-empty">还没有学习任务</div>
+          <div v-else-if="!filteredConversations.length" class="chat-sidebar-empty">没有匹配的学习任务<br /><small>试试标题、学习目标或知识点</small></div>
           <div v-else class="conversation-list">
             <button
               v-for="conversation in filteredConversations"
@@ -5855,43 +5886,51 @@ onBeforeUnmount(() => {
               </div>
               <div class="learning-agent-workbench-state" :class="{ ready: educationAgentReady }"><i></i>{{ educationAgentReady ? '课程与学情已接入' : '还缺少课程资料' }}</div>
             </div>
-            <div class="learning-agent-decision-flow">
-              <article class="learning-agent-decision-card" :class="{ empty: !currentEducationSourceCount }">
-                <span class="learning-agent-decision-step">01</span>
-                <span class="learning-agent-decision-icon"><BookOpen :size="16" /></span>
-                <div :title="currentEducationRetrievalDetail"><small>课程知识边界</small><strong>{{ activeChatCourse?.title || `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` }}</strong><p>{{ currentEducationSourceLabel }} · {{ currentEducationRetrievalScope.filterSummary }}</p></div>
+            <div class="learning-agent-state-grid">
+              <article class="learning-agent-state-card learning-agent-course-card" :class="{ empty: !currentEducationSourceCount }">
+                <header><span><BookOpen :size="16" /></span><small>课程约束 / KNOWLEDGE BOUNDARY</small></header>
+                <strong>{{ activeChatCourse?.title || `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` }}</strong>
+                <p :title="currentEducationRetrievalDetail">{{ currentEducationRetrievalDetail }}</p>
+                <footer><b>{{ currentEducationSourceLabel }}</b><button type="button" @click="chatMode = false; navigateConsoleSection('education')">调整课程资料 <ArrowUp :size="12" /></button></footer>
               </article>
-              <article class="learning-agent-decision-card" :class="{ empty: !activeLearningGoal }">
-                <span class="learning-agent-decision-step">02</span>
-                <span class="learning-agent-decision-icon"><Target :size="16" /></span>
-                <div v-if="activeLearningGoal"><small>学习目标</small><strong>{{ activeLearningGoal.title }}</strong><p>{{ activeLearningGoal.conceptKey }} · 已推进 {{ Math.round(activeLearningProgress * 100) }}%</p><i><b :style="{ width: `${activeLearningProgress * 100}%` }"></b></i></div>
-                <div v-else><small>学习目标</small><strong>尚未建立目标</strong><p>设定目标后，Agent 才能持续追踪进展。</p><button type="button" @click="showQuickLearningGoalForm = true">设定目标</button></div>
+              <article class="learning-agent-state-card learning-agent-goal-card" :class="{ empty: !activeLearningGoal }">
+                <header><span><Target :size="16" /></span><small>学习目标 / SUCCESS CRITERIA</small></header>
+                <template v-if="activeLearningGoal">
+                  <strong>{{ activeLearningGoal.title }}</strong>
+                  <p>{{ activeLearningGoal.conceptKey }} · 目标掌握度 {{ formatRate(activeLearningGoal.targetMastery) }}</p>
+                  <footer class="learning-agent-progress"><span><b :style="{ width: `${activeLearningProgress * 100}%` }"></b></span><em>已推进 {{ Math.round(activeLearningProgress * 100) }}%</em></footer>
+                </template>
+                <template v-else>
+                  <strong>尚未建立可追踪目标</strong>
+                  <p>把一次提问变成可评估的学习结果，Agent 才能持续调整下一步。</p>
+                  <footer><button type="button" @click="showQuickLearningGoalForm = true">设定学习目标 <ArrowUp :size="12" /></button></footer>
+                </template>
               </article>
-              <article class="learning-agent-decision-card">
-                <span class="learning-agent-decision-step">03</span>
-                <span class="learning-agent-decision-icon"><Brain :size="16" /></span>
-                <div><small>学习者状态</small><strong v-if="activeLearningRecommendation">当前掌握度 {{ formatRate(activeLearningRecommendation.currentMastery) }}</strong><strong v-else>{{ learnerMasteryLoading ? '正在读取学习状态…' : `${learnerMastery.length} 个知识点已建档` }}</strong><p v-if="activeLearningRecommendation">目标 {{ formatRate(activeLearningRecommendation.targetMastery) }} · 已测评 {{ activeLearningRecommendation.attemptCount }} 次</p><p v-else-if="learnerMasteryPreview.length">优先补强：{{ learnerMasteryPreview.map((item) => item.conceptKey).join('、') }}</p><p v-else>首次测评后会在这里形成可用的学情判断。</p></div>
+              <article class="learning-agent-state-card learning-agent-learner-card">
+                <header><span><Brain :size="16" /></span><small>学习者状态 / EVIDENCE-BASED</small></header>
+                <strong v-if="activeLearningRecommendation">当前掌握度 {{ formatRate(activeLearningRecommendation.currentMastery) }}</strong>
+                <strong v-else>{{ learnerMasteryLoading ? '正在读取学习状态…' : `${learnerMastery.length} 个知识点已建档` }}</strong>
+                <p v-if="activeLearningRecommendation">距目标 {{ formatRate(activeLearningRecommendation.targetMastery) }} · 已有 {{ activeLearningRecommendation.attemptCount }} 次带证据测评</p>
+                <p v-else-if="learnerMasteryPreview.length">优先补强：{{ learnerMasteryPreview.map((item) => item.conceptKey).join('、') }}</p>
+                <p v-else>尚未观察到可验证作答；Agent 不会猜测掌握度。</p>
+                <footer><b>{{ activeLearningGoal ? learningEvidenceSummary : '等待目标与作答证据' }}</b></footer>
               </article>
-              <article class="learning-agent-decision-card learning-agent-decision-action">
-                <span class="learning-agent-decision-step">04</span>
-                <span class="learning-agent-decision-icon"><CalendarClock :size="16" /></span>
-                <div><small>Agent 教学动作</small><strong>{{ activeLearningTask?.title || activeLearningRecommendation?.nextActionTitle || '等待目标生成下一步' }}</strong><p>{{ activeLearningTask ? (learningTaskSourceBlockReason(activeLearningTask) || (activeLearningTask.status === 'AWAITING_EVIDENCE' ? '需要补充测评证据' : activeLearningTask.prompt)) : (activeLearningRecommendation ? (learningGoalSourceBlockReason(activeLearningRecommendation.learningGoalId) || activeLearningRecommendation.rationale) : '会根据课程目标和学情安排讲解、诊断、练习或复习。') }}</p></div>
-              </article>
-              <article class="learning-agent-decision-card learning-agent-decision-evidence" :class="{ empty: !activeLearningGoal }">
-                <span class="learning-agent-decision-step">05</span>
-                <span class="learning-agent-decision-icon"><ListChecks :size="16" /></span>
-                <div><small>形成性证据回写</small><strong>{{ learningEvidenceSummary }}</strong><p v-if="activeLearningGoal">本轮回答与测评会回写到“{{ activeLearningGoal.conceptKey }}”，用于调整下一步。</p><p v-else>绑定目标后，回答会沉淀为可追踪的掌握度证据。</p></div>
+              <article class="learning-agent-state-card learning-agent-action-card">
+                <header><span><CalendarClock :size="16" /></span><small>AGENT 下一步 / TEACHING ACTION</small></header>
+                <strong>{{ activeLearningTask?.title || activeLearningRecommendation?.nextActionTitle || '等待目标生成教学动作' }}</strong>
+                <p>{{ activeLearningTask ? (learningTaskSourceBlockReason(activeLearningTask) || (activeLearningTask.status === 'AWAITING_EVIDENCE' ? '请先补充本轮作答或评分依据。' : activeLearningTask.prompt)) : (activeLearningRecommendation ? (learningGoalSourceBlockReason(activeLearningRecommendation.learningGoalId) || activeLearningRecommendation.rationale) : '课程资料、学习目标和学情共同决定讲解、诊断、练习或复习。') }}</p>
+                <footer>
+                  <b>{{ educationAgentReady ? '将按课程范围执行' : '课程资料尚未满足' }}</b>
+                  <button v-if="activeLearningTask" type="button" :title="learningTaskSourceBlockReason(activeLearningTask)" :disabled="learningTaskStartingId === activeLearningTask.id || chatSending || chatUploading || Boolean(learningTaskSourceBlockReason(activeLearningTask))" @click="startLearningTask(activeLearningTask)">{{ learningTaskSourceBlockReason(activeLearningTask) ? '补充资料' : (learningTaskStartingId === activeLearningTask.id ? '启动中…' : '开始任务') }} <ArrowUp :size="12" /></button>
+                  <button v-else-if="activeLearningRecommendation" type="button" :title="learningGoalSourceBlockReason(activeLearningRecommendation.learningGoalId)" :disabled="chatSending || chatUploading || Boolean(learningGoalSourceBlockReason(activeLearningRecommendation.learningGoalId))" @click="useLearningRecommendation">按建议开始 <ArrowUp :size="12" /></button>
+                  <button v-else type="button" @click="showQuickLearningGoalForm = true">设定目标 <ArrowUp :size="12" /></button>
+                </footer>
               </article>
             </div>
-            <div class="learning-agent-next-action">
-              <div><small>NEXT LEARNING ACTION</small><strong>{{ activeLearningTask?.title || activeLearningRecommendation?.nextActionTitle || '先设定一个可追踪学习目标' }}</strong><p>{{ activeLearningTask ? (learningTaskSourceBlockReason(activeLearningTask) || activeLearningTask.prompt) : (activeLearningRecommendation ? (learningGoalSourceBlockReason(activeLearningRecommendation.learningGoalId) || activeLearningRecommendation.rationale) : '明确一个知识点与目标掌握度后，Agent 会生成符合课程约束的学习行动。') }}</p></div>
-              <div class="learning-agent-next-action-buttons">
-                <button v-if="activeLearningTask" class="primary-button" type="button" :title="learningTaskSourceBlockReason(activeLearningTask)" :disabled="learningTaskStartingId === activeLearningTask.id || chatSending || chatUploading || Boolean(learningTaskSourceBlockReason(activeLearningTask))" @click="startLearningTask(activeLearningTask)">{{ learningTaskSourceBlockReason(activeLearningTask) ? '需补充课程资料' : (learningTaskStartingId === activeLearningTask.id ? '启动中…' : (activeLearningTask.status === 'FAILED' ? '重试学习任务' : (activeLearningTask.status === 'IN_PROGRESS' ? '继续学习' : '按建议开始'))) }}</button>
-                <button v-else-if="activeLearningRecommendation" class="primary-button" type="button" :title="learningGoalSourceBlockReason(activeLearningRecommendation.learningGoalId)" :disabled="chatSending || chatUploading || Boolean(learningGoalSourceBlockReason(activeLearningRecommendation.learningGoalId))" @click="useLearningRecommendation">{{ learningGoalSourceBlockReason(activeLearningRecommendation.learningGoalId) ? '需补充课程资料' : '按建议开始' }}</button>
-                <button v-else class="primary-button" type="button" @click="showQuickLearningGoalForm = true">设定学习目标</button>
-                <button v-if="!currentEducationSourceCount || (activeLearningTask && learningTaskSourceBlockReason(activeLearningTask)) || (activeLearningRecommendation && !activeLearningTask && learningGoalSourceBlockReason(activeLearningRecommendation.learningGoalId))" class="secondary-button" type="button" @click="chatMode = false; navigateConsoleSection('education')">配置课程资料</button>
-                <button class="text-button" type="button" @click="toggleLearningTrace">查看完整决策依据 <ArrowUp :size="13" /></button>
-              </div>
+            <div class="learning-agent-evidence-loop" aria-label="形成性证据闭环说明">
+              <span><ListChecks :size="15" /></span>
+              <div><strong>形成性证据闭环</strong><p>只有学习者的作答、推理或教师评分会进入学习档案；这些证据会更新掌握度并改变下一步教学动作。</p></div>
+              <span class="learning-agent-evidence-loop-status" :class="{ ready: activeLearningGoal && learningGoalAssessments.length }">{{ activeLearningGoal ? learningEvidenceSummary : '等待绑定目标' }}</span>
             </div>
             <div v-if="nextLearnerCourseAssignment" class="learning-agent-assignment-inline">
               <span><BookOpen :size="14" /></span>
