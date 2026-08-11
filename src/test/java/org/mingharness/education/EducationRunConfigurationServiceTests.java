@@ -77,6 +77,26 @@ class EducationRunConfigurationServiceTests {
     }
 
     @Test
+    void shouldRejectClientCourseFieldsThatConflictWithLearnerProfile() {
+        LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        LearnerProfile profile = new LearnerProfile("tenant-a", "student-1", "数学",
+                "高中一年级", "人教A版", null, "zh-CN");
+        when(profiles.findByIdAndTenantIdAndUserId(profile.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(profile));
+
+        EducationRunConfigurationService service = new EducationRunConfigurationService(
+                profiles, mastery, new SensitiveDataSanitizer());
+
+        var exception = assertThrows(org.mingharness.common.BusinessException.class, () -> service.resolve(
+                "tenant-a", "student-1", new EducationRunOptions(true, profile.getId(), null,
+                        null, null, "物理", "高中一年级", "人教A版", "力学",
+                        null, null, "PRACTICE")));
+
+        assertEquals("EDUCATION_PROFILE_CONTEXT_MISMATCH", exception.getCode());
+    }
+
+    @Test
     void shouldRejectUnknownPedagogicalMode() {
         LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
         LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);

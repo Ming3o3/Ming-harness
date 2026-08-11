@@ -177,9 +177,18 @@ public class EducationRunConfigurationService {
             profileId = expectedProfileId;
         }
         LearnerProfile profile = resolveProfile(tenantId, userId, profileId);
-        String subject = firstNonBlank(options.subject(), profile.getSubject());
-        String gradeLevel = firstNonBlank(options.gradeLevel(), profile.getGradeLevel());
-        String curriculumVersion = firstNonBlank(options.curriculumVersion(), profile.getCurriculumVersion());
+        // 学习者画像是直接学习会话的权威课程约束。没有课程实例时，也不能让客户端
+        // 借请求字段把同一画像切换到另一学科、年级或课程版本；否则检索和掌握度会
+        // 落到两套不一致的课程语境中。
+        String subject = clean(profile.getSubject());
+        String gradeLevel = clean(profile.getGradeLevel());
+        String curriculumVersion = clean(profile.getCurriculumVersion());
+        if (!sameOrUnspecified(options.subject(), subject)
+                || !sameOrUnspecified(options.gradeLevel(), gradeLevel)
+                || !sameOrUnspecified(options.curriculumVersion(), curriculumVersion)) {
+            throw new BusinessException(HttpStatus.CONFLICT, "EDUCATION_PROFILE_CONTEXT_MISMATCH",
+                    "请求中的学科、年级或课程版本与学习者画像不一致");
+        }
         EducationCourse course = resolveCourse(tenantId, userId, options.courseId(), assignment);
         if (course != null) {
             if (!sameContext(subject, course.getSubject())
@@ -423,8 +432,9 @@ public class EducationRunConfigurationService {
                 .collect(Collectors.joining(", "));
     }
 
-    private String firstNonBlank(String first, String fallback) {
-        return first == null || first.isBlank() ? clean(fallback) : clean(first);
+    private boolean sameOrUnspecified(String requested, String expected) {
+        String normalized = clean(requested);
+        return normalized == null || sameContext(normalized, expected);
     }
 
     private String clean(String value) {
