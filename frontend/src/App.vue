@@ -664,6 +664,8 @@ const activeEducationCourse = computed(() => educationCourses.value
   .find((course) => course.id === activeEducationCourseId.value) || null)
 const teacherEducationCourses = computed(() => educationCourses.value
   .filter((course) => course.ownerUserId === form.userId))
+const enrolledEducationCourses = computed(() => educationCourses.value
+  .filter((course) => course.ownerUserId !== form.userId))
 const teacherActiveLearnerCount = computed(() => teacherEducationCourses.value
   .reduce((total, course) => total + Number(course.activeEnrollmentCount || 0), 0))
 const teacherCoursePendingCount = computed(() => {
@@ -688,6 +690,12 @@ const availableChatCourses = computed(() => {
 const activeEducationCourseIsOwner = computed(() => Boolean(
   activeEducationCourse.value && activeEducationCourse.value.ownerUserId === form.userId,
 ))
+const activeEducationCourseLearnerResult = computed(() => {
+  const course = activeEducationCourse.value
+  if (!course || course.ownerUserId === form.userId) return null
+  return educationCourseResult.value?.learners
+    ?.find((learner) => learner.learnerUserId === form.userId) || null
+})
 const visibleLearningAssignments = computed(() => {
   let entries = learningAssignments.value
   if (learningAssignmentCourseFilter.value) {
@@ -3460,10 +3468,14 @@ async function loadEducationData() {
       || goals.find((goal) => goal.status === 'ACTIVE')
       || goals[0]
     if (nextGoal) await selectLearningGoal(nextGoal, false)
-    const ownerCourses = educationCourses.value.filter((course) => course.ownerUserId === form.userId)
-    const nextCourse = ownerCourses.find((course) => course.id === activeEducationCourseId.value)
+    const ownerCourses = teacherEducationCourses.value
+    // 课程列表同时包含我创建和我已加入的课程。优先保留用户刚刚选择的课程，
+    // 这样教师在查看自己加入的课程、学习者刷新页面时都不会被强行切回教师视图。
+    const nextCourse = educationCourses.value.find((course) => course.id === activeEducationCourseId.value)
       || ownerCourses.find((course) => course.status === 'ACTIVE')
       || ownerCourses[0]
+      || enrolledEducationCourses.value.find((course) => course.status === 'ACTIVE')
+      || enrolledEducationCourses.value[0]
     if (nextCourse) {
       await loadEducationCourseWorkspace(nextCourse.id)
     } else {
@@ -3503,8 +3515,8 @@ async function educationLoadErrorText(error) {
 
 async function loadEducationCourseWorkspace(courseId) {
   const course = educationCourses.value.find((item) => item.id === courseId)
-  if (!course || course.ownerUserId !== form.userId) {
-    activeEducationCourseId.value = course?.id || ''
+  if (!course) {
+    activeEducationCourseId.value = ''
     educationCourseEnrollments.value = []
     educationCourseProgress.value = null
     educationCourseResult.value = null
@@ -3513,11 +3525,16 @@ async function loadEducationCourseWorkspace(courseId) {
   activeEducationCourseId.value = course.id
   educationCourseLoading.value = true
   try {
-    const [enrollments, progress, result] = await Promise.all([
-      api.listEducationCourseEnrollments(course.id),
-      api.getEducationCourseProgress(course.id),
-      api.getEducationCourseResult(course.id).catch(() => null),
-    ])
+    // 班级名单与汇总进度属于课程教师；学习者只读取后端已按本人过滤的结课快照，
+    // 既避免越权请求，也让课程页成为学习者可用的状态入口。
+    const isOwner = course.ownerUserId === form.userId
+    const [enrollments, progress, result] = isOwner
+      ? await Promise.all([
+        api.listEducationCourseEnrollments(course.id),
+        api.getEducationCourseProgress(course.id),
+        api.getEducationCourseResult(course.id).catch(() => null),
+      ])
+      : [[], null, await api.getEducationCourseResult(course.id).catch(() => null)]
     if (activeEducationCourseId.value === course.id) {
       educationCourseEnrollments.value = enrollments || []
       educationCourseProgress.value = progress || null
@@ -3726,6 +3743,14 @@ function focusCourseLearner(learner) {
   if (!learner?.learnerUserId) return
   learningAssignmentCourseFilter.value = activeEducationCourseId.value
   learningAssignmentLearnerFilter.value = learner.learnerUserId
+  nextTick(() => document.getElementById('learning-assignment-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+}
+
+function focusMyCourseAssignments() {
+  const course = activeEducationCourse.value
+  if (!course) return
+  learningAssignmentCourseFilter.value = course.id
+  learningAssignmentLearnerFilter.value = form.userId
   nextTick(() => document.getElementById('learning-assignment-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
 }
 
@@ -7314,12 +7339,12 @@ onBeforeUnmount(() => {
                 <strong>{{ profile.subject }} · {{ profile.gradeLevel }}</strong><small>{{ profile.curriculumVersion }} · {{ profile.learningGoal || '未设置学习目标' }}</small>
               </button>
             </div>
-            <section class="education-course-workbench" aria-label="课程教师工作台">
+            <section class="education-course-workbench" aria-label="课程工作台">
               <div class="subsection-title education-course-heading">
-                <div><h4>课程教师工作台</h4><span>{{ educationCourses.length }} 个课程实例</span></div>
+                <div><h4>课程工作台</h4><span>{{ teacherEducationCourses.length }} 个我创建 · {{ enrolledEducationCourses.length }} 个已加入</span></div>
                 <span v-if="activeEducationCourse" class="context-mode-chip">{{ educationCourseStatusLabel(activeEducationCourse.status) }}</span>
               </div>
-              <p class="learning-task-help">先创建课程实例，再维护活跃名单；批量布置会生成可追踪的独立作业，课程进度会把待证据、待重试和待教师确认集中呈现。</p>
+              <p class="learning-task-help">课程约束决定学习范围；Agent 会结合每次作业、提交物和对话证据更新学习状态。教师管理班级进度，学习者只查看自己的行动与结课结果。</p>
               <form class="education-course-form" @submit.prevent="createEducationCourse">
                 <label class="field"><span>课程代码</span><input v-model="educationCourseForm.code" required maxlength="128" placeholder="例如：MATH-G1-2026" /></label>
                 <label class="field"><span>课程名称</span><input v-model="educationCourseForm.title" required maxlength="255" placeholder="例如：高中数学函数基础" /></label>
@@ -7331,10 +7356,10 @@ onBeforeUnmount(() => {
               <div v-if="educationCourses.length" class="education-course-list">
                 <button v-for="course in educationCourses" :key="course.id" type="button" class="education-course-chip" :class="{ active: course.id === activeEducationCourseId }" @click="selectEducationCourse(course)">
                   <span><strong>{{ course.title }}</strong><small>{{ course.code }} · {{ course.subject }} · {{ course.gradeLevel }} · {{ course.curriculumVersion }}</small></span>
-                  <em>{{ course.activeEnrollmentCount }} 人</em>
+                  <em>{{ course.ownerUserId === form.userId ? `我的课程 · ${course.activeEnrollmentCount} 人` : '已加入' }}</em>
                 </button>
               </div>
-              <div v-else class="context-preview-empty">还没有课程实例；创建后才能使用课程名单和批量布置。</div>
+              <div v-else class="context-preview-empty">还没有可访问的课程；创建课程后可维护名单并批量布置作业。</div>
               <div v-if="activeEducationCourse && activeEducationCourseIsOwner" class="education-course-detail">
                 <div class="education-course-detail-heading">
                   <div><strong>{{ activeEducationCourse.title }}</strong><small>{{ activeEducationCourse.code }} · 课程负责人 {{ activeEducationCourse.ownerUserId }}</small></div>
@@ -7409,6 +7434,31 @@ onBeforeUnmount(() => {
                       </div>
                     </div>
                   </div>
+                </div>
+              </div>
+              <div v-else-if="activeEducationCourse" class="education-course-detail education-course-learner-detail">
+                <div class="education-course-detail-heading">
+                  <div><strong>{{ activeEducationCourse.title }}</strong><small>{{ activeEducationCourse.code }} · 课程负责人 {{ activeEducationCourse.ownerUserId }}</small></div>
+                  <span class="context-mode-chip">我的学习状态</span>
+                </div>
+                <div v-if="educationCourseResult" class="education-course-progress education-course-result education-course-learner-result">
+                  <div class="subsection-title"><div><h4>我的结课结果</h4><span>{{ formatDate(educationCourseResult.completedAt) }}</span></div><span class="context-mode-chip">不可被后续复习改写</span></div>
+                  <template v-if="activeEducationCourseLearnerResult">
+                    <p class="learning-task-help">这是 Agent 在结课时固化的个人学习事实，后续复习会更新当前状态，但不会改写这份结果。</p>
+                    <div class="education-course-summary-grid education-course-learner-summary-grid">
+                      <div><span>有效作业</span><strong>{{ activeEducationCourseLearnerResult.assignmentCompleted }} / {{ activeEducationCourseLearnerResult.effectiveAssignmentTotal }}</strong><small>已完成的课程作业</small></div>
+                      <div><span>教师确认</span><strong>{{ activeEducationCourseLearnerResult.assignmentVerified }} / {{ activeEducationCourseLearnerResult.effectiveAssignmentTotal }}</strong><small>通过业务复核</small></div>
+                      <div><span>提交物覆盖</span><strong>{{ activeEducationCourseLearnerResult.submissionCovered }} / {{ activeEducationCourseLearnerResult.effectiveAssignmentTotal }}</strong><small>有可追溯的作答</small></div>
+                      <div><span>目标进度</span><strong>{{ formatRate(activeEducationCourseLearnerResult.averageMasteryProgress) }}</strong><small>掌握度提升 {{ activeEducationCourseLearnerResult.averageMasteryGain >= 0 ? '+' : '' }}{{ formatRate(activeEducationCourseLearnerResult.averageMasteryGain) }}</small></div>
+                    </div>
+                    <small class="education-course-learner-activity">{{ activeEducationCourseLearnerResult.lastActivityAt ? `最后学习活动：${formatDate(activeEducationCourseLearnerResult.lastActivityAt)}` : '结课时没有记录到个人学习活动。' }}</small>
+                  </template>
+                  <div v-else class="context-preview-empty">课程已形成结课快照，但其中没有当前账号的个人学习记录。</div>
+                </div>
+                <div v-else class="education-course-learner-state">
+                  <div><strong>{{ activeEducationCourse.status === 'ACTIVE' ? '课程进行中' : '结课结果尚未读取' }}</strong><small>{{ activeEducationCourse.status === 'ACTIVE' ? 'Agent 正在依据你的作业、提交物与对话证据更新学习状态；结课后这里会出现个人结果。' : '请刷新课程工作台；若仍不可用，请联系课程负责人确认结课快照。' }}</small></div>
+                  <button v-if="activeEducationCourse.status === 'ACTIVE'" class="secondary-button" type="button" @click="focusMyCourseAssignments">查看我的作业</button>
+                  <button v-else class="text-button" type="button" :disabled="educationCourseLoading" @click="loadEducationCourseWorkspace(activeEducationCourse.id)">{{ educationCourseLoading ? '刷新中…' : '刷新结果' }}</button>
                 </div>
               </div>
             </section>

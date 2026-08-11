@@ -492,6 +492,14 @@ h3 { margin: 0; font-size: 13px; }
 .education-course-progress-row strong { overflow: hidden; color: var(--soft); font: 10px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .education-course-progress-row small { color: var(--muted); font: 8px "DM Mono", monospace; }
 .education-course-status-copy { color: var(--muted); font: 8px/1.45 "DM Mono", monospace; }
+.education-course-learner-detail { gap: 11px; }
+.education-course-learner-result { background: rgba(76,226,213,.035); }
+.education-course-learner-summary-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.education-course-learner-activity { color: var(--muted); font: 8px "DM Mono", monospace; }
+.education-course-learner-state { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid rgba(76,226,213,.2); border-radius: 7px; background: var(--input-bg); padding: 12px; }
+.education-course-learner-state > div { display: grid; gap: 4px; min-width: 0; }
+.education-course-learner-state strong { color: var(--soft); font-size: 11px; }
+.education-course-learner-state small { color: var(--muted); font: 8px/1.5 "DM Mono", monospace; }
 .education-source-editor { display: grid; gap: 11px; border-top: 1px solid var(--line); padding-top: 13px; }
 .learning-goal-workbench { display: grid; gap: 11px; border-top: 1px solid var(--line); padding-top: 13px; }
 .learning-assignment-workbench { display: grid; gap: 8px; border: 1px solid rgba(76,226,213,.22); border-radius: 8px; background: rgba(76,226,213,.035); padding: 11px; }
@@ -586,6 +594,7 @@ h3 { margin: 0; font-size: 13px; }
   .education-course-form, .education-course-columns { grid-template-columns: 1fr; }
   .education-course-list { grid-template-columns: 1fr; }
   .education-course-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .education-course-learner-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .education-course-progress-header, .education-course-progress-row { grid-template-columns: minmax(100px, 1fr) minmax(150px, 1.4fr) minmax(90px, .8fr) auto; }
   .education-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .learning-task-row { grid-template-columns: 1fr; }
@@ -604,6 +613,7 @@ h3 { margin: 0; font-size: 13px; }
 @media (max-width: 520px) {
   .education-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .education-course-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .education-course-learner-state { align-items: stretch; flex-direction: column; }
   .education-course-progress-header { display: none; }
   .education-course-progress-row { grid-template-columns: 1fr auto; gap: 6px; }
   .education-course-progress-row > span:nth-child(2) { grid-column: 1 / -1; }
