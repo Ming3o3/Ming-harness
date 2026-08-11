@@ -38,13 +38,14 @@ public class EducationAssessmentTool implements HarnessTool {
                 false,
                 Map.of(
                         "type", "object",
-                        "required", List.of("conceptKey", "correct", "evidenceText"),
+                        "required", List.of("conceptKey", "correct", "evidenceText", "learnerEvidenceQuote"),
                         "additionalProperties", false,
                         "properties", Map.of(
                                 "conceptKey", Map.of("type", "string", "minLength", 1, "maxLength", 255),
                                 "correct", Map.of("type", "boolean"),
                                 "observedMastery", Map.of("type", "number", "minimum", 0, "maximum", 1),
                                 "evidenceText", Map.of("type", "string", "minLength", 1, "maxLength", 4000),
+                                "learnerEvidenceQuote", Map.of("type", "string", "minLength", 1, "maxLength", 2000),
                                 "feedback", Map.of("type", "string", "maxLength", 1000)
                         )
                 ),
@@ -91,13 +92,18 @@ public class EducationAssessmentTool implements HarnessTool {
             if (evidenceText.isBlank()) {
                 throw new IllegalArgumentException("形成性评价必须包含学生作答或推理依据 evidenceText");
             }
+            String learnerEvidenceQuote = request.get("learnerEvidenceQuote") == null
+                    ? "" : request.get("learnerEvidenceQuote").asText("").trim();
+            if (learnerEvidenceQuote.isBlank()) {
+                throw new IllegalArgumentException("形成性评价必须包含本轮学习者原话 learnerEvidenceQuote");
+            }
             boolean correct = request.get("correct").asBoolean();
             double observedMastery = request.get("observedMastery") == null
                     ? (correct ? 1.0 : 0.0) : request.get("observedMastery").asDouble();
             AssessmentAttempt attempt = assessmentService.record(
                     context.tenantId(), context.userId(), context.runId(), context.stepId(),
                     context.educationLearnerProfileId(), conceptKey, correct, observedMastery,
-                    "MODEL_TOOL", evidenceText,
+                    "MODEL_TOOL", evidenceText, learnerEvidenceQuote,
                     request.get("feedback") == null ? null : request.get("feedback").asText(""));
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("ok", true);

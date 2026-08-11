@@ -50,6 +50,9 @@ public class AssessmentAttempt {
     private String evidenceSource;
     @Column(name = "evidence_text", length = 4000)
     private String evidenceText;
+    /** 模型评价必须锚定到本轮学习者输入中的原话，便于回放时核对证据归因。 */
+    @Column(name = "learner_evidence_quote", length = 2000)
+    private String learnerEvidenceQuote;
     @Column(length = 1000)
     private String feedback;
     @Column(name = "retrieval_evidence_json", columnDefinition = "text")
@@ -108,6 +111,19 @@ public class AssessmentAttempt {
                              String reviewPlanId, String evidenceSource, String evidenceText,
                              String feedback, String learningAssignmentId,
                              String retrievalEvidenceJson) {
+        this(tenantId, userId, runId, stepId, learningGoalId, learnerProfileId, conceptKey,
+                correct, observedMastery, masteryBefore, masteryAfter, assessmentType,
+                reviewPlanId, evidenceSource, evidenceText, feedback, learningAssignmentId,
+                retrievalEvidenceJson, null);
+    }
+
+    public AssessmentAttempt(String tenantId, String userId, String runId, String stepId,
+                             String learningGoalId, String learnerProfileId, String conceptKey,
+                             boolean correct, double observedMastery, double masteryBefore,
+                             double masteryAfter, AssessmentAttemptType assessmentType,
+                             String reviewPlanId, String evidenceSource, String evidenceText,
+                             String feedback, String learningAssignmentId,
+                             String retrievalEvidenceJson, String learnerEvidenceQuote) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = required(tenantId, "tenantId");
         this.userId = required(userId, "userId");
@@ -126,6 +142,8 @@ public class AssessmentAttempt {
         this.reviewPlanId = reviewPlanId == null || reviewPlanId.isBlank() ? null : reviewPlanId.trim();
         this.evidenceSource = required(evidenceSource, "evidenceSource");
         this.evidenceText = evidenceText == null || evidenceText.isBlank() ? null : evidenceText.trim();
+        this.learnerEvidenceQuote = learnerEvidenceQuote == null || learnerEvidenceQuote.isBlank()
+                ? null : learnerEvidenceQuote.trim();
         this.feedback = feedback == null || feedback.isBlank() ? null : feedback.trim();
         this.retrievalEvidenceJson = retrievalEvidenceJson == null || retrievalEvidenceJson.isBlank()
                 ? "[]" : retrievalEvidenceJson.trim();
@@ -160,6 +178,7 @@ public class AssessmentAttempt {
     public String getReviewPlanId() { return reviewPlanId; }
     public String getEvidenceSource() { return evidenceSource; }
     public String getEvidenceText() { return evidenceText; }
+    public String getLearnerEvidenceQuote() { return learnerEvidenceQuote; }
     public String getFeedback() { return feedback; }
     public String getRetrievalEvidenceJson() { return retrievalEvidenceJson; }
     public Instant getCreatedAt() { return createdAt; }

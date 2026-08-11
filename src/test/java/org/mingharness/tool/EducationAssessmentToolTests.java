@@ -19,13 +19,14 @@ class EducationAssessmentToolTests {
     void shouldRecordEvidenceBackedAssessmentOnlyWithFrozenProfileAndReturnStructuredResult() {
         EducationAssessmentService assessmentService = mock(EducationAssessmentService.class);
         when(assessmentService.record(any(), any(), any(), any(), any(), any(), anyBoolean(), anyDouble(),
-                any(), any(), any())).thenReturn(
+                any(), any(), any(), any())).thenReturn(
                 new AssessmentAttempt("tenant-a", "student-1", "run-1", "step-1", "goal-1",
                         "profile-1", "函数", true, 0.9, 0.4, 0.72, "继续练习"));
         EducationAssessmentTool tool = new EducationAssessmentTool(assessmentService, new ObjectMapper());
 
         String output = tool.execute("{\"conceptKey\":\"函数\",\"correct\":true,\"observedMastery\":0.9,"
-                        + "\"evidenceText\":\"学生说明了自变量取值范围\"}",
+                        + "\"evidenceText\":\"学生说明了自变量取值范围\","
+                        + "\"learnerEvidenceQuote\":\"函数的自变量不能为零\"}",
                 new ToolExecutionContext("run-1", "step-1", "tenant-a", "student-1", null,
                         "idempotency", "profile-1"));
 
@@ -36,6 +37,11 @@ class EducationAssessmentToolTests {
 
         assertThrows(IllegalArgumentException.class, () -> tool.execute(
                 "{\"conceptKey\":\"函数\",\"correct\":true}",
+                new ToolExecutionContext("run-1", "step-1", "tenant-a", "student-1", null,
+                        "idempotency", "profile-1")));
+
+        assertThrows(IllegalArgumentException.class, () -> tool.execute(
+                "{\"conceptKey\":\"函数\",\"correct\":true,\"evidenceText\":\"学生写出推理\"}",
                 new ToolExecutionContext("run-1", "step-1", "tenant-a", "student-1", null,
                         "idempotency", "profile-1")));
     }

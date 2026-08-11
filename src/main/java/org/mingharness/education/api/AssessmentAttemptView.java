@@ -24,6 +24,7 @@ public record AssessmentAttemptView(
         String reviewPlanId,
         String evidenceSource,
         String evidenceText,
+        String learnerEvidenceQuote,
         String feedback,
         List<AssessmentEvidenceReference> retrievalEvidence,
         Instant createdAt
@@ -37,6 +38,7 @@ public record AssessmentAttemptView(
                 attempt.getObservedMastery(), attempt.getMasteryBefore(), attempt.getMasteryAfter(),
                 attempt.getAssessmentType().name(), attempt.getReviewPlanId(),
                 attempt.getEvidenceSource(), attempt.getEvidenceText(),
+                attempt.getLearnerEvidenceQuote(),
                 attempt.getFeedback(),
                 EducationRetrievalEvidence.decode(attempt.getRetrievalEvidenceJson()),
                 attempt.getCreatedAt());

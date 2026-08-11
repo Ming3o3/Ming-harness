@@ -102,7 +102,7 @@ public class EducationAssessmentService {
                                     String profileId, String conceptKey, boolean correct,
                                     double observedMastery, String feedback) {
         return recordInternal(tenantId, userId, runId, stepId, null, profileId, conceptKey,
-                correct, observedMastery, "MODEL_TOOL", null, feedback);
+                correct, observedMastery, "MODEL_TOOL", null, null, feedback);
     }
 
     @Transactional
@@ -111,7 +111,20 @@ public class EducationAssessmentService {
                                     double observedMastery, String evidenceSource,
                                     String evidenceText, String feedback) {
         return recordInternal(tenantId, userId, runId, stepId, null, profileId, conceptKey,
-                correct, observedMastery, evidenceSource, evidenceText, feedback);
+                correct, observedMastery, evidenceSource, evidenceText, null, feedback);
+    }
+
+    /**
+     * 模型工具记录形成性评价时，必须提供本轮学习者输入中的逐字原话。
+     * 这让服务端能区分“模型给出的一道题”与“学习者已经作出的回答”。
+     */
+    @Transactional
+    public AssessmentAttempt record(String tenantId, String userId, String runId, String stepId,
+                                    String profileId, String conceptKey, boolean correct,
+                                    double observedMastery, String evidenceSource,
+                                    String evidenceText, String learnerEvidenceQuote, String feedback) {
+        return recordInternal(tenantId, userId, runId, stepId, null, profileId, conceptKey,
+                correct, observedMastery, evidenceSource, evidenceText, learnerEvidenceQuote, feedback);
     }
 
     /** 由路径绑定的目标提交复核，防止请求体里的 Run 与 URL 目标交叉写入。 */
@@ -121,13 +134,14 @@ public class EducationAssessmentService {
                                            String conceptKey, boolean correct, double observedMastery,
                                            String evidenceSource, String evidenceText, String feedback) {
         return recordInternal(tenantId, userId, runId, stepId, expectedGoalId, profileId, conceptKey,
-                correct, observedMastery, evidenceSource, evidenceText, feedback);
+                correct, observedMastery, evidenceSource, evidenceText, null, feedback);
     }
 
     private AssessmentAttempt recordInternal(String tenantId, String userId, String runId, String stepId,
                                              String expectedGoalId, String profileId, String conceptKey,
                                              boolean correct, double observedMastery, String evidenceSource,
-                                             String evidenceText, String feedback) {
+                                             String evidenceText, String learnerEvidenceQuote,
+                                             String feedback) {
         Run run = runRepository.findById(runId)
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
                         "RUN_NOT_FOUND", "测评所属 Run 不存在"));
@@ -145,6 +159,19 @@ public class EducationAssessmentService {
         if (normalizedEvidenceText == null) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "ASSESSMENT_EVIDENCE_REQUIRED",
                     "更新学习者掌握度必须提供学生作答、推理过程或评分依据");
+        }
+        String normalizedLearnerEvidenceQuote = cleanEvidence(learnerEvidenceQuote);
+        if ("MODEL_TOOL".equals(normalizedEvidenceSource)) {
+            if (normalizedLearnerEvidenceQuote == null) {
+                throw new BusinessException(HttpStatus.BAD_REQUEST,
+                        "ASSESSMENT_LEARNER_EVIDENCE_QUOTE_REQUIRED",
+                        "模型评价必须逐字引用本轮学习者的作答或推理原话");
+            }
+            if (!matchesRunInput(run.getInput(), normalizedLearnerEvidenceQuote)) {
+                throw new BusinessException(HttpStatus.CONFLICT,
+                        "ASSESSMENT_LEARNER_EVIDENCE_QUOTE_MISMATCH",
+                        "模型评价引用的学习者原话不属于本轮输入，不能更新掌握度");
+            }
         }
         if ("MANUAL_REVIEW".equals(normalizedEvidenceSource)) {
             if (run.getStatus() != RunStatus.SUCCEEDED) {
@@ -217,7 +244,7 @@ public class EducationAssessmentService {
                 updated.getMasteryScore(), attemptType, reviewPlanId, normalizedEvidenceSource,
                 normalizedEvidenceText,
                 cleanFeedback(feedback), run.getEducationLearningAssignmentId(),
-                EducationRetrievalEvidence.snapshot(run));
+                EducationRetrievalEvidence.snapshot(run), normalizedLearnerEvidenceQuote);
         AssessmentAttempt saved = attemptRepository.save(attempt);
         if (attemptType == AssessmentAttemptType.FORMATIVE && assignmentCompletionService != null) {
             assignmentCompletionService.resumeAfterEvidenceForGoal(
@@ -269,6 +296,18 @@ public class EducationAssessmentService {
     private String cleanEvidence(String value) {
         String cleaned = clean(value);
         return cleaned.isBlank() ? null : cleaned;
+    }
+
+    /** 忽略大小写和空白比较，保留词语与数字本身，避免模型只凭泛化结论伪造证据。 */
+    private boolean matchesRunInput(String learnerInput, String learnerEvidenceQuote) {
+        String normalizedInput = normalizeEvidenceForMatch(learnerInput);
+        String normalizedQuote = normalizeEvidenceForMatch(learnerEvidenceQuote);
+        return !normalizedQuote.isBlank() && normalizedInput.contains(normalizedQuote);
+    }
+
+    private String normalizeEvidenceForMatch(String value) {
+        if (value == null) return "";
+        return value.toLowerCase(java.util.Locale.ROOT).replaceAll("\\s+", "");
     }
 
     private double clamp(double value) {
