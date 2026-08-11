@@ -510,11 +510,30 @@ function navigateConsoleSection(section) {
   scrollToConsoleSection(section)
 }
 
+/** 课程知识库资料仍由 Runtime 统一上传、解析和索引；教育工作台只负责把入口
+ * 放在当前课程语境里，避免教师在“课程约束”和“高级治理”之间来回寻找。 */
+function openEducationDocumentUpload() {
+  chatMode.value = false
+  showGovernance.value = true
+  setActiveConsoleSection('runtime')
+  if (window.location.hash !== '#runtime') {
+    window.history.pushState({ consoleSection: 'runtime' }, '', '#runtime')
+  }
+  scrollToConsoleSection('runtime', 'auto')
+  void nextTick(() => {
+    document.getElementById('education-document-upload')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
+}
+
 /**
  * 把 Agent 的阻断原因直接映射到可执行的配置入口，避免用户在聊天页和
  * 教育工作台之间来回寻找。课程资料和画像仍由后端做最终权限校验。
  */
 function openEducationAgentSetup() {
+  if (educationWorkspaceMode.value === 'teacher' && !ownedKnowledgeDocuments.value.length) {
+    openEducationDocumentUpload()
+    return
+  }
   chatMode.value = false
   navigateConsoleSection('education')
   void nextTick(() => {
@@ -7489,7 +7508,7 @@ onBeforeUnmount(() => {
             <div v-else class="context-preview-empty">正在读取 Runtime 配置…</div>
             <small class="form-hint">配置按组织保存；修改后旧向量会失效，请使用上方索引操作重新建立向量。</small>
           </section>
-          <form class="governance-card governance-fixed-card" @submit.prevent="createDocument">
+          <form id="education-document-upload" class="governance-card governance-fixed-card" @submit.prevent="createDocument">
             <div class="context-workbench-heading">
               <div><h3>添加授权知识文档</h3><small class="form-hint">仅支持 PDF/DOCX 上传解析，上传后自动建立索引。</small></div>
               <span class="context-mode-chip">文件 → 文本 → 向量</span>
@@ -7548,6 +7567,16 @@ onBeforeUnmount(() => {
             </div>
             <p class="context-workbench-help">{{ educationWorkspaceModeDetail }} 课程元数据决定检索范围，学习者状态和形成性证据决定 Agent 的教学动作。</p>
             <p v-if="educationError" class="policy-error">{{ educationError }}</p>
+            <section v-if="educationWorkspaceMode === 'teacher' || (activeEducationCourse && !currentEducationSourceCount)" class="education-knowledge-base-bridge" :class="{ ready: currentEducationSourceCount }" aria-label="课程知识库入口">
+              <div class="education-knowledge-base-bridge-icon"><BookOpen :size="16" /></div>
+              <div class="education-knowledge-base-bridge-copy">
+                <p class="eyebrow">COURSE KNOWLEDGE BASE</p>
+                <strong>{{ currentEducationSourceCount ? `${currentEducationSourceCount} 个来源已进入当前课程约束` : (educationWorkspaceMode === 'teacher' ? '先把课程资料接入知识库' : '当前课程还没有可检索的知识来源') }}</strong>
+                <span>{{ currentEducationSourceCount ? 'Agent 会只从匹配学科、年级、课程版本、知识点和难度的来源中检索。' : (educationWorkspaceMode === 'teacher' ? '上传 PDF/DOCX 后，继续补充章节、知识点、前置知识和难度元数据，课程才可以启动教学 Run。' : '请联系课程负责人补充课程资料；没有授权来源时，Agent 不会退化成通用问答。') }}</span>
+              </div>
+              <button v-if="educationWorkspaceMode === 'teacher' && !ownedKnowledgeDocuments.length" class="secondary-button" type="button" @click="openEducationDocumentUpload">上传课程资料 <ArrowUp :size="12" /></button>
+              <button v-else-if="educationWorkspaceMode === 'teacher'" class="secondary-button" type="button" @click="openEducationAgentSetup">维护课程元数据 <ArrowUp :size="12" /></button>
+            </section>
             <section class="education-agent-state-card" :class="{ ready: educationAgentReady }" aria-label="教育 Agent 当前状态">
               <div class="education-agent-state-heading">
                 <div><p class="eyebrow">CURRENT AGENT STATE</p><h4>当前学习状态与下一步</h4><span>Agent 将课程边界、学习者证据和教学动作串成一条可追踪的学习回路。</span></div>

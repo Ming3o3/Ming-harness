@@ -310,6 +310,15 @@ h3 { margin: 0; font-size: 13px; }
 .context-workbench-heading .eyebrow { margin-bottom: 6px; }
 .context-mode-chip, .context-result-state { border: 1px solid rgba(76,226,213,.22); border-radius: 12px; color: var(--cyan); padding: 4px 7px; font: 9px "DM Mono", monospace; white-space: nowrap; }
 .context-workbench-help { max-width: 760px; margin: -2px 0 0; color: var(--muted); font-size: 10px; line-height: 1.55; }
+.education-knowledge-base-bridge { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; border: 1px solid rgba(241,184,91,.3); border-radius: 9px; background: rgba(241,184,91,.055); padding: 10px; }
+.education-knowledge-base-bridge.ready { border-color: rgba(76,226,213,.25); background: rgba(76,226,213,.045); }
+.education-knowledge-base-bridge-icon { display: grid; width: 30px; height: 30px; place-items: center; border: 1px solid rgba(241,184,91,.32); border-radius: 8px; color: var(--orange); }
+.education-knowledge-base-bridge.ready .education-knowledge-base-bridge-icon { border-color: rgba(76,226,213,.3); color: var(--cyan); }
+.education-knowledge-base-bridge-copy { display: grid; min-width: 0; gap: 3px; }
+.education-knowledge-base-bridge-copy .eyebrow { margin: 0; color: var(--muted); font-size: 8px; letter-spacing: .12em; }
+.education-knowledge-base-bridge-copy strong { overflow: hidden; color: var(--soft); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.education-knowledge-base-bridge-copy span { color: var(--muted); font: 8px/1.5 "DM Mono", monospace; }
+.education-knowledge-base-bridge .secondary-button { flex: 0 0 auto; white-space: nowrap; }
 .education-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; }
 .education-metrics > div { display: grid; gap: 4px; min-width: 0; border: 1px solid rgba(76,226,213,.16); border-radius: 7px; background: rgba(76,226,213,.035); padding: 8px 9px; }
 .education-metrics span { overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
@@ -659,6 +668,8 @@ h3 { margin: 0; font-size: 13px; }
 @media (max-width: 850px) {
   .education-profile-form, .education-source-form, .education-run-grid, .learning-goal-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .education-agent-state-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .education-knowledge-base-bridge { grid-template-columns: auto minmax(0, 1fr); }
+  .education-knowledge-base-bridge .secondary-button { grid-column: 2; justify-self: start; }
   .education-agent-loop { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .education-course-form, .education-course-columns { grid-template-columns: 1fr; }
   .education-course-list { grid-template-columns: 1fr; }
@@ -683,6 +694,8 @@ h3 { margin: 0; font-size: 13px; }
 @media (max-width: 520px) {
   .education-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .education-agent-state-grid { grid-template-columns: 1fr; }
+  .education-knowledge-base-bridge { grid-template-columns: auto minmax(0, 1fr); align-items: start; }
+  .education-knowledge-base-bridge .secondary-button { grid-column: 2; }
   .education-agent-loop { grid-template-columns: 1fr; }
   .education-agent-loop-arrow { top: auto; right: auto; bottom: -10px; left: 50%; transform: translateX(-50%) rotate(0deg); }
   .education-agent-state-heading, .education-agent-state-footer { align-items: stretch; flex-direction: column; }
