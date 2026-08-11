@@ -313,6 +313,8 @@ const chatDragActive = ref(false)
 const chatAttachmentInput = ref(null)
 const chatFolderInput = ref(null)
 const showChatRun = ref(false)
+// 教育 Agent 的上下文依据默认可见；运行追踪和知识材料会复用同一个右侧检查位。
+const showLearningTrace = ref(true)
 const showRejectDialog = ref(false)
 const rejectReason = ref('')
 const rejectReasonInputRef = ref(null)
@@ -728,6 +730,71 @@ const activeLearningTask = computed(() => {
     .filter((task) => task.learningGoalId === goalId && activeStatuses.has(task.status))
     .sort((left, right) => new Date(left.scheduledAt || left.createdAt) - new Date(right.scheduledAt || right.createdAt))[0] || null
 })
+const pedagogicalModeLabel = computed(() => ({
+  AUTO: '自动选择（基于学习状态）',
+  EXPLAIN: '概念讲解',
+  SOCRATIC: '启发式引导',
+  PRACTICE: '练习优先',
+  DIAGNOSE: '错误诊断',
+}[chatEducation.pedagogicalMode] || '自动选择（基于学习状态）'))
+const educationAgentTrace = computed(() => [
+  {
+    id: 'course',
+    label: '课程约束',
+    value: activeChatCourse.value
+      ? `${activeChatCourse.value.code} · ${activeChatCourse.value.title}`
+      : activeLearnerProfile.value
+        ? `${activeLearnerProfile.value.subject} · ${activeLearnerProfile.value.gradeLevel}`
+        : '尚未绑定课程或学习者画像',
+    detail: activeChatCourse.value
+      ? `${activeChatCourse.value.curriculumVersion} · 课程实例已锁定`
+      : activeLearnerProfile.value
+        ? `${activeLearnerProfile.value.curriculumVersion} · 将按画像约束检索`
+        : '先配置画像，Agent 才能限制知识检索范围',
+    state: activeLearnerProfile.value ? 'ready' : 'pending',
+    icon: BookOpen,
+  },
+  {
+    id: 'knowledge',
+    label: '知识库检索',
+    value: matchingEducationSourceCount.value ? `${matchingEducationSourceCount.value} 个适用课程来源` : '等待课程知识来源',
+    detail: activeLearnerProfile.value ? '按学科、年级、版本和难度过滤' : '课程元数据会决定可用知识范围',
+    state: matchingEducationSourceCount.value ? 'ready' : 'pending',
+    icon: ShieldCheck,
+  },
+  {
+    id: 'learner',
+    label: '学习者状态',
+    value: activeLearnerProfile.value
+      ? (learnerMasteryLoading.value ? '正在读取掌握度…' : `${learnerMastery.value.length} 个知识点已建档`)
+      : '等待学习者画像',
+    detail: activeLearningRecommendation.value
+      ? `当前掌握度 ${formatRate(activeLearningRecommendation.value.currentMastery)} · 目标 ${formatRate(activeLearningRecommendation.value.targetMastery)}`
+      : learnerMasteryPreview.value.length
+        ? `优先关注：${learnerMasteryPreview.value.map((item) => item.conceptKey).join('、')}`
+        : '完成带证据的测评后会更新状态',
+    state: activeLearnerProfile.value ? 'ready' : 'pending',
+    icon: Brain,
+  },
+  {
+    id: 'teaching',
+    label: '教学决策',
+    value: chatEducation.enabled && activeLearnerProfile.value ? pedagogicalModeLabel.value : '等待教育 Agent 激活',
+    detail: chatEducation.enabled && activeLearnerProfile.value
+      ? (chatEducation.conceptKey ? `目标知识点：${chatEducation.conceptKey}` : '会根据问题和掌握度选择讲解、练习或诊断')
+      : '先绑定学习者画像，再由 Agent 决定合适的教学动作',
+    state: chatEducation.enabled && activeLearnerProfile.value ? 'ready' : 'pending',
+    icon: Target,
+  },
+  {
+    id: 'evidence',
+    label: '形成性证据',
+    value: activeLearningGoal.value ? `${learningGoalAssessments.value.length} 次测评记录` : '回答后可生成测评证据',
+    detail: activeLearningGoal.value ? '结果会累计到学习目标并触发下一步动作' : '绑定学习目标后，Agent 会追踪进度和复习任务',
+    state: activeLearningGoal.value ? 'ready' : 'pending',
+    icon: ListChecks,
+  },
+])
 const matchingEducationSourceCount = computed(() => {
   const profile = activeLearnerProfile.value
   if (!profile) return 0
@@ -2182,6 +2249,7 @@ async function toggleWorkspaceExplorer() {
   showChatWorkspace.value = !showChatWorkspace.value
   if (!showChatWorkspace.value) return
   showChatRun.value = false
+  showLearningTrace.value = false
   await loadWorkspaceDirectory('.')
 }
 
@@ -2189,6 +2257,7 @@ async function toggleWorkspaceExplorer() {
 async function toggleRunPanel() {
   const nextVisible = !showChatRun.value
   showChatWorkspace.value = false
+  showLearningTrace.value = false
   showChatRun.value = nextVisible
 }
 
@@ -2196,8 +2265,17 @@ async function toggleRunPanel() {
 async function openRunPanel(runId, announce = false) {
   if (!runId) return
   showChatWorkspace.value = false
+  showLearningTrace.value = false
   showChatRun.value = true
   await selectRun(runId, announce, false)
+}
+
+/** 课程约束、学习状态和证据链共享右侧检查位，便于学习者理解 Agent 的决策依据。 */
+function toggleLearningTrace() {
+  const nextVisible = !showLearningTrace.value
+  showChatWorkspace.value = false
+  showChatRun.value = false
+  showLearningTrace.value = nextVisible
 }
 
 /** 展开 Git 审阅时才请求变更明细，普通目录浏览不会额外运行 Git 命令。 */
@@ -5064,7 +5142,7 @@ onBeforeUnmount(() => {
       <header class="chat-topbar">
         <div class="chat-brand">
           <div class="brand-mark" aria-hidden="true"><Sparkles :size="17" :stroke-width="1.8" /></div>
-          <div><strong>Ming Harness</strong><span>EDUCATION KNOWLEDGE AGENT</span></div>
+          <div><strong>Ming Harness</strong><span>COURSE-CONSTRAINED LEARNING AGENT</span></div>
         </div>
         <div class="chat-topbar-actions">
           <span class="chat-identity">{{ form.tenantId }} / {{ form.userId }}</span>
@@ -5161,7 +5239,7 @@ onBeforeUnmount(() => {
                 <button class="primary-button" type="submit" :disabled="conversationRenaming">{{ conversationRenaming ? '保存中…' : '保存' }}</button>
               </form>
               <h1 v-else>{{ activeConversation?.conversation?.title || '新的对话' }}</h1>
-              <p class="chat-heading-meta">每一轮回答都会结合课程约束、知识库来源和学习者状态，并保留可追溯的形成性证据。</p>
+              <p class="chat-heading-meta">不是通用问答：Agent 先锁定课程范围，再读取学习状态，最后选择教学动作并沉淀形成性证据。</p>
             </div>
             <div class="chat-heading-actions">
               <button class="chat-education-status-chip" type="button" title="打开教育工作台配置课程与学习者" @click="chatMode = false; navigateConsoleSection('education')">
@@ -5193,6 +5271,7 @@ onBeforeUnmount(() => {
               ><i></i>{{ runEventStatusLabel }}</span>
               <span v-if="pendingChatMessage" class="chat-run-pill" :class="statusClass(chatRunStatus)"><i></i>{{ statusLabel(chatRunStatus) }}</span>
               <span v-if="pendingChatMessage && chatRunActivity" class="chat-activity-pill" role="status" aria-live="polite">{{ chatRunActivity }}</span>
+              <button class="secondary-button chat-agent-trace-button" type="button" :class="{ active: showLearningTrace }" @click="toggleLearningTrace"><Brain :size="14" />{{ showLearningTrace ? '收起依据' : 'Agent 依据' }}</button>
               <button v-if="activeConversationId && !showConversationRename" class="secondary-button" type="button" :disabled="conversationRenaming" @click="beginConversationRename">重命名</button>
               <button v-if="workspaceExplorerAvailable" class="secondary-button" type="button" @click="toggleWorkspaceExplorer">{{ showChatWorkspace ? '隐藏材料' : '知识材料' }}</button>
               <button v-if="latestConversationRun(activeConversation)" class="secondary-button" type="button" @click="toggleRunPanel">{{ showChatRun ? '隐藏运行' : '查看运行' }}</button>
@@ -5404,7 +5483,7 @@ onBeforeUnmount(() => {
               v-model="chatInput"
               rows="3"
               :disabled="chatSending || chatUploading || !activeConversationId"
-              placeholder="输入一道题、一个知识点或你的学习目标…"
+              placeholder="提交一个学习任务：题目、知识点、学习困难或目标…"
               aria-label="输入消息"
               @input="handleChatInput"
               @keydown="handleChatKeydown"
@@ -5424,6 +5503,39 @@ onBeforeUnmount(() => {
             </div>
           </form>
         </main>
+
+        <aside v-if="showLearningTrace && !showChatWorkspace && !showChatRun" class="chat-learning-trace-panel" aria-label="教育 Agent 决策依据">
+          <div class="chat-run-panel-heading">
+            <div><p class="eyebrow">AGENT CONTEXT</p><h2>Agent 依据</h2></div>
+            <button class="icon-button" type="button" aria-label="关闭 Agent 依据" @click="showLearningTrace = false"><X :size="15" /></button>
+          </div>
+          <div class="learning-trace-intro" :class="{ ready: chatEducation.enabled && activeLearnerProfile }">
+            <div class="learning-trace-intro-icon"><Sparkles :size="16" /></div>
+            <div>
+              <strong>{{ chatEducation.enabled && activeLearnerProfile ? '教育 Agent 已就绪' : '先建立学习上下文' }}</strong>
+              <p>{{ chatEducation.enabled && activeLearnerProfile ? '本轮回答会受到课程约束与学习者状态共同影响。' : '配置学习者画像和课程后，回答才会进入教育 Agent 路径。' }}</p>
+            </div>
+          </div>
+          <section class="learning-trace-section" aria-label="Agent 上下文链路">
+            <div class="learning-trace-section-heading"><span>DECISION PIPELINE</span><small>{{ educationAgentTrace.filter((item) => item.state === 'ready').length }} / {{ educationAgentTrace.length }} 已就绪</small></div>
+            <div class="learning-trace-list">
+              <article v-for="(item, index) in educationAgentTrace" :key="item.id" class="learning-trace-row" :class="`is-${item.state}`">
+                <div class="learning-trace-index"><span>{{ index + 1 }}</span><i v-if="index < educationAgentTrace.length - 1"></i></div>
+                <div class="learning-trace-copy">
+                  <div class="learning-trace-label"><component :is="item.icon" :size="13" /><strong>{{ item.label }}</strong><em>{{ item.state === 'ready' ? '已应用' : '待配置' }}</em></div>
+                  <b>{{ item.value }}</b>
+                  <small>{{ item.detail }}</small>
+                </div>
+              </article>
+            </div>
+          </section>
+          <section class="learning-trace-next" aria-label="下一步学习动作">
+            <div class="learning-trace-section-heading"><span>NEXT LEARNING ACTION</span></div>
+            <strong>{{ activeLearningTask?.title || activeLearningRecommendation?.nextActionTitle || '绑定学习目标后生成' }}</strong>
+            <p>{{ activeLearningTask?.prompt || activeLearningRecommendation?.rationale || 'Agent 会根据掌握度和测评证据，给出下一步练习、诊断或复习。' }}</p>
+            <button class="secondary-button" type="button" @click="chatMode = false; navigateConsoleSection('education')">{{ activeLearnerProfile ? '调整课程与学习目标' : '配置学习者画像' }} <ArrowUp :size="13" /></button>
+          </section>
+        </aside>
 
         <aside v-if="showChatWorkspace" class="chat-workspace-panel" :class="{ 'workspace-panel-expanded': workspaceFilePreview || workspaceFilePreviewLoading }">
           <div class="chat-run-panel-heading">
