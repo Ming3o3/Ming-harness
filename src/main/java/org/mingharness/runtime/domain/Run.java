@@ -46,6 +46,13 @@ public class Run {
     private Boolean educationMode;
     @Column(name = "education_learner_profile_id", length = 128)
     private String educationLearnerProfileId;
+    /** 直接学习会话选定的课程实例快照，避免后续改名或换班后无法追溯课程边界。 */
+    @Column(name = "education_course_id", length = 128)
+    private String educationCourseId;
+    @Column(name = "education_course_code", length = 128)
+    private String educationCourseCode;
+    @Column(name = "education_course_title", length = 255)
+    private String educationCourseTitle;
     @Column(name = "education_learning_goal_id", length = 128)
     private String educationLearningGoalId;
     @Column(name = "education_learning_assignment_id", length = 128)
@@ -201,6 +208,9 @@ public class Run {
                 ? EducationRunConfiguration.disabled() : configuration;
         this.educationMode = value.enabled();
         this.educationLearnerProfileId = value.learnerProfileId();
+        this.educationCourseId = value.courseId();
+        this.educationCourseCode = value.courseCode();
+        this.educationCourseTitle = value.courseTitle();
         this.educationLearningGoalId = value.learningGoalId();
         this.educationLearningAssignmentId = value.learningAssignmentId();
         this.educationLearningAssignmentTitle = value.learningAssignmentTitle();
@@ -232,7 +242,8 @@ public class Run {
                 educationSubject, educationGradeLevel, educationCurriculumVersion, educationConceptKey,
                 educationMinDifficulty, educationMaxDifficulty,
                 educationPedagogicalMode == null ? "AUTO" : educationPedagogicalMode,
-                educationLearnerState == null ? "" : educationLearnerState);
+                educationLearnerState == null ? "" : educationLearnerState,
+                educationCourseId, educationCourseCode, educationCourseTitle);
     }
 
     /** Worker 成功获取执行锁后建立租约。 */
@@ -368,6 +379,9 @@ public class Run {
     public String getWorkspaceId() { return workspaceId; }
     public boolean isEducationMode() { return Boolean.TRUE.equals(educationMode); }
     public String getEducationLearnerProfileId() { return educationLearnerProfileId; }
+    public String getEducationCourseId() { return educationCourseId; }
+    public String getEducationCourseCode() { return educationCourseCode; }
+    public String getEducationCourseTitle() { return educationCourseTitle; }
     public String getEducationLearningGoalId() { return educationLearningGoalId; }
     public String getEducationLearningAssignmentId() { return educationLearningAssignmentId; }
     public String getEducationLearningAssignmentTitle() { return educationLearningAssignmentTitle; }

@@ -281,4 +281,71 @@ class EducationRunConfigurationServiceTests {
         assertEquals("请补充定义域判定依据",
                 run.educationConfiguration().learningAssignmentTeacherReviewNote());
     }
+
+    @Test
+    void shouldFreezeAnActiveEnrolledCourseIntoDirectLearningRun() {
+        LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        EducationCourseRepository courses = mock(EducationCourseRepository.class);
+        EducationEnrollmentRepository enrollments = mock(EducationEnrollmentRepository.class);
+        LearnerProfile profile = new LearnerProfile("tenant-a", "student-1", "数学",
+                "高中一年级", "人教A版", null, "zh-CN");
+        EducationCourse course = new EducationCourse("tenant-a", "teacher-1", "MATH-101",
+                "函数基础", "数学", "高中一年级", "人教A版");
+        when(profiles.findByIdAndTenantIdAndUserId(profile.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(profile));
+        when(mastery.findByTenantIdAndLearnerProfileIdOrderByConceptKeyAsc("tenant-a", profile.getId()))
+                .thenReturn(List.of());
+        when(courses.findByTenantIdAndId("tenant-a", course.getId())).thenReturn(Optional.of(course));
+        when(enrollments.existsByTenantIdAndCourseIdAndLearnerUserIdAndStatus(
+                "tenant-a", course.getId(), "student-1", EducationEnrollmentStatus.ACTIVE))
+                .thenReturn(true);
+
+        EducationRunConfigurationService service = new EducationRunConfigurationService(
+                profiles, mastery, null, null, null, null, courses, enrollments,
+                new SensitiveDataSanitizer());
+        EducationRunConfiguration configuration = service.resolve("tenant-a", "student-1",
+                new EducationRunOptions(true, profile.getId(), null, null, null,
+                        "数学", "高中一年级", "人教A版", "函数", null, null,
+                        "PRACTICE", course.getId()));
+
+        assertEquals(course.getId(), configuration.courseId());
+        assertEquals("MATH-101", configuration.courseCode());
+        assertEquals("函数基础", configuration.courseTitle());
+        assertTrue(configuration.promptSummary().contains("课程实例=MATH-101 · 函数基础"));
+
+        Run run = new Run("tenant-a", "student-1", "函数学习", "开始",
+                BigDecimal.ONE, "demo-model", "prompt-v1", "policy-v1");
+        run.attachEducationConfiguration(configuration);
+        assertEquals(course.getId(), run.getEducationCourseId());
+        assertEquals("MATH-101", run.educationConfiguration().courseCode());
+    }
+
+    @Test
+    void shouldRejectDirectLearningRunWhenLearnerIsNotEnrolledInCourse() {
+        LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        EducationCourseRepository courses = mock(EducationCourseRepository.class);
+        EducationEnrollmentRepository enrollments = mock(EducationEnrollmentRepository.class);
+        LearnerProfile profile = new LearnerProfile("tenant-a", "student-1", "数学",
+                "高中一年级", "人教A版", null, "zh-CN");
+        EducationCourse course = new EducationCourse("tenant-a", "teacher-1", "MATH-101",
+                "函数基础", "数学", "高中一年级", "人教A版");
+        when(profiles.findByIdAndTenantIdAndUserId(profile.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(profile));
+        when(courses.findByTenantIdAndId("tenant-a", course.getId())).thenReturn(Optional.of(course));
+        when(enrollments.existsByTenantIdAndCourseIdAndLearnerUserIdAndStatus(
+                "tenant-a", course.getId(), "student-1", EducationEnrollmentStatus.ACTIVE))
+                .thenReturn(false);
+
+        EducationRunConfigurationService service = new EducationRunConfigurationService(
+                profiles, mastery, null, null, null, null, courses, enrollments,
+                new SensitiveDataSanitizer());
+        var exception = assertThrows(org.mingharness.common.BusinessException.class, () -> service.resolve(
+                "tenant-a", "student-1", new EducationRunOptions(true, profile.getId(), null,
+                        null, null, "数学", "高中一年级", "人教A版", "函数", null, null,
+                        "AUTO", course.getId())));
+
+        assertEquals("EDUCATION_COURSE_ENROLLMENT_REQUIRED", exception.getCode());
+    }
 }

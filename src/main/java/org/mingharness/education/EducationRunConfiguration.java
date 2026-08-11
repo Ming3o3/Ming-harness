@@ -28,12 +28,33 @@ public record EducationRunConfiguration(
         Integer minDifficulty,
         Integer maxDifficulty,
         String pedagogicalMode,
-        String learnerStateSummary
+        String learnerStateSummary,
+        String courseId,
+        String courseCode,
+        String courseTitle
 ) {
 
     public static EducationRunConfiguration disabled() {
         return new EducationRunConfiguration(false, null, null, null, null, null, null, null, null, 0.0, 0.0,
-                null, null, null, null, null, null, "AUTO", "");
+                null, null, null, null, null, null, "AUTO", "", null, null, null);
+    }
+
+    /** 兼容增加课程实例快照前的完整配置构造方式。 */
+    public EducationRunConfiguration(boolean enabled, String learnerProfileId, String learningGoalId,
+                                     String learningAssignmentId, String learningAssignmentTitle,
+                                     String learningAssignmentInstructions,
+                                     String learningAssignmentTeacherReviewNote, String reviewPlanId,
+                                     String learningGoalTitle, double learningGoalBaselineMastery,
+                                     double learningGoalTargetMastery, String subject, String gradeLevel,
+                                     String curriculumVersion, String conceptKey, Integer minDifficulty,
+                                     Integer maxDifficulty, String pedagogicalMode,
+                                     String learnerStateSummary) {
+        this(enabled, learnerProfileId, learningGoalId, learningAssignmentId,
+                learningAssignmentTitle, learningAssignmentInstructions,
+                learningAssignmentTeacherReviewNote, reviewPlanId, learningGoalTitle,
+                learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
+                curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
+                learnerStateSummary, null, null, null);
     }
 
     /** 兼容未绑定教师返工说明的既有完整快照构造方式。 */
@@ -49,7 +70,7 @@ public record EducationRunConfiguration(
                 learningAssignmentInstructions, null, reviewPlanId, learningGoalTitle,
                 learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
                 curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
-                learnerStateSummary);
+                learnerStateSummary, null, null, null);
     }
 
     /** 兼容未绑定保持度复习计划的既有调用方。 */
@@ -59,10 +80,10 @@ public record EducationRunConfiguration(
                                      String curriculumVersion, String conceptKey, Integer minDifficulty,
                                      Integer maxDifficulty, String pedagogicalMode,
                                      String learnerStateSummary) {
-        this(enabled, learnerProfileId, learningGoalId, null, null, null, null, learningGoalTitle,
+        this(enabled, learnerProfileId, learningGoalId, null, null, null, null, null, learningGoalTitle,
                 learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
                 curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
-                learnerStateSummary);
+                learnerStateSummary, null, null, null);
     }
 
     /** 兼容旧版携带保持度复习计划的快照构造方式。 */
@@ -72,10 +93,10 @@ public record EducationRunConfiguration(
                                      String subject, String gradeLevel, String curriculumVersion,
                                      String conceptKey, Integer minDifficulty, Integer maxDifficulty,
                                      String pedagogicalMode, String learnerStateSummary) {
-        this(enabled, learnerProfileId, learningGoalId, null, null, null, reviewPlanId, learningGoalTitle,
+        this(enabled, learnerProfileId, learningGoalId, null, null, null, null, reviewPlanId, learningGoalTitle,
                 learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
                 curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
-                learnerStateSummary);
+                learnerStateSummary, null, null, null);
     }
 
     public EducationRetrievalFilter retrievalFilter() {
@@ -113,6 +134,11 @@ public record EducationRunConfiguration(
                 .append("；年级=").append(gradeLevel)
                 .append("；课程版本=").append(curriculumVersion)
                 .append("；教学策略=").append(pedagogicalMode);
+        if (courseId != null && !courseId.isBlank()) {
+            summary.append("；课程实例=")
+                    .append(courseCode == null || courseCode.isBlank() ? courseId : courseCode)
+                    .append(courseTitle == null || courseTitle.isBlank() ? "" : " · " + courseTitle);
+        }
         if (learningGoalId != null && !learningGoalId.isBlank()) {
             summary.append("；学习目标=").append(learningGoalTitle)
                     .append("；目标掌握度=").append(String.format(java.util.Locale.ROOT, "%.2f",

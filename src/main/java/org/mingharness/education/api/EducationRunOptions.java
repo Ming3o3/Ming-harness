@@ -22,15 +22,26 @@ public record EducationRunOptions(
         @Max(value = 5, message = "最低难度必须在 1 到 5 之间") Integer minDifficulty,
         @Min(value = 1, message = "最高难度必须在 1 到 5 之间")
         @Max(value = 5, message = "最高难度必须在 1 到 5 之间") Integer maxDifficulty,
-        @Size(max = 64, message = "教学策略长度不能超过 64 个字符") String pedagogicalMode
+        @Size(max = 64, message = "教学策略长度不能超过 64 个字符") String pedagogicalMode,
+        @Size(max = 128, message = "课程实例 ID 不能超过 128 个字符") String courseId
 ) {
+
+    /** 兼容增加课程实例绑定前的完整教育 Run 请求。 */
+    public EducationRunOptions(Boolean enabled, String learnerProfileId, String learningGoalId,
+                               String learningAssignmentId, String reviewPlanId, String subject,
+                               String gradeLevel, String curriculumVersion, String conceptKey,
+                               Integer minDifficulty, Integer maxDifficulty, String pedagogicalMode) {
+        this(enabled, learnerProfileId, learningGoalId, learningAssignmentId, reviewPlanId,
+                subject, gradeLevel, curriculumVersion, conceptKey, minDifficulty,
+                maxDifficulty, pedagogicalMode, null);
+    }
 
     /** 兼容既有调用方；未绑定结构化学习目标。 */
     public EducationRunOptions(Boolean enabled, String learnerProfileId, String subject,
                                String gradeLevel, String curriculumVersion, String conceptKey,
                                Integer minDifficulty, Integer maxDifficulty, String pedagogicalMode) {
         this(enabled, learnerProfileId, null, null, null, subject, gradeLevel, curriculumVersion, conceptKey,
-                minDifficulty, maxDifficulty, pedagogicalMode);
+                minDifficulty, maxDifficulty, pedagogicalMode, null);
     }
 
     /** 兼容已绑定学习目标但不使用保持度复习的旧调用方。 */
@@ -39,7 +50,7 @@ public record EducationRunOptions(
                                String conceptKey, Integer minDifficulty, Integer maxDifficulty,
                                String pedagogicalMode) {
         this(enabled, learnerProfileId, learningGoalId, null, null, subject, gradeLevel,
-                curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode);
+                curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode, null);
     }
 
     /** 兼容已绑定学习目标和保持度复习计划的旧调用方。 */
@@ -48,7 +59,7 @@ public record EducationRunOptions(
                                String curriculumVersion, String conceptKey, Integer minDifficulty,
                                Integer maxDifficulty, String pedagogicalMode) {
         this(enabled, learnerProfileId, learningGoalId, null, reviewPlanId, subject, gradeLevel,
-                curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode);
+                curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode, null);
     }
 
     public boolean isEnabled() {

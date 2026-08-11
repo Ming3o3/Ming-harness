@@ -517,6 +517,7 @@ const form = reactive({
     enabled: false,
     learnerProfileId: '',
     learningGoalId: '',
+    courseId: '',
     subject: '',
     gradeLevel: '',
     curriculumVersion: '',
@@ -654,6 +655,17 @@ const selectedAllowedToolsSummary = computed(() => {
 
 const activeEducationCourse = computed(() => educationCourses.value
   .find((course) => course.id === activeEducationCourseId.value) || null)
+const activeChatCourse = computed(() => educationCourses.value
+  .find((course) => course.id === chatEducation.courseId) || null)
+const availableChatCourses = computed(() => {
+  const profile = activeLearnerProfile.value
+  if (!profile) return []
+  return educationCourses.value.filter((course) => course.status === 'ACTIVE'
+    && course.ownerUserId !== form.userId
+    && course.subject === profile.subject
+    && course.gradeLevel === profile.gradeLevel
+    && course.curriculumVersion === profile.curriculumVersion)
+})
 const activeEducationCourseIsOwner = computed(() => Boolean(
   activeEducationCourse.value && activeEducationCourse.value.ownerUserId === form.userId,
 ))
@@ -1344,6 +1356,7 @@ function defaultChatEducation() {
     enabled: true,
     learnerProfileId: '',
     learningGoalId: '',
+    courseId: '',
     subject: '',
     gradeLevel: '',
     curriculumVersion: '',
@@ -3538,6 +3551,37 @@ function applyLearnerProfileToChat(profile) {
   chatEducation.subject = profile.subject || ''
   chatEducation.gradeLevel = profile.gradeLevel || ''
   chatEducation.curriculumVersion = profile.curriculumVersion || ''
+  const course = ensureChatCourseMatchesProfile(profile)
+  form.education.courseId = course?.id || ''
+}
+
+function ensureChatCourseMatchesProfile(profile = activeLearnerProfile.value) {
+  const course = educationCourses.value.find((item) => item.id === chatEducation.courseId)
+  const matchesProfile = Boolean(course && profile
+    && course.status === 'ACTIVE'
+    && course.ownerUserId !== form.userId
+    && course.subject === profile.subject
+    && course.gradeLevel === profile.gradeLevel
+    && course.curriculumVersion === profile.curriculumVersion)
+  if (!matchesProfile) {
+    chatEducation.courseId = ''
+    return null
+  }
+  return course
+}
+
+function selectChatCourse() {
+  const course = availableChatCourses.value.find((item) => item.id === chatEducation.courseId)
+  if (!course) {
+    chatEducation.courseId = ''
+    form.education.courseId = ''
+    return
+  }
+  chatEducation.subject = course.subject
+  chatEducation.gradeLevel = course.gradeLevel
+  chatEducation.curriculumVersion = course.curriculumVersion
+  form.education.courseId = course.id
+  noticeMessage.value = `已锁定课程约束：${course.code} · ${course.title}`
 }
 
 async function selectLearnerProfile(profile, notify = true) {
@@ -3730,6 +3774,7 @@ async function useLearningRecommendation() {
     const detail = await api.executeLearningGoalNextAction(recommendation.learningGoalId, {
       conversationId: activeConversationId.value || null,
       maxTurns: chatMaxTurns.value,
+      courseId: chatEducation.courseId || null,
     }, `learning-action-${crypto.randomUUID?.() || Date.now()}`)
     activeConversation.value = detail
     conversations.value = [detail.conversation, ...conversations.value
@@ -5077,7 +5122,7 @@ onBeforeUnmount(() => {
             <div class="chat-heading-actions">
               <button class="chat-education-status-chip" type="button" title="打开教育工作台配置课程与学习者" @click="chatMode = false; navigateConsoleSection('education')">
                 <Sparkles :size="14" />
-                <span><small>当前学习上下文</small><strong>{{ activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` : '待配置学习者画像' }}</strong></span>
+                <span><small>当前学习上下文</small><strong>{{ activeChatCourse ? `${activeChatCourse.code} · ${activeChatCourse.title}` : (activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` : '待配置学习者画像') }}</strong></span>
               </button>
               <div class="chat-workspace-chip" :class="workspaceStatusClass" :title="workspaceDetail">
                 <i></i>
@@ -5121,7 +5166,7 @@ onBeforeUnmount(() => {
             <div class="learning-cockpit-grid">
               <article class="learning-cockpit-card learning-cockpit-context">
                 <span class="learning-cockpit-icon"><BookOpen :size="16" /></span>
-                <div><small>课程约束</small><strong>{{ activeLearnerProfile.subject }} · {{ activeLearnerProfile.gradeLevel }}</strong><p>{{ activeLearnerProfile.curriculumVersion }} · {{ matchingEducationSourceCount }} 个适用课程来源</p></div>
+                <div><small>课程约束</small><strong>{{ activeChatCourse?.title || `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` }}</strong><p>{{ activeChatCourse ? `${activeChatCourse.code} · ` : '' }}{{ activeLearnerProfile.curriculumVersion }} · {{ matchingEducationSourceCount }} 个适用课程来源{{ activeChatCourse ? ' · 已锁定' : ' · 未绑定课程实例' }}</p></div>
               </article>
               <article class="learning-cockpit-card learning-cockpit-goal" :class="{ empty: !activeLearningGoal }">
                 <span class="learning-cockpit-icon"><Target :size="16" /></span>
@@ -5165,12 +5210,12 @@ onBeforeUnmount(() => {
             <div v-else-if="!chatMessages.length" class="chat-empty-state">
               <div class="chat-empty-mark" aria-hidden="true"><Sparkles :size="23" /></div>
               <strong>从一个学习问题开始</strong>
-              <span>{{ activeLearnerProfile ? `当前画像：${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel} · ${activeLearnerProfile.curriculumVersion}。Agent 会按掌握度选择讲解、练习或诊断方式。` : '先在教育工作台创建学习者画像，Agent 才能按课程版本和学习状态给出分层回答。' }}</span>
+              <span>{{ activeLearnerProfile ? `当前画像：${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel} · ${activeLearnerProfile.curriculumVersion}${activeChatCourse ? ` · 课程：${activeChatCourse.title}` : ''}。Agent 会按掌握度选择讲解、练习或诊断方式。` : '先在教育工作台创建学习者画像，Agent 才能按课程版本和学习状态给出分层回答。' }}</span>
               <div class="chat-learning-context-card" aria-label="当前学习上下文">
                 <div class="chat-learning-context-heading"><span>学习上下文</span><button type="button" @click="chatMode = false; navigateConsoleSection('education')">{{ activeLearnerProfile ? '调整画像' : '创建画像' }}</button></div>
                 <div v-if="activeLearnerProfile" class="chat-learning-context-body">
                   <div class="chat-learning-profile-mark"><Sparkles :size="15" /></div>
-                  <div><strong>{{ activeLearnerProfile.subject }} · {{ activeLearnerProfile.gradeLevel }}</strong><small>{{ activeLearnerProfile.curriculumVersion }}<span v-if="activeLearningGoal"> · 目标：{{ activeLearningGoal.title }}</span></small></div>
+                  <div><strong>{{ activeLearnerProfile.subject }} · {{ activeLearnerProfile.gradeLevel }}</strong><small>{{ activeLearnerProfile.curriculumVersion }}<span v-if="activeChatCourse"> · 课程：{{ activeChatCourse.title }}</span><span v-if="activeLearningGoal"> · 目标：{{ activeLearningGoal.title }}</span></small></div>
                   <span class="chat-learning-context-state" :class="{ ready: chatEducation.enabled }">{{ chatEducation.enabled ? '教育 Agent 已启用' : '通用模式' }}</span>
                 </div>
                 <div v-else class="chat-learning-context-empty">还没有学习者画像；完成配置后会自动带入学科、年级、课程版本和掌握度。</div>
@@ -5301,11 +5346,12 @@ onBeforeUnmount(() => {
                 </label>
                 <div v-if="chatEducation.enabled" class="chat-education-grid">
                   <label><span>学习者画像</span><select v-model="chatEducation.learnerProfileId" :disabled="chatSending || chatUploading" @change="selectChatLearnerProfile"><option value="">请选择画像</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>
+                  <label><span>当前课程</span><select v-model="chatEducation.courseId" :disabled="chatSending || chatUploading || !chatEducation.learnerProfileId" @change="selectChatCourse"><option value="">仅使用画像课程约束</option><option v-for="course in availableChatCourses" :key="course.id" :value="course.id">{{ course.code }} · {{ course.title }}</option></select></label>
                   <label><span>学习目标</span><select v-model="chatEducation.learningGoalId" :disabled="chatSending || chatUploading" @change="selectLearningGoal(learningGoals.find((goal) => goal.id === chatEducation.learningGoalId), false)"><option value="">不绑定目标</option><option v-for="goal in learningGoals.filter((item) => item.status === 'ACTIVE')" :key="goal.id" :value="goal.id">{{ goal.title }} · {{ goal.conceptKey }}</option></select></label>
                   <label><span>教学策略</span><select v-model="chatEducation.pedagogicalMode" :disabled="chatSending || chatUploading"><option value="AUTO">自动选择</option><option value="EXPLAIN">概念讲解</option><option value="SOCRATIC">启发式引导</option><option value="PRACTICE">练习优先</option><option value="DIAGNOSE">错误诊断</option></select></label>
                   <label><span>目标知识点</span><input v-model="chatEducation.conceptKey" maxlength="255" placeholder="例如：函数定义域" :disabled="chatSending || chatUploading" /></label>
                   <label><span>难度范围</span><div class="chat-education-difficulty"><input v-model.number="chatEducation.minDifficulty" type="number" min="1" max="5" placeholder="1" :disabled="chatSending || chatUploading" /><span>—</span><input v-model.number="chatEducation.maxDifficulty" type="number" min="1" max="5" placeholder="5" :disabled="chatSending || chatUploading" /></div></label>
-                  <small class="chat-education-context">{{ chatEducation.subject || '未选择学科' }} · {{ chatEducation.gradeLevel || '未选择年级' }} · {{ chatEducation.curriculumVersion || '未选择课程版本' }}</small>
+                  <small class="chat-education-context">{{ activeChatCourse ? `已锁定 ${activeChatCourse.code} · ${activeChatCourse.title}` : '课程实例未绑定；将按画像与知识源范围运行' }} · {{ chatEducation.subject || '未选择学科' }} · {{ chatEducation.gradeLevel || '未选择年级' }} · {{ chatEducation.curriculumVersion || '未选择课程版本' }}</small>
                 </div>
               </div>
             </div>
@@ -5322,7 +5368,7 @@ onBeforeUnmount(() => {
             <div class="chat-composer-footer">
               <span class="chat-composer-hint">
                 <span class="chat-composer-hint-primary"><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行<span v-if="canCancelChat"> · <kbd>Esc</kbd> 停止</span></span>
-                <span class="chat-composer-hint-context">{{ desktopWorkspaceDropping ? '正在导入知识材料…' : chatEducation.enabled ? (activeLearnerProfile ? '已应用课程约束与学习者掌握度' : '请先创建学习者画像，再开始教育对话') : '当前为通用问答模式，可在教学设置中启用教育 Agent' }}</span>
+                <span class="chat-composer-hint-context">{{ desktopWorkspaceDropping ? '正在导入知识材料…' : chatEducation.enabled ? (activeLearnerProfile ? (activeChatCourse ? `已锁定课程「${activeChatCourse.title}」与学习者掌握度` : '已应用画像课程约束与学习者掌握度') : '请先创建学习者画像，再开始教育对话') : '当前为通用问答模式，可在教学设置中启用教育 Agent' }}</span>
               </span>
               <div class="chat-composer-actions">
                 <button class="secondary-button chat-agent-settings-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="showChatAgentSettings = !showChatAgentSettings"><Settings2 :size="14" /><span>教学设置 · {{ activeLearnerProfile ? activeLearnerProfile.subject : '未配置' }}</span></button>

@@ -69,9 +69,9 @@ public class LearningAssignmentStartService {
                     "课程作业尚未建立学习目标");
         }
         ExecuteLearningActionRequest effectiveRequest = request == null
-                ? new ExecuteLearningActionRequest(null, null, null, assignment.getId())
+                ? new ExecuteLearningActionRequest(null, null, null, assignment.getId(), assignment.getCourseId())
                 : new ExecuteLearningActionRequest(request.conversationId(), request.modelName(),
-                        request.maxTurns(), assignment.getId());
+                        request.maxTurns(), assignment.getId(), assignment.getCourseId());
         ConversationDetail conversation = actionService.execute(
                 tenantId, learnerUserId, assignment.getLearningGoalId(), effectiveRequest,
                 permissions, idempotencyKey);

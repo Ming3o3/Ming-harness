@@ -27,13 +27,15 @@ public class EducationRunConfigurationService {
     private final LearningAssignmentRepository assignmentRepository;
     private final LearningAssignmentFeedbackRepository feedbackRepository;
     private final LearningReviewPlanService reviewPlanService;
+    private final EducationCourseRepository courseRepository;
+    private final EducationEnrollmentRepository enrollmentRepository;
     private final SensitiveDataSanitizer sanitizer;
 
     /** 兼容旧组件测试和扩展调用方；未启用结构化学习目标解析。 */
     public EducationRunConfigurationService(LearnerProfileRepository profileRepository,
                                             LearnerMasteryRepository masteryRepository,
                                             SensitiveDataSanitizer sanitizer) {
-        this(profileRepository, masteryRepository, null, null, null, null, sanitizer);
+        this(profileRepository, masteryRepository, null, null, null, null, null, null, sanitizer);
     }
 
     /** 兼容已启用学习目标但尚未使用保持度复习的测试和扩展调用方。 */
@@ -41,7 +43,7 @@ public class EducationRunConfigurationService {
                                             LearnerMasteryRepository masteryRepository,
                                             LearningGoalRepository goalRepository,
                                             SensitiveDataSanitizer sanitizer) {
-        this(profileRepository, masteryRepository, goalRepository, null, null, null, sanitizer);
+        this(profileRepository, masteryRepository, goalRepository, null, null, null, null, null, sanitizer);
     }
 
     /** 兼容已接入保持度复习但尚未绑定课程作业的扩展调用方。 */
@@ -50,7 +52,8 @@ public class EducationRunConfigurationService {
                                             LearningGoalRepository goalRepository,
                                             LearningReviewPlanService reviewPlanService,
                                             SensitiveDataSanitizer sanitizer) {
-        this(profileRepository, masteryRepository, goalRepository, reviewPlanService, null, null, sanitizer);
+        this(profileRepository, masteryRepository, goalRepository, reviewPlanService, null, null,
+                null, null, sanitizer);
     }
 
     /** 兼容已绑定课程作业但尚未接入教师干预的扩展调用方。 */
@@ -61,7 +64,19 @@ public class EducationRunConfigurationService {
                                             LearningAssignmentRepository assignmentRepository,
                                             SensitiveDataSanitizer sanitizer) {
         this(profileRepository, masteryRepository, goalRepository, reviewPlanService,
-                assignmentRepository, null, sanitizer);
+                assignmentRepository, null, null, null, sanitizer);
+    }
+
+    /** 兼容课程实例作为 Run 约束前的完整组件构造方式。 */
+    public EducationRunConfigurationService(LearnerProfileRepository profileRepository,
+                                            LearnerMasteryRepository masteryRepository,
+                                            LearningGoalRepository goalRepository,
+                                            LearningReviewPlanService reviewPlanService,
+                                            LearningAssignmentRepository assignmentRepository,
+                                            LearningAssignmentFeedbackRepository feedbackRepository,
+                                            SensitiveDataSanitizer sanitizer) {
+        this(profileRepository, masteryRepository, goalRepository, reviewPlanService,
+                assignmentRepository, feedbackRepository, null, null, sanitizer);
     }
 
     @Autowired
@@ -71,6 +86,8 @@ public class EducationRunConfigurationService {
                                             LearningReviewPlanService reviewPlanService,
                                             LearningAssignmentRepository assignmentRepository,
                                             LearningAssignmentFeedbackRepository feedbackRepository,
+                                            EducationCourseRepository courseRepository,
+                                            EducationEnrollmentRepository enrollmentRepository,
                                             SensitiveDataSanitizer sanitizer) {
         this.profileRepository = profileRepository;
         this.masteryRepository = masteryRepository;
@@ -78,6 +95,8 @@ public class EducationRunConfigurationService {
         this.assignmentRepository = assignmentRepository;
         this.feedbackRepository = feedbackRepository;
         this.reviewPlanService = reviewPlanService;
+        this.courseRepository = courseRepository;
+        this.enrollmentRepository = enrollmentRepository;
         this.sanitizer = sanitizer;
     }
 
@@ -143,6 +162,19 @@ public class EducationRunConfigurationService {
         String subject = firstNonBlank(options.subject(), profile.getSubject());
         String gradeLevel = firstNonBlank(options.gradeLevel(), profile.getGradeLevel());
         String curriculumVersion = firstNonBlank(options.curriculumVersion(), profile.getCurriculumVersion());
+        EducationCourse course = resolveCourse(tenantId, userId, options.courseId(), assignment);
+        if (course != null) {
+            if (!sameContext(subject, course.getSubject())
+                    || !sameContext(gradeLevel, course.getGradeLevel())
+                    || !sameContext(curriculumVersion, course.getCurriculumVersion())) {
+                throw new BusinessException(HttpStatus.CONFLICT, "EDUCATION_COURSE_CONTEXT_MISMATCH",
+                        "学习者画像与所选课程的学科、年级或课程版本不一致");
+            }
+            // 课程实例是本次 Run 的权威课程约束，不能被客户端自由字段覆盖。
+            subject = course.getSubject();
+            gradeLevel = course.getGradeLevel();
+            curriculumVersion = course.getCurriculumVersion();
+        }
         if (subject == null || gradeLevel == null || curriculumVersion == null) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "EDUCATION_CONTEXT_INCOMPLETE",
                     "教育 Agent 必须明确学科、年级和课程版本");
@@ -186,7 +218,47 @@ public class EducationRunConfigurationService {
                 goal == null ? 0.0 : goal.getBaselineMastery(),
                 goal == null ? 0.0 : goal.getTargetMastery(),
                 clean(subject), clean(gradeLevel), clean(curriculumVersion), conceptKey,
-                minDifficulty, maxDifficulty, pedagogicalMode, masterySummary(tenantId, profile.getId()));
+                minDifficulty, maxDifficulty, pedagogicalMode, masterySummary(tenantId, profile.getId()),
+                course == null ? null : course.getId(),
+                course == null ? null : course.getCode(),
+                course == null ? null : course.getTitle());
+    }
+
+    private EducationCourse resolveCourse(String tenantId, String userId, String requestedCourseId,
+                                           LearningAssignment assignment) {
+        String requested = clean(requestedCourseId);
+        String assignmentCourseId = assignment == null ? null : clean(assignment.getCourseId());
+        if (requested != null && assignmentCourseId != null && !requested.equals(assignmentCourseId)) {
+            throw new BusinessException(HttpStatus.CONFLICT, "EDUCATION_COURSE_ASSIGNMENT_MISMATCH",
+                    "所选课程与课程作业不一致");
+        }
+        if (requested != null && assignment != null && assignmentCourseId == null) {
+            throw new BusinessException(HttpStatus.CONFLICT, "EDUCATION_COURSE_ASSIGNMENT_MISMATCH",
+                    "未绑定课程实例的课程作业不能放入指定课程会话");
+        }
+        String effectiveCourseId = assignmentCourseId == null ? requested : assignmentCourseId;
+        if (effectiveCourseId == null) return null;
+        if (courseRepository == null || enrollmentRepository == null) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "EDUCATION_COURSE_UNAVAILABLE",
+                    "当前运行环境未启用课程实例存储");
+        }
+        EducationCourse course = courseRepository.findByTenantIdAndId(tenantId, effectiveCourseId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
+                        "EDUCATION_COURSE_NOT_FOUND", "课程实例不存在"));
+        if (!course.isActive()) {
+            throw new BusinessException(HttpStatus.CONFLICT, "EDUCATION_COURSE_NOT_ACTIVE",
+                    "只有进行中的课程实例可以创建教育 Run");
+        }
+        if (!enrollmentRepository.existsByTenantIdAndCourseIdAndLearnerUserIdAndStatus(
+                tenantId, course.getId(), userId, EducationEnrollmentStatus.ACTIVE)) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "EDUCATION_COURSE_ENROLLMENT_REQUIRED",
+                    "学习者不是该课程的活跃名单成员");
+        }
+        return course;
+    }
+
+    private boolean sameContext(String left, String right) {
+        return left != null && right != null && left.trim().equalsIgnoreCase(right.trim());
     }
 
     private LearningAssignmentFeedback latestOpenIntervention(String tenantId, String userId,
