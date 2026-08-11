@@ -641,17 +641,23 @@ public class RunService {
         }
         try {
             EducationRunConfiguration educationConfiguration = run.educationConfiguration();
+            String retrievalQuery = educationConfiguration != null && educationConfiguration.enabled()
+                    ? run.input() : started.get().input();
             ContextResult context = contextBuilder.build(run.tenantId(), run.userId(),
-                    started.get().input(), runtimeLimits.maxContextChars(),
+                    retrievalQuery, runtimeLimits.maxContextChars(),
                     educationConfiguration == null ? null : educationConfiguration.retrievalFilter());
             if (!context.isEmpty()) {
                 executionStateService.recordContextRetrieved(run.id(), run.tenantId(), workerId,
                         step.id(), context.evidences().size(), ContextEvidenceCodec.encode(context.evidences()));
             }
-            String modelInput = educationalInputPrefix(educationConfiguration) + (context.isEmpty()
-                    ? started.get().input()
-                    : started.get().input() + "\n\n参考资料（请使用来源标题引用；不要输出 document:/memory: ID、window 或 chunk 等内部标识）:\n" + context.text());
-            ModelResponse response = executeStreamingModelCall(run, started.get(), modelInput, workerId);
+            String retrievedContext = courseReferenceContext(context);
+            // 通用 Agent 保持既有的转录语义；只有教育 Agent 需要在每轮重新显式携带课程证据。
+            String referenceContext = educationConfiguration != null && educationConfiguration.enabled()
+                    ? retrievedContext : "";
+            String modelInput = educationalInputPrefix(educationConfiguration)
+                    + appendReferenceContext(started.get().input(), retrievedContext);
+            ModelResponse response = executeStreamingModelCall(run, started.get(), modelInput,
+                    referenceContext, workerId);
             if (run.agentMode()) {
                 validateAgentToolCalls(run, response.toolCalls());
             }
@@ -809,18 +815,24 @@ public class RunService {
         try {
             if (step.getType() == StepType.MODEL) {
                 EducationRunConfiguration educationConfiguration = run.educationConfiguration();
+                String retrievalQuery = educationConfiguration != null && educationConfiguration.enabled()
+                        ? run.getInput() : step.getInput();
                 ContextResult context = contextBuilder.build(run.getTenantId(), run.getUserId(),
-                        step.getInput(), runtimeLimits.maxContextChars(),
+                        retrievalQuery, runtimeLimits.maxContextChars(),
                         educationConfiguration == null ? null : educationConfiguration.retrievalFilter());
                 if (!context.isEmpty()) {
                     step.setContextEvidenceJson(ContextEvidenceCodec.encode(context.evidences()));
                     record(run.getId(), step.getId(), "CONTEXT_RETRIEVED",
                             "检索到 " + context.evidences().size() + " 条授权来源");
                 }
-                String modelInput = educationalInputPrefix(educationConfiguration) + (context.isEmpty()
-                        ? step.getInput()
-                        : step.getInput() + "\n\n参考资料（请使用来源标题引用；不要输出 document:/memory: ID、window 或 chunk 等内部标识）:\n" + context.text());
-                ModelResponse response = executeModelCall(run, step, modelInput, workerId, false);
+                String retrievedContext = courseReferenceContext(context);
+                // 通用 Agent 保持既有的转录语义；只有教育 Agent 需要在每轮重新显式携带课程证据。
+                String referenceContext = educationConfiguration != null && educationConfiguration.enabled()
+                        ? retrievedContext : "";
+                String modelInput = educationalInputPrefix(educationConfiguration)
+                        + appendReferenceContext(step.getInput(), retrievedContext);
+                ModelResponse response = executeModelCall(run, step, modelInput, referenceContext,
+                        workerId, false);
                 if (run.isAgentMode()) {
                     validateAgentToolCalls(new RunExecutionStateService.RunExecutionSnapshot(
                             run.getId(), run.getTenantId(), run.getUserId(), run.getModelName(),
@@ -1299,30 +1311,34 @@ public class RunService {
      */
     private ModelResponse executeStreamingModelCall(RunExecutionStateService.RunExecutionSnapshot run,
                                                     RunExecutionStateService.StepExecutionSnapshot step,
-                                                    String modelInput, String workerId) {
+                                                    String modelInput, String referenceContext,
+                                                    String workerId) {
         return executeModelCall(new StreamingRunContext(run.id(), run.tenantId(), run.userId(), run.modelName(),
                 run.modelConfigSnapshotId(),
                 run.promptVersion(), run.input(), run.agentMode(), permissions(run.permissionsSnapshot()),
                 run.educationConfiguration(), historyFromSnapshots(run.steps(), step.sequence())),
-                step.id(), modelInput, workerId, true);
+                step.id(), modelInput, referenceContext, workerId, true);
     }
 
-    private ModelResponse executeModelCall(Run run, Step step, String modelInput, String workerId,
-                                           boolean streamToChat) {
+    private ModelResponse executeModelCall(Run run, Step step, String modelInput, String referenceContext,
+                                           String workerId, boolean streamToChat) {
         return executeModelCall(new StreamingRunContext(run.getId(), run.getTenantId(), run.getUserId(), run.getModelName(),
                 run.getModelConfigSnapshotId(),
                 run.getPromptVersion(), run.getInput(), run.isAgentMode(), permissions(run),
                 run.educationConfiguration(), historyFromEntities(run.getSteps(), step.getSequence())),
-                step.getId(), modelInput, workerId, streamToChat);
+                step.getId(), modelInput, referenceContext, workerId, streamToChat);
     }
 
     private ModelResponse executeModelCall(StreamingRunContext run, String stepId,
-                                           String modelInput, String workerId, boolean streamToChat) {
+                                           String modelInput, String referenceContext,
+                                           String workerId, boolean streamToChat) {
         String safeInput = sanitizer.sanitize(modelInput);
+        String safeReferenceContext = sanitizer.sanitize(referenceContext);
         List<ModelToolDefinition> tools = run.agentMode()
                 ? availableModelTools(run.tenantId(), run.permissions(), run.educationConfiguration()) : List.of();
         List<ModelMessage> messages = run.agentMode()
-                ? agentMessages(run.input(), safeInput, run.history(), runtimeLimits.maxContextChars(),
+                ? agentMessages(run.input(), safeInput, safeReferenceContext,
+                run.history(), runtimeLimits.maxContextChars(),
                 run.educationConfiguration()) : List.of();
         ModelRequest request = new ModelRequest(
                 safeInput, run.modelName(), run.promptVersion(), tools, messages,
@@ -1368,11 +1384,23 @@ public class RunService {
     private List<ModelMessage> agentMessages(String runInput, String currentInput,
                                              List<AgentHistoryStep> history, int maximumChars,
                                              EducationRunConfiguration educationConfiguration) {
+        return agentMessages(runInput, currentInput, "", history, maximumChars,
+                educationConfiguration);
+    }
+
+    /**
+     * 后续模型轮次要保留原始学习任务和最新课程资料，而不是把含工具输出的转录文本再作为检索结果。
+     * 课程资料单独传入，首轮由 currentInput 承载，后续轮次则重新附加到不可变的 Run 输入。
+     */
+    private List<ModelMessage> agentMessages(String runInput, String currentInput, String referenceContext,
+                                             List<AgentHistoryStep> history, int maximumChars,
+                                             EducationRunConfiguration educationConfiguration) {
         List<AgentHistoryStep> orderedHistory = history == null ? List.of() : history.stream()
                 .sorted(java.util.Comparator.comparingInt(AgentHistoryStep::sequence))
                 .toList();
         boolean hasPreviousModel = orderedHistory.stream().anyMatch(step -> step.type() == StepType.MODEL);
-        String initialUser = hasPreviousModel ? runInput : currentInput;
+        String initialUser = hasPreviousModel
+                ? appendReferenceContext(runInput, referenceContext) : currentInput;
         List<List<ModelMessage>> turns = new ArrayList<>();
 
         for (int index = 0; index < orderedHistory.size(); index++) {
@@ -1444,6 +1472,19 @@ public class RunService {
         if (educationConfiguration == null || !educationConfiguration.enabled()) return "";
         return "教育任务约束（必须遵守）：" + educationConfiguration.promptSummary()
                 + "。请优先给出可学习的解释，并在信息不足时提出澄清问题。\n\n";
+    }
+
+    /** 构造给模型的课程材料块；只暴露可读来源标题，内部 citation 保留在审计快照中。 */
+    private String courseReferenceContext(ContextResult context) {
+        if (context == null || context.isEmpty() || context.text() == null || context.text().isBlank()) return "";
+        return "参考资料（请使用来源标题引用；不要输出 document:/memory: ID、window 或 chunk 等内部标识）：\n"
+                + context.text();
+    }
+
+    private String appendReferenceContext(String input, String referenceContext) {
+        String base = input == null ? "" : input;
+        if (referenceContext == null || referenceContext.isBlank()) return base;
+        return base + "\n\n" + referenceContext;
     }
 
     /** 上一轮若全部工具步骤都是重放结果，给供应商一个明确的收敛提示。 */

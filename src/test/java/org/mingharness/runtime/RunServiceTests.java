@@ -4,7 +4,17 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mingharness.audit.AuditEventRepository;
 import org.mingharness.common.BusinessException;
+import org.mingharness.context.KnowledgeDocument;
+import org.mingharness.context.KnowledgeDocumentRepository;
 import org.mingharness.education.EducationRunConfiguration;
+import org.mingharness.education.EducationKnowledgeSource;
+import org.mingharness.education.EducationKnowledgeSourceRepository;
+import org.mingharness.education.EducationRetrievalEvidence;
+import org.mingharness.education.LearnerProfile;
+import org.mingharness.education.LearnerProfileRepository;
+import org.mingharness.education.LearningGoal;
+import org.mingharness.education.LearningGoalRepository;
+import org.mingharness.education.api.EducationRunOptions;
 import org.mingharness.runtime.api.CreateRunRequest;
 import org.mingharness.runtime.api.RunDetail;
 import org.mingharness.runtime.api.RunPage;
@@ -60,6 +70,14 @@ class RunServiceTests {
     @Autowired
     private RunRepository runRepository;
     @Autowired
+    private KnowledgeDocumentRepository knowledgeDocumentRepository;
+    @Autowired
+    private EducationKnowledgeSourceRepository educationKnowledgeSourceRepository;
+    @Autowired
+    private LearnerProfileRepository learnerProfileRepository;
+    @Autowired
+    private LearningGoalRepository learningGoalRepository;
+    @Autowired
     private AuditEventRepository auditEventRepository;
     @Autowired
     private AgentModelToolsState agentModelToolsState;
@@ -74,6 +92,10 @@ class RunServiceTests {
     void cleanDatabase() {
         auditEventRepository.deleteAll();
         runRepository.deleteAll();
+        learningGoalRepository.deleteAll();
+        learnerProfileRepository.deleteAll();
+        educationKnowledgeSourceRepository.deleteAll();
+        knowledgeDocumentRepository.deleteAll();
         agentModelToolsState.reset();
         mixedReplayState.reset();
     }
@@ -167,6 +189,57 @@ class RunServiceTests {
         assertEquals("Agent 最终结果", result.run().output());
         assertTrue(auditEventRepository.findTop100ByRunIdOrderByCreatedAtDesc(created.id()).stream()
                 .anyMatch(event -> "AGENT_TOOL_CALL_REQUESTED".equals(event.getEventType())));
+    }
+
+    @Test
+    void shouldKeepCourseEvidenceInEveryEducationAgentTurn() {
+        LearnerProfile profile = learnerProfileRepository.save(new LearnerProfile(
+                "tenant-education", "learner-education", "数学", "高中一年级", "人教A版",
+                "掌握函数定义域", "zh-CN"));
+        LearningGoal goal = learningGoalRepository.save(new LearningGoal(
+                "tenant-education", "learner-education", profile.getId(),
+                "掌握函数定义域", "函数定义域", 0.2, 0.8));
+        KnowledgeDocument document = knowledgeDocumentRepository.save(new KnowledgeDocument(
+                "tenant-education", "teacher-education", "函数定义域课程资料",
+                "函数定义域由课程规则约束：分母不能为零，偶次根式被开方数不能为负。",
+                "INTERNAL", "learner-education"));
+        educationKnowledgeSourceRepository.save(new EducationKnowledgeSource(
+                "tenant-education", document.getId(), "数学", "高中一年级", "人教A版",
+                "函数", "掌握函数定义域规则", "函数定义域", "", 3, "TEXTBOOK"));
+
+        CreateRunRequest request = new CreateRunRequest(
+                "tenant-education", "learner-education", "课程证据多轮任务",
+                "多轮课程证据 函数定义域", null, null, "prompt-agent", "policy-v1",
+                BigDecimal.TEN, null, null, true, 3)
+                .withEducation(new EducationRunOptions(
+                        true, profile.getId(), goal.getId(), "数学", "高中一年级", "人教A版",
+                        "函数定义域", null, null, "PRACTICE"));
+
+        RunSummary created = runService.create(request);
+        RunDetail result = runService.start(created.id(), "tenant-education");
+
+        assertEquals(RunStatus.SUCCEEDED, result.run().status(), result.run().error());
+        List<org.mingharness.runtime.api.StepView> modelSteps = result.steps().stream()
+                .filter(step -> step.type() == org.mingharness.runtime.domain.StepType.MODEL)
+                .toList();
+        assertEquals(2, modelSteps.size());
+        assertTrue(modelSteps.stream().allMatch(step -> step.contextEvidence().stream()
+                .anyMatch(evidence -> "函数定义域课程资料".equals(evidence.title()))));
+
+        for (int index = 0; index < 2; index++) {
+            ModelMessage userMessage = agentModelToolsState.requestMessages(index).stream()
+                    .filter(message -> "user".equals(message.role()))
+                    .findFirst().orElseThrow();
+            assertTrue(userMessage.content().contains("函数定义域课程资料"),
+                    "第 " + (index + 1) + " 轮缺少课程来源标题");
+            assertTrue(userMessage.content().contains("分母不能为零"),
+                    "第 " + (index + 1) + " 轮缺少课程资料正文");
+        }
+
+        Run persisted = runRepository.findById(created.id()).orElseThrow();
+        var evidence = EducationRetrievalEvidence.decode(EducationRetrievalEvidence.snapshot(persisted));
+        assertEquals(1, evidence.size());
+        assertEquals("函数定义域课程资料", evidence.get(0).title());
     }
 
     @Test
