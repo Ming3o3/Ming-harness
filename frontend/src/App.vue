@@ -138,6 +138,7 @@ const manualAssessmentSaving = ref(false)
 const manualAssessmentError = ref('')
 const educationLoading = ref(false)
 const educationError = ref('')
+const showQuickLearningGoalForm = ref(false)
 const contextPreviewQuery = ref('')
 const contextPreviewMaxChars = ref(4000)
 const contextPreviewResult = ref(null)
@@ -3788,6 +3789,7 @@ async function createLearningGoal() {
     learningGoals.value = [goal, ...learningGoals.value.filter((item) => item.id !== goal.id)]
     learningGoalForm.title = ''
     learningGoalForm.conceptKey = ''
+    showQuickLearningGoalForm.value = false
     await selectLearningGoal(goal, false)
     noticeMessage.value = '学习目标已创建；后续教育 Run 会围绕该目标累计进度并触发下一步建议。'
     educationError.value = ''
@@ -5394,7 +5396,7 @@ onBeforeUnmount(() => {
                   <small>当前学习目标</small><strong>{{ activeLearningGoal.title }}</strong><p>{{ activeLearningGoal.conceptKey }} · {{ Math.round(activeLearningProgress * 100) }}% 已推进</p>
                   <i><b :style="{ width: `${activeLearningProgress * 100}%` }"></b></i>
                 </div>
-                <div v-else><small>当前学习目标</small><strong>还没有结构化目标</strong><p>先创建目标，Agent 才能持续追踪学习进展。</p></div>
+                <div v-else class="learning-cockpit-card-copy"><small>当前学习目标</small><strong>还没有结构化目标</strong><p>先创建目标，Agent 才能持续追踪学习进展。</p><button type="button" @click="showQuickLearningGoalForm = true">设定学习目标</button></div>
               </article>
               <article class="learning-cockpit-card learning-cockpit-mastery">
                 <span class="learning-cockpit-icon"><Brain :size="16" /></span>
@@ -5415,7 +5417,7 @@ onBeforeUnmount(() => {
                   <p>{{ activeLearningTask ? (activeLearningTask.status === 'AWAITING_EVIDENCE' ? '需要补充测评证据' : activeLearningTask.prompt) : (activeLearningRecommendation?.rationale || '通过课程目标生成下一步练习、诊断或复习。') }}</p>
                   <button v-if="activeLearningTask" type="button" :disabled="learningTaskStartingId === activeLearningTask.id || chatSending || chatUploading" @click="startLearningTask(activeLearningTask)">{{ learningTaskStartingId === activeLearningTask.id ? '启动中…' : (activeLearningTask.status === 'FAILED' ? '重试任务' : (activeLearningTask.status === 'IN_PROGRESS' ? '继续学习' : '开始学习')) }}</button>
                   <button v-else-if="activeLearningRecommendation" type="button" :disabled="chatSending || chatUploading" @click="useLearningRecommendation">按建议开始</button>
-                  <button v-else type="button" @click="chatMode = false; navigateConsoleSection('education')">创建学习目标</button>
+                  <button v-else type="button" @click="showQuickLearningGoalForm = true">设定学习目标</button>
                 </div>
               </article>
               <article class="learning-cockpit-card learning-cockpit-evidence" :class="{ empty: !activeLearningGoal }">
@@ -5428,6 +5430,16 @@ onBeforeUnmount(() => {
                 </div>
               </article>
             </div>
+            <form v-if="showQuickLearningGoalForm && !activeLearningGoal" class="learning-goal-quick-form" @submit.prevent="createLearningGoal">
+              <div class="learning-goal-quick-form-heading">
+                <div><span>第二步</span><strong>把学习诉求转成可追踪目标</strong><small>Agent 会把后续的练习与测评证据累计到这个目标。</small></div>
+                <button type="button" aria-label="取消设定学习目标" @click="showQuickLearningGoalForm = false"><X :size="14" /></button>
+              </div>
+              <label><span>目标名称</span><input v-model="learningGoalForm.title" required maxlength="255" placeholder="例如：掌握函数定义域" /></label>
+              <label><span>目标知识点</span><input v-model="learningGoalForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
+              <label><span>目标掌握度</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required /></label>
+              <button class="primary-button" type="submit" :disabled="educationLoading">{{ educationLoading ? '创建中…' : '开始追踪目标' }}</button>
+            </form>
             <div v-if="learnerMasteryPreview.length" class="learning-cockpit-mastery-strip" aria-label="需要关注的知识点">
               <span>优先关注</span>
               <button v-for="item in learnerMasteryPreview" :key="item.id || item.conceptKey" type="button" @click="chatInput = `请帮我诊断并练习「${item.conceptKey}」`"><strong>{{ item.conceptKey }}</strong><em>{{ formatRate(item.masteryScore) }}</em></button>

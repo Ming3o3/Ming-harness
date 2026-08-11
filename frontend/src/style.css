@@ -1447,10 +1447,33 @@ h3 { margin: 0; font-size: 13px; }
 .learning-cockpit-card small { overflow: hidden; color: var(--muted); font: 8px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .learning-cockpit-card strong { overflow: hidden; color: var(--soft); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .learning-cockpit-card p { display: -webkit-box; overflow: hidden; margin: 0; color: var(--muted); font-size: 8px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.learning-cockpit-card-copy > button { justify-self: start; margin-top: 3px; border: 1px solid var(--line); border-radius: 7px; background: var(--hover-bg); color: var(--soft); padding: 6px 8px; font: 9px "DM Mono", monospace; }
+.learning-cockpit-card-copy > button:hover { border-color: var(--heading); background: var(--selected-bg); color: var(--heading); }
 .learning-cockpit-goal i { display: block; height: 4px; overflow: hidden; margin-top: 2px; border-radius: 4px; background: rgba(153, 174, 218, .16); }
 .learning-cockpit-goal i b { display: block; height: 100%; border-radius: inherit; background: var(--heading); }
 .learning-cockpit-action button { justify-self: start; margin-top: 3px; }
 .learning-cockpit-evidence .learning-cockpit-icon { color: var(--cyan); }
+
+.learning-goal-quick-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.2fr) minmax(100px, .55fr) auto;
+  align-items: end;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 11px;
+}
+
+.learning-goal-quick-form-heading { display: grid; grid-column: 1 / -1; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px; }
+.learning-goal-quick-form-heading > div { display: grid; gap: 3px; }
+.learning-goal-quick-form-heading span { color: var(--cyan); font: 8px "DM Mono", monospace; letter-spacing: .08em; text-transform: uppercase; }
+.learning-goal-quick-form-heading strong { color: var(--heading); font-size: 10px; }
+.learning-goal-quick-form-heading small { color: var(--muted); font-size: 8px; line-height: 1.45; }
+.learning-goal-quick-form-heading > button { display: grid; width: 25px; height: 25px; place-items: center; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); }
+.learning-goal-quick-form-heading > button:hover { border-color: var(--heading); color: var(--heading); }
+.learning-goal-quick-form label { display: grid; min-width: 0; gap: 4px; color: var(--muted); font-size: 9px; }
+.learning-goal-quick-form input { min-width: 0; width: 100%; border: 1px solid var(--line); border-radius: 7px; outline: 0; background: var(--input-bg); color: var(--text); padding: 8px 9px; font-size: 10px; }
+.learning-goal-quick-form input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(76, 226, 213, .1); }
+.learning-goal-quick-form > .primary-button { min-height: 35px; padding: 8px 11px; }
 
 .learning-cockpit-mastery-strip {
   display: flex;
@@ -1540,6 +1563,8 @@ h3 { margin: 0; font-size: 13px; }
   .learning-onboarding-existing { border-top: 1px solid var(--line); border-left: 0; padding-top: 12px; padding-left: 0; }
   .learning-onboarding-wide { grid-column: auto; }
   .learning-onboarding-section-heading > small { display: none; }
+  .learning-goal-quick-form { grid-template-columns: minmax(0, 1fr); }
+  .learning-goal-quick-form-heading { grid-column: auto; }
   .chat-education-status-chip { width: 100%; }
   .chat-learning-context-state { display: none; }
   .learning-cockpit { padding: 11px; }
