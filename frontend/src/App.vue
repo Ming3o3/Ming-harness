@@ -298,6 +298,7 @@ const conversationRenaming = ref(false)
 const conversationRenameInputRef = ref(null)
 const chatInput = ref('')
 const chatInputRef = ref(null)
+const chatAssignmentSubmissionInputRef = ref(null)
 const chatLoading = ref(false)
 const chatSending = ref(false)
 const chatCancellingRunId = ref('')
@@ -697,12 +698,23 @@ const visibleLearningAssignments = computed(() => {
 const learnerCourseAssignments = computed(() => learningAssignments.value
   .filter((assignment) => assignment.learnerUserId === form.userId && assignment.status !== 'CANCELLED')
   .sort((left, right) => {
-    const leftPriority = ['ASSIGNED', 'RETRY_REQUIRED', 'AWAITING_EVIDENCE', 'OVERDUE'].indexOf(left.status)
-    const rightPriority = ['ASSIGNED', 'RETRY_REQUIRED', 'AWAITING_EVIDENCE', 'OVERDUE'].indexOf(right.status)
+    const leftPriority = ['ASSIGNED', 'RETRY_REQUIRED', 'AWAITING_EVIDENCE', 'OVERDUE', 'ACCEPTED', 'COMPLETED'].indexOf(left.status)
+    const rightPriority = ['ASSIGNED', 'RETRY_REQUIRED', 'AWAITING_EVIDENCE', 'OVERDUE', 'ACCEPTED', 'COMPLETED'].indexOf(right.status)
     return (leftPriority < 0 ? 10 : leftPriority) - (rightPriority < 0 ? 10 : rightPriority)
       || new Date(left.dueAt || left.createdAt) - new Date(right.dueAt || right.createdAt)
   }))
 const nextLearnerCourseAssignment = computed(() => learnerCourseAssignments.value[0] || null)
+const nextLearnerCourseAssignmentOpenFeedback = computed(() => {
+  const assignment = nextLearnerCourseAssignment.value
+  if (!assignment) return null
+  return (learningAssignmentFeedbackMap.value[assignment.id] || [])
+    .find((feedback) => feedback.status === 'OPEN') || null
+})
+const nextLearnerCourseAssignmentLatestSubmission = computed(() => {
+  const assignment = nextLearnerCourseAssignment.value
+  if (!assignment) return null
+  return (learningAssignmentSubmissionMap.value[assignment.id] || [])[0] || null
+})
 
 function toggleAllAllowedTools() {
   selectedAllowedTools.value = allAllowedToolsSelected.value
@@ -3489,6 +3501,13 @@ function startLearningAssignmentSubmission(assignment) {
   learningAssignmentSubmissionForm.content = ''
 }
 
+async function openChatLearningAssignmentSubmission(assignment) {
+  if (!learningAssignmentSubmissionOpen(assignment)) return
+  startLearningAssignmentSubmission(assignment)
+  await nextTick()
+  chatAssignmentSubmissionInputRef.value?.focus()
+}
+
 function learningAssignmentSubmissionOpen(assignment) {
   return Boolean(assignment?.id)
     && assignment.learnerUserId === form.userId
@@ -5510,7 +5529,9 @@ onBeforeUnmount(() => {
                   <strong>{{ nextLearnerCourseAssignment.title }}</strong>
                   <p>{{ learningAssignmentStatusLabel(nextLearnerCourseAssignment.status) }} · {{ nextLearnerCourseAssignment.conceptKey }}<span v-if="nextLearnerCourseAssignment.dueAt"> · 截止 {{ formatDate(nextLearnerCourseAssignment.dueAt) }}</span></p>
                   <button v-if="['ASSIGNED', 'RETRY_REQUIRED'].includes(nextLearnerCourseAssignment.status)" type="button" :disabled="learningAssignmentAcceptingId === nextLearnerCourseAssignment.id || chatSending || chatUploading" @click="startLearningAssignment(nextLearnerCourseAssignment)">{{ learningAssignmentAcceptingId === nextLearnerCourseAssignment.id ? '启动中…' : (nextLearnerCourseAssignment.status === 'ASSIGNED' ? '接受并开始' : '重试作业') }}</button>
-                  <button v-else type="button" @click="focusLearnerCourseAssignment(nextLearnerCourseAssignment)">{{ nextLearnerCourseAssignment.status === 'COMPLETED' && nextLearnerCourseAssignment.reviewStatus === 'PENDING' ? '查看教师确认' : '打开作业与提交物' }}</button>
+                  <button v-else-if="nextLearnerCourseAssignmentOpenFeedback" type="button" :disabled="learningAssignmentFeedbackAcknowledgingId === nextLearnerCourseAssignmentOpenFeedback.id" @click="acknowledgeLearningAssignmentFeedback(nextLearnerCourseAssignment, nextLearnerCourseAssignmentOpenFeedback)">{{ learningAssignmentFeedbackAcknowledgingId === nextLearnerCourseAssignmentOpenFeedback.id ? '确认中…' : '确认教师反馈' }}</button>
+                  <button v-else-if="learningAssignmentSubmissionOpen(nextLearnerCourseAssignment)" type="button" @click="openChatLearningAssignmentSubmission(nextLearnerCourseAssignment)">提交作业内容</button>
+                  <button v-else type="button" @click="focusLearnerCourseAssignment(nextLearnerCourseAssignment)">{{ nextLearnerCourseAssignment.status === 'COMPLETED' && nextLearnerCourseAssignment.reviewStatus === 'PENDING' ? '查看教师确认' : '查看完整记录' }}</button>
                 </div>
               </article>
             </div>
@@ -5528,6 +5549,45 @@ onBeforeUnmount(() => {
               <span>优先关注</span>
               <button v-for="item in learnerMasteryPreview" :key="item.id || item.conceptKey" type="button" @click="chatInput = `请帮我诊断并练习「${item.conceptKey}」`"><strong>{{ item.conceptKey }}</strong><em>{{ formatRate(item.masteryScore) }}</em></button>
             </div>
+          </section>
+
+          <section v-if="nextLearnerCourseAssignment" class="chat-course-assignment-panel" aria-label="当前课程作业">
+            <header class="chat-course-assignment-heading">
+              <div>
+                <p class="eyebrow">COURSE ASSIGNMENT / EVIDENCE LOOP</p>
+                <h2>{{ nextLearnerCourseAssignment.title }}</h2>
+                <p>{{ nextLearnerCourseAssignment.instructions }}</p>
+              </div>
+              <div class="chat-course-assignment-statuses">
+                <span :class="`assignment-status-${nextLearnerCourseAssignment.status.toLowerCase()}`">{{ learningAssignmentStatusLabel(nextLearnerCourseAssignment.status) }}</span>
+                <span v-if="nextLearnerCourseAssignment.reviewStatus && nextLearnerCourseAssignment.reviewStatus !== 'NOT_REQUIRED'">{{ learningAssignmentReviewStatusLabel(nextLearnerCourseAssignment.reviewStatus) }}</span>
+              </div>
+            </header>
+            <div class="chat-course-assignment-meta">
+              <span><BookOpen :size="13" />{{ nextLearnerCourseAssignment.courseTitle || nextLearnerCourseAssignment.subject }} · {{ nextLearnerCourseAssignment.gradeLevel }} · {{ nextLearnerCourseAssignment.curriculumVersion }}</span>
+              <span><Target :size="13" />{{ nextLearnerCourseAssignment.conceptKey }} · 目标掌握度 {{ formatRate(nextLearnerCourseAssignment.targetMastery) }}</span>
+              <span v-if="nextLearnerCourseAssignment.dueAt"><CalendarClock :size="13" />截止 {{ formatDate(nextLearnerCourseAssignment.dueAt) }}</span>
+            </div>
+            <div v-if="nextLearnerCourseAssignmentOpenFeedback" class="chat-course-assignment-feedback">
+              <span class="chat-course-assignment-feedback-icon"><CircleAlert :size="15" /></span>
+              <div><strong>{{ learningAssignmentFeedbackActionLabel(nextLearnerCourseAssignmentOpenFeedback.action) }}</strong><p>{{ nextLearnerCourseAssignmentOpenFeedback.message }}</p><small v-if="nextLearnerCourseAssignmentOpenFeedback.suggestedDueAt">建议截止：{{ formatDate(nextLearnerCourseAssignmentOpenFeedback.suggestedDueAt) }}</small></div>
+              <button class="secondary-button" type="button" :disabled="learningAssignmentFeedbackAcknowledgingId === nextLearnerCourseAssignmentOpenFeedback.id" @click="acknowledgeLearningAssignmentFeedback(nextLearnerCourseAssignment, nextLearnerCourseAssignmentOpenFeedback)">{{ learningAssignmentFeedbackAcknowledgingId === nextLearnerCourseAssignmentOpenFeedback.id ? '确认中…' : '确认并继续' }}</button>
+            </div>
+            <div class="chat-course-assignment-actions">
+              <button v-if="['ASSIGNED', 'RETRY_REQUIRED', 'AWAITING_EVIDENCE'].includes(nextLearnerCourseAssignment.status)" class="primary-button" type="button" :disabled="learningAssignmentAcceptingId === nextLearnerCourseAssignment.id || chatSending || chatUploading" @click="startLearningAssignment(nextLearnerCourseAssignment)">{{ learningAssignmentAcceptingId === nextLearnerCourseAssignment.id ? '启动中…' : (nextLearnerCourseAssignment.status === 'ASSIGNED' ? '开始课程作业' : (nextLearnerCourseAssignment.status === 'RETRY_REQUIRED' ? '按反馈重试' : '补充学习证据')) }}</button>
+              <button v-if="learningAssignmentSubmissionOpen(nextLearnerCourseAssignment)" class="secondary-button" type="button" @click="openChatLearningAssignmentSubmission(nextLearnerCourseAssignment)">{{ learningAssignmentSubmissionForm.assignmentId === nextLearnerCourseAssignment.id ? '正在填写提交物' : '提交作业内容' }}</button>
+              <button class="text-button" type="button" @click="focusLearnerCourseAssignment(nextLearnerCourseAssignment)">查看完整证据链</button>
+            </div>
+            <form v-if="learningAssignmentSubmissionForm.assignmentId === nextLearnerCourseAssignment.id" class="chat-course-assignment-submission" @submit.prevent="submitLearningAssignmentSubmission">
+              <div><strong>提交作业内容</strong><small>提交物会绑定本次课程作业与最近一次教育 Run，供教师结合测评证据审核。</small></div>
+              <textarea ref="chatAssignmentSubmissionInputRef" v-model="learningAssignmentSubmissionForm.content" required maxlength="8000" rows="4" placeholder="填写解题过程、答案、实验结果或反思；尽量说明你的判断依据。"></textarea>
+              <div><button class="text-button" type="button" @click="closeLearningAssignmentSubmission">稍后再写</button><button class="primary-button" type="submit" :disabled="learningAssignmentSubmissionSavingId === nextLearnerCourseAssignment.id">{{ learningAssignmentSubmissionSavingId === nextLearnerCourseAssignment.id ? '提交中…' : '保存提交物并通知教师' }}</button></div>
+            </form>
+            <footer class="chat-course-assignment-evidence">
+              <span><ListChecks :size="13" />{{ learningAssignmentProgressMap[nextLearnerCourseAssignment.id] ? `测评 ${learningAssignmentProgressMap[nextLearnerCourseAssignment.id].assessmentTotal} 次 · Run 证据 ${formatRate(learningAssignmentProgressMap[nextLearnerCourseAssignment.id].runEvidenceCoverageRate)}` : '完成学习对话后，这里会汇总测评与 Run 证据。' }}</span>
+              <span v-if="nextLearnerCourseAssignmentLatestSubmission"><Check :size="13" />最近提交：{{ formatDate(nextLearnerCourseAssignmentLatestSubmission.submittedAt) }}</span>
+              <span v-else><PenLine :size="13" />尚未提交作业内容</span>
+            </footer>
           </section>
 
           <div class="chat-messages" aria-live="polite" @scroll="updateChatFollowOutput">
