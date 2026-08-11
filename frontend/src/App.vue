@@ -5216,7 +5216,7 @@ onBeforeUnmount(() => {
       <header class="chat-topbar">
         <div class="chat-brand">
           <div class="brand-mark" aria-hidden="true"><Sparkles :size="17" :stroke-width="1.8" /></div>
-          <div><strong>Ming Harness</strong><span>COURSE-CONSTRAINED LEARNING AGENT</span></div>
+          <div><strong>学习知识库 Agent</strong><span>COURSE + LEARNER STATE</span></div>
         </div>
         <div class="chat-topbar-actions">
           <span class="chat-identity">{{ form.tenantId }} / {{ form.userId }}</span>
@@ -5243,7 +5243,7 @@ onBeforeUnmount(() => {
               <MessageSquarePlus :size="15" /><span>新建学习对话</span><kbd>⌘N</kbd>
             </button>
             <button class="chat-primary-nav-item chat-primary-nav-item-education" type="button" @click="chatMode = false; navigateConsoleSection('education')">
-              <Sparkles :size="15" /><span>教育工作台</span>
+              <Sparkles :size="15" /><span>课程与学习状态</span>
             </button>
             <button class="chat-primary-nav-item" type="button" @click="chatMode = false; navigateConsoleSection('runtime')">
               <CircleDot :size="15" /><span>运行追踪</span>
@@ -5333,9 +5333,9 @@ onBeforeUnmount(() => {
                 <Sparkles :size="14" />
                 <span><small>当前学习上下文</small><strong>{{ activeChatCourse ? `${activeChatCourse.code} · ${activeChatCourse.title}` : (activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` : '待配置学习者画像') }}</strong></span>
               </button>
-              <div class="chat-workspace-chip" :class="workspaceStatusClass" :title="workspaceDetail">
+              <div class="chat-workspace-chip chat-course-knowledge-chip" :class="matchingEducationSourceCount ? 'workspace-ready' : 'workspace-warning'" title="当前学习者画像可检索的课程知识来源">
                 <i></i>
-                <span><small>KNOWLEDGE SPACE</small><strong>{{ workspaceLabel }}</strong></span>
+                <span><small>COURSE KNOWLEDGE BASE</small><strong>{{ matchingEducationSourceCount ? `${matchingEducationSourceCount} 个适用来源` : '待配置课程来源' }}</strong></span>
               </div>
               <div v-if="desktopWorkspaceAvailable" class="chat-workspace-selector" title="该选择只会绑定下一次新建的会话">
                 <select v-model="newConversationWorkspaceId" :disabled="desktopWorkspacePicking || chatSending || chatUploading">
@@ -5364,6 +5364,37 @@ onBeforeUnmount(() => {
               <button v-if="latestConversationRun(activeConversation)" class="secondary-button" type="button" @click="toggleRunPanel">{{ showChatRun ? '隐藏运行' : '查看运行' }}</button>
             </div>
           </div>
+
+          <section class="education-agent-context-strip" aria-label="教育 Agent 当前上下文">
+            <div class="education-agent-context-heading">
+              <div>
+                <p class="eyebrow">EDUCATION AGENT / LIVE LEARNING LOOP</p>
+                <strong>课程约束与学习者状态</strong>
+                <span>每次回答都从课程知识库检索，并根据掌握度决定下一步教学动作。</span>
+              </div>
+              <span class="education-agent-context-state" :class="{ ready: chatEducation.enabled && activeLearnerProfile }">
+                <i></i>{{ chatEducation.enabled && activeLearnerProfile ? '教育路径已启用' : '等待学习上下文' }}
+              </span>
+            </div>
+            <div class="education-agent-context-grid">
+              <article>
+                <span class="education-agent-context-icon"><BookOpen :size="14" /></span>
+                <div><small>课程约束</small><strong>{{ activeChatCourse?.title || (activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` : '尚未绑定课程') }}</strong><em>{{ activeChatCourse ? `${activeChatCourse.code} · ${activeChatCourse.curriculumVersion}` : (activeLearnerProfile?.curriculumVersion || '先建立学习者画像') }}</em></div>
+              </article>
+              <article>
+                <span class="education-agent-context-icon"><Brain :size="14" /></span>
+                <div><small>学习者状态</small><strong>{{ activeLearnerProfile ? (activeLearningRecommendation ? `掌握度 ${formatRate(activeLearningRecommendation.currentMastery)}` : `${learnerMastery.length} 个知识点已建档`) : '等待学习者画像' }}</strong><em>{{ activeLearningRecommendation ? `目标 ${formatRate(activeLearningRecommendation.targetMastery)}` : (learnerMasteryPreview.length ? `待加强：${learnerMasteryPreview[0].conceptKey}` : '完成测评后更新') }}</em></div>
+              </article>
+              <article>
+                <span class="education-agent-context-icon"><Target :size="14" /></span>
+                <div><small>当前教学动作</small><strong>{{ activeLearningTask?.title || activeLearningRecommendation?.nextActionTitle || pedagogicalModeLabel }}</strong><em>{{ chatEducation.conceptKey ? `目标知识点：${chatEducation.conceptKey}` : '由 Agent 根据状态自动选择' }}</em></div>
+              </article>
+              <article>
+                <span class="education-agent-context-icon"><ListChecks :size="14" /></span>
+                <div><small>形成性证据</small><strong>{{ learningEvidenceSummary }}</strong><em>{{ activeLearningGoal ? '结果会回写学习目标与掌握度' : '绑定学习目标后开始追踪' }}</em></div>
+              </article>
+            </div>
+          </section>
 
           <section v-if="!activeLearnerProfile" class="learning-onboarding" aria-label="建立教育 Agent 学习上下文">
             <div class="learning-onboarding-intro">
