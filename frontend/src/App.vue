@@ -4179,6 +4179,21 @@ function closeLearningAssignmentFeedback() {
   learningAssignmentFeedbackForm.suggestedDueAt = ''
 }
 
+async function refreshLearningAssignmentProgress(assignmentId) {
+  if (!assignmentId) return
+  try {
+    const progress = await api.getLearningAssignmentProgress(assignmentId)
+    if (progress) {
+      learningAssignmentProgressMap.value = {
+        ...learningAssignmentProgressMap.value,
+        [assignmentId]: progress,
+      }
+    }
+  } catch {
+    // 反馈动作已经成功；进度指标等待下一次教育数据刷新，不覆盖主操作结果。
+  }
+}
+
 async function submitLearningAssignmentFeedback() {
   const assignmentId = learningAssignmentFeedbackForm.assignmentId
   if (!assignmentId || !learningAssignmentFeedbackForm.message.trim()
@@ -4216,6 +4231,7 @@ async function acknowledgeLearningAssignmentFeedback(assignment, feedback) {
       [assignment.id]: (learningAssignmentFeedbackMap.value[assignment.id] || [])
         .map((item) => item.id === updated.id ? updated : item),
     }
+    await refreshLearningAssignmentProgress(assignment.id)
     noticeMessage.value = '已确认教师反馈。'
   } catch (error) {
     errorMessage.value = errorText(error)
