@@ -52,7 +52,32 @@ class EducationCourseCompletionServiceTests {
         assertNotNull(result.completedAt());
         verify(courses).save(course);
         org.mockito.Mockito.verify(resultService).capture(
-                "tenant-a", "teacher-1", course, course.getCompletedAt());
+                "tenant-a", "teacher-1", course);
+    }
+
+    @Test
+    void shouldRepairMissingResultSnapshotWhenCompletedCourseIsRetried() {
+        EducationCourseRepository courses = mock(EducationCourseRepository.class);
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        LearningAssignmentSubmissionRepository submissions = mock(LearningAssignmentSubmissionRepository.class);
+        EducationEnrollmentRepository enrollments = mock(EducationEnrollmentRepository.class);
+        EducationCourseResultService resultService = mock(EducationCourseResultService.class);
+        EducationCourse course = course();
+        Instant completedAt = Instant.parse("2026-08-10T12:00:00Z");
+        course.complete("teacher-1", "历史结课", completedAt);
+        when(courses.findByTenantIdAndId("tenant-a", course.getId())).thenReturn(Optional.of(course));
+        when(enrollments.countByTenantIdAndCourseIdAndStatus(
+                "tenant-a", course.getId(), EducationEnrollmentStatus.ACTIVE)).thenReturn(1L);
+
+        var result = new EducationCourseCompletionService(courses, assignments, submissions, enrollments,
+                new SensitiveDataSanitizer(), resultService).complete("tenant-a", "teacher-1", course.getId(),
+                new EducationCourseCompletionRequest("不应覆盖历史结课说明"));
+
+        assertEquals("COMPLETED", result.status());
+        assertEquals("历史结课", result.completionNote());
+        assertEquals(completedAt, result.completedAt());
+        org.mockito.Mockito.verify(resultService).capture("tenant-a", "teacher-1", course);
+        verifyNoInteractions(assignments, submissions);
     }
 
     @Test

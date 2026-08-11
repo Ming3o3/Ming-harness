@@ -66,6 +66,12 @@ public class EducationCourseCompletionService {
             return view(course);
         }
         if (course.getStatus() == EducationCourseStatus.COMPLETED) {
+            // 结课接口保持幂等，但不能把“课程已结课、结果缺失”的历史异常永久隐藏。
+            // 生产构造会注入结果服务；重试时使用课程自身冻结的完成者和时间，避免
+            // 后续调用者改写历史快照的归属。
+            if (resultService != null) {
+                resultService.capture(tenantId, course.getCompletedByUserId(), course);
+            }
             return view(course);
         }
 
@@ -122,7 +128,7 @@ public class EducationCourseCompletionService {
         course.complete(teacherUserId, note, Instant.now());
         EducationCourse saved = courseRepository.save(course);
         if (resultService != null) {
-            resultService.capture(tenantId, teacherUserId, saved, saved.getCompletedAt());
+            resultService.capture(tenantId, teacherUserId, saved);
         }
         return view(saved);
     }

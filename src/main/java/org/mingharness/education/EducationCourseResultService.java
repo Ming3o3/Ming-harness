@@ -45,7 +45,18 @@ public class EducationCourseResultService {
 
     @Transactional
     public EducationCourseResultView capture(String tenantId, String teacherUserId,
-                                             EducationCourse course, Instant completedAt) {
+                                             EducationCourse course) {
+        if (course == null || course.getStatus() != EducationCourseStatus.COMPLETED) {
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "EDUCATION_COURSE_RESULT_CAPTURE_NOT_ALLOWED",
+                    "只有已结课课程才能形成结果快照");
+        }
+        if (course.getCompletedAt() == null || course.getCompletedByUserId() == null
+                || course.getCompletedByUserId().isBlank()) {
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "EDUCATION_COURSE_COMPLETION_FACT_INCOMPLETE",
+                    "课程缺少完整的结课时间或完成者事实，无法形成结果快照");
+        }
         EducationCourseResult existing = resultRepository
                 .findByTenantIdAndCourseId(tenantId, course.getId()).orElse(null);
         if (existing != null) return view(existing, course, teacherUserId);
@@ -90,7 +101,7 @@ public class EducationCourseResultService {
                 tenantId, course.getId(), activeLearnerIds.size(), coveredLearnerIds.size(),
                 effectiveAssignments.size(), assignmentCompleted, assignmentVerified, submissionCovered,
                 average(masteryProgressSum, masteryCount), average(masteryGainSum, masteryCount),
-                completedAt, teacherUserId));
+                course.getCompletedAt(), course.getCompletedByUserId()));
         learnerResultRepository.saveAll(byLearner.values().stream()
                 .map(accumulator -> accumulator.toEntity(tenantId, saved.getId(), course.getId()))
                 .toList());

@@ -37,6 +37,7 @@ class EducationCourseResultServiceTests {
         assignment.accept("profile-1", "goal-1", Instant.now());
         assignment.complete(Instant.now());
         assignment.verifyByTeacher("teacher-1", "已核验", Instant.now());
+        course.complete("teacher-1", "结课", Instant.parse("2026-08-10T12:00:00Z"));
         when(results.findByTenantIdAndCourseId("tenant-a", course.getId())).thenReturn(Optional.empty());
         when(assignments.findByTenantIdAndCourseIdOrderByCreatedAtDesc(
                 "tenant-a", course.getId())).thenReturn(List.of(assignment));
@@ -58,7 +59,7 @@ class EducationCourseResultServiceTests {
 
         var result = new EducationCourseResultService(results, learnerResults, courses, assignments,
                 enrollments, submissions, progress).capture(
-                "tenant-a", "teacher-1", course, Instant.now());
+                "tenant-a", "teacher-1", course);
 
         assertEquals(course.getId(), result.courseId());
         assertEquals(1, result.activeLearnerTotal());
@@ -69,6 +70,26 @@ class EducationCourseResultServiceTests {
         assertEquals(1, result.submissionCovered());
         assertEquals(1, result.learners().size());
         assertEquals("student-1", result.learners().get(0).learnerUserId());
+    }
+
+    @Test
+    void shouldRejectSnapshotCaptureBeforeCourseCompletion() {
+        EducationCourseResultRepository results = mock(EducationCourseResultRepository.class);
+        EducationCourseLearnerResultRepository learnerResults = mock(EducationCourseLearnerResultRepository.class);
+        EducationCourseService courses = mock(EducationCourseService.class);
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        EducationEnrollmentRepository enrollments = mock(EducationEnrollmentRepository.class);
+        LearningAssignmentSubmissionRepository submissions = mock(LearningAssignmentSubmissionRepository.class);
+        LearningAssignmentProgressService progress = mock(LearningAssignmentProgressService.class);
+        EducationCourse course = new EducationCourse("tenant-a", "teacher-1", "math-g1", "高一数学",
+                "数学", "高中一年级", "人教A版");
+
+        var service = new EducationCourseResultService(results, learnerResults, courses, assignments,
+                enrollments, submissions, progress);
+        BusinessException exception = assertThrows(BusinessException.class, () ->
+                service.capture("tenant-a", "teacher-1", course));
+
+        assertEquals("EDUCATION_COURSE_RESULT_CAPTURE_NOT_ALLOWED", exception.getCode());
     }
 
     @Test
