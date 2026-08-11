@@ -7309,7 +7309,33 @@ onBeforeUnmount(() => {
             </div>
             <p class="context-workbench-help">课程元数据决定检索范围；学习者画像和知识点掌握度决定讲解难度与教学策略。原始知识正文仍由知识文档权限控制。</p>
             <p v-if="educationError" class="policy-error">{{ educationError }}</p>
-            <div v-if="educationMetrics" class="education-metrics" aria-label="教育业务闭环指标">
+            <section class="education-agent-state-card" :class="{ ready: educationAgentReady }" aria-label="教育 Agent 当前状态">
+              <div class="education-agent-state-heading">
+                <div><p class="eyebrow">CURRENT AGENT STATE</p><h4>当前学习状态与下一步</h4><span>Agent 将课程边界、学习者证据和教学动作串成一条可追踪的学习回路。</span></div>
+                <span class="education-agent-state-pill"><i></i>{{ educationAgentReady ? '课程与学情已接入' : '等待配置' }}</span>
+              </div>
+              <div class="education-agent-state-grid">
+                <article class="education-agent-state-item">
+                  <small>01 · 课程边界</small><strong>{{ currentEducationSourceLabel }}</strong><p>{{ currentEducationRetrievalDetail }}</p>
+                </article>
+                <article class="education-agent-state-item">
+                  <small>02 · 学习者状态</small><strong>{{ learnerStateDiagnosis.title }}</strong><p>{{ learnerStateDiagnosis.detail }}</p>
+                </article>
+                <article class="education-agent-state-item">
+                  <small>03 · Agent 下一动作</small><strong>{{ agentTeachingAction.title }}</strong><p>{{ agentTeachingAction.detail }}</p>
+                </article>
+                <article class="education-agent-state-item">
+                  <small>04 · 需要的证据</small><strong>{{ agentEvidenceRequest.title }}</strong><p>{{ agentEvidenceRequest.detail }}</p>
+                </article>
+              </div>
+              <footer class="education-agent-state-footer">
+                <span>{{ activeLearningGoal ? `当前目标：${activeLearningGoal.title} · ${learningEvidenceSummary}` : '尚未绑定学习目标；聊天内容不会被直接当作掌握度证据。' }}</span>
+                <button class="secondary-button" type="button" @click="chatMode = true">{{ educationAgentReady ? '进入学习对话' : '配置并开始' }} <ArrowUp :size="12" /></button>
+              </footer>
+            </section>
+            <details v-if="educationMetrics && teacherEducationCourses.length" class="education-operations-metrics">
+              <summary><span>教师运营指标</span><small>完成率 · 证据覆盖 · 复核与干预</small></summary>
+              <div class="education-metrics" aria-label="教育业务闭环指标">
               <div><span>作业完成率</span><strong>{{ formatRate(educationMetrics.assignmentCompletionRate) }}</strong><small>{{ educationMetrics.assignmentCompleted }} / {{ educationMetrics.assignmentTotal }}</small></div>
               <div><span>提交物覆盖</span><strong>{{ formatRate(educationMetrics.assignmentSubmissionCoverageRate) }}</strong><small>{{ educationMetrics.assignmentSubmissionCovered }} / {{ educationMetrics.assignmentTotal }}</small></div>
               <div><span>任务启动率</span><strong>{{ formatRate(educationMetrics.taskStartRate) }}</strong><small>{{ educationMetrics.taskStarted }} / {{ educationMetrics.taskTotal }}</small></div>
@@ -7326,7 +7352,8 @@ onBeforeUnmount(() => {
               <div><span>作业待重试</span><strong>{{ educationMetrics.assignmentRetryRequired }}</strong><small>失败/超时/取消后待处理</small></div>
               <div><span>作业待返工</span><strong>{{ educationMetrics.assignmentReviewRevisionRequired }}</strong><small>教师退回后待重新提交</small></div>
               <div><span>保持度正确率</span><strong>{{ formatRate(educationMetrics.reviewAssessmentAccuracyRate) }}</strong><small>平均掌握度提升 {{ formatRate(educationMetrics.averageMasteryGain) }}</small></div>
-            </div>
+              </div>
+            </details>
             <form class="education-profile-form" @submit.prevent="saveLearnerProfile">
               <label class="field"><span>学科</span><input v-model="learnerProfileForm.subject" required maxlength="128" /></label>
               <label class="field"><span>年级</span><input v-model="learnerProfileForm.gradeLevel" required maxlength="128" /></label>
