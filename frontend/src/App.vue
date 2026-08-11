@@ -806,6 +806,19 @@ const learnerMasteryPreview = computed(() => [...learnerMastery.value]
   .sort((left, right) => Number(left.masteryScore) - Number(right.masteryScore)
     || String(left.conceptKey || '').localeCompare(String(right.conceptKey || ''), 'zh-CN'))
   .slice(0, 3))
+const learningSetupProgress = computed(() => {
+  const completed = [
+    Boolean(activeLearnerProfile.value),
+    Boolean(activeLearningGoal.value),
+    matchingEducationSourceCount.value > 0,
+  ].filter(Boolean).length
+  return { completed, total: 3 }
+})
+const learningEvidenceSummary = computed(() => {
+  if (!activeLearningGoal.value) return '等待学习目标'
+  const count = learningGoalAssessments.value.length
+  return count ? `${count} 条测评证据` : '尚无测评证据'
+})
 const manualAssessmentSteps = computed(() => (selectedRun.value?.steps || [])
   .filter((step) => step.status === 'SUCCEEDED'))
 const manualAssessmentGoal = computed(() => {
@@ -5232,14 +5245,14 @@ onBeforeUnmount(() => {
         <main class="chat-main">
           <div class="chat-heading">
             <div>
-              <p class="eyebrow">EDUCATION KNOWLEDGE SESSION</p>
+              <p class="eyebrow">COURSE-CONSTRAINED LEARNING SESSION</p>
               <form v-if="showConversationRename" class="conversation-rename-form" @submit.prevent="renameActiveConversation">
                 <input ref="conversationRenameInputRef" v-model="conversationRenameValue" maxlength="255" :disabled="conversationRenaming" aria-label="对话标题" @keydown.esc.prevent="cancelConversationRename" />
                 <button class="secondary-button" type="button" :disabled="conversationRenaming" @click="cancelConversationRename">取消</button>
                 <button class="primary-button" type="submit" :disabled="conversationRenaming">{{ conversationRenaming ? '保存中…' : '保存' }}</button>
               </form>
               <h1 v-else>{{ activeConversation?.conversation?.title || '新的对话' }}</h1>
-              <p class="chat-heading-meta">不是通用问答：Agent 先锁定课程范围，再读取学习状态，最后选择教学动作并沉淀形成性证据。</p>
+              <p class="chat-heading-meta">课程范围决定“能教什么”，学习状态决定“现在怎么教”；每次学习都会留下可追踪的形成性证据。</p>
             </div>
             <div class="chat-heading-actions">
               <button class="chat-education-status-chip" type="button" title="打开教育工作台配置课程与学习者" @click="chatMode = false; navigateConsoleSection('education')">
@@ -5278,11 +5291,66 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
+          <section v-if="!activeLearnerProfile" class="learning-onboarding" aria-label="建立教育 Agent 学习上下文">
+            <div class="learning-onboarding-intro">
+              <div class="learning-onboarding-mark" aria-hidden="true"><Sparkles :size="20" /></div>
+              <div>
+                <p class="eyebrow">START A LEARNING LOOP</p>
+                <h2>先建立你的学习上下文</h2>
+                <p>这不是一次通用问答。先告诉 Agent 你在学什么、遵循哪套课程，再让它根据后续测评不断调整讲解、练习和复习。</p>
+              </div>
+              <span class="learning-onboarding-progress">{{ learningSetupProgress.completed }} / {{ learningSetupProgress.total }} 已就绪</span>
+            </div>
+            <div class="learning-onboarding-steps" aria-label="教育 Agent 启动流程">
+              <article class="learning-onboarding-step" :class="{ ready: activeLearnerProfile }">
+                <span>1</span>
+                <div><strong>学习者状态</strong><small>{{ activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` : '建立学科、年级与课程版本画像' }}</small></div>
+              </article>
+              <article class="learning-onboarding-step" :class="{ ready: matchingEducationSourceCount > 0 }">
+                <span>2</span>
+                <div><strong>课程知识范围</strong><small>{{ matchingEducationSourceCount ? `${matchingEducationSourceCount} 个课程来源可检索` : '按课程版本过滤；可继续补充课程资料' }}</small></div>
+              </article>
+              <article class="learning-onboarding-step" :class="{ ready: activeLearningGoal }">
+                <span>3</span>
+                <div><strong>学习目标与证据</strong><small>{{ activeLearningGoal ? activeLearningGoal.title : '设定目标后，测评结果会持续回写' }}</small></div>
+              </article>
+            </div>
+            <div class="learning-onboarding-content">
+              <div class="learning-onboarding-profile">
+                <div class="learning-onboarding-section-heading">
+                  <div><span>第一步</span><strong>建立学习者画像</strong></div>
+                  <small>画像只用于限定本次教育 Agent 的课程与难度范围</small>
+                </div>
+                <form class="learning-onboarding-profile-form" @submit.prevent="saveLearnerProfile">
+                  <label><span>学科</span><input v-model="learnerProfileForm.subject" required maxlength="128" /></label>
+                  <label><span>年级</span><input v-model="learnerProfileForm.gradeLevel" required maxlength="128" /></label>
+                  <label><span>课程版本</span><input v-model="learnerProfileForm.curriculumVersion" required maxlength="128" /></label>
+                  <label class="learning-onboarding-wide"><span>当前学习诉求（可选）</span><input v-model="learnerProfileForm.learningGoal" maxlength="512" placeholder="例如：理解函数定义域，并能独立完成基础题" /></label>
+                  <button class="primary-button" type="submit" :disabled="educationLoading">{{ educationLoading ? '建立中…' : '建立学习画像' }}</button>
+                </form>
+              </div>
+              <aside class="learning-onboarding-existing">
+                <div class="learning-onboarding-section-heading">
+                  <div><span>继续学习</span><strong>已有学习上下文</strong></div>
+                  <button type="button" @click="chatMode = false; navigateConsoleSection('education')">课程与资料管理 <ArrowUp :size="13" /></button>
+                </div>
+                <div v-if="learnerProfiles.length" class="learning-onboarding-profile-list">
+                  <button v-for="profile in learnerProfiles.slice(0, 4)" :key="profile.id" type="button" @click="selectLearnerProfile(profile)">
+                    <span class="learning-onboarding-profile-icon"><Brain :size="14" /></span>
+                    <span><strong>{{ profile.subject }} · {{ profile.gradeLevel }}</strong><small>{{ profile.curriculumVersion }} · {{ profile.learningGoal || '尚未设置学习诉求' }}</small></span>
+                    <ArrowUp :size="13" />
+                  </button>
+                </div>
+                <p v-else>还没有保存过学习画像。完成左侧第一步后，Agent 才会开始按课程和学习状态决策。</p>
+              </aside>
+            </div>
+          </section>
+
           <section v-if="activeLearnerProfile" class="learning-cockpit" aria-label="当前学习状态">
             <div class="learning-cockpit-heading">
               <div>
                 <p>LEARNING CONTROL CENTER</p>
-                <strong>当前学习状态</strong>
+                <strong>课程约束驱动的学习闭环</strong>
               </div>
               <button type="button" @click="chatMode = false; navigateConsoleSection('education')">管理课程与目标 <ArrowUp :size="13" /></button>
             </div>
@@ -5321,6 +5389,15 @@ onBeforeUnmount(() => {
                   <button v-else type="button" @click="chatMode = false; navigateConsoleSection('education')">创建学习目标</button>
                 </div>
               </article>
+              <article class="learning-cockpit-card learning-cockpit-evidence" :class="{ empty: !activeLearningGoal }">
+                <span class="learning-cockpit-icon"><ListChecks :size="16" /></span>
+                <div class="learning-cockpit-card-copy">
+                  <small>形成性证据</small>
+                  <strong>{{ learningEvidenceSummary }}</strong>
+                  <p v-if="activeLearningGoal">每次作答、测评与反馈都会回写到“{{ activeLearningGoal.conceptKey }}”的学习状态。</p>
+                  <p v-else>绑定学习目标后，Agent 会把本轮学习转化为可追踪的掌握度证据。</p>
+                </div>
+              </article>
             </div>
             <div v-if="learnerMasteryPreview.length" class="learning-cockpit-mastery-strip" aria-label="需要关注的知识点">
               <span>优先关注</span>
@@ -5330,6 +5407,9 @@ onBeforeUnmount(() => {
 
           <div class="chat-messages" aria-live="polite" @scroll="updateChatFollowOutput">
             <div v-if="chatLoading && !chatMessages.length" class="chat-empty-state">正在加载会话…</div>
+            <div v-else-if="!chatMessages.length && !activeLearnerProfile" class="chat-empty-state chat-empty-state-preparing">
+              <span>完成上方的学习画像后，即可开始一段受课程约束的学习对话。</span>
+            </div>
             <div v-else-if="!chatMessages.length" class="chat-empty-state">
               <div class="chat-empty-mark" aria-hidden="true"><Sparkles :size="23" /></div>
               <strong>从一个学习问题开始</strong>
