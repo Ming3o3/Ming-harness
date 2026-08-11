@@ -4256,6 +4256,10 @@ async function openLearningAssignmentNotification(notification) {
     await loadEducationData()
     assignment = learningAssignments.value.find((item) => item.id === notification.learningAssignmentId)
   }
+  if (!assignment) {
+    noticeMessage.value = '通知对应的课程作业已不在当前列表中，请刷新教育状态。'
+    return
+  }
   if (['FEEDBACK', 'FEEDBACK_ACKNOWLEDGED'].includes(notification.notificationType)) {
     await nextTick()
     document.getElementById(`learning-assignment-${assignment.id}`)?.scrollIntoView({
@@ -4264,10 +4268,6 @@ async function openLearningAssignmentNotification(notification) {
     noticeMessage.value = notification.notificationType === 'FEEDBACK_ACKNOWLEDGED'
       ? `已打开课程作业“${assignment.title}”的反馈确认回执。`
       : `已打开课程作业“${assignment.title}”的教师反馈。`
-    return
-  }
-  if (!assignment) {
-    noticeMessage.value = '通知对应的课程作业已不在当前列表中，请刷新教育状态。'
     return
   }
   if (['ASSIGNED', 'RETRY_REQUIRED', 'REVISION_REQUIRED'].includes(notification.notificationType)
