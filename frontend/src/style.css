@@ -2164,6 +2164,119 @@ button svg {
 .learning-agent-workbench-state i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .learning-agent-workbench-state.ready { border-color: color-mix(in srgb, var(--cyan) 42%, var(--line)); background: color-mix(in srgb, var(--cyan) 8%, var(--panel)); color: var(--cyan); }
 
+/* The main learning surface is a live decision board, not a row of dashboard
+ * counters: it exposes the actual retrieval boundary, the learner diagnosis,
+ * the chosen teaching action, and the evidence that may change the state. */
+.learning-agent-decision-board {
+  display: grid;
+  gap: 9px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 20%, var(--line));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--panel) 76%, transparent);
+  padding: 10px;
+}
+
+.learning-agent-decision-board-heading,
+.learning-agent-action-plan > header,
+.learning-agent-action-plan > footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.learning-agent-decision-board-heading > div,
+.learning-agent-action-plan > header > div { display: grid; min-width: 0; gap: 2px; }
+.learning-agent-decision-board-heading p,
+.learning-agent-action-plan > header p { margin: 0; color: var(--muted); font: 8px "DM Mono", monospace; letter-spacing: .1em; }
+.learning-agent-decision-board-heading strong { color: var(--heading); font-size: 11px; letter-spacing: -.015em; }
+.learning-agent-decision-board-heading span { color: var(--muted); font-size: 9px; line-height: 1.45; }
+.learning-agent-decision-board-heading .text-button { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; color: var(--cyan); padding: 3px 0; font-size: 9px; white-space: nowrap; }
+
+.learning-agent-decision-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1.06fr) minmax(0, .94fr);
+  gap: 8px;
+}
+
+.learning-agent-boundary-card,
+.learning-agent-diagnosis-card {
+  display: grid;
+  min-width: 0;
+  min-height: 148px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  padding: 10px;
+}
+
+.learning-agent-boundary-card { grid-template-rows: auto auto minmax(42px, 1fr) auto; gap: 6px; border-color: color-mix(in srgb, var(--cyan) 35%, var(--line)); }
+.learning-agent-boundary-card.empty { border-style: dashed; }
+.learning-agent-boundary-card > header,
+.learning-agent-diagnosis-card > header { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 7px; min-width: 0; }
+.learning-agent-boundary-card > header > span,
+.learning-agent-diagnosis-card > header > span { display: grid; width: 27px; height: 27px; place-items: center; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-soft); }
+.learning-agent-boundary-card > header > span { color: var(--cyan); }
+.learning-agent-diagnosis-card > header > span { color: #6f8fe5; }
+.learning-agent-boundary-card > header div,
+.learning-agent-diagnosis-card > header div { display: grid; min-width: 0; gap: 1px; }
+.learning-agent-boundary-card > header small,
+.learning-agent-diagnosis-card > header small { overflow: hidden; color: var(--muted); font: 8px "DM Mono", monospace; letter-spacing: .04em; text-overflow: ellipsis; white-space: nowrap; }
+.learning-agent-boundary-card > header strong,
+.learning-agent-diagnosis-card > header strong { overflow: hidden; color: var(--heading); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.learning-agent-boundary-card > header em,
+.learning-agent-diagnosis-card > header em { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); padding: 3px 5px; font: 7px "DM Mono", monospace; font-style: normal; white-space: nowrap; }
+.learning-agent-boundary-card > header em.ready { border-color: color-mix(in srgb, var(--cyan) 35%, var(--line)); color: var(--cyan); }
+.learning-agent-boundary-card > p,
+.learning-agent-diagnosis-card > p { display: -webkit-box; overflow: hidden; margin: 0; color: var(--muted); font-size: 9px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+
+.learning-agent-source-list { display: flex; flex-wrap: wrap; align-content: start; gap: 5px; min-width: 0; }
+.learning-agent-source-list > span { display: inline-grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 4px; align-items: center; max-width: 100%; border: 1px solid color-mix(in srgb, var(--cyan) 22%, var(--line)); border-radius: 6px; background: color-mix(in srgb, var(--cyan) 5%, transparent); color: var(--cyan); padding: 4px 5px; }
+.learning-agent-source-list b { overflow: hidden; max-width: 152px; color: var(--soft); font: 8px "DM Mono", monospace; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.learning-agent-source-list small { grid-column: 2; overflow: hidden; max-width: 152px; color: var(--muted); font: 7px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.learning-agent-source-empty { display: flex; align-items: center; gap: 5px; align-self: center; color: var(--muted); font-size: 8px; line-height: 1.45; }
+.learning-agent-source-empty svg { flex: 0 0 auto; color: var(--orange); }
+.learning-agent-boundary-card > footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent); padding-top: 6px; }
+.learning-agent-boundary-card > footer b { color: var(--cyan); font: 8px "DM Mono", monospace; font-weight: 500; }
+.learning-agent-boundary-card > footer button { display: inline-flex; align-items: center; gap: 3px; border: 0; background: transparent; color: var(--muted); padding: 0; font: 8px "DM Mono", monospace; }
+.learning-agent-boundary-card > footer button:hover { color: var(--heading); text-decoration: underline; text-underline-offset: 3px; }
+
+.learning-agent-diagnosis-card { grid-template-rows: auto auto minmax(27px, 1fr) auto; gap: 5px; border-color: color-mix(in srgb, #6f8fe5 35%, var(--line)); }
+.learning-agent-diagnosis-card.is-unverified { border-style: dashed; }
+.learning-agent-diagnosis-card.is-ready { border-color: color-mix(in srgb, var(--green) 40%, var(--line)); }
+.learning-agent-diagnosis-card > strong { overflow: hidden; color: var(--heading); font-size: 12px; letter-spacing: -.015em; text-overflow: ellipsis; white-space: nowrap; }
+.learning-agent-diagnosis-meter { display: grid; grid-template-columns: auto minmax(48px, 1fr) auto; align-items: center; gap: 6px; color: var(--muted); font: 8px "DM Mono", monospace; }
+.learning-agent-diagnosis-meter b { color: var(--soft); font-weight: 600; }
+.learning-agent-diagnosis-meter i { display: block; height: 4px; overflow: hidden; border-radius: 4px; background: color-mix(in srgb, #6f8fe5 16%, transparent); }
+.learning-agent-diagnosis-meter i b { display: block; height: 100%; border-radius: inherit; background: #6f8fe5; }
+.learning-agent-diagnosis-note { display: inline-flex; align-items: center; gap: 5px; align-self: end; color: var(--muted); font-size: 8px; }
+.learning-agent-diagnosis-note svg { color: #6f8fe5; }
+
+.learning-agent-action-plan { display: grid; gap: 8px; border: 1px solid color-mix(in srgb, var(--orange) 31%, var(--line)); border-radius: 9px; background: color-mix(in srgb, var(--orange) 4%, var(--panel)); padding: 10px; }
+.learning-agent-action-plan > header { align-items: center; }
+.learning-agent-action-plan > header strong { color: var(--heading); font-size: 10px; }
+.learning-agent-action-plan > header > span { border: 1px solid var(--line); border-radius: 999px; color: var(--muted); padding: 3px 6px; font: 8px "DM Mono", monospace; white-space: nowrap; }
+.learning-agent-action-plan > header > span.is-ready { border-color: color-mix(in srgb, var(--green) 38%, var(--line)); color: var(--green); }
+.learning-agent-action-plan > header > span.is-blocked { border-color: color-mix(in srgb, var(--orange) 38%, var(--line)); color: var(--orange); }
+.learning-agent-action-plan > ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 0; padding: 0; list-style: none; }
+.learning-agent-action-plan > ol > li { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 6px; min-width: 0; border-left: 2px solid var(--line); padding: 3px 6px; }
+.learning-agent-action-plan > ol > li > span { display: grid; width: 19px; height: 19px; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: var(--panel); color: var(--muted); font: 8px "DM Mono", monospace; }
+.learning-agent-action-plan > ol > li > div { display: grid; min-width: 0; gap: 2px; }
+.learning-agent-action-plan > ol small { color: var(--muted); font: 7px "DM Mono", monospace; letter-spacing: .04em; }
+.learning-agent-action-plan > ol strong { display: block; overflow: hidden; color: var(--soft); font-size: 9px; font-weight: 650; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.learning-agent-action-plan > ol p { display: -webkit-box; overflow: hidden; margin: 0; color: var(--muted); font-size: 8px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.learning-agent-plan-action { border-color: var(--orange) !important; }
+.learning-agent-plan-action > span { color: var(--orange) !important; }
+.learning-agent-plan-evidence { border-color: var(--green) !important; }
+.learning-agent-plan-evidence > span { color: var(--green) !important; }
+.learning-agent-plan-writeback { border-color: #6f8fe5 !important; }
+.learning-agent-plan-writeback > span { color: #6f8fe5 !important; }
+.learning-agent-action-plan > footer { align-items: center; border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent); padding-top: 7px; }
+.learning-agent-action-plan > footer > span { display: inline-flex; align-items: center; gap: 5px; overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.learning-agent-action-plan > footer > span svg { color: var(--green); }
+.learning-agent-action-plan > footer > div { display: flex; flex: 0 0 auto; gap: 6px; }
+.learning-agent-action-plan > footer button { display: inline-flex; align-items: center; gap: 4px; min-height: 29px; padding: 5px 8px; font-size: 8px; white-space: nowrap; }
+
 .learning-agent-state-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -3161,6 +3274,14 @@ button svg {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .learning-agent-action-plan > ol {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .learning-agent-action-plan > ol > li {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
   .learning-agent-state-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3283,6 +3404,26 @@ button svg {
 
   .learning-agent-workbench-heading {
     flex-direction: column;
+  }
+
+  .learning-agent-decision-board-heading,
+  .learning-agent-action-plan > header,
+  .learning-agent-action-plan > footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .learning-agent-decision-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .learning-agent-boundary-card,
+  .learning-agent-diagnosis-card {
+    min-height: 0;
+  }
+
+  .learning-agent-action-plan > footer > div {
+    width: 100%;
   }
 
   .learning-agent-decision-flow {

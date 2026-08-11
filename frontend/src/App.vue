@@ -814,6 +814,17 @@ function sourceMatchesEducationScope(source, scope) {
     && (scope.maxDifficulty === null || Number(source.difficultyLevel) <= scope.maxDifficulty)
 }
 
+function educationSourceLabel(source) {
+  const chapter = String(source?.chapter || '').trim()
+  if (chapter) return chapter
+  const firstConcept = String(source?.conceptTags || '')
+    .split(/[,，;；\n]/)
+    .map((item) => item.trim())
+    .find(Boolean)
+  if (firstConcept) return firstConcept
+  return source?.documentId ? `课程资料 ${source.documentId}` : '课程资料'
+}
+
 /**
  * 学习目标、复习任务和课程作业都可能从聊天输入区以外的入口启动。
  * 这里复用服务端的课程元数据、知识点和难度比较规则，让所有教学动作在请求前
@@ -932,6 +943,141 @@ const currentEducationRetrievalScope = computed(() => {
   }
 })
 const currentEducationSourceCount = computed(() => currentEducationRetrievalScope.value.sourceCount)
+// 不只告诉学习者“有几份资料”，还把本轮实际允许 Agent 检索的课程条目摆到
+// 决策面板中。这样课程边界是可见、可核对的，而不是隐藏在一次请求的参数里。
+const currentEducationSourcePreview = computed(() => {
+  const scope = currentEducationRetrievalScope.value
+  return educationSources.value
+    .filter((source) => sourceMatchesEducationScope(source, scope))
+    .slice(0, 3)
+})
+const currentLearningEvidenceCount = computed(() => {
+  if (!activeLearningGoal.value) return 0
+  const recommendedCount = Number(activeLearningRecommendation.value?.attemptCount)
+  return Number.isFinite(recommendedCount)
+    ? recommendedCount
+    : learningGoalAssessments.value.length
+})
+// 学习者状态不能只表现为“已建档多少知识点”。这里把 Agent 能据以教学的结论、
+// 证据数量和不确定性拆开呈现；没有可验证作答时明确标为未知，而不伪造掌握度。
+const learnerStateDiagnosis = computed(() => {
+  if (!activeLearnerProfile.value) {
+    return {
+      state: 'pending',
+      title: '尚未建立学习者状态',
+      detail: '先绑定画像，Agent 才能把后续作答写入同一份学习档案。',
+      currentMastery: null,
+      targetMastery: null,
+    }
+  }
+  if (!activeLearningGoal.value) {
+    return {
+      state: 'pending',
+      title: '尚未定义本轮达标标准',
+      detail: '可以先问问题，但没有学习目标时，Agent 无法判断何时达标或安排复习。',
+      currentMastery: null,
+      targetMastery: null,
+    }
+  }
+  const recommendation = activeLearningRecommendation.value
+  const currentMastery = Number(recommendation?.currentMastery)
+  const targetMastery = Number(recommendation?.targetMastery ?? activeLearningGoal.value.targetMastery)
+  const evidenceCount = currentLearningEvidenceCount.value
+  if (Number.isFinite(currentMastery) && Number.isFinite(targetMastery)) {
+    const gap = Math.max(0, targetMastery - currentMastery)
+    return {
+      state: evidenceCount ? (gap > 0.01 ? 'observed' : 'ready') : 'unverified',
+      title: gap > 0.01 ? `距离目标还差 ${formatRate(gap)}` : '当前证据已达到目标',
+      detail: evidenceCount
+        ? `围绕「${activeLearningGoal.value.conceptKey}」已有 ${evidenceCount} 次形成性证据；Agent 会按此状态调整难度与动作。`
+        : '尚无形成性证据；当前数值只作为初始状态，下一轮需要用作答或评分验证。',
+      currentMastery,
+      targetMastery,
+    }
+  }
+  if (learnerMasteryPreview.value.length) {
+    return {
+      state: 'observed',
+      title: `优先诊断：${learnerMasteryPreview.value[0].conceptKey}`,
+      detail: `已发现 ${learnerMasteryPreview.value.length} 个待补强知识点；先完成本轮目标的作答，才会写入新的掌握度。`,
+      currentMastery: null,
+      targetMastery: Number(activeLearningGoal.value.targetMastery),
+    }
+  }
+  return {
+    state: 'unverified',
+    title: '还没有可靠的作答证据',
+    detail: 'Agent 会先用诊断题或追问建立基线，不会仅根据提问内容推断你已经掌握。',
+    currentMastery: null,
+    targetMastery: Number(activeLearningGoal.value.targetMastery),
+  }
+})
+const agentTeachingAction = computed(() => {
+  if (!currentEducationSourceCount.value) {
+    return {
+      state: 'blocked',
+      title: '先补齐可检索的课程资料',
+      detail: educationSendBlockReason.value || '课程边界为空，Agent 不会退化为通用问答。',
+    }
+  }
+  if (!activeLearningGoal.value) {
+    return {
+      state: 'pending',
+      title: '先把学习诉求变成达标目标',
+      detail: '目标会提供知识点、目标掌握度和后续证据的归属。',
+    }
+  }
+  if (activeLearningTask.value) {
+    return {
+      state: activeLearningTask.value.status === 'AWAITING_EVIDENCE' ? 'evidence' : 'ready',
+      title: activeLearningTask.value.title,
+      detail: learningTaskSourceBlockReason(activeLearningTask.value)
+        || (activeLearningTask.value.status === 'AWAITING_EVIDENCE'
+          ? '先补充本轮作答或评分依据，再决定是否进入下一步。'
+          : activeLearningTask.value.prompt),
+    }
+  }
+  if (activeLearningRecommendation.value) {
+    return {
+      state: 'ready',
+      title: activeLearningRecommendation.value.nextActionTitle,
+      detail: activeLearningRecommendation.value.rationale || '根据当前掌握度与目标自动选择教学动作。',
+    }
+  }
+  return {
+    state: 'pending',
+    title: '等待 Agent 生成教学策略',
+    detail: '开始一轮学习对话后，Agent 会在课程边界内选择讲解、诊断、练习或复习。',
+  }
+})
+const agentEvidenceRequest = computed(() => {
+  if (!activeLearningGoal.value) {
+    return {
+      state: 'pending',
+      title: '先绑定学习目标',
+      detail: '没有目标时，作答无法沉淀为可追踪的掌握度证据。',
+    }
+  }
+  if (activeLearningTask.value?.status === 'AWAITING_EVIDENCE') {
+    return {
+      state: 'required',
+      title: '需要补充本轮证据',
+      detail: '提交解题过程、作答理由或教师评分；仅完成对话不会自动提升掌握度。',
+    }
+  }
+  if (!currentLearningEvidenceCount.value) {
+    return {
+      state: 'required',
+      title: '先用一次作答建立基线',
+      detail: 'Agent 会记录正确性、推理过程和反馈，再更新掌握度。',
+    }
+  }
+  return {
+    state: 'ready',
+    title: `继续收集 ${activeLearningGoal.value.conceptKey} 的证据`,
+    detail: `已有 ${currentLearningEvidenceCount.value} 次测评记录；新的作答会决定是否调整下一次练习难度。`,
+  }
+})
 const educationSendBlockReason = computed(() => {
   if (!activeLearnerProfile.value) {
     return '教育 Agent 尚未绑定学习者画像。画像提供学科、年级、课程版本和当前学习状态。'
@@ -5902,52 +6048,50 @@ onBeforeUnmount(() => {
               </div>
               <div class="learning-agent-workbench-state" :class="{ ready: educationAgentReady }"><i></i>{{ educationAgentReady ? '课程与学情已接入' : '还缺少课程资料' }}</div>
             </div>
-            <div class="learning-agent-state-grid">
-              <article class="learning-agent-state-card learning-agent-course-card" :class="{ empty: !currentEducationSourceCount }">
-                <header><span><BookOpen :size="16" /></span><small>课程约束 / KNOWLEDGE BOUNDARY</small></header>
-                <strong>{{ activeChatCourse?.title || `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` }}</strong>
-                <p :title="currentEducationRetrievalDetail">{{ currentEducationRetrievalDetail }}</p>
-                <footer><b>{{ currentEducationSourceLabel }}</b><button type="button" @click="chatMode = false; navigateConsoleSection('education')">调整课程资料 <ArrowUp :size="12" /></button></footer>
-              </article>
-              <article class="learning-agent-state-card learning-agent-goal-card" :class="{ empty: !activeLearningGoal }">
-                <header><span><Target :size="16" /></span><small>学习目标 / SUCCESS CRITERIA</small></header>
-                <template v-if="activeLearningGoal">
-                  <strong>{{ activeLearningGoal.title }}</strong>
-                  <p>{{ activeLearningGoal.conceptKey }} · 目标掌握度 {{ formatRate(activeLearningGoal.targetMastery) }}</p>
-                  <footer class="learning-agent-progress"><span><b :style="{ width: `${activeLearningProgress * 100}%` }"></b></span><em>已推进 {{ Math.round(activeLearningProgress * 100) }}%</em></footer>
-                </template>
-                <template v-else>
-                  <strong>尚未建立可追踪目标</strong>
-                  <p>把一次提问变成可评估的学习结果，Agent 才能持续调整下一步。</p>
-                  <footer><button type="button" @click="showQuickLearningGoalForm = true">设定学习目标 <ArrowUp :size="12" /></button></footer>
-                </template>
-              </article>
-              <article class="learning-agent-state-card learning-agent-learner-card">
-                <header><span><Brain :size="16" /></span><small>学习者状态 / EVIDENCE-BASED</small></header>
-                <strong v-if="activeLearningRecommendation">当前掌握度 {{ formatRate(activeLearningRecommendation.currentMastery) }}</strong>
-                <strong v-else>{{ learnerMasteryLoading ? '正在读取学习状态…' : `${learnerMastery.length} 个知识点已建档` }}</strong>
-                <p v-if="activeLearningRecommendation">距目标 {{ formatRate(activeLearningRecommendation.targetMastery) }} · 已有 {{ activeLearningRecommendation.attemptCount }} 次带证据测评</p>
-                <p v-else-if="learnerMasteryPreview.length">优先补强：{{ learnerMasteryPreview.map((item) => item.conceptKey).join('、') }}</p>
-                <p v-else>尚未观察到可验证作答；Agent 不会猜测掌握度。</p>
-                <footer><b>{{ activeLearningGoal ? learningEvidenceSummary : '等待目标与作答证据' }}</b></footer>
-              </article>
-              <article class="learning-agent-state-card learning-agent-action-card">
-                <header><span><CalendarClock :size="16" /></span><small>AGENT 下一步 / TEACHING ACTION</small></header>
-                <strong>{{ activeLearningTask?.title || activeLearningRecommendation?.nextActionTitle || '等待目标生成教学动作' }}</strong>
-                <p>{{ activeLearningTask ? (learningTaskSourceBlockReason(activeLearningTask) || (activeLearningTask.status === 'AWAITING_EVIDENCE' ? '请先补充本轮作答或评分依据。' : activeLearningTask.prompt)) : (activeLearningRecommendation ? (learningGoalSourceBlockReason(activeLearningRecommendation.learningGoalId) || activeLearningRecommendation.rationale) : '课程资料、学习目标和学情共同决定讲解、诊断、练习或复习。') }}</p>
+            <section class="learning-agent-decision-board" aria-label="Agent 实时教学决策">
+              <header class="learning-agent-decision-board-heading">
+                <div><p>LIVE DECISION BOARD</p><strong>先限定知识，再根据证据决定教学动作</strong><span>每一项都是 Agent 本轮可观察、可解释、可改变的决策依据。</span></div>
+                <button class="text-button" type="button" @click="toggleLearningTrace"><Brain :size="13" />{{ showLearningTrace ? '收起完整依据' : '查看完整依据' }}</button>
+              </header>
+              <div class="learning-agent-decision-summary">
+                <article class="learning-agent-boundary-card" :class="{ empty: !currentEducationSourceCount }">
+                  <header><span><BookOpen :size="16" /></span><div><small>01 · 知识边界</small><strong>本轮允许参考的课程资料</strong></div><em :class="{ ready: currentEducationSourceCount }">{{ currentEducationSourceCount ? `${currentEducationSourceCount} 份可检索` : '尚未就绪' }}</em></header>
+                  <p :title="currentEducationRetrievalDetail">{{ currentEducationRetrievalDetail }}</p>
+                  <div v-if="currentEducationSourcePreview.length" class="learning-agent-source-list" aria-label="当前可检索课程来源">
+                    <span v-for="source in currentEducationSourcePreview" :key="source.id" :title="`${source.documentId} · ${source.conceptTags || '未标注知识点'}`"><BookOpen :size="11" /><b>{{ educationSourceLabel(source) }}</b><small>{{ source.sourceType || 'TEXTBOOK' }} · 难度 {{ source.difficultyLevel || 3 }}</small></span>
+                  </div>
+                  <div v-else class="learning-agent-source-empty"><ShieldCheck :size="13" /><span>课程外资料不会被 Agent 用来替代本轮教学依据。</span></div>
+                  <footer><b>{{ currentEducationSourceCount ? '知识边界已锁定' : '需先配置课程资料' }}</b><button type="button" @click="chatMode = false; navigateConsoleSection('education')">管理知识边界 <ArrowUp :size="12" /></button></footer>
+                </article>
+                <article class="learning-agent-diagnosis-card" :class="`is-${learnerStateDiagnosis.state}`">
+                  <header><span><Brain :size="16" /></span><div><small>02 · 学情诊断</small><strong>{{ activeLearningGoal?.title || '当前学习者状态' }}</strong></div><em>{{ currentLearningEvidenceCount }} 条证据</em></header>
+                  <strong>{{ learnerMasteryLoading ? '正在读取学习状态…' : learnerStateDiagnosis.title }}</strong>
+                  <p>{{ learnerStateDiagnosis.detail }}</p>
+                  <div v-if="Number.isFinite(learnerStateDiagnosis.currentMastery) && Number.isFinite(learnerStateDiagnosis.targetMastery)" class="learning-agent-diagnosis-meter">
+                    <span>当前 <b>{{ formatRate(learnerStateDiagnosis.currentMastery) }}</b></span><i><b :style="{ width: `${Math.min(100, Math.max(0, learnerStateDiagnosis.currentMastery / Math.max(learnerStateDiagnosis.targetMastery, 0.01) * 100))}%` }"></b></i><span>目标 {{ formatRate(learnerStateDiagnosis.targetMastery) }}</span>
+                  </div>
+                  <div v-else class="learning-agent-diagnosis-note"><CircleDot :size="12" />{{ activeLearningGoal ? `目标掌握度 ${formatRate(activeLearningGoal.targetMastery)}` : '创建目标后显示达标条件' }}</div>
+                </article>
+              </div>
+              <section class="learning-agent-action-plan" aria-label="Agent 教学计划">
+                <header><div><p>03 · AGENT TEACHING PLAN</p><strong>从当前状态到下一次可验证改变</strong></div><span :class="`is-${agentTeachingAction.state}`">{{ agentTeachingAction.state === 'blocked' ? '等待输入' : (agentTeachingAction.state === 'ready' ? '可执行' : '待确认') }}</span></header>
+                <ol>
+                  <li class="learning-agent-plan-action"><span>1</span><div><small>教学动作</small><strong>{{ agentTeachingAction.title }}</strong><p>{{ agentTeachingAction.detail }}</p></div></li>
+                  <li class="learning-agent-plan-evidence"><span>2</span><div><small>需要观察的证据</small><strong>{{ agentEvidenceRequest.title }}</strong><p>{{ agentEvidenceRequest.detail }}</p></div></li>
+                  <li class="learning-agent-plan-writeback"><span>3</span><div><small>状态如何改变</small><strong>{{ activeLearningGoal ? `回写「${activeLearningGoal.conceptKey}」学习档案` : '等待建立学习档案目标' }}</strong><p>只有作答、推理过程或教师评分会改变掌握度；聊天文本本身不会被当作已掌握。</p></div></li>
+                </ol>
                 <footer>
-                  <b>{{ educationAgentReady ? '将按课程范围执行' : '课程资料尚未满足' }}</b>
-                  <button v-if="activeLearningTask" type="button" :title="learningTaskSourceBlockReason(activeLearningTask)" :disabled="learningTaskStartingId === activeLearningTask.id || chatSending || chatUploading || Boolean(learningTaskSourceBlockReason(activeLearningTask))" @click="startLearningTask(activeLearningTask)">{{ learningTaskSourceBlockReason(activeLearningTask) ? '补充资料' : (learningTaskStartingId === activeLearningTask.id ? '启动中…' : '开始任务') }} <ArrowUp :size="12" /></button>
-                  <button v-else-if="activeLearningRecommendation" type="button" :title="learningGoalSourceBlockReason(activeLearningRecommendation.learningGoalId)" :disabled="chatSending || chatUploading || Boolean(learningGoalSourceBlockReason(activeLearningRecommendation.learningGoalId))" @click="useLearningRecommendation">按建议开始 <ArrowUp :size="12" /></button>
-                  <button v-else type="button" @click="showQuickLearningGoalForm = true">设定目标 <ArrowUp :size="12" /></button>
+                  <span><ListChecks :size="13" />{{ activeLearningGoal ? learningEvidenceSummary : '先定义目标，再开始累积证据' }}</span>
+                  <div>
+                    <button v-if="agentTeachingAction.state === 'blocked'" class="secondary-button" type="button" @click="chatMode = false; navigateConsoleSection('education')">配置课程资料</button>
+                    <button v-else-if="!activeLearningGoal" class="secondary-button" type="button" @click="showQuickLearningGoalForm = true">设定学习目标</button>
+                    <button v-else-if="activeLearningTask" class="primary-button" type="button" :title="learningTaskSourceBlockReason(activeLearningTask)" :disabled="learningTaskStartingId === activeLearningTask.id || chatSending || chatUploading || Boolean(learningTaskSourceBlockReason(activeLearningTask))" @click="startLearningTask(activeLearningTask)">{{ learningTaskSourceBlockReason(activeLearningTask) ? '补充课程资料' : (learningTaskStartingId === activeLearningTask.id ? '启动中…' : '执行本轮计划') }} <ArrowUp :size="12" /></button>
+                    <button v-else-if="activeLearningRecommendation" class="primary-button" type="button" :title="learningGoalSourceBlockReason(activeLearningRecommendation.learningGoalId)" :disabled="chatSending || chatUploading || Boolean(learningGoalSourceBlockReason(activeLearningRecommendation.learningGoalId))" @click="useLearningRecommendation">按 Agent 建议开始 <ArrowUp :size="12" /></button>
+                    <button v-else class="secondary-button" type="button" @click="chatInputRef?.focus()">提出学习问题 <ArrowUp :size="12" /></button>
+                  </div>
                 </footer>
-              </article>
-            </div>
-            <div class="learning-agent-evidence-loop" aria-label="形成性证据闭环说明">
-              <span><ListChecks :size="15" /></span>
-              <div><strong>形成性证据闭环</strong><p>只有学习者的作答、推理或教师评分会进入学习档案；这些证据会更新掌握度并改变下一步教学动作。</p></div>
-              <span class="learning-agent-evidence-loop-status" :class="{ ready: activeLearningGoal && learningGoalAssessments.length }">{{ activeLearningGoal ? learningEvidenceSummary : '等待绑定目标' }}</span>
-            </div>
+              </section>
+            </section>
             <div v-if="nextLearnerCourseAssignment" class="learning-agent-assignment-inline">
               <span><BookOpen :size="14" /></span>
               <div><small>课程作业</small><strong>{{ nextLearnerCourseAssignment.title }}</strong><p>{{ learningAssignmentStatusLabel(nextLearnerCourseAssignment.status) }} · {{ nextLearnerCourseAssignment.conceptKey }}<span v-if="nextLearnerCourseAssignment.dueAt"> · 截止 {{ formatDate(nextLearnerCourseAssignment.dueAt) }}</span></p><p v-if="nextLearnerCourseAssignment.teacherReviewNote" class="learning-agent-assignment-review-note"><b>{{ learningAssignmentReviewNoteLabel(nextLearnerCourseAssignment) }}：</b>{{ nextLearnerCourseAssignment.teacherReviewNote }}</p></div>
