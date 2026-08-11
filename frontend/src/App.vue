@@ -781,6 +781,103 @@ const pedagogicalModeLabel = computed(() => ({
   PRACTICE: '练习优先',
   DIAGNOSE: '错误诊断',
 }[chatEducation.pedagogicalMode] || '自动选择（基于学习状态）'))
+
+// 这里与服务端 EducationRetrievalFilter 保持同一组比较规则。课程版本下有资料，
+// 不代表当前 Run 一定能使用：知识点标签与难度范围仍会继续收紧证据范围。
+function normalizeEducationFilterValue(value) {
+  const normalized = String(value ?? '').trim()
+  return normalized ? normalized.toLocaleLowerCase('en-US') : ''
+}
+
+function normalizeEducationDifficulty(value) {
+  if (value === null || value === undefined || String(value).trim() === '') return null
+  const parsed = Number(value)
+  return Number.isInteger(parsed) ? Math.max(1, Math.min(5, parsed)) : null
+}
+
+function sourceHasConcept(source, conceptKey) {
+  const expected = normalizeEducationFilterValue(conceptKey)
+  if (!expected) return true
+  return String(source?.conceptTags || '')
+    .split(/[,，;；\n]/)
+    .map((item) => normalizeEducationFilterValue(item))
+    .some((item) => item === expected)
+}
+
+function sourceMatchesEducationScope(source, scope) {
+  if (!source || !scope) return false
+  return normalizeEducationFilterValue(source.subject) === normalizeEducationFilterValue(scope.subject)
+    && normalizeEducationFilterValue(source.gradeLevel) === normalizeEducationFilterValue(scope.gradeLevel)
+    && normalizeEducationFilterValue(source.curriculumVersion) === normalizeEducationFilterValue(scope.curriculumVersion)
+    && sourceHasConcept(source, scope.conceptKey)
+    && (scope.minDifficulty === null || Number(source.difficultyLevel) >= scope.minDifficulty)
+    && (scope.maxDifficulty === null || Number(source.difficultyLevel) <= scope.maxDifficulty)
+}
+
+const currentChatLearningGoal = computed(() => {
+  const goalId = chatEducation.learningGoalId
+  return goalId ? learningGoals.value.find((goal) => goal.id === goalId) || null : null
+})
+const currentEducationRetrievalScope = computed(() => {
+  const profile = activeLearnerProfile.value
+  if (!chatEducation.enabled || !profile) {
+    return { configured: false, sourceCount: 0, courseSourceCount: 0, filterSummary: '' }
+  }
+  const course = activeChatCourse.value
+  let minDifficulty = normalizeEducationDifficulty(chatEducation.minDifficulty)
+  let maxDifficulty = normalizeEducationDifficulty(chatEducation.maxDifficulty)
+  if (minDifficulty !== null && maxDifficulty !== null && minDifficulty > maxDifficulty) {
+    const previousMinDifficulty = minDifficulty
+    minDifficulty = maxDifficulty
+    maxDifficulty = previousMinDifficulty
+  }
+  const scope = {
+    subject: course?.subject || String(chatEducation.subject || '').trim() || profile.subject,
+    gradeLevel: course?.gradeLevel || String(chatEducation.gradeLevel || '').trim() || profile.gradeLevel,
+    curriculumVersion: course?.curriculumVersion
+      || String(chatEducation.curriculumVersion || '').trim() || profile.curriculumVersion,
+    conceptKey: currentChatLearningGoal.value?.conceptKey || String(chatEducation.conceptKey || '').trim(),
+    minDifficulty,
+    maxDifficulty,
+  }
+  const courseSources = educationSources.value.filter((source) =>
+    normalizeEducationFilterValue(source.subject) === normalizeEducationFilterValue(scope.subject)
+      && normalizeEducationFilterValue(source.gradeLevel) === normalizeEducationFilterValue(scope.gradeLevel)
+      && normalizeEducationFilterValue(source.curriculumVersion)
+        === normalizeEducationFilterValue(scope.curriculumVersion))
+  const filters = []
+  if (scope.conceptKey) filters.push(`知识点「${scope.conceptKey}」`)
+  if (scope.minDifficulty !== null && scope.maxDifficulty !== null) {
+    filters.push(`难度 ${scope.minDifficulty}–${scope.maxDifficulty}`)
+  } else if (scope.minDifficulty !== null) {
+    filters.push(`难度 ≥ ${scope.minDifficulty}`)
+  } else if (scope.maxDifficulty !== null) {
+    filters.push(`难度 ≤ ${scope.maxDifficulty}`)
+  }
+  return {
+    configured: Boolean(scope.subject && scope.gradeLevel && scope.curriculumVersion),
+    ...scope,
+    sourceCount: courseSources.filter((source) => sourceMatchesEducationScope(source, scope)).length,
+    courseSourceCount: courseSources.length,
+    filterSummary: filters.length ? filters.join(' · ') : '未附加知识点或难度过滤',
+  }
+})
+const currentEducationSourceCount = computed(() => currentEducationRetrievalScope.value.sourceCount)
+const currentEducationSourceLabel = computed(() => {
+  const scope = currentEducationRetrievalScope.value
+  if (!chatEducation.enabled) return '教育 Agent 未启用'
+  if (!scope.configured) return '待配置学习上下文'
+  if (scope.sourceCount) return `${scope.sourceCount} 个当前可检索来源`
+  return scope.conceptKey ? '当前知识点暂无匹配来源' : '当前约束下暂无匹配来源'
+})
+const currentEducationRetrievalDetail = computed(() => {
+  const scope = currentEducationRetrievalScope.value
+  if (!chatEducation.enabled) return '启用教育 Agent 后，才会按课程元数据限制知识检索范围'
+  if (!scope.configured) return '先配置学习者画像，Agent 才能锁定课程知识范围'
+  const base = `${scope.subject} · ${scope.gradeLevel} · ${scope.curriculumVersion}`
+  const available = `课程版本下 ${scope.courseSourceCount} 个来源`
+  return `${base} · ${scope.filterSummary} · ${available}`
+})
 const educationAgentTrace = computed(() => [
   {
     id: 'course',
@@ -801,9 +898,9 @@ const educationAgentTrace = computed(() => [
   {
     id: 'knowledge',
     label: '知识库检索',
-    value: matchingEducationSourceCount.value ? `${matchingEducationSourceCount.value} 个适用课程来源` : '等待课程知识来源',
-    detail: activeLearnerProfile.value ? '按学科、年级、版本和难度过滤' : '课程元数据会决定可用知识范围',
-    state: matchingEducationSourceCount.value ? 'ready' : 'pending',
+    value: currentEducationSourceLabel.value,
+    detail: currentEducationRetrievalDetail.value,
+    state: currentEducationSourceCount.value ? 'ready' : 'pending',
     icon: ShieldCheck,
   },
   {
@@ -5561,9 +5658,9 @@ onBeforeUnmount(() => {
                 <Sparkles :size="14" />
                 <span><small>当前学习上下文</small><strong>{{ activeChatCourse ? `${activeChatCourse.code} · ${activeChatCourse.title}` : (activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` : '待配置学习者画像') }}</strong></span>
               </button>
-              <div class="chat-workspace-chip chat-course-knowledge-chip" :class="matchingEducationSourceCount ? 'workspace-ready' : 'workspace-warning'" title="当前学习者画像可检索的课程知识来源">
+              <div class="chat-workspace-chip chat-course-knowledge-chip" :class="currentEducationSourceCount ? 'workspace-ready' : 'workspace-warning'" :title="currentEducationRetrievalDetail">
                 <i></i>
-                <span><small>COURSE KNOWLEDGE BASE</small><strong>{{ matchingEducationSourceCount ? `${matchingEducationSourceCount} 个适用来源` : '待配置课程来源' }}</strong></span>
+                <span><small>CURRENT RETRIEVAL SCOPE</small><strong>{{ currentEducationSourceLabel }}</strong></span>
               </div>
               <div v-if="desktopWorkspaceAvailable" class="chat-workspace-selector" title="该选择只会绑定下一次新建的会话">
                 <select v-model="newConversationWorkspaceId" :disabled="desktopWorkspacePicking || chatSending || chatUploading">
@@ -5641,7 +5738,7 @@ onBeforeUnmount(() => {
               </article>
               <article class="learning-onboarding-step" :class="{ ready: matchingEducationSourceCount > 0 }">
                 <span>2</span>
-                <div><strong>课程知识范围</strong><small>{{ matchingEducationSourceCount ? `${matchingEducationSourceCount} 个课程来源可检索` : '按课程版本过滤；可继续补充课程资料' }}</small></div>
+                <div><strong>课程知识范围</strong><small>{{ matchingEducationSourceCount ? `课程版本下已有 ${matchingEducationSourceCount} 个来源` : '按课程版本补充课程资料' }}</small></div>
               </article>
               <article class="learning-onboarding-step" :class="{ ready: activeLearningGoal }">
                 <span>3</span>
@@ -5690,7 +5787,7 @@ onBeforeUnmount(() => {
             <div class="learning-cockpit-grid">
               <article class="learning-cockpit-card learning-cockpit-context">
                 <span class="learning-cockpit-icon"><BookOpen :size="16" /></span>
-                <div><small>课程约束</small><strong>{{ activeChatCourse?.title || `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` }}</strong><p>{{ activeChatCourse ? `${activeChatCourse.code} · ` : '' }}{{ activeLearnerProfile.curriculumVersion }} · {{ matchingEducationSourceCount }} 个适用课程来源{{ activeChatCourse ? ' · 已锁定' : ' · 未绑定课程实例' }}</p></div>
+                <div :title="currentEducationRetrievalDetail"><small>课程约束</small><strong>{{ activeChatCourse?.title || `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` }}</strong><p>{{ activeChatCourse ? `${activeChatCourse.code} · ` : '' }}{{ currentEducationRetrievalScope.filterSummary }} · {{ currentEducationSourceLabel }}{{ activeChatCourse ? ' · 已锁定' : ' · 未绑定课程实例' }}</p></div>
               </article>
               <article class="learning-cockpit-card learning-cockpit-goal" :class="{ empty: !activeLearningGoal }">
                 <span class="learning-cockpit-icon"><Target :size="16" /></span>
