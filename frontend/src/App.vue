@@ -666,6 +666,36 @@ const teacherEducationCourses = computed(() => educationCourses.value
   .filter((course) => course.ownerUserId === form.userId))
 const enrolledEducationCourses = computed(() => educationCourses.value
   .filter((course) => course.ownerUserId !== form.userId))
+const learnerLearningAssignmentCount = computed(() => learningAssignments.value
+  .filter((assignment) => assignment.learnerUserId === form.userId).length)
+const hasTeacherEducationContext = computed(() => teacherEducationCourses.value.length > 0
+  || learningEvaluationQueue.value.length > 0)
+const hasLearnerEducationContext = computed(() => enrolledEducationCourses.value.length > 0
+  || learnerLearningAssignmentCount.value > 0
+  || learnerProfiles.value.length > 0
+  || learningGoals.value.length > 0)
+const educationWorkspaceMode = computed(() => {
+  if (hasTeacherEducationContext.value) return 'teacher'
+  if (hasLearnerEducationContext.value) return 'learner'
+  return 'setup'
+})
+const educationWorkspaceModeLabel = computed(() => {
+  if (educationWorkspaceMode.value === 'teacher') return '课程负责人模式'
+  if (educationWorkspaceMode.value === 'learner') return '学习者模式'
+  return '待建立学习上下文'
+})
+const educationWorkspaceModeDetail = computed(() => {
+  if (educationWorkspaceMode.value === 'teacher') {
+    return '先查看班级状态和干预信号，再进入名单、布置和复核操作。'
+  }
+  if (educationWorkspaceMode.value === 'learner') {
+    return '先看课程边界、当前状态和下一步行动；教师管理入口按需展开。'
+  }
+  return '先建立学习者画像或加入课程，Agent 才能把知识检索和学习证据串起来。'
+})
+const educationAssignmentsForView = computed(() => educationWorkspaceMode.value === 'teacher'
+  ? learningAssignments.value
+  : learningAssignments.value.filter((assignment) => assignment.learnerUserId === form.userId))
 const ownedKnowledgeDocuments = computed(() => documents.value
   .filter((document) => document.ownerUserId === form.userId))
 const teacherActiveLearnerCount = computed(() => teacherEducationCourses.value
@@ -725,7 +755,7 @@ function canEditEducationSource(source) {
   ))
 }
 const visibleLearningAssignments = computed(() => {
-  let entries = learningAssignments.value
+  let entries = educationAssignmentsForView.value
   if (learningAssignmentCourseFilter.value) {
     entries = entries.filter((assignment) => assignment.courseId === learningAssignmentCourseFilter.value)
   }
@@ -7357,10 +7387,10 @@ onBeforeUnmount(() => {
           </form>
           <section id="education" class="governance-card governance-fixed-card education-governance-card">
             <div class="context-workbench-heading">
-              <div><p class="eyebrow">EDUCATION AGENT</p><h3>课程与学习者配置</h3></div>
-              <span class="context-mode-chip">{{ learnerProfiles.length }} 个画像</span>
+              <div><p class="eyebrow">EDUCATION AGENT</p><h3>{{ educationWorkspaceMode === 'teacher' ? '课程运营与 Agent 状态' : '学习契约与 Agent 状态' }}</h3></div>
+              <span class="context-mode-chip">{{ educationWorkspaceModeLabel }}</span>
             </div>
-            <p class="context-workbench-help">课程元数据决定检索范围；学习者画像和知识点掌握度决定讲解难度与教学策略。原始知识正文仍由知识文档权限控制。</p>
+            <p class="context-workbench-help">{{ educationWorkspaceModeDetail }} 课程元数据决定检索范围，学习者状态和形成性证据决定 Agent 的教学动作。</p>
             <p v-if="educationError" class="policy-error">{{ educationError }}</p>
             <section class="education-agent-state-card" :class="{ ready: educationAgentReady }" aria-label="教育 Agent 当前状态">
               <div class="education-agent-state-heading">
@@ -7386,6 +7416,13 @@ onBeforeUnmount(() => {
                 <button class="secondary-button" type="button" @click="chatMode = true">{{ educationAgentReady ? '进入学习对话' : '配置并开始' }} <ArrowUp :size="12" /></button>
               </footer>
             </section>
+            <ol class="education-agent-loop" aria-label="教育 Agent 学习闭环">
+              <li v-for="(trace, index) in educationAgentTrace" :key="trace.id" :class="`is-${trace.state}`">
+                <span class="education-agent-loop-index">{{ String(index + 1).padStart(2, '0') }}</span>
+                <div><strong>{{ trace.label }}</strong><small>{{ trace.value }}</small></div>
+                <ArrowDown v-if="index < educationAgentTrace.length - 1" class="education-agent-loop-arrow" :size="13" />
+              </li>
+            </ol>
             <details v-if="educationMetrics && teacherEducationCourses.length" class="education-operations-metrics">
               <summary><span>教师运营指标</span><small>完成率 · 证据覆盖 · 复核与干预</small></summary>
               <div class="education-metrics" aria-label="教育业务闭环指标">
@@ -7407,39 +7444,48 @@ onBeforeUnmount(() => {
               <div><span>保持度正确率</span><strong>{{ formatRate(educationMetrics.reviewAssessmentAccuracyRate) }}</strong><small>平均掌握度提升 {{ formatRate(educationMetrics.averageMasteryGain) }}</small></div>
               </div>
             </details>
-            <form class="education-profile-form" @submit.prevent="saveLearnerProfile">
-              <label class="field"><span>学科</span><input v-model="learnerProfileForm.subject" required maxlength="128" /></label>
-              <label class="field"><span>年级</span><input v-model="learnerProfileForm.gradeLevel" required maxlength="128" /></label>
-              <label class="field"><span>课程版本</span><input v-model="learnerProfileForm.curriculumVersion" required maxlength="128" /></label>
-              <label class="field"><span>学习目标</span><input v-model="learnerProfileForm.learningGoal" maxlength="512" placeholder="例如：掌握函数基础并能独立完成练习" /></label>
-              <button class="secondary-button" type="submit" :disabled="educationLoading">{{ educationLoading ? '保存中…' : '保存学习者画像' }}</button>
-            </form>
-            <div v-if="learnerProfiles.length" class="education-profile-list">
-              <button v-for="profile in learnerProfiles" :key="profile.id" type="button" class="education-profile-chip" :class="{ active: profile.id === activeLearnerProfile?.id }" @click="selectLearnerProfile(profile)">
-                <strong>{{ profile.subject }} · {{ profile.gradeLevel }}</strong><small>{{ profile.curriculumVersion }} · {{ profile.learningGoal || '未设置学习目标' }}</small>
-              </button>
-            </div>
+            <details class="education-profile-setup" :open="!activeLearnerProfile">
+              <summary><span><strong>学习者画像与目标</strong><small>{{ activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel} · ${activeLearnerProfile.curriculumVersion}` : '建立 Agent 可持续读取的学习上下文' }}</small></span><em>{{ activeLearnerProfile ? '已绑定' : '待建立' }}</em></summary>
+              <div class="education-profile-setup-content">
+                <form class="education-profile-form" @submit.prevent="saveLearnerProfile">
+                  <label class="field"><span>学科</span><input v-model="learnerProfileForm.subject" required maxlength="128" /></label>
+                  <label class="field"><span>年级</span><input v-model="learnerProfileForm.gradeLevel" required maxlength="128" /></label>
+                  <label class="field"><span>课程版本</span><input v-model="learnerProfileForm.curriculumVersion" required maxlength="128" /></label>
+                  <label class="field"><span>学习目标</span><input v-model="learnerProfileForm.learningGoal" maxlength="512" placeholder="例如：掌握函数基础并能独立完成练习" /></label>
+                  <button class="secondary-button" type="submit" :disabled="educationLoading">{{ educationLoading ? '保存中…' : '保存学习者画像' }}</button>
+                </form>
+                <div v-if="learnerProfiles.length" class="education-profile-list">
+                  <button v-for="profile in learnerProfiles" :key="profile.id" type="button" class="education-profile-chip" :class="{ active: profile.id === activeLearnerProfile?.id }" @click="selectLearnerProfile(profile)">
+                    <strong>{{ profile.subject }} · {{ profile.gradeLevel }}</strong><small>{{ profile.curriculumVersion }} · {{ profile.learningGoal || '未设置学习目标' }}</small>
+                  </button>
+                </div>
+              </div>
+            </details>
             <section class="education-course-workbench" aria-label="课程工作台">
               <div class="subsection-title education-course-heading">
-                <div><h4>课程工作台</h4><span>{{ teacherEducationCourses.length }} 个我创建 · {{ enrolledEducationCourses.length }} 个已加入</span></div>
+                <div><h4>{{ educationWorkspaceMode === 'teacher' ? '课程运营工作台' : '我的课程与学习路径' }}</h4><span>{{ teacherEducationCourses.length }} 个我创建 · {{ enrolledEducationCourses.length }} 个已加入</span></div>
                 <span v-if="activeEducationCourse" class="context-mode-chip">{{ educationCourseStatusLabel(activeEducationCourse.status) }}</span>
               </div>
-              <p class="learning-task-help">课程约束决定学习范围；Agent 会结合每次作业、提交物和对话证据更新学习状态。教师管理班级进度，学习者只查看自己的行动与结课结果。</p>
-              <form class="education-course-form" @submit.prevent="createEducationCourse">
-                <label class="field"><span>课程代码</span><input v-model="educationCourseForm.code" required maxlength="128" placeholder="例如：MATH-G1-2026" /></label>
-                <label class="field"><span>课程名称</span><input v-model="educationCourseForm.title" required maxlength="255" placeholder="例如：高中数学函数基础" /></label>
-                <label class="field"><span>学科</span><input v-model="educationCourseForm.subject" required maxlength="128" /></label>
-                <label class="field"><span>年级</span><input v-model="educationCourseForm.gradeLevel" required maxlength="128" /></label>
-                <label class="field"><span>课程版本</span><input v-model="educationCourseForm.curriculumVersion" required maxlength="128" /></label>
-                <button class="secondary-button" type="submit" :disabled="educationCourseSaving">{{ educationCourseSaving ? '创建中…' : '创建课程实例' }}</button>
-              </form>
+              <p class="learning-task-help">课程约束决定学习范围；Agent 会结合每次作业、提交物和对话证据更新学习状态。{{ educationWorkspaceMode === 'teacher' ? '班级进度、名单和布置动作只在课程负责人入口中展开。' : '你只需要关注自己的课程行动、证据和结课结果。' }}</p>
+              <details class="education-teacher-entry" :open="educationWorkspaceMode === 'teacher'">
+                <summary><span><strong>课程负责人入口</strong><small>创建课程、维护名单、批量布置作业</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '管理模式' : '需要教师 / 组织权限' }}</em></summary>
+                <p class="education-teacher-entry-help">这是课程管理操作，不会改变学习者的 Agent 状态；提交后仍由 Runtime 做最终权限校验。</p>
+                <form class="education-course-form" @submit.prevent="createEducationCourse">
+                  <label class="field"><span>课程代码</span><input v-model="educationCourseForm.code" required maxlength="128" placeholder="例如：MATH-G1-2026" /></label>
+                  <label class="field"><span>课程名称</span><input v-model="educationCourseForm.title" required maxlength="255" placeholder="例如：高中数学函数基础" /></label>
+                  <label class="field"><span>学科</span><input v-model="educationCourseForm.subject" required maxlength="128" /></label>
+                  <label class="field"><span>年级</span><input v-model="educationCourseForm.gradeLevel" required maxlength="128" /></label>
+                  <label class="field"><span>课程版本</span><input v-model="educationCourseForm.curriculumVersion" required maxlength="128" /></label>
+                  <button class="secondary-button" type="submit" :disabled="educationCourseSaving">{{ educationCourseSaving ? '创建中…' : '创建课程实例' }}</button>
+                </form>
+              </details>
               <div v-if="educationCourses.length" class="education-course-list">
                 <button v-for="course in educationCourses" :key="course.id" type="button" class="education-course-chip" :class="{ active: course.id === activeEducationCourseId }" @click="selectEducationCourse(course)">
                   <span><strong>{{ course.title }}</strong><small>{{ course.code }} · {{ course.subject }} · {{ course.gradeLevel }} · {{ course.curriculumVersion }}</small></span>
                   <em>{{ course.ownerUserId === form.userId ? `我的课程 · ${course.activeEnrollmentCount} 人` : '已加入' }}</em>
                 </button>
               </div>
-              <div v-else class="context-preview-empty">还没有可访问的课程；创建课程后可维护名单并批量布置作业。</div>
+              <div v-else class="context-preview-empty">{{ educationWorkspaceMode === 'learner' ? '还没有加入课程；课程负责人发布后，课程约束和学习路径会出现在这里。' : '还没有可访问的课程；如需开课，请展开课程负责人入口。' }}</div>
               <div v-if="activeEducationCourse && activeEducationCourseIsOwner" class="education-course-detail">
                 <div class="education-course-detail-heading">
                   <div><strong>{{ activeEducationCourse.title }}</strong><small>{{ activeEducationCourse.code }} · 课程负责人 {{ activeEducationCourse.ownerUserId }}</small></div>
@@ -7558,8 +7604,8 @@ onBeforeUnmount(() => {
               </div>
             </section>
             <section class="learning-assignment-workbench" aria-label="课程作业入口">
-              <div class="subsection-title"><h4>课程作业入口</h4><div><span v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter">当前已筛选</span><button v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter" class="text-button" type="button" @click="clearLearningAssignmentFilter">清除筛选</button><span v-else>{{ learningAssignments.length }} 个作业</span></div></div>
-              <p class="learning-task-help">教师或组织可把课程约束和目标知识点布置给指定学习者；学习者接受后自动生成画像与学习目标。</p>
+              <div class="subsection-title"><h4>{{ educationWorkspaceMode === 'teacher' ? '课程作业与复核' : '我的课程作业与反馈' }}</h4><div><span v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter">当前已筛选</span><button v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter" class="text-button" type="button" @click="clearLearningAssignmentFilter">清除筛选</button><span v-else>{{ educationAssignmentsForView.length }} 个作业</span></div></div>
+              <p class="learning-task-help">{{ educationWorkspaceMode === 'teacher' ? '围绕课程约束布置作业，并根据提交物、测评证据和反馈决定确认、返工或重试。' : '接受课程作业后，Agent 会把课程边界、目标知识点和当前掌握度汇总成下一步行动。' }}</p>
               <div class="subsection-title learning-task-heading"><div><h4>作业通知</h4><span>{{ learningAssignmentNotifications.length }} 条</span></div><div class="learning-notification-heading-actions"><span>{{ learningAssignmentNotificationUnreadCount }} 条未读</span><button v-if="learningAssignmentNotificationUnreadCount" class="text-button" type="button" @click="markAllLearningAssignmentNotificationsRead">全部已读</button></div></div>
               <div v-if="learningAssignmentNotifications.length" class="learning-notification-list" aria-label="课程作业通知">
                 <article v-for="notification in learningAssignmentNotifications.slice(0, 5)" :key="notification.id" class="learning-notification-row" :class="{ unread: notification.unread }">
@@ -7567,18 +7613,21 @@ onBeforeUnmount(() => {
                   <div class="learning-notification-actions"><button class="secondary-button" type="button" @click="openLearningAssignmentNotification(notification)">{{ notification.notificationType === 'ASSIGNED' ? '接受作业' : (['FEEDBACK', 'FEEDBACK_ACKNOWLEDGED'].includes(notification.notificationType) ? '查看反馈' : (['RETRY_REQUIRED', 'REVISION_REQUIRED'].includes(notification.notificationType) ? '重试/返工作业' : (notification.assignmentStatus === 'ACCEPTED' ? '查看目标' : '查看作业'))) }}</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningAssignmentNotificationRead(notification)">标记已读</button></div>
                 </article>
               </div>
-              <form class="learning-assignment-form" @submit.prevent="createLearningAssignment">
-                <label class="field"><span>学习者 ID</span><input v-model="learningAssignmentForm.learnerUserId" required maxlength="255" placeholder="例如：student-1" /></label>
-                <label class="field"><span>作业标题</span><input v-model="learningAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域作业" /></label>
-                <label class="field"><span>学科</span><input v-model="learningAssignmentForm.subject" required maxlength="128" placeholder="数学" /></label>
-                <label class="field"><span>年级</span><input v-model="learningAssignmentForm.gradeLevel" required maxlength="128" placeholder="高中一年级" /></label>
-                <label class="field"><span>课程版本</span><input v-model="learningAssignmentForm.curriculumVersion" required maxlength="128" placeholder="人教A版" /></label>
-                <label class="field"><span>目标知识点</span><input v-model="learningAssignmentForm.conceptKey" required maxlength="255" placeholder="函数定义域" /></label>
-                <label class="field"><span>目标掌握度</span><input v-model="learningAssignmentForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required /></label>
-                <label class="field"><span>截止时间（可选）</span><input v-model="learningAssignmentForm.dueAt" type="datetime-local" /></label>
-                <label class="field learning-assignment-wide"><span>作业说明</span><textarea v-model="learningAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作业要求、作答范围或迁移任务"></textarea></label>
-                <button class="secondary-button learning-assignment-submit" type="submit" :disabled="learningAssignmentSaving">{{ learningAssignmentSaving ? '布置中…' : '布置课程作业' }}</button>
-              </form>
+              <details class="education-teacher-entry education-assignment-entry" :open="educationWorkspaceMode === 'teacher'">
+                <summary><span><strong>教师布置入口</strong><small>把课程约束和目标知识点下发给指定学习者</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '管理模式' : '需要教师 / 组织权限' }}</em></summary>
+                <form class="learning-assignment-form" @submit.prevent="createLearningAssignment">
+                  <label class="field"><span>学习者 ID</span><input v-model="learningAssignmentForm.learnerUserId" required maxlength="255" placeholder="例如：student-1" /></label>
+                  <label class="field"><span>作业标题</span><input v-model="learningAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域作业" /></label>
+                  <label class="field"><span>学科</span><input v-model="learningAssignmentForm.subject" required maxlength="128" placeholder="数学" /></label>
+                  <label class="field"><span>年级</span><input v-model="learningAssignmentForm.gradeLevel" required maxlength="128" placeholder="高中一年级" /></label>
+                  <label class="field"><span>课程版本</span><input v-model="learningAssignmentForm.curriculumVersion" required maxlength="128" placeholder="人教A版" /></label>
+                  <label class="field"><span>目标知识点</span><input v-model="learningAssignmentForm.conceptKey" required maxlength="255" placeholder="函数定义域" /></label>
+                  <label class="field"><span>目标掌握度</span><input v-model="learningAssignmentForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required /></label>
+                  <label class="field"><span>截止时间（可选）</span><input v-model="learningAssignmentForm.dueAt" type="datetime-local" /></label>
+                  <label class="field learning-assignment-wide"><span>作业说明</span><textarea v-model="learningAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作业要求、作答范围或迁移任务"></textarea></label>
+                  <button class="secondary-button learning-assignment-submit" type="submit" :disabled="learningAssignmentSaving">{{ learningAssignmentSaving ? '布置中…' : '布置课程作业' }}</button>
+                </form>
+              </details>
               <div v-if="visibleLearningAssignments.length" id="learning-assignment-list" class="learning-assignment-list">
                 <article v-for="assignment in visibleLearningAssignments" :id="`learning-assignment-${assignment.id}`" :key="assignment.id" class="learning-assignment-row">
                   <div class="learning-assignment-main">
@@ -7598,14 +7647,14 @@ onBeforeUnmount(() => {
                     <button v-if="assignment.learnerUserId === form.userId && (assignment.status === 'ASSIGNED' || assignment.status === 'AWAITING_EVIDENCE' || assignment.status === 'RETRY_REQUIRED' || (['ACCEPTED', 'OVERDUE'].includes(assignment.status) && learningAssignmentHasOpenIntervention(assignment)))" class="secondary-button" type="button" :title="learningAssignmentSourceBlockReason(assignment)" :disabled="learningAssignmentAcceptingId === assignment.id || Boolean(learningAssignmentSourceBlockReason(assignment))" @click="startLearningAssignment(assignment)">{{ learningAssignmentSourceBlockReason(assignment) ? '需课程资料' : learningAssignmentStartLabel(assignment, learningAssignmentAcceptingId === assignment.id) }}</button>
                     <button v-if="assignment.learnerUserId === form.userId && learningAssignmentSourceBlockReason(assignment)" class="text-button" type="button" @click="navigateConsoleSection('education')">配置课程资料</button>
                     <button v-if="learningAssignmentSubmissionOpen(assignment)" class="secondary-button" type="button" @click="startLearningAssignmentSubmission(assignment)">提交作业内容</button>
-                    <button v-if="assignment.teacherUserId === form.userId && assignment.status === 'COMPLETED' && assignment.reviewStatus === 'PENDING'" class="secondary-button" type="button" :disabled="learningAssignmentReviewSavingId === assignment.id" @click="verifyLearningAssignment(assignment)">{{ learningAssignmentReviewSavingId === assignment.id ? '确认中…' : '确认作业结果' }}</button>
-                    <button v-if="assignment.teacherUserId === form.userId && assignment.status === 'COMPLETED' && assignment.reviewStatus === 'PENDING'" class="text-button" type="button" :disabled="learningAssignmentReviewSavingId === assignment.id" @click="returnLearningAssignmentForRevision(assignment)">{{ learningAssignmentReviewSavingId === assignment.id ? '处理中…' : '退回返工' }}</button>
-                    <button v-if="assignment.teacherUserId === form.userId && assignment.status !== 'CANCELLED'" class="text-button" type="button" @click="startLearningAssignmentFeedback(assignment)">写教师反馈</button>
-                    <button v-if="assignment.teacherUserId === form.userId && ['ASSIGNED', 'ACCEPTED', 'RETRY_REQUIRED', 'OVERDUE'].includes(assignment.status)" class="text-button" type="button" @click="cancelLearningAssignment(assignment)">取消作业</button>
+                    <button v-if="educationWorkspaceMode === 'teacher' && assignment.teacherUserId === form.userId && assignment.status === 'COMPLETED' && assignment.reviewStatus === 'PENDING'" class="secondary-button" type="button" :disabled="learningAssignmentReviewSavingId === assignment.id" @click="verifyLearningAssignment(assignment)">{{ learningAssignmentReviewSavingId === assignment.id ? '确认中…' : '确认作业结果' }}</button>
+                    <button v-if="educationWorkspaceMode === 'teacher' && assignment.teacherUserId === form.userId && assignment.status === 'COMPLETED' && assignment.reviewStatus === 'PENDING'" class="text-button" type="button" :disabled="learningAssignmentReviewSavingId === assignment.id" @click="returnLearningAssignmentForRevision(assignment)">{{ learningAssignmentReviewSavingId === assignment.id ? '处理中…' : '退回返工' }}</button>
+                    <button v-if="educationWorkspaceMode === 'teacher' && assignment.teacherUserId === form.userId && assignment.status !== 'CANCELLED'" class="text-button" type="button" @click="startLearningAssignmentFeedback(assignment)">写教师反馈</button>
+                    <button v-if="educationWorkspaceMode === 'teacher' && assignment.teacherUserId === form.userId && ['ASSIGNED', 'ACCEPTED', 'RETRY_REQUIRED', 'OVERDUE'].includes(assignment.status)" class="text-button" type="button" @click="cancelLearningAssignment(assignment)">取消作业</button>
                   </div>
                 </article>
               </div>
-              <div v-else class="context-preview-empty">{{ learningAssignments.length ? '当前筛选范围没有作业。' : '还没有课程作业；可以先在上方创建课程并向活跃名单布置。' }}</div>
+              <div v-else class="context-preview-empty">{{ educationAssignmentsForView.length ? '当前筛选范围没有作业。' : (educationWorkspaceMode === 'teacher' ? '还没有课程作业；可在教师布置入口创建。' : '暂无课程作业；接受课程作业后，Agent 会在这里展示行动与证据。') }}</div>
               <form v-if="learningAssignmentFeedbackForm.assignmentId" class="learning-assignment-feedback-form" @submit.prevent="submitLearningAssignmentFeedback">
                 <div class="subsection-title"><h4>教师反馈</h4><button class="text-button" type="button" @click="closeLearningAssignmentFeedback">关闭</button></div>
                 <label class="field"><span>反馈动作</span><select v-model="learningAssignmentFeedbackForm.action"><option value="COMMENT">教师反馈</option><option value="REQUEST_EVIDENCE">要求补充证据</option><option value="RECOMMEND_RETRY">建议重新学习</option><option value="RESCHEDULE">重新安排截止时间</option></select></label>
@@ -7664,8 +7713,8 @@ onBeforeUnmount(() => {
                 <details v-if="learningGoalAssessments.length" class="learning-assessment-history"><summary>查看测评历史（{{ learningGoalAssessments.length }}）</summary><div v-for="attempt in learningGoalAssessments.slice().reverse().slice(0, 5)" :key="attempt.id"><span :class="attempt.correct ? 'assessment-correct' : 'assessment-wrong'">{{ attempt.correct ? '正确' : '错误' }}</span><span>{{ Math.round(attempt.masteryBefore * 100) }}% → {{ Math.round(attempt.masteryAfter * 100) }}%</span><small>{{ attempt.assessmentType === 'REVIEW' ? '保持度复习' : (attempt.evidenceSource === 'MANUAL_REVIEW' ? '人工复核' : 'Agent观察') }} · {{ formatDate(attempt.createdAt) }}</small></div></details>
               </div>
             </div>
-            <div class="education-source-editor">
-              <div class="subsection-title"><h4>绑定知识文档课程元数据</h4><span>{{ educationSources.length }} 个课程来源</span></div>
+            <details class="education-source-editor education-teacher-entry" :open="educationWorkspaceMode === 'teacher'">
+              <summary><span><strong>课程资料维护入口</strong><small>为知识文档补充学科、版本、章节和知识点边界</small></span><em>{{ educationSources.length }} 个课程来源</em></summary>
               <form v-if="ownedKnowledgeDocuments.length" class="education-source-form" @submit.prevent="saveEducationSource">
                 <label class="field field-wide"><span>知识文档</span><select v-model="educationSourceForm.documentId" required><option value="">选择你拥有的知识文档</option><option v-for="document in ownedKnowledgeDocuments" :key="document.id" :value="document.id">{{ document.title }}</option></select></label>
                 <label class="field"><span>学科</span><input v-model="educationSourceForm.subject" required /></label>
@@ -7685,8 +7734,8 @@ onBeforeUnmount(() => {
                   <button v-if="canEditEducationSource(source)" class="text-button" type="button" @click="educationSourceForm.documentId = source.documentId; educationSourceForm.subject = source.subject; educationSourceForm.gradeLevel = source.gradeLevel; educationSourceForm.curriculumVersion = source.curriculumVersion; educationSourceForm.chapter = source.chapter || ''; educationSourceForm.conceptTags = source.conceptTags || ''; educationSourceForm.prerequisiteConcepts = source.prerequisiteConcepts || ''; educationSourceForm.learningObjectives = source.learningObjectives || ''; educationSourceForm.difficultyLevel = source.difficultyLevel">编辑</button>
                   <small v-else class="document-owner-hint">仅资料所有者可维护</small>
                 </div>
-                  </div>
-                </div>
+              </div>
+            </details>
           </section>
           <form class="governance-card governance-fixed-card memory-card" @submit.prevent="createMemory">
             <div class="context-workbench-heading">
