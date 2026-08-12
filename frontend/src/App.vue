@@ -6101,6 +6101,12 @@ function refreshEducationAfterChatRun(runId, runSnapshot = selectedRun.value?.ru
       learnerMastery.value = mastery
     }
     if (tasks) learningTasks.value = tasks
+    // 通知原本只按 15 秒轮询；Run 终态已经是最可靠的状态边界，
+    // 此刻立即刷新可让用户马上看到“待补证据 / 新复习任务”的下一步。
+    await Promise.all([
+      loadLearningNotifications(),
+      loadLearningAssignmentNotifications(),
+    ])
     if (!assignmentId || !assignments) return
 
     learningAssignments.value = assignments
