@@ -280,11 +280,35 @@ const workspace = ref(null)
 const currentUser = ref(null)
 const demoRole = ref(readStoredValue('harnessDemoRole', import.meta.env.VITE_HARNESS_DEMO_ROLE || 'STUDENT'))
 const demoRoleSwitching = ref(false)
+const identityLoading = ref(true)
+const localDemoLoginBusy = ref(false)
+const localDemoLoginError = ref('')
+const localDemoSessionActive = ref(readStoredValue('harnessLocalSession', '') === 'active')
 const demoRoleUserIds = {
   ADMIN: 'admin-demo',
   TEACHER: 'teacher-demo',
   STUDENT: 'student-demo',
 }
+const localDemoUsers = [
+  {
+    role: 'ADMIN',
+    userId: 'admin-demo',
+    name: '管理员演示账号',
+    detail: '管理模型、知识库、权限、策略和审计。',
+  },
+  {
+    role: 'TEACHER',
+    userId: 'teacher-demo',
+    name: '老师演示账号',
+    detail: '配置课程资料、发布课程、布置作业和复核反馈。',
+  },
+  {
+    role: 'STUDENT',
+    userId: 'student-demo',
+    name: '学生演示账号',
+    detail: '建立学习档案、加入课程、完成任务和查看反馈。',
+  },
+]
 const currentPrimaryRole = computed(() => String(
   currentUser.value?.primaryRole || demoRole.value || 'STUDENT',
 ).toUpperCase())
@@ -323,6 +347,11 @@ const roleWorkspaceSteps = computed(() => ({
     { title: '完成下一步行动', detail: '进入学习对话，提交作业并查看反馈与掌握度。' },
   ],
 }[currentPrimaryRole.value] || []))
+const showLocalDemoLogin = computed(() => Boolean(
+  !identityLoading.value
+  && currentUser.value?.localDemo
+  && !localDemoSessionActive.value,
+))
 // 已登记工作区是用户明确在桌面端授权的项目；选择只影响后续创建的会话。
 const localWorkspaces = ref([])
 const newConversationWorkspaceId = ref('')
@@ -512,6 +541,8 @@ function roleLabel(role) {
 }
 
 async function loadCurrentUser() {
+  identityLoading.value = true
+  localDemoLoginError.value = ''
   try {
     currentUser.value = await api.currentUser()
     if (currentUser.value?.localDemo && currentUser.value.primaryRole) {
@@ -528,6 +559,38 @@ async function loadCurrentUser() {
   } catch (error) {
     // 身份摘要失败不阻断已有本地演示能力；具体接口仍会返回真实权限错误。
     currentUser.value = null
+  } finally {
+    identityLoading.value = false
+  }
+}
+
+function beginLocalDemoSession(user) {
+  if (!user || localDemoLoginBusy.value) return
+  localDemoLoginBusy.value = true
+  localDemoLoginError.value = ''
+  try {
+    localStorage.setItem('harnessDemoRole', user.role)
+    localStorage.setItem('harnessUserId', user.userId)
+    localStorage.setItem('harnessLocalSession', 'active')
+    demoRole.value = user.role
+    localDemoSessionActive.value = true
+    window.location.reload()
+  } catch (error) {
+    localDemoLoginError.value = '无法保存本地演示登录状态，请检查浏览器存储权限。'
+  } finally {
+    localDemoLoginBusy.value = false
+  }
+}
+
+function endLocalDemoSession() {
+  if (localDemoLoginBusy.value) return
+  localDemoLoginBusy.value = true
+  try {
+    localStorage.removeItem('harnessLocalSession')
+    localDemoSessionActive.value = false
+    window.location.reload()
+  } finally {
+    localDemoLoginBusy.value = false
   }
 }
 
@@ -538,6 +601,7 @@ function switchDemoRole(nextRole) {
   try {
     localStorage.setItem('harnessDemoRole', normalized)
     localStorage.setItem('harnessUserId', demoRoleUserIds[normalized])
+    localStorage.setItem('harnessLocalSession', 'active')
     form.userId = demoRoleUserIds[normalized]
     window.location.reload()
   } finally {
@@ -6828,6 +6892,7 @@ onMounted(async () => {
     })
   }
   await loadCurrentUser()
+  if (showLocalDemoLogin.value) return
   if (!isAdminRole.value) {
     await nextTick()
     navigateConsoleSection('education', 'auto')
@@ -6878,6 +6943,25 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <section v-if="showLocalDemoLogin" class="local-demo-login" aria-labelledby="local-demo-login-title">
+    <div class="local-demo-login-card">
+      <div class="local-demo-login-brand">
+        <div class="brand-mark" aria-hidden="true"><Sparkles :size="17" :stroke-width="1.8" /></div>
+        <div><strong>Ming Harness</strong><span>LOCAL DEMO LOGIN</span></div>
+      </div>
+      <p class="eyebrow">选择体验身份</p>
+      <h1 id="local-demo-login-title">你要以什么身份进入系统？</h1>
+      <p class="local-demo-login-help">本地演示账号只用于体验不同工作台。正式环境会使用 API Key 或企业 OIDC 登录，角色由服务端权限决定。</p>
+      <div class="local-demo-user-list">
+        <button v-for="user in localDemoUsers" :key="user.role" class="local-demo-user-card" type="button" :disabled="localDemoLoginBusy" @click="beginLocalDemoSession(user)">
+          <span class="local-demo-user-icon"><ShieldCheck v-if="user.role === 'ADMIN'" :size="17" /><PenLine v-else-if="user.role === 'TEACHER'" :size="17" /><BookOpen v-else :size="17" /></span>
+          <span><strong>{{ user.name }}</strong><small>{{ user.detail }}</small><em>{{ user.userId }}</em></span>
+          <ArrowRight :size="15" />
+        </button>
+      </div>
+      <p v-if="localDemoLoginError" class="local-demo-login-error">{{ localDemoLoginError }}</p>
+    </div>
+  </section>
   <template v-if="chatMode">
     <div class="chat-app">
       <header class="chat-topbar">
@@ -6890,13 +6974,14 @@ onBeforeUnmount(() => {
           <button class="theme-toggle" type="button" :aria-label="theme === 'dark' ? '切换到白天模式' : '切换到黑夜模式'" @click="toggleTheme">
             <Sun v-if="theme === 'dark'" :size="15" aria-hidden="true" /><Moon v-else :size="15" aria-hidden="true" />{{ theme === 'dark' ? '白天' : '黑夜' }}
           </button>
-          <div v-if="currentUser" class="current-user-chip" :title="`${currentUser.userId} · ${currentUser.tenantId}`">
+          <div v-if="currentUser && localDemoSessionActive" class="current-user-chip" :title="`${currentUser.userId} · ${currentUser.tenantId}`">
             <span>{{ roleLabel(currentUser.primaryRole) }}</span><strong>{{ currentUser.userId }}</strong>
             <select v-if="currentUser.localDemo" v-model="demoRole" aria-label="切换本地演示角色" :disabled="demoRoleSwitching" @change="switchDemoRole(demoRole)">
               <option value="STUDENT">学生</option>
               <option value="TEACHER">老师</option>
               <option value="ADMIN">管理员</option>
             </select>
+            <button v-if="currentUser.localDemo" class="current-user-logout" type="button" :disabled="localDemoLoginBusy" @click="endLocalDemoSession">退出</button>
           </div>
           <button class="secondary-button chat-console-button" type="button" :title="roleWorkspaceDetail" @click="chatMode = false; navigateConsoleSection('education')"><Settings2 :size="15" />{{ roleWorkspaceTitle }}</button>
         </div>
@@ -7844,13 +7929,14 @@ onBeforeUnmount(() => {
             <Sun v-if="theme === 'dark'" :size="15" aria-hidden="true" /><Moon v-else :size="15" aria-hidden="true" />
             {{ theme === 'dark' ? '白天' : '黑夜' }}
           </button>
-          <div v-if="currentUser" class="current-user-chip" :title="`${currentUser.userId} · ${currentUser.tenantId}`">
+          <div v-if="currentUser && localDemoSessionActive" class="current-user-chip" :title="`${currentUser.userId} · ${currentUser.tenantId}`">
             <span>{{ roleLabel(currentUser.primaryRole) }}</span><strong>{{ currentUser.userId }}</strong>
             <select v-if="currentUser.localDemo" v-model="demoRole" aria-label="切换本地演示角色" :disabled="demoRoleSwitching" @change="switchDemoRole(demoRole)">
               <option value="STUDENT">学生</option>
               <option value="TEACHER">老师</option>
               <option value="ADMIN">管理员</option>
             </select>
+            <button v-if="currentUser.localDemo" class="current-user-logout" type="button" :disabled="localDemoLoginBusy" @click="endLocalDemoSession">退出</button>
           </div>
           <button v-if="isAdminRole" class="secondary-button top-config-button" type="button" title="配置大语言模型" @click="showModelSettings = true"><Settings2 :size="15" />大语言模型</button>
           <button v-if="isAdminRole" class="secondary-button top-config-button" type="button" title="配置向量模型" @click="showEmbeddingSettings = true"><Settings2 :size="15" />向量模型</button>
