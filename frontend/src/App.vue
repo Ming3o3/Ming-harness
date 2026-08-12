@@ -952,6 +952,7 @@ const learningAssignmentIssueLabel = computed(() => ({
   review: '待教师确认',
   revision: '待返工',
   submission: '缺提交物',
+  submitted: '查看提交物',
   intervention: '开放干预',
   overdue: '已逾期',
 }[learningAssignmentIssueFilter.value] || '问题作业'))
@@ -4281,6 +4282,7 @@ function learningAssignmentMatchesIssue(assignment, issue) {
   if (issue === 'review') return assignment.status === 'COMPLETED' && assignment.reviewStatus === 'PENDING'
   if (issue === 'revision') return assignment.reviewStatus === 'REVISION_REQUIRED'
   if (issue === 'submission') return !learningAssignmentSubmissionMap.value[assignment.id]?.length
+  if (issue === 'submitted') return Boolean(learningAssignmentSubmissionMap.value[assignment.id]?.length)
   if (issue === 'intervention') return learningAssignmentHasOpenInterventionForView(assignment)
   if (issue === 'overdue') return assignment.status === 'OVERDUE'
   return true
@@ -4541,21 +4543,60 @@ function learningAssignmentFeedbackActionLabel(action) {
 }
 
 function learningAssignmentFeedbackContinueLabel(feedback) {
-  return ['REQUEST_EVIDENCE', 'RECOMMEND_RETRY'].includes(feedback?.action)
-    ? '确认并开始下一步'
-    : '确认反馈'
+  if (['REQUEST_EVIDENCE', 'RECOMMEND_RETRY'].includes(feedback?.action)) {
+    return feedback?.status === 'ACKNOWLEDGED' ? '继续下一步' : '确认并开始下一步'
+  }
+  return '确认反馈'
+}
+
+function learningAssignmentNotificationActionLabel(notification) {
+  if (!notification) return '查看作业'
+  if (notification.notificationType === 'ASSIGNED') return '接受并开始'
+  if (notification.notificationType === 'EVIDENCE_REQUIRED') {
+    return notification.assignmentStatus === 'AWAITING_EVIDENCE' ? '补证据并继续' : '查看补证据'
+  }
+  if (['RETRY_REQUIRED', 'REVISION_REQUIRED'].includes(notification.notificationType)) {
+    return '重试/返工作业'
+  }
+  if (notification.notificationType === 'OVERDUE') return '查看逾期作业'
+  if (notification.notificationType === 'REVIEW_REQUIRED') return '去教师确认'
+  if (notification.notificationType === 'REVIEW_VERIFIED') return '查看确认结果'
+  if (notification.notificationType === 'SUBMISSION_RECEIVED') return '查看提交物'
+  if (notification.notificationType === 'FEEDBACK_ACKNOWLEDGED') return '查看确认回执'
+  if (notification.notificationType === 'FEEDBACK') return '查看反馈'
+  if (notification.notificationType === 'ACCEPTED') return '查看作业进度'
+  if (notification.notificationType === 'COMPLETED') return '查看完成结果'
+  return notification.assignmentStatus === 'ACCEPTED' ? '查看作业进度' : '查看作业'
 }
 
 function learningAssignmentOpenFeedback(assignment) {
   if (!assignment) return null
-  return (learningAssignmentFeedbackMap.value[assignment.id] || [])
-    .find((feedback) => feedback.status === 'OPEN') || null
+  const feedbacks = learningAssignmentFeedbackMap.value[assignment.id] || []
+  return feedbacks.find((feedback) => ['OPEN', 'ACKNOWLEDGED'].includes(feedback.status)
+    && ['REQUEST_EVIDENCE', 'RECOMMEND_RETRY'].includes(feedback.action))
+    || feedbacks.find((feedback) => ['OPEN', 'ACKNOWLEDGED'].includes(feedback.status))
+    || null
 }
 
 function learningAssignmentHasExecutableFeedback(assignment) {
   return ['REQUEST_EVIDENCE', 'RECOMMEND_RETRY'].includes(
     learningAssignmentOpenFeedback(assignment)?.action,
   )
+}
+
+// 通知必须回到同一份作业证据链，而不是把用户丢回泛化目标页。
+async function focusLearningAssignmentNotificationAssignment(assignment, issue = '') {
+  if (!assignment?.id) return
+  learningAssignmentCourseFilter.value = assignment.courseId || ''
+  learningAssignmentLearnerFilter.value = assignment.learnerUserId || form.userId
+  learningAssignmentIssueFilter.value = issue
+  chatMode.value = false
+  navigateConsoleSection('education')
+  await ensureLearningAssignmentDetails(assignment.id)
+  await nextTick()
+  document.getElementById(`learning-assignment-${assignment.id}`)?.scrollIntoView({
+    behavior: 'smooth', block: 'center',
+  })
 }
 
 function learningAssignmentActionHint(assignment) {
@@ -4775,7 +4816,7 @@ async function submitLearningAssignmentFeedback() {
 }
 
 async function acknowledgeLearningAssignmentFeedback(assignment, feedback) {
-  if (!assignment?.id || !feedback?.id || feedback.status !== 'OPEN'
+  if (!assignment?.id || !feedback?.id || !['OPEN', 'ACKNOWLEDGED'].includes(feedback.status)
     || assignment.learnerUserId !== form.userId
     || learningAssignmentFeedbackAcknowledgingId.value) return
   learningAssignmentFeedbackAcknowledgingId.value = feedback.id
@@ -4859,21 +4900,70 @@ async function openLearningAssignmentNotification(notification) {
     noticeMessage.value = '通知对应的课程作业已不在当前列表中，请刷新教育状态。'
     return
   }
-  if (['FEEDBACK', 'FEEDBACK_ACKNOWLEDGED'].includes(notification.notificationType)) {
-    await nextTick()
-    document.getElementById(`learning-assignment-${assignment.id}`)?.scrollIntoView({
-      behavior: 'smooth', block: 'center',
-    })
-    noticeMessage.value = notification.notificationType === 'FEEDBACK_ACKNOWLEDGED'
+  const isLearner = assignment.learnerUserId === form.userId
+  const isTeacher = assignment.teacherUserId === form.userId
+  const type = notification.notificationType
+
+  // 学习者通知优先落到可执行动作；逾期和已确认结果只打开证据链，避免误导为可启动 Run。
+  if (isLearner && type === 'ASSIGNED' && assignment.status === 'ASSIGNED') {
+    await startLearningAssignment(assignment)
+    return
+  }
+  if (isLearner && type === 'EVIDENCE_REQUIRED' && assignment.status === 'AWAITING_EVIDENCE') {
+    await startLearningAssignment(assignment)
+    return
+  }
+  if (isLearner && ['RETRY_REQUIRED', 'REVISION_REQUIRED'].includes(type)
+    && assignment.status === 'RETRY_REQUIRED') {
+    await startLearningAssignment(assignment)
+    return
+  }
+  if (type === 'OVERDUE') {
+    await focusLearningAssignmentNotificationAssignment(assignment, 'overdue')
+    noticeMessage.value = `已打开逾期作业“${assignment.title}”；提交已有成果，或等待教师重新安排。`
+    return
+  }
+  if (type === 'REVIEW_REQUIRED' && isTeacher) {
+    await focusLearningAssignmentNotificationAssignment(assignment, 'review')
+    noticeMessage.value = `已定位待教师确认作业“${assignment.title}”。`
+    return
+  }
+  if (type === 'SUBMISSION_RECEIVED' && isTeacher) {
+    await focusLearningAssignmentNotificationAssignment(assignment, 'submitted')
+    noticeMessage.value = `已定位“${assignment.title}”的提交物和复核入口。`
+    return
+  }
+  if (type === 'REVIEW_VERIFIED' && isLearner) {
+    await focusLearningAssignmentNotificationAssignment(assignment)
+    if (assignment.learningGoalId) {
+      const goal = learningGoals.value.find((item) => item.id === assignment.learningGoalId)
+      if (goal) await selectLearningGoal(goal, false)
+    }
+    noticeMessage.value = `教师已确认“${assignment.title}”；可查看当前目标并继续保持度复习。`
+    return
+  }
+  if (['FEEDBACK', 'FEEDBACK_ACKNOWLEDGED'].includes(type)) {
+    await focusLearningAssignmentNotificationAssignment(assignment)
+    noticeMessage.value = type === 'FEEDBACK_ACKNOWLEDGED'
       ? `已打开课程作业“${assignment.title}”的反馈确认回执。`
       : `已打开课程作业“${assignment.title}”的教师反馈。`
     return
   }
-  if (['ASSIGNED', 'RETRY_REQUIRED', 'REVISION_REQUIRED'].includes(notification.notificationType)
-    && ((notification.notificationType === 'ASSIGNED' && assignment.status === 'ASSIGNED')
-      || (['RETRY_REQUIRED', 'REVISION_REQUIRED'].includes(notification.notificationType) && assignment.status === 'RETRY_REQUIRED'))
-    && assignment.learnerUserId === form.userId) {
-    await startLearningAssignment(assignment)
+  if (['EVIDENCE_REQUIRED', 'RETRY_REQUIRED', 'REVISION_REQUIRED'].includes(type)) {
+    await focusLearningAssignmentNotificationAssignment(assignment,
+      type === 'EVIDENCE_REQUIRED' ? 'evidence' : (type === 'REVISION_REQUIRED' ? 'revision' : 'retry'))
+    noticeMessage.value = `已打开课程作业“${assignment.title}”的下一步处理入口。`
+    return
+  }
+  if (type === 'ACCEPTED') {
+    await focusLearningAssignmentNotificationAssignment(assignment, 'accepted')
+    noticeMessage.value = `已打开课程作业“${assignment.title}”的学习进度。`
+    return
+  }
+  if (type === 'COMPLETED') {
+    await focusLearningAssignmentNotificationAssignment(assignment,
+      assignment.reviewStatus === 'PENDING' ? 'review' : '')
+    noticeMessage.value = `已打开课程作业“${assignment.title}”的完成结果。`
     return
   }
   const goal = learningGoals.value.find((item) => item.id === assignment.learningGoalId)
@@ -8389,7 +8479,7 @@ onBeforeUnmount(() => {
               <div v-if="learningAssignmentNotifications.length" class="learning-notification-list" aria-label="课程作业通知">
                 <article v-for="notification in learningAssignmentNotifications.slice(0, 5)" :key="notification.id" class="learning-notification-row" :class="{ unread: notification.unread }">
                   <div class="learning-notification-main"><div class="learning-notification-meta"><strong>{{ notification.title }}</strong><small>{{ formatDate(notification.createdAt) }}</small></div><p>{{ notification.body }}</p></div>
-                  <div class="learning-notification-actions"><button class="secondary-button" type="button" @click="openLearningAssignmentNotification(notification)">{{ notification.notificationType === 'ASSIGNED' ? '接受作业' : (['FEEDBACK', 'FEEDBACK_ACKNOWLEDGED'].includes(notification.notificationType) ? '查看反馈' : (['RETRY_REQUIRED', 'REVISION_REQUIRED'].includes(notification.notificationType) ? '重试/返工作业' : (notification.assignmentStatus === 'ACCEPTED' ? '查看目标' : '查看作业'))) }}</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningAssignmentNotificationRead(notification)">标记已读</button></div>
+                  <div class="learning-notification-actions"><button class="secondary-button" type="button" @click="openLearningAssignmentNotification(notification)">{{ learningAssignmentNotificationActionLabel(notification) }}</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningAssignmentNotificationRead(notification)">标记已读</button></div>
                 </article>
               </div>
               <details class="education-teacher-entry education-assignment-entry" :open="educationWorkspaceMode === 'teacher'">
@@ -8421,7 +8511,7 @@ onBeforeUnmount(() => {
                     <small v-if="learningAssignmentProgressMap[assignment.id]" class="learning-assignment-progress">Run 证据覆盖 {{ formatRate(learningAssignmentProgressMap[assignment.id].runEvidenceCoverageRate) }}（{{ learningAssignmentProgressMap[assignment.id].runWithAssessmentEvidence }} / {{ learningAssignmentProgressMap[assignment.id].runTotal }}） · 教师反馈确认 {{ formatRate(learningAssignmentProgressMap[assignment.id].feedbackAcknowledgementRate) }}（{{ learningAssignmentProgressMap[assignment.id].feedbackAcknowledged }} / {{ learningAssignmentProgressMap[assignment.id].feedbackTotal }}）</small>
                     <details v-if="learningAssignmentEvidenceMap[assignment.id]?.length" class="learning-assessment-history"><summary>查看测评证据（{{ learningAssignmentEvidenceMap[assignment.id].length }}）</summary><div v-for="attempt in learningAssignmentEvidenceMap[assignment.id].slice().reverse().slice(0, 5)" :key="attempt.id"><span :class="attempt.correct ? 'assessment-correct' : 'assessment-wrong'">{{ attempt.correct ? '正确' : '错误' }}</span><span><b v-if="attempt.learnerEvidenceQuote">学习者原话：{{ attempt.learnerEvidenceQuote }} · </b>{{ attempt.evidenceText || '未填写证据文本' }}<small v-if="attempt.feedback"> · {{ attempt.feedback }}</small></span><small>{{ attempt.evidenceSource === 'MANUAL_REVIEW' ? '人工复核' : (attempt.assessmentType === 'REVIEW' ? '保持度复习' : 'Agent观察') }} · {{ formatDate(attempt.createdAt) }}</small><small v-if="assessmentRetrievalEvidenceLabel(attempt)">知识源：{{ assessmentRetrievalEvidenceLabel(attempt) }}</small></div></details>
                     <details v-if="learningAssignmentSubmissionMap[assignment.id]?.length" class="learning-assessment-history"><summary>学习者提交物（{{ learningAssignmentSubmissionMap[assignment.id].length }}）</summary><div v-for="submission in learningAssignmentSubmissionMap[assignment.id].slice(0, 5)" :key="submission.id"><span>原始作答</span><span>{{ submission.content }}</span><small>Run {{ submission.runId.slice(0, 8) }} · {{ formatDate(submission.submittedAt) }}</small></div></details>
-                    <details v-if="learningAssignmentFeedbackMap[assignment.id]?.length" class="learning-assessment-history"><summary>教师反馈（{{ learningAssignmentFeedbackMap[assignment.id].length }}）</summary><div v-for="feedback in learningAssignmentFeedbackMap[assignment.id].slice(0, 5)" :key="feedback.id"><span>{{ learningAssignmentFeedbackActionLabel(feedback.action) }}</span><span>{{ feedback.message }}<small v-if="feedback.suggestedDueAt"> · 截止 {{ formatDate(feedback.suggestedDueAt) }}</small></span><small>{{ feedback.status === 'RESOLVED' ? '已执行' : (feedback.status === 'ACKNOWLEDGED' ? '已确认' : '待确认') }} · {{ formatDate(feedback.createdAt) }}<button v-if="assignment.learnerUserId === form.userId && feedback.status === 'OPEN'" class="text-button" type="button" :disabled="learningAssignmentFeedbackAcknowledgingId === feedback.id" @click="acknowledgeLearningAssignmentFeedback(assignment, feedback)">确认</button></small></div></details>
+                    <details v-if="learningAssignmentFeedbackMap[assignment.id]?.length" class="learning-assessment-history"><summary>教师反馈（{{ learningAssignmentFeedbackMap[assignment.id].length }}）</summary><div v-for="feedback in learningAssignmentFeedbackMap[assignment.id].slice(0, 5)" :key="feedback.id"><span>{{ learningAssignmentFeedbackActionLabel(feedback.action) }}</span><span>{{ feedback.message }}<small v-if="feedback.suggestedDueAt"> · 截止 {{ formatDate(feedback.suggestedDueAt) }}</small></span><small>{{ feedback.status === 'RESOLVED' ? '已执行' : (feedback.status === 'ACKNOWLEDGED' ? '已确认，待新证据' : '待确认') }} · {{ formatDate(feedback.createdAt) }}<button v-if="assignment.learnerUserId === form.userId && ['OPEN', 'ACKNOWLEDGED'].includes(feedback.status) && ['REQUEST_EVIDENCE', 'RECOMMEND_RETRY'].includes(feedback.action)" class="text-button" type="button" :disabled="learningAssignmentFeedbackAcknowledgingId === feedback.id || learningAssignmentAcceptingId === assignment.id" @click="acknowledgeLearningAssignmentFeedback(assignment, feedback)">{{ feedback.status === 'ACKNOWLEDGED' ? '继续下一步' : '确认并开始' }}</button></small></div></details>
                     <details v-if="learningAssignmentEvaluationMap[assignment.id]?.length" class="learning-assessment-history"><summary>教师量规评价（{{ learningAssignmentEvaluationMap[assignment.id].length }}）</summary><div v-for="evaluation in learningAssignmentEvaluationMap[assignment.id].slice(0, 5)" :key="evaluation.id"><span>{{ evaluation.decision === 'VERIFY' ? '确认' : '退回' }} · {{ evaluation.rubricVersion }}</span><span>内容 {{ evaluation.contentCorrectnessScore }} / 5 · 证据 {{ evaluation.evidenceQualityScore }} / 5 · 迁移 {{ evaluation.transferReadinessScore }} / 5</span><small>{{ evaluation.evaluatorUserId }} · {{ formatDate(evaluation.createdAt) }}<span v-if="evaluation.note"> · {{ evaluation.note }}</span></small></div></details>
                   </div>
                   <div class="learning-assignment-actions">
