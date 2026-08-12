@@ -1056,16 +1056,26 @@ function educationSourceLabel(source) {
  */
 function courseSourceAvailability(scope) {
   if (!scope?.subject || !scope?.gradeLevel || !scope?.curriculumVersion) {
-    return { sourceCount: 0, courseSourceCount: 0 }
+    return {
+      sourceCount: 0,
+      courseSourceCount: 0,
+      sameSubjectGradeSourceCount: 0,
+      availableCurriculumVersions: [],
+    }
   }
-  const courseSources = educationSources.value.filter((source) =>
+  const sameSubjectGradeSources = educationSources.value.filter((source) =>
     normalizeEducationFilterValue(source.subject) === normalizeEducationFilterValue(scope.subject)
-      && normalizeEducationFilterValue(source.gradeLevel) === normalizeEducationFilterValue(scope.gradeLevel)
-      && normalizeEducationFilterValue(source.curriculumVersion)
-        === normalizeEducationFilterValue(scope.curriculumVersion))
+      && normalizeEducationFilterValue(source.gradeLevel) === normalizeEducationFilterValue(scope.gradeLevel))
+  const courseSources = sameSubjectGradeSources.filter((source) =>
+    normalizeEducationFilterValue(source.curriculumVersion)
+      === normalizeEducationFilterValue(scope.curriculumVersion))
   return {
     sourceCount: courseSources.filter((source) => sourceMatchesEducationScope(source, scope)).length,
     courseSourceCount: courseSources.length,
+    sameSubjectGradeSourceCount: sameSubjectGradeSources.length,
+    availableCurriculumVersions: [...new Set(sameSubjectGradeSources
+      .map((source) => String(source.curriculumVersion || '').trim())
+      .filter(Boolean))],
   }
 }
 
@@ -1076,6 +1086,10 @@ function courseSourceBlockReason(scope) {
   }
   if (availability.sourceCount) return ''
   if (!availability.courseSourceCount) {
+    if (availability.sameSubjectGradeSourceCount) {
+      const versions = availability.availableCurriculumVersions.join('、')
+      return `当前课程版本「${scope.curriculumVersion}」没有匹配来源，但同学科「${scope.subject}」${scope.gradeLevel}已有 ${availability.sameSubjectGradeSourceCount} 个来源（${versions}）。请统一学习者画像与课程资料的课程版本。`
+    }
     return `课程版本「${scope.curriculumVersion}」还没有可检索的课程资料。请先绑定与当前课程匹配的知识文档。`
   }
   if (scope.conceptKey) {
@@ -1311,10 +1325,7 @@ const educationSendBlockReason = computed(() => {
     return '教育 Agent 缺少完整课程约束，请先补齐学科、年级和课程版本。'
   }
   if (!scope.sourceCount) {
-    if (!scope.courseSourceCount) {
-      return `课程版本「${scope.curriculumVersion}」还没有可检索的课程资料。请先绑定与当前课程匹配的知识文档。`
-    }
-    return `当前${scope.filterSummary}没有匹配的课程资料。请调整知识点/难度，或补充对应的课程来源。`
+    return courseSourceBlockReason(scope)
   }
   return ''
 })
@@ -1339,7 +1350,11 @@ const currentEducationRetrievalDetail = computed(() => {
   const scope = currentEducationRetrievalScope.value
   if (!scope.configured) return '先配置学习者画像，Agent 才能锁定课程知识范围'
   const base = `${scope.subject} · ${scope.gradeLevel} · ${scope.curriculumVersion}`
-  const available = `课程版本下 ${scope.courseSourceCount} 个来源`
+  const available = scope.courseSourceCount
+    ? `当前版本下 ${scope.courseSourceCount} 个来源`
+    : scope.sameSubjectGradeSourceCount
+      ? `当前版本 0 个来源 · 同学科/年级另有 ${scope.sameSubjectGradeSourceCount} 个（${scope.availableCurriculumVersions.join('、')}）`
+      : '当前版本 0 个来源'
   return `${base} · ${scope.filterSummary} · ${available}`
 })
 const educationAgentTrace = computed(() => [
