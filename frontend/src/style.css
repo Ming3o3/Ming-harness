@@ -73,7 +73,7 @@ h3 { margin: 0; font-size: 13px; }
 .current-user-logout { border: 0; background: transparent; color: var(--muted); padding: 0 0 0 2px; font-size: 10px; cursor: pointer; }
 .current-user-logout:hover:not(:disabled) { color: var(--heading); }
 
-.local-demo-login { display: grid; min-height: 100vh; place-items: center; background: var(--bg); padding: 28px; }
+.local-demo-login { position: fixed; z-index: 1000; inset: 0; display: grid; min-height: 100vh; place-items: center; background: color-mix(in srgb, var(--bg) 94%, transparent); padding: 28px; }
 .local-demo-login-card { width: min(720px, 100%); display: grid; gap: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); box-shadow: var(--panel-shadow); padding: clamp(24px, 5vw, 42px); }
 .local-demo-login-brand { display: flex; align-items: center; gap: 10px; }
 .local-demo-login-brand > div:last-child { display: grid; gap: 2px; }
