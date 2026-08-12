@@ -1318,6 +1318,13 @@ const agentTeachingAction = computed(() => {
     }
   }
   if (activeLearningTask.value) {
+    if (learningTaskIsScheduled(activeLearningTask.value)) {
+      return {
+        state: 'scheduled',
+        title: '下一次复习已安排',
+        detail: `任务将在 ${formatDate(activeLearningTask.value.scheduledAt)} 开放；到期后再开始本轮复习。`,
+      }
+    }
     return {
       state: activeLearningTask.value.status === 'AWAITING_EVIDENCE' ? 'evidence' : 'ready',
       title: activeLearningTask.value.title,
@@ -1353,6 +1360,13 @@ const agentEvidenceRequest = computed(() => {
       state: 'required',
       title: '需要补充本轮证据',
       detail: '提交解题过程、作答理由或教师评分；仅完成对话不会自动提升掌握度。',
+    }
+  }
+  if (learningTaskIsScheduled(activeLearningTask.value)) {
+    return {
+      state: 'scheduled',
+      title: `等待 ${formatDate(activeLearningTask.value.scheduledAt)} 开放`,
+      detail: '当前无需提前作答；到期后完成复习，新的作答或评分才会写回保持度证据。',
     }
   }
   if (!currentLearningEvidenceCount.value) {
@@ -6752,7 +6766,7 @@ onBeforeUnmount(() => {
                   <strong>{{ activeLearningGoal?.title || '尚未设定学习目标' }}</strong>
                   <span>{{ activeLearningGoal ? `围绕「${activeLearningGoal.conceptKey}」把一次作答变成可验证的学习进展。` : '先设定目标，Agent 才能判断什么算一次有效进展。' }}</span>
                 </div>
-                <span class="learning-session-focus-status" :class="`is-${agentTeachingAction.state}`">{{ agentTeachingAction.state === 'blocked' ? '等待课程边界' : (agentTeachingAction.state === 'ready' ? '正在推进' : '等待证据') }}</span>
+                <span class="learning-session-focus-status" :class="`is-${agentTeachingAction.state}`">{{ agentTeachingAction.state === 'blocked' ? '等待课程边界' : (agentTeachingAction.state === 'scheduled' ? '已安排' : (agentTeachingAction.state === 'ready' ? '正在推进' : '等待证据')) }}</span>
               </header>
               <div class="learning-session-focus-grid">
                 <div class="learning-course-path">
@@ -6769,7 +6783,7 @@ onBeforeUnmount(() => {
                   <strong>{{ agentTeachingAction.title }}</strong>
                   <p>{{ agentTeachingAction.detail }}</p>
                   <div class="learning-session-evidence-callout"><ListChecks :size="14" /><span><b>{{ agentEvidenceRequest.title }}</b><small>{{ agentEvidenceRequest.detail }}</small></span></div>
-                  <button class="primary-button" type="button" @click="educationSendBlockReason ? openEducationAgentSetup() : chatInputRef?.focus()">{{ educationSendBlockReason ? `先${educationSetupActionLabel}` : '进入本轮作答' }} <ArrowDown :size="13" /></button>
+                  <button class="primary-button" type="button" :disabled="Boolean(!educationSendBlockReason && learningTaskIsScheduled(activeLearningTask))" @click="educationSendBlockReason ? openEducationAgentSetup() : (learningTaskIsScheduled(activeLearningTask) ? focusLearningTask(activeLearningTask) : chatInputRef?.focus())">{{ educationSendBlockReason ? `先${educationSetupActionLabel}` : (learningTaskIsScheduled(activeLearningTask) ? '查看复习安排' : '进入本轮作答') }} <ArrowDown :size="13" /></button>
                 </div>
               </div>
             </section>
@@ -6801,7 +6815,7 @@ onBeforeUnmount(() => {
                 </article>
               </div>
               <section class="learning-agent-action-plan" aria-label="Agent 教学计划">
-                <header><div><p>03 · AGENT TEACHING PLAN</p><strong>从当前状态到下一次可验证改变</strong></div><span :class="`is-${agentTeachingAction.state}`">{{ agentTeachingAction.state === 'blocked' ? '等待输入' : (agentTeachingAction.state === 'ready' ? '可执行' : '待确认') }}</span></header>
+                <header><div><p>03 · AGENT TEACHING PLAN</p><strong>从当前状态到下一次可验证改变</strong></div><span :class="`is-${agentTeachingAction.state}`">{{ agentTeachingAction.state === 'blocked' ? '等待输入' : (agentTeachingAction.state === 'scheduled' ? '已安排' : (agentTeachingAction.state === 'ready' ? '可执行' : '待确认')) }}</span></header>
                 <ol>
                   <li class="learning-agent-plan-action"><span>1</span><div><small>教学动作</small><strong>{{ agentTeachingAction.title }}</strong><p>{{ agentTeachingAction.detail }}</p></div></li>
                   <li class="learning-agent-plan-evidence"><span>2</span><div><small>需要观察的证据</small><strong>{{ agentEvidenceRequest.title }}</strong><p>{{ agentEvidenceRequest.detail }}</p></div></li>

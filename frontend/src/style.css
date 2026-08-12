@@ -2531,7 +2531,8 @@ button svg {
 .learning-session-focus-status { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); padding: 4px 7px; font: 8px "DM Mono", monospace; white-space: nowrap; }
 .learning-session-focus-status.is-ready { border-color: color-mix(in srgb, var(--green) 38%, var(--line)); color: var(--green); }
 .learning-session-focus-status.is-evidence,
-.learning-session-focus-status.is-pending { border-color: color-mix(in srgb, var(--orange) 34%, var(--line)); color: var(--orange); }
+.learning-session-focus-status.is-pending,
+.learning-session-focus-status.is-scheduled { border-color: color-mix(in srgb, var(--orange) 34%, var(--line)); color: var(--orange); }
 .learning-session-focus-status.is-blocked { border-color: color-mix(in srgb, var(--red) 34%, var(--line)); color: var(--red); }
 
 .learning-session-focus-grid { display: grid; grid-template-columns: minmax(0, 1.18fr) minmax(220px, .82fr); gap: 9px; }
@@ -2669,7 +2670,8 @@ button svg {
 .learning-agent-action-plan > header strong { color: var(--heading); font-size: 10px; }
 .learning-agent-action-plan > header > span { border: 1px solid var(--line); border-radius: 999px; color: var(--muted); padding: 3px 6px; font: 8px "DM Mono", monospace; white-space: nowrap; }
 .learning-agent-action-plan > header > span.is-ready { border-color: color-mix(in srgb, var(--green) 38%, var(--line)); color: var(--green); }
-.learning-agent-action-plan > header > span.is-blocked { border-color: color-mix(in srgb, var(--orange) 38%, var(--line)); color: var(--orange); }
+.learning-agent-action-plan > header > span.is-blocked,
+.learning-agent-action-plan > header > span.is-scheduled { border-color: color-mix(in srgb, var(--orange) 38%, var(--line)); color: var(--orange); }
 .learning-agent-action-plan > ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 0; padding: 0; list-style: none; }
 .learning-agent-action-plan > ol > li { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 6px; min-width: 0; border-left: 2px solid var(--line); padding: 3px 6px; }
 .learning-agent-action-plan > ol > li > span { display: grid; width: 19px; height: 19px; place-items: center; border: 1px solid var(--line); border-radius: 50%; background: var(--panel); color: var(--muted); font: 8px "DM Mono", monospace; }
