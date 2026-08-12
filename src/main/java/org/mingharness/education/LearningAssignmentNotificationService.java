@@ -28,6 +28,7 @@ public class LearningAssignmentNotificationService {
     @Transactional
     public void ensureForState(LearningAssignment assignment) {
         if (assignment == null) return;
+        resolveStaleStateNotifications(assignment);
         for (RecipientSpec recipient : recipients(assignment)) {
             if (notificationRepository
                     .findByTenantIdAndUserIdAndLearningAssignmentIdAndEventKey(
@@ -39,6 +40,61 @@ public class LearningAssignmentNotificationService {
                         Instant.now()));
             }
         }
+    }
+
+    /**
+     * 同一份作业进入新状态后，旧状态通知不再是可执行入口。
+     * 只读历史仍保留在数据库中，但未读列表不会同时诱导用户执行旧动作。
+     */
+    @Transactional
+    public void resolveStaleStateNotifications(LearningAssignment assignment) {
+        if (assignment == null) return;
+        Instant now = Instant.now();
+        for (String userId : List.of(assignment.getLearnerUserId(), assignment.getTeacherUserId())) {
+            List<LearningAssignmentNotification> stale = notificationRepository
+                    .findByTenantIdAndUserIdAndLearningAssignmentIdAndStatus(
+                            assignment.getTenantId(), userId, assignment.getId(),
+                            LearningAssignmentNotificationStatus.UNREAD);
+            List<LearningAssignmentNotification> toRead = stale.stream()
+                    .filter(notification -> isStaleStateNotification(notification, assignment))
+                    .toList();
+            toRead.forEach(notification -> notification.markRead(now));
+            if (!toRead.isEmpty()) notificationRepository.saveAll(toRead);
+        }
+    }
+
+    private boolean isStaleStateNotification(LearningAssignmentNotification notification,
+                                              LearningAssignment assignment) {
+        LearningAssignmentNotificationType type = notification.getNotificationType();
+        if (type == LearningAssignmentNotificationType.FEEDBACK
+                || type == LearningAssignmentNotificationType.FEEDBACK_ACKNOWLEDGED
+                || type == LearningAssignmentNotificationType.SUBMISSION_RECEIVED) {
+            return false;
+        }
+        if (assignment.getStatus() == LearningAssignmentStatus.RETRY_REQUIRED) {
+            return type == LearningAssignmentNotificationType.ASSIGNED
+                    || type == LearningAssignmentNotificationType.ACCEPTED
+                    || type == LearningAssignmentNotificationType.EVIDENCE_REQUIRED
+                    || type == LearningAssignmentNotificationType.OVERDUE;
+        }
+        if (assignment.getStatus() == LearningAssignmentStatus.AWAITING_EVIDENCE) {
+            return type == LearningAssignmentNotificationType.ASSIGNED
+                    || type == LearningAssignmentNotificationType.ACCEPTED
+                    || type == LearningAssignmentNotificationType.RETRY_REQUIRED;
+        }
+        if (assignment.getStatus() == LearningAssignmentStatus.ACCEPTED) {
+            return type == LearningAssignmentNotificationType.ASSIGNED
+                    || type == LearningAssignmentNotificationType.RETRY_REQUIRED
+                    || type == LearningAssignmentNotificationType.OVERDUE;
+        }
+        if (assignment.getStatus() == LearningAssignmentStatus.COMPLETED) {
+            return type == LearningAssignmentNotificationType.ASSIGNED
+                    || type == LearningAssignmentNotificationType.ACCEPTED
+                    || type == LearningAssignmentNotificationType.RETRY_REQUIRED
+                    || type == LearningAssignmentNotificationType.EVIDENCE_REQUIRED
+                    || type == LearningAssignmentNotificationType.OVERDUE;
+        }
+        return false;
     }
 
     @Transactional
@@ -121,6 +177,7 @@ public class LearningAssignmentNotificationService {
     @Transactional
     public void ensureForEvidenceRequired(LearningAssignment assignment, String runId) {
         if (assignment == null || runId == null || runId.isBlank()) return;
+        resolveStaleStateNotifications(assignment);
         String eventKey = "EVIDENCE_REQUIRED:" + runId;
         saveIfAbsent(assignment, assignment.getLearnerUserId(), eventKey,
                 "课程作业待补证据", assignment.getTitle() + "对应的学习 Run 已完成，请补充形成性测评证据。");
@@ -133,6 +190,7 @@ public class LearningAssignmentNotificationService {
     @Transactional
     public void ensureForRetryRequired(LearningAssignment assignment, String runId, String reason) {
         if (assignment == null || runId == null || runId.isBlank()) return;
+        resolveStaleStateNotifications(assignment);
         String eventKey = "RETRY_REQUIRED:" + runId;
         String detail = reason == null || reason.isBlank() ? "教育 Run 未完成" : reason;
         saveIfAbsent(assignment, assignment.getLearnerUserId(), eventKey,
@@ -182,6 +240,22 @@ public class LearningAssignmentNotificationService {
     public NotificationPage list(String tenantId, String userId, boolean unreadOnly, int limit) {
         int boundedLimit = Math.max(1, Math.min(100, limit));
         PageRequest page = PageRequest.of(0, boundedLimit);
+        // 先收敛全部未读状态通知，再分页返回，确保 unreadCount 与列表中的可执行入口一致。
+        List<LearningAssignmentNotification> allUnread = notificationRepository
+                .findByTenantIdAndUserIdAndStatus(
+                        tenantId, userId, LearningAssignmentNotificationStatus.UNREAD);
+        Instant stateObservedAt = Instant.now();
+        List<LearningAssignmentNotification> staleUnread = allUnread.stream()
+                .filter(notification -> {
+                    LearningAssignment assignment = assignmentRepository.findByTenantIdAndId(
+                            tenantId, notification.getLearningAssignmentId()).orElse(null);
+                    return assignment != null && isStaleStateNotification(notification, assignment);
+                })
+                .toList();
+        if (!staleUnread.isEmpty()) {
+            staleUnread.forEach(notification -> notification.markRead(stateObservedAt));
+            notificationRepository.saveAll(staleUnread);
+        }
         List<LearningAssignmentNotification> notifications = unreadOnly
                 ? notificationRepository.findByTenantIdAndUserIdAndStatusOrderByCreatedAtDesc(
                 tenantId, userId, LearningAssignmentNotificationStatus.UNREAD, page)

@@ -1230,6 +1230,11 @@ const chatCourseAssignmentLatestSubmission = computed(() => {
   if (!assignment) return null
   return (learningAssignmentSubmissionMap.value[assignment.id] || [])[0] || null
 })
+// 作业状态通知是行动入口；状态已经推进后，旧的已读通知不应继续显示旧按钮。
+// 反馈和提交物属于证据历史，即使已读也保留，方便回看教师与学习者之间的闭环。
+const learningAssignmentNotificationsForView = computed(() => learningAssignmentNotifications.value
+  .filter((notification) => notification.unread
+    || ['FEEDBACK', 'FEEDBACK_ACKNOWLEDGED', 'SUBMISSION_RECEIVED'].includes(notification.notificationType)))
 
 function toggleAllAllowedTools() {
   selectedAllowedTools.value = allAllowedToolsSelected.value
@@ -8965,9 +8970,9 @@ onBeforeUnmount(() => {
             <section class="learning-assignment-workbench" aria-label="课程作业入口">
               <div class="subsection-title"><h4>{{ isAdminWorkspace ? '课程作业概览' : (educationWorkspaceMode === 'teacher' ? '课程作业与复核' : '我的课程作业与反馈') }}</h4><div><span v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter || learningAssignmentIssueFilter">{{ learningAssignmentIssueFilter ? `正在处理：${learningAssignmentIssueLabel}` : '当前已筛选' }}</span><button v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter || learningAssignmentIssueFilter" class="text-button" type="button" @click="clearLearningAssignmentFilter">清除筛选</button><span v-else>{{ educationAssignmentsForView.length }} 个作业</span></div></div>
               <p class="learning-task-help">{{ isAdminWorkspace ? '管理员只读查看作业状态与证据覆盖；确认、返工和反馈由课程教师执行。' : (educationWorkspaceMode === 'teacher' ? '围绕课程约束布置作业，并根据提交物、测评证据和反馈决定确认、返工或重试。' : '接受课程作业后，Agent 会把课程边界、目标知识点和当前掌握度汇总成下一步行动。') }}</p>
-              <div v-if="!isAdminWorkspace" class="subsection-title learning-task-heading"><div><h4>作业通知</h4><span>{{ learningAssignmentNotifications.length }} 条</span></div><div class="learning-notification-heading-actions"><span>{{ learningAssignmentNotificationUnreadCount }} 条未读</span><button v-if="learningAssignmentNotificationUnreadCount" class="text-button" type="button" @click="markAllLearningAssignmentNotificationsRead">全部已读</button></div></div>
-              <div v-if="!isAdminWorkspace && learningAssignmentNotifications.length" class="learning-notification-list" aria-label="课程作业通知">
-                <article v-for="notification in learningAssignmentNotifications.slice(0, 5)" :key="notification.id" class="learning-notification-row" :class="{ unread: notification.unread }">
+              <div v-if="!isAdminWorkspace" class="subsection-title learning-task-heading"><div><h4>作业通知</h4><span>{{ learningAssignmentNotificationsForView.length }} 条</span></div><div class="learning-notification-heading-actions"><span>{{ learningAssignmentNotificationUnreadCount }} 条未读</span><button v-if="learningAssignmentNotificationUnreadCount" class="text-button" type="button" @click="markAllLearningAssignmentNotificationsRead">全部已读</button></div></div>
+              <div v-if="!isAdminWorkspace && learningAssignmentNotificationsForView.length" class="learning-notification-list" aria-label="课程作业通知">
+                <article v-for="notification in learningAssignmentNotificationsForView.slice(0, 5)" :key="notification.id" class="learning-notification-row" :class="{ unread: notification.unread }">
                   <div class="learning-notification-main"><div class="learning-notification-meta"><strong>{{ notification.title }}</strong><small>{{ formatDate(notification.createdAt) }}</small></div><p>{{ notification.body }}</p></div>
                   <div class="learning-notification-actions"><button class="secondary-button" type="button" @click="openLearningAssignmentNotification(notification)">{{ learningAssignmentNotificationActionLabel(notification) }}</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningAssignmentNotificationRead(notification)">标记已读</button></div>
                 </article>

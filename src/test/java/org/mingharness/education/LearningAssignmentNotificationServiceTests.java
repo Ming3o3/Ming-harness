@@ -57,6 +57,33 @@ class LearningAssignmentNotificationServiceTests {
     }
 
     @Test
+    void shouldResolveOldStateNotificationWhenAssignmentMovesForward() {
+        LearningAssignmentNotificationRepository notifications = mock(LearningAssignmentNotificationRepository.class);
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        LearningAssignment assignment = assignment();
+        LearningAssignmentNotification old = new LearningAssignmentNotification(
+                "tenant-a", "student-1", assignment.getId(), LearningAssignmentNotificationType.ASSIGNED,
+                "ASSIGNED", "收到课程作业", "请接受", Instant.now());
+        assignment.accept("profile-1", "goal-1", Instant.now());
+        when(notifications.findByTenantIdAndUserIdAndLearningAssignmentIdAndStatus(
+                eq("tenant-a"), any(String.class), eq(assignment.getId()),
+                eq(LearningAssignmentNotificationStatus.UNREAD)))
+                .thenReturn(java.util.List.of(old), java.util.List.of());
+        when(notifications.findByTenantIdAndUserIdAndLearningAssignmentIdAndEventKey(
+                eq("tenant-a"), any(String.class), eq(assignment.getId()), any(String.class)))
+                .thenReturn(Optional.empty());
+        when(notifications.save(any(LearningAssignmentNotification.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        LearningAssignmentNotificationService service = new LearningAssignmentNotificationService(notifications, assignments);
+        service.ensureForState(assignment);
+
+        assertEquals(LearningAssignmentNotificationStatus.READ, old.getStatus());
+        verify(notifications).saveAll(java.util.List.of(old));
+        verify(notifications).save(any(LearningAssignmentNotification.class));
+    }
+
+    @Test
     void shouldMarkReadAndReturnAssignmentContext() {
         LearningAssignmentNotificationRepository notifications = mock(LearningAssignmentNotificationRepository.class);
         LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
