@@ -1168,6 +1168,13 @@ function learningTaskActionLabel(task, starting = false) {
   return '开始复习'
 }
 
+function learningNotificationBody(notification) {
+  if (notification?.taskStatus === 'DEFERRED' && notification.scheduledAt) {
+    return `${notification.title || '复习任务'}已延期，将在 ${formatDate(notification.scheduledAt)} 开放；当前无需提前作答。`
+  }
+  return notification?.body || ''
+}
+
 function learningAssignmentSourceBlockReason(assignment) {
   if (!assignment) return '课程作业不可用。'
   return courseSourceBlockReason({
@@ -8291,7 +8298,7 @@ onBeforeUnmount(() => {
                 <p class="learning-task-help">复习计划到期后会自动生成任务；Run 失败会进入可重试，Run 成功但没有测评证据会进入待补证据。</p>
                 <div v-if="learningNotifications.length" class="learning-notification-list" aria-label="学习任务通知">
                   <article v-for="notification in learningNotifications.slice(0, 5)" :key="notification.id" class="learning-notification-row" :class="{ unread: notification.unread }">
-                    <div class="learning-notification-main"><div class="learning-notification-meta"><strong>{{ notification.title }}</strong><small>{{ formatDate(notification.createdAt) }}</small></div><p>{{ notification.body }}</p></div>
+                    <div class="learning-notification-main"><div class="learning-notification-meta"><strong>{{ notification.title }}</strong><small>{{ formatDate(notification.createdAt) }}</small></div><p>{{ learningNotificationBody(notification) }}</p></div>
                     <div class="learning-notification-actions"><button class="secondary-button" type="button" @click="openLearningNotification(notification)">{{ notification.notificationType === 'EVIDENCE_REQUIRED' ? '补充证据' : (notification.notificationType === 'FAILED' ? '重试任务' : (notification.taskStatus === 'DEFERRED' ? '查看复习安排' : '打开任务')) }}</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningNotificationRead(notification)">标记已读</button></div>
                   </article>
                 </div>
