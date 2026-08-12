@@ -30,6 +30,7 @@ import {
   Sparkles,
   Sun,
   Target,
+  Trash2,
   X,
 } from '@lucide/vue'
 import { api } from './api'
@@ -174,6 +175,7 @@ const apiKeyError = ref('')
 const createdApiKeySecret = ref('')
 const loading = ref(false)
 const documentDeletingId = ref('')
+const learnerProfileDeletingId = ref('')
 const documentUploadInput = ref(null)
 const documentUploadFile = ref(null)
 const documentUploadDragging = ref(false)
@@ -1687,24 +1689,6 @@ const runtimeAlerts = computed(() => {
   ].filter(Boolean)
 })
 const desktopWorkspaceAvailable = computed(() => api.isDesktop())
-const learningRuntimeState = computed(() => {
-  if (health.value?.error) {
-    return { state: 'down', label: 'Runtime 不可用', detail: health.value.error }
-  }
-  if (!health.value) {
-    return { state: 'checking', label: '正在检查 Runtime', detail: '等待本地教育 Runtime 返回健康状态。' }
-  }
-  if (educationRuntimeDiagnostic.value) {
-    return { state: 'warning', label: '教育接口未就绪', detail: educationRuntimeDiagnostic.value }
-  }
-  return {
-    state: 'ready',
-    label: desktopWorkspaceAvailable.value ? '桌面 Runtime 在线' : '浏览器 Runtime 在线',
-    detail: desktopWorkspaceAvailable.value
-      ? '本地课程资料和工作区能力已连接到当前桌面 Runtime。'
-      : '当前页面通过浏览器代理连接 Runtime。',
-  }
-})
 const activeConversationWorkspaceId = computed(() => activeConversation.value?.conversation?.workspaceId || '')
 const activeRegisteredWorkspace = computed(() => localWorkspaces.value
   .find((item) => item.id === activeConversationWorkspaceId.value) || null)
@@ -6095,6 +6079,53 @@ async function saveLearnerProfile() {
   }
 }
 
+async function deleteLearnerProfile(profile) {
+  if (!profile?.id || learnerProfileDeletingId.value) return
+  if (typeof window !== 'undefined'
+    && !window.confirm(`确认删除学习画像“${profile.subject} · ${profile.gradeLevel} · ${profile.curriculumVersion}”吗？\n\n已产生的学习目标、测评和历史 Run 会保留，画像只会从当前可选列表中移除。`)) return
+  clearMessages()
+  learnerProfileDeletingId.value = profile.id
+  try {
+    await api.deleteLearnerProfile(profile.id)
+    const remainingProfiles = learnerProfiles.value.filter((item) => item.id !== profile.id)
+    learnerProfiles.value = remainingProfiles
+    if (activeLearnerProfile.value?.id === profile.id) {
+      activeLearningGoal.value = null
+      learningGoalAssessments.value = []
+      learningRecommendation.value = null
+      form.education.learningGoalId = ''
+      form.education.conceptKey = ''
+      chatEducation.learningGoalId = ''
+      chatEducation.conceptKey = ''
+      const nextProfile = remainingProfiles[0] || null
+      if (nextProfile) {
+        await selectLearnerProfile(nextProfile, false)
+      } else {
+        activeLearnerProfile.value = null
+        learnerMastery.value = []
+        form.education.learnerProfileId = ''
+        form.education.subject = ''
+        form.education.gradeLevel = ''
+        form.education.curriculumVersion = ''
+        form.education.conceptKey = ''
+        form.education.courseId = ''
+        chatEducation.learnerProfileId = ''
+        chatEducation.subject = ''
+        chatEducation.gradeLevel = ''
+        chatEducation.curriculumVersion = ''
+        chatEducation.conceptKey = ''
+        chatEducation.courseId = ''
+      }
+    }
+    noticeMessage.value = `学习画像“${profile.subject} · ${profile.gradeLevel}”已删除`
+    educationError.value = ''
+  } catch (error) {
+    educationError.value = errorText(error)
+  } finally {
+    learnerProfileDeletingId.value = ''
+  }
+}
+
 async function saveEducationSource() {
   if (!educationSourceForm.documentId || educationLoading.value) return
   clearMessages()
@@ -6789,15 +6820,6 @@ onBeforeUnmount(() => {
                   <ArrowUp :size="12" />
                 </button>
               </section>
-              <button
-                class="learning-sidebar-runtime-state"
-                :class="`is-${learningRuntimeState.state}`"
-                type="button"
-                :title="learningRuntimeState.detail"
-                @click="chatMode = false; navigateConsoleSection('runtime')"
-              >
-                <i></i><span>{{ learningRuntimeState.label }}</span><small>{{ learningRuntimeState.detail }}</small>
-              </button>
               <button type="button" @click="educationAgentReady ? (showChatAgentSettings = true) : openEducationAgentSetup()">{{ educationAgentReady ? '调整本轮约束' : educationSetupActionLabel }} <ArrowUp :size="12" /></button>
             </template>
             <template v-else>
@@ -7001,11 +7023,14 @@ onBeforeUnmount(() => {
                   <button type="button" @click="chatMode = false; navigateConsoleSection('education')">课程与资料管理 <ArrowUp :size="13" /></button>
                 </div>
                 <div v-if="learnerProfiles.length" class="learning-onboarding-profile-list">
-                  <button v-for="profile in learnerProfiles.slice(0, 4)" :key="profile.id" type="button" @click="selectLearnerProfile(profile)">
-                    <span class="learning-onboarding-profile-icon"><Brain :size="14" /></span>
-                    <span><strong>{{ profile.subject }} · {{ profile.gradeLevel }}</strong><small>{{ profile.curriculumVersion }} · {{ profile.learningGoal || '尚未设置学习诉求' }}</small></span>
-                    <ArrowUp :size="13" />
-                  </button>
+                  <div v-for="profile in learnerProfiles.slice(0, 4)" :key="profile.id" class="learning-onboarding-profile-item">
+                    <button type="button" class="learning-onboarding-profile-select" @click="selectLearnerProfile(profile)">
+                      <span class="learning-onboarding-profile-icon"><Brain :size="14" /></span>
+                      <span><strong>{{ profile.subject }} · {{ profile.gradeLevel }}</strong><small>{{ profile.curriculumVersion }} · {{ profile.learningGoal || '尚未设置学习诉求' }}</small></span>
+                      <ArrowUp :size="13" />
+                    </button>
+                    <button type="button" class="learning-onboarding-profile-delete" :disabled="learnerProfileDeletingId === profile.id" title="删除学习画像" @click.stop="deleteLearnerProfile(profile)"><Trash2 :size="13" /></button>
+                  </div>
                 </div>
                 <p v-else>还没有保存过学习画像。完成左侧第一步后，Agent 才会开始按课程和学习状态决策。</p>
               </aside>
@@ -7703,7 +7728,6 @@ onBeforeUnmount(() => {
 
       <div class="sidebar-foot">
         <div class="system-state"><span class="pulse" :class="{ offline: !infraOnline }"></span><span>{{ infraLabel }}</span></div>
-        <small>Runtime v0.1 · Java 17</small>
       </div>
     </aside>
 
@@ -8296,9 +8320,12 @@ onBeforeUnmount(() => {
                   <button class="secondary-button" type="submit" :disabled="educationLoading">{{ educationLoading ? '保存中…' : '保存学习者画像' }}</button>
                 </form>
                 <div v-if="learnerProfiles.length" class="education-profile-list">
-                  <button v-for="profile in learnerProfiles" :key="profile.id" type="button" class="education-profile-chip" :class="{ active: profile.id === activeLearnerProfile?.id }" @click="selectLearnerProfile(profile)">
-                    <strong>{{ profile.subject }} · {{ profile.gradeLevel }}</strong><small>{{ profile.curriculumVersion }} · {{ profile.learningGoal || '未设置学习目标' }}</small>
-                  </button>
+                  <div v-for="profile in learnerProfiles" :key="profile.id" class="education-profile-chip" :class="{ active: profile.id === activeLearnerProfile?.id }">
+                    <button type="button" class="education-profile-select" @click="selectLearnerProfile(profile)">
+                      <strong>{{ profile.subject }} · {{ profile.gradeLevel }}</strong><small>{{ profile.curriculumVersion }} · {{ profile.learningGoal || '未设置学习目标' }}</small>
+                    </button>
+                    <button type="button" class="education-profile-delete" :disabled="learnerProfileDeletingId === profile.id" title="删除学习画像" @click.stop="deleteLearnerProfile(profile)"><Trash2 :size="13" /></button>
+                  </div>
                 </div>
               </div>
             </details>

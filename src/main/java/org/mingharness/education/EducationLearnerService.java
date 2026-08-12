@@ -77,7 +77,25 @@ public class EducationLearnerService {
 
     @Transactional(readOnly = true)
     public List<LearnerProfile> listProfiles(String tenantId, String userId) {
-        return profileRepository.findByTenantIdAndUserIdOrderByUpdatedAtDesc(tenantId, userId);
+        // 已删除的画像保留在数据库中，以便历史 Run、测评和学习目标继续可追溯，
+        // 但不再出现在学习者的可选画像列表里。重新保存相同课程组合时会重新激活它。
+        return profileRepository.findByTenantIdAndUserIdOrderByUpdatedAtDesc(tenantId, userId).stream()
+                .filter(LearnerProfile::isActive)
+                .toList();
+    }
+
+    /**
+     * 删除画像采用可恢复的归档语义：画像会从当前学习上下文中移除，但不会破坏已经
+     * 绑定它的历史 Run、掌握度、目标和作业记录。
+     */
+    @Transactional
+    public void deleteProfile(String tenantId, String userId, String profileId) {
+        LearnerProfile profile = profileRepository.findByIdAndTenantIdAndUserId(profileId, tenantId, userId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
+                        "LEARNER_PROFILE_NOT_FOUND", "学习者画像不存在"));
+        if (!profile.isActive()) return;
+        profile.deactivate();
+        profileRepository.save(profile);
     }
 
     @Transactional(readOnly = true)

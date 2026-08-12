@@ -176,6 +176,13 @@ public class EducationController {
                 .map(LearnerProfileView::from).toList();
     }
 
+    @DeleteMapping("/profiles/{profileId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteProfile(@PathVariable String profileId) {
+        HarnessIdentity identity = identity();
+        learnerService.deleteProfile(identity.tenantId(), identity.userId(), profileId);
+    }
+
     @GetMapping("/profiles/active")
     public LearnerProfileView activeProfile() {
         HarnessIdentity identity = identity();

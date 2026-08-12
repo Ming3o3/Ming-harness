@@ -5,6 +5,7 @@ import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.education.api.LearnerProfileRequest;
 import org.mingharness.education.api.MasteryUpdateRequest;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -117,5 +118,26 @@ class EducationLearnerServiceTests {
                         new MasteryUpdateRequest("函数", 1.0, true, null, null)));
 
         assertEquals("MASTERY_EVIDENCE_REQUIRED", exception.getCode());
+    }
+
+    @Test
+    void shouldArchiveProfileWithoutDestroyingItsLearningHistory() {
+        LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        LearnerProfile profile = new LearnerProfile("tenant-a", "student-1", "数学",
+                "高中一年级", "人教A版", "掌握函数", "zh-CN");
+        when(profiles.findByIdAndTenantIdAndUserId(profile.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(profile));
+        when(profiles.save(any(LearnerProfile.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(profiles.findByTenantIdAndUserIdOrderByUpdatedAtDesc("tenant-a", "student-1"))
+                .thenReturn(List.of());
+
+        EducationLearnerService service = new EducationLearnerService(profiles, mastery,
+                new SensitiveDataSanitizer());
+        service.deleteProfile("tenant-a", "student-1", profile.getId());
+
+        assertTrue(!profile.isActive());
+        verify(profiles).save(profile);
+        assertTrue(service.listProfiles("tenant-a", "student-1").isEmpty());
     }
 }

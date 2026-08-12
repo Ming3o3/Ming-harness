@@ -294,6 +294,9 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(payload),
   }),
+  deleteLearnerProfile: (profileId) => request(`/education/profiles/${encodeURIComponent(profileId)}`, {
+    method: 'DELETE',
+  }),
   activeLearnerProfile: () => request('/education/profiles/active'),
   listLearnerMastery: (profileId) => request(`/education/profiles/${encodeURIComponent(profileId)}/mastery`),
   updateLearnerMastery: (profileId, payload) => request(`/education/profiles/${encodeURIComponent(profileId)}/mastery`, {
