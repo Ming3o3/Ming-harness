@@ -66,6 +66,9 @@ Ming Harness 是一个面向课程约束与学习者状态的教育知识库 Age
 
 ## 启动方式
 
+三类用户的登录方式、课程资料配置路径和完整业务流程见
+[docs/roles-and-user-flows.md](docs/roles-and-user-flows.md)。
+
 后端要求 Java 17：
 
 ```bash
