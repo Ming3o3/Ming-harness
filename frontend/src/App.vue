@@ -487,6 +487,10 @@ async function runLearningOverviewNextAction() {
     await startLearningTask(activeLearningTask.value)
     return
   }
+  if (action.kind === 'task-scheduled') {
+    focusLearningTask(activeLearningTask.value)
+    return
+  }
   if (action.kind === 'recommendation') {
     await useLearningRecommendation()
     return
@@ -991,9 +995,13 @@ const learningOverviewNextAction = computed(() => {
     return { kind: 'expand', label: '设定学习目标', detail: '设定知识点和达标标准，后续作答才能形成学习证据。' }
   }
   if (activeLearningTask.value) {
+    const scheduled = activeLearningTask.value.status === 'DEFERRED'
+      && new Date(activeLearningTask.value.scheduledAt).getTime() > Date.now()
     return {
-      kind: 'task',
-      label: activeLearningTask.value.status === 'AWAITING_EVIDENCE' ? '补充本轮证据' : '开始学习任务',
+      kind: scheduled ? 'task-scheduled' : 'task',
+      label: activeLearningTask.value.status === 'AWAITING_EVIDENCE'
+        ? '补充本轮证据'
+        : (scheduled ? '查看复习安排' : '开始学习任务'),
       detail: activeLearningTask.value.title,
     }
   }
@@ -4981,6 +4989,14 @@ function focusLearnerCourseAssignment(assignment) {
     ?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
 }
 
+function focusLearningTask(task) {
+  if (!task?.id) return
+  chatMode.value = false
+  navigateConsoleSection('education')
+  void nextTick(() => document.getElementById(`learning-task-${task.id}`)
+    ?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
+}
+
 async function cancelLearningAssignment(assignment) {
   if (!assignment?.id || assignment.teacherUserId !== form.userId) return
   if (!window.confirm(`确认取消课程作业“${assignment.title}”吗？`)) return
@@ -8247,7 +8263,7 @@ onBeforeUnmount(() => {
                   </article>
                 </div>
                 <div v-if="learningTasks.length" class="learning-task-list">
-                  <article v-for="task in learningTasks.filter((item) => ['OPEN', 'IN_PROGRESS', 'AWAITING_EVIDENCE', 'DEFERRED', 'FAILED'].includes(item.status)).slice(0, 8)" :key="task.id" class="learning-task-row">
+                  <article v-for="task in learningTasks.filter((item) => ['OPEN', 'IN_PROGRESS', 'AWAITING_EVIDENCE', 'DEFERRED', 'FAILED'].includes(item.status)).slice(0, 8)" :id="`learning-task-${task.id}`" :key="task.id" class="learning-task-row">
                     <div class="learning-task-main"><strong>{{ task.title }}</strong><small>{{ task.status === 'IN_PROGRESS' ? '进行中' : (task.status === 'AWAITING_EVIDENCE' ? '待补测评证据' : (task.status === 'FAILED' ? `执行失败${task.failureReason ? `：${task.failureReason}` : ''}` : (task.status === 'DEFERRED' ? `延期至 ${formatDate(task.scheduledAt)}` : `到期 ${formatDate(task.scheduledAt)}`))) }} · 第 {{ task.reviewSequence + 1 }} 次复习</small><p>{{ task.prompt }}</p></div>
                     <div class="learning-task-actions">
                     <button class="secondary-button" type="button" :title="learningTaskSourceBlockReason(task)" :disabled="learningTaskStartingId === task.id || learningTaskDeferringId === task.id || Boolean(learningTaskSourceBlockReason(task))" @click="startLearningTask(task)">{{ learningTaskSourceBlockReason(task) ? '需课程资料' : (learningTaskStartingId === task.id ? '启动中…' : (task.status === 'FAILED' ? '重试任务' : (task.status === 'AWAITING_EVIDENCE' ? '补充证据' : (task.status === 'IN_PROGRESS' ? '继续复习' : '开始复习')))) }}</button>
