@@ -2807,6 +2807,28 @@ function messageStatusLabel(status) {
   }[status] || status || ''
 }
 
+function chatFailureTitle(message) {
+  const content = String(message?.content || '').toLowerCase()
+  return content.includes('超时') || content.includes('timed out') || content.includes('timeout')
+    ? '本轮执行超时' : '本轮执行失败'
+}
+
+function chatFailureGuidance(message) {
+  if (!message || message.status !== 'FAILED') return ''
+  const run = selectedRun.value?.run?.id === message.runId ? selectedRun.value.run : null
+  const assignmentId = run?.educationLearningAssignmentId || ''
+  const assignment = assignmentId
+    ? learningAssignments.value.find((item) => item.id === assignmentId)
+    : null
+  if (assignment?.learnerUserId === form.userId && assignment.status === 'RETRY_REQUIRED') {
+    return '课程作业已回流为“待重试/返工”。点击“重试本轮”，或从下方作业卡片重新开始。'
+  }
+  if (assignment?.learnerUserId === form.userId && assignment.status === 'ACCEPTED') {
+    return '课程作业仍在同步状态；稍后刷新作业卡片，确认是否已进入“待重试/返工”。'
+  }
+  return '可以点击“重试本轮”；如果多次失败，请联系教师检查课程资料，或联系管理员检查模型与 Runtime。'
+}
+
 function messageStatusClass(status) {
   return `message-status-${String(status || 'unknown').toLowerCase()}`
 }
@@ -7642,6 +7664,11 @@ onBeforeUnmount(() => {
                     </section>
                     <p v-if="!message.content">{{ messageStatusLabel(message.status) }}</p>
                     <small v-if="message.role === 'ASSISTANT' && message.status !== 'COMPLETED'">{{ messageStatusLabel(message.status) }}</small>
+                    <div v-if="message.role === 'ASSISTANT' && message.status === 'FAILED'" class="chat-failure-guide" role="status">
+                      <strong>{{ chatFailureTitle(message) }}</strong>
+                      <span v-if="message.content">原因：{{ message.content }}</span>
+                      <small>{{ chatFailureGuidance(message) }}</small>
+                    </div>
                   </template>
                   <div v-if="message.attachments?.length" class="chat-attachment-list" aria-label="已导入的工作区文件">
                     <span v-for="attachment in message.attachments" :key="attachment.id" :title="attachment.workspacePath">

@@ -44,31 +44,59 @@ public class LearningAssignmentReconciliationService {
                     .findTopByTenantIdAndUserIdAndEducationLearningAssignmentIdOrderByCreatedAtDesc(
                             assignment.getTenantId(), assignment.getLearnerUserId(), assignment.getId())
                     .orElse(null);
-            if (!isBoundToAssignment(run, assignment)) continue;
-            if (run.getStatus() == RunStatus.FAILED
-                    || run.getStatus() == RunStatus.TIMED_OUT
-                    || run.getStatus() == RunStatus.CANCELLED) {
-                if (assignment.getStatus() == LearningAssignmentStatus.RETRY_REQUIRED) continue;
-                String reason = run.getError();
-                if (reason == null || reason.isBlank()) reason = "Run 状态为 " + run.getStatus();
-                assignment.requireRetry(now);
-                assignmentRepository.save(assignment);
-                notificationService.ensureForRetryRequired(assignment, run.getId(), reason);
-                changed++;
-                continue;
-            }
-            if (run.getStatus() != RunStatus.SUCCEEDED) continue;
-            boolean hasFormativeEvidence = assessmentRepository
-                    .existsByTenantIdAndUserIdAndRunIdAndAssessmentType(
-                            assignment.getTenantId(), assignment.getLearnerUserId(), run.getId(),
-                            AssessmentAttemptType.FORMATIVE);
-            if (hasFormativeEvidence) continue;
-            assignment.awaitEvidence(now);
-            assignmentRepository.save(assignment);
-            notificationService.ensureForEvidenceRequired(assignment, run.getId());
-            changed++;
+            changed += reconcileCandidate(assignment, run, now);
         }
         return changed;
+    }
+
+    /**
+     * 将一个已经落库的教育 Run 立即收敛到对应作业状态。
+     *
+     * <p>定时扫描仍然保留，用来兜底处理跨进程延迟；Run 终态写入路径调用此方法后，
+     * 学习者不会在一整轮调度间隔内看到“学习中”而不知道该重试。</p>
+     */
+    @Transactional
+    public int reconcileRun(Run run) {
+        if (run == null || !isTerminal(run.getStatus())
+                || run.getEducationLearningAssignmentId() == null
+                || run.getEducationLearningAssignmentId().isBlank()) return 0;
+        LearningAssignment assignment = assignmentRepository.findByTenantIdAndId(
+                        run.getTenantId(), run.getEducationLearningAssignmentId())
+                .orElse(null);
+        if (assignment == null) return 0;
+        return reconcileCandidate(assignment, run, Instant.now());
+    }
+
+    private int reconcileCandidate(LearningAssignment assignment, Run run, Instant now) {
+        if (!isBoundToAssignment(run, assignment)) return 0;
+        if (run.getStatus() == RunStatus.FAILED
+                || run.getStatus() == RunStatus.TIMED_OUT
+                || run.getStatus() == RunStatus.CANCELLED) {
+            if (assignment.getStatus() == LearningAssignmentStatus.RETRY_REQUIRED) return 0;
+            String reason = run.getError();
+            if (reason == null || reason.isBlank()) reason = "Run 状态为 " + run.getStatus();
+            assignment.requireRetry(now);
+            assignmentRepository.save(assignment);
+            notificationService.ensureForRetryRequired(assignment, run.getId(), reason);
+            return 1;
+        }
+        if (run.getStatus() != RunStatus.SUCCEEDED) return 0;
+        boolean hasFormativeEvidence = assessmentRepository
+                .existsByTenantIdAndUserIdAndRunIdAndAssessmentType(
+                        assignment.getTenantId(), assignment.getLearnerUserId(), run.getId(),
+                        AssessmentAttemptType.FORMATIVE);
+        if (hasFormativeEvidence) return 0;
+        assignment.awaitEvidence(now);
+        assignmentRepository.save(assignment);
+        notificationService.ensureForEvidenceRequired(assignment, run.getId());
+        return 1;
+    }
+
+    private boolean isTerminal(RunStatus status) {
+        return status == RunStatus.SUCCEEDED
+                || status == RunStatus.FAILED
+                || status == RunStatus.TIMED_OUT
+                || status == RunStatus.CANCELLED;
     }
 
     private boolean isBoundToAssignment(Run run, LearningAssignment assignment) {

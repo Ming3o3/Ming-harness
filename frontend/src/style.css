@@ -1053,6 +1053,10 @@ h3 { margin: 0; font-size: 13px; }
 .chat-bubble small { display: block; margin-top: 8px; color: var(--red); font: 9px "DM Mono", monospace; }
 .chat-bubble.message-status-failed { border-color: rgba(255,114,123,.3); }
 .chat-bubble.message-status-cancelled { border-color: rgba(255,182,95,.28); }
+.chat-failure-guide { display: grid; gap: 4px; margin-top: 9px; border-top: 1px solid rgba(255,114,123,.18); padding-top: 8px; }
+.chat-failure-guide strong { color: var(--red); font-size: 10px; }
+.chat-failure-guide span { color: var(--soft); font-size: 10px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-failure-guide small { margin-top: 0; color: var(--muted); font: 10px inherit; line-height: 1.5; }
 .chat-message-actions { display: flex; gap: 8px; margin-top: 5px; }
 .chat-message-actions button { border: 0; background: transparent; color: var(--muted); padding: 2px; font: 9px "DM Mono", monospace; }
 .chat-message-actions button:hover:not(:disabled) { color: var(--accent-light); text-decoration: underline; }

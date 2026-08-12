@@ -85,6 +85,26 @@ class LearningAssignmentReconciliationServiceTests {
         verify(notifications).ensureForRetryRequired(assignment, run.getId(), "模型调用失败");
     }
 
+    @Test
+    void shouldReconcileTerminalRunImmediatelyWithoutWaitingForScheduler() {
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        RunRepository runs = mock(RunRepository.class);
+        AssessmentAttemptRepository attempts = mock(AssessmentAttemptRepository.class);
+        LearningAssignmentNotificationService notifications = mock(LearningAssignmentNotificationService.class);
+        LearningAssignment assignment = assignment();
+        assignment.accept("profile-1", "goal-1", Instant.now());
+        Run run = failedRun(assignment);
+        when(assignments.findByTenantIdAndId("tenant-a", assignment.getId()))
+                .thenReturn(Optional.of(assignment));
+        when(assignments.save(any(LearningAssignment.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LearningAssignmentReconciliationService service = new LearningAssignmentReconciliationService(
+                assignments, runs, attempts, notifications);
+        assertEquals(1, service.reconcileRun(run));
+        assertEquals(LearningAssignmentStatus.RETRY_REQUIRED, assignment.getStatus());
+        verify(notifications).ensureForRetryRequired(assignment, run.getId(), "模型调用失败");
+    }
+
     private LearningAssignment assignment() {
         return new LearningAssignment("tenant-a", "teacher-1", "student-1", "函数作业",
                 "完成练习", "数学", "高中一年级", "人教A版", "函数", 0.8,

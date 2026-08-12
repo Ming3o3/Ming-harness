@@ -3,6 +3,7 @@ package org.mingharness.conversation;
 import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.domain.RunStatus;
+import org.mingharness.education.LearningAssignmentReconciliationService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,13 +14,16 @@ public class ConversationMessageWriter {
     private final ConversationMessageRepository messageRepository;
     private final ConversationRepository conversationRepository;
     private final SensitiveDataSanitizer sanitizer;
+    private final LearningAssignmentReconciliationService assignmentReconciliationService;
 
     public ConversationMessageWriter(ConversationMessageRepository messageRepository,
                                      ConversationRepository conversationRepository,
-                                     SensitiveDataSanitizer sanitizer) {
+                                     SensitiveDataSanitizer sanitizer,
+                                     LearningAssignmentReconciliationService assignmentReconciliationService) {
         this.messageRepository = messageRepository;
         this.conversationRepository = conversationRepository;
         this.sanitizer = sanitizer;
+        this.assignmentReconciliationService = assignmentReconciliationService;
     }
 
     @Transactional
@@ -37,6 +41,7 @@ public class ConversationMessageWriter {
     @Transactional
     public void updateForTerminalRun(Run run) {
         if (run == null || run.getConversationId() == null) {
+            if (run != null) assignmentReconciliationService.reconcileRun(run);
             return;
         }
         messageRepository.findByRunIdAndRole(run.getId(), ConversationMessageRole.ASSISTANT)
@@ -44,6 +49,7 @@ public class ConversationMessageWriter {
                     update(message, run);
                     touchConversation(message);
                 });
+        assignmentReconciliationService.reconcileRun(run);
     }
 
     /**
