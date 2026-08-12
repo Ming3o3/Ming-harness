@@ -977,7 +977,7 @@ const learningOverviewNextAction = computed(() => {
     return { kind: 'expand', label: '建立学习画像', detail: '先告诉 Agent 你正在学习的课程和年级。' }
   }
   if (educationSendBlockReason.value) {
-    return { kind: 'setup', label: '配置课程资料', detail: educationSendBlockReason.value }
+    return { kind: 'setup', label: educationSetupActionLabel.value, detail: educationSendBlockReason.value }
   }
   if (!activeLearningGoal.value) {
     return { kind: 'expand', label: '设定学习目标', detail: '设定知识点和达标标准，后续作答才能形成学习证据。' }
@@ -1348,6 +1348,16 @@ const educationSendBlockReason = computed(() => {
     return courseSourceBlockReason(scope)
   }
   return ''
+})
+const educationSetupActionLabel = computed(() => {
+  if (educationWorkspaceMode.value === 'teacher' && !ownedKnowledgeDocuments.value.length) return '上传课程资料'
+  if (!activeLearnerProfile.value) return '建立学习画像'
+  const scope = currentEducationRetrievalScope.value
+  const availability = courseSourceAvailability(scope)
+  if (scope.configured && !availability.courseSourceCount && availability.sameSubjectGradeSourceCount) {
+    return '统一课程版本'
+  }
+  return '配置课程资料'
 })
 const educationAgentReady = computed(() => !educationSendBlockReason.value)
 const educationComposerPlaceholder = computed(() => {
@@ -6458,7 +6468,7 @@ onBeforeUnmount(() => {
               >
                 <i></i><span>{{ learningRuntimeState.label }}</span><small>{{ learningRuntimeState.detail }}</small>
               </button>
-              <button type="button" @click="educationAgentReady ? (showChatAgentSettings = true) : openEducationAgentSetup()">{{ educationAgentReady ? '调整本轮约束' : '配置课程资料' }} <ArrowUp :size="12" /></button>
+              <button type="button" @click="educationAgentReady ? (showChatAgentSettings = true) : openEducationAgentSetup()">{{ educationAgentReady ? '调整本轮约束' : educationSetupActionLabel }} <ArrowUp :size="12" /></button>
             </template>
             <template v-else>
               <p class="learning-sidebar-contract-empty">先建立学习者画像，才能把课程版本、资料范围和后续掌握度绑定到同一个学习任务。</p>
@@ -6705,7 +6715,7 @@ onBeforeUnmount(() => {
                   <strong>{{ agentTeachingAction.title }}</strong>
                   <p>{{ agentTeachingAction.detail }}</p>
                   <div class="learning-session-evidence-callout"><ListChecks :size="14" /><span><b>{{ agentEvidenceRequest.title }}</b><small>{{ agentEvidenceRequest.detail }}</small></span></div>
-                  <button class="primary-button" type="button" @click="educationSendBlockReason ? openEducationAgentSetup() : chatInputRef?.focus()">{{ educationSendBlockReason ? '先配置课程资料' : '进入本轮作答' }} <ArrowDown :size="13" /></button>
+                  <button class="primary-button" type="button" @click="educationSendBlockReason ? openEducationAgentSetup() : chatInputRef?.focus()">{{ educationSendBlockReason ? `先${educationSetupActionLabel}` : '进入本轮作答' }} <ArrowDown :size="13" /></button>
                 </div>
               </div>
             </section>
@@ -6746,7 +6756,7 @@ onBeforeUnmount(() => {
                 <footer>
                   <span><ListChecks :size="13" />{{ activeLearningGoal ? learningEvidenceSummary : '先定义目标，再开始累积证据' }}</span>
                   <div>
-                    <button v-if="agentTeachingAction.state === 'blocked'" class="secondary-button" type="button" @click="openEducationAgentSetup">配置课程资料</button>
+                    <button v-if="agentTeachingAction.state === 'blocked'" class="secondary-button" type="button" @click="openEducationAgentSetup">{{ educationSetupActionLabel }}</button>
                     <button v-else-if="!activeLearningGoal" class="secondary-button" type="button" @click="showQuickLearningGoalForm = true">设定学习目标</button>
                     <button v-else-if="activeLearningTask" class="primary-button" type="button" :title="learningTaskSourceBlockReason(activeLearningTask)" :disabled="learningTaskStartingId === activeLearningTask.id || chatSending || chatUploading || Boolean(learningTaskSourceBlockReason(activeLearningTask))" @click="startLearningTask(activeLearningTask)">{{ learningTaskSourceBlockReason(activeLearningTask) ? '补充课程资料' : (learningTaskStartingId === activeLearningTask.id ? '启动中…' : '执行本轮计划') }} <ArrowUp :size="12" /></button>
                     <button v-else-if="activeLearningRecommendation" class="primary-button" type="button" :title="learningGoalSourceBlockReason(activeLearningRecommendation.learningGoalId)" :disabled="chatSending || chatUploading || Boolean(learningGoalSourceBlockReason(activeLearningRecommendation.learningGoalId))" @click="useLearningRecommendation">按 Agent 建议开始 <ArrowUp :size="12" /></button>
@@ -6808,7 +6818,7 @@ onBeforeUnmount(() => {
             </div>
             <div class="chat-course-assignment-actions">
               <button v-if="['ASSIGNED', 'RETRY_REQUIRED', 'AWAITING_EVIDENCE'].includes(chatCourseAssignment.status)" class="primary-button" type="button" :title="learningAssignmentSourceBlockReason(chatCourseAssignment)" :disabled="learningAssignmentAcceptingId === chatCourseAssignment.id || chatSending || chatUploading || Boolean(learningAssignmentSourceBlockReason(chatCourseAssignment))" @click="startLearningAssignment(chatCourseAssignment)">{{ learningAssignmentSourceBlockReason(chatCourseAssignment) ? '需课程资料' : learningAssignmentStartLabel(chatCourseAssignment, learningAssignmentAcceptingId === chatCourseAssignment.id) }}</button>
-              <button v-if="learningAssignmentSourceBlockReason(chatCourseAssignment)" class="secondary-button" type="button" @click="openEducationAgentSetup">配置课程资料</button>
+              <button v-if="learningAssignmentSourceBlockReason(chatCourseAssignment)" class="secondary-button" type="button" @click="openEducationAgentSetup">{{ educationSetupActionLabel }}</button>
               <button v-if="learningAssignmentSubmissionOpen(chatCourseAssignment)" class="secondary-button" type="button" @click="openChatLearningAssignmentSubmission(chatCourseAssignment)">{{ learningAssignmentSubmissionForm.assignmentId === chatCourseAssignment.id ? '正在填写提交物' : '提交作业内容' }}</button>
               <button class="text-button" type="button" @click="focusLearnerCourseAssignment(chatCourseAssignment)">查看完整证据链</button>
             </div>
@@ -7007,7 +7017,7 @@ onBeforeUnmount(() => {
                 <strong>本轮教学尚不能启动</strong>
                 <p>{{ educationSendBlockReason }}</p>
               </div>
-              <button type="button" class="secondary-button" :disabled="chatSending || chatUploading" @click="openEducationAgentSetup">{{ activeLearnerProfile ? '配置课程资料' : '建立学习画像' }} <ArrowUp :size="13" /></button>
+              <button type="button" class="secondary-button" :disabled="chatSending || chatUploading" @click="openEducationAgentSetup">{{ educationSetupActionLabel }} <ArrowUp :size="13" /></button>
             </section>
             <textarea
               ref="chatInputRef"
@@ -8178,7 +8188,7 @@ onBeforeUnmount(() => {
                   </div>
                   <div class="learning-assignment-actions">
                     <button v-if="assignment.learnerUserId === form.userId && (assignment.status === 'ASSIGNED' || assignment.status === 'AWAITING_EVIDENCE' || assignment.status === 'RETRY_REQUIRED' || (['ACCEPTED', 'OVERDUE'].includes(assignment.status) && learningAssignmentHasOpenIntervention(assignment)))" class="secondary-button" type="button" :title="learningAssignmentSourceBlockReason(assignment)" :disabled="learningAssignmentAcceptingId === assignment.id || Boolean(learningAssignmentSourceBlockReason(assignment))" @click="startLearningAssignment(assignment)">{{ learningAssignmentSourceBlockReason(assignment) ? '需课程资料' : learningAssignmentStartLabel(assignment, learningAssignmentAcceptingId === assignment.id) }}</button>
-                    <button v-if="assignment.learnerUserId === form.userId && learningAssignmentSourceBlockReason(assignment)" class="text-button" type="button" @click="openEducationAgentSetup">配置课程资料</button>
+                    <button v-if="assignment.learnerUserId === form.userId && learningAssignmentSourceBlockReason(assignment)" class="text-button" type="button" @click="openEducationAgentSetup">{{ educationSetupActionLabel }}</button>
                     <button v-if="learningAssignmentSubmissionOpen(assignment)" class="secondary-button" type="button" @click="startLearningAssignmentSubmission(assignment)">提交作业内容</button>
                     <button v-if="educationWorkspaceMode === 'teacher' && assignment.teacherUserId === form.userId && assignment.status === 'COMPLETED' && assignment.reviewStatus === 'PENDING'" class="secondary-button" type="button" :disabled="learningAssignmentReviewSavingId === assignment.id" @click="verifyLearningAssignment(assignment)">{{ learningAssignmentReviewSavingId === assignment.id ? '确认中…' : '确认作业结果' }}</button>
                     <button v-if="educationWorkspaceMode === 'teacher' && assignment.teacherUserId === form.userId && assignment.status === 'COMPLETED' && assignment.reviewStatus === 'PENDING'" class="text-button" type="button" :disabled="learningAssignmentReviewSavingId === assignment.id" @click="returnLearningAssignmentForRevision(assignment)">{{ learningAssignmentReviewSavingId === assignment.id ? '处理中…' : '退回返工' }}</button>
@@ -8217,7 +8227,7 @@ onBeforeUnmount(() => {
                     <div class="learning-task-main"><strong>{{ task.title }}</strong><small>{{ task.status === 'IN_PROGRESS' ? '进行中' : (task.status === 'AWAITING_EVIDENCE' ? '待补测评证据' : (task.status === 'FAILED' ? `执行失败${task.failureReason ? `：${task.failureReason}` : ''}` : (task.status === 'DEFERRED' ? `延期至 ${formatDate(task.scheduledAt)}` : `到期 ${formatDate(task.scheduledAt)}`))) }} · 第 {{ task.reviewSequence + 1 }} 次复习</small><p>{{ task.prompt }}</p></div>
                     <div class="learning-task-actions">
                     <button class="secondary-button" type="button" :title="learningTaskSourceBlockReason(task)" :disabled="learningTaskStartingId === task.id || learningTaskDeferringId === task.id || Boolean(learningTaskSourceBlockReason(task))" @click="startLearningTask(task)">{{ learningTaskSourceBlockReason(task) ? '需课程资料' : (learningTaskStartingId === task.id ? '启动中…' : (task.status === 'FAILED' ? '重试任务' : (task.status === 'AWAITING_EVIDENCE' ? '补充证据' : (task.status === 'IN_PROGRESS' ? '继续复习' : '开始复习')))) }}</button>
-                    <button v-if="learningTaskSourceBlockReason(task)" class="text-button" type="button" @click="openEducationAgentSetup">配置课程资料</button>
+                    <button v-if="learningTaskSourceBlockReason(task)" class="text-button" type="button" @click="openEducationAgentSetup">{{ educationSetupActionLabel }}</button>
                       <button v-if="task.status === 'OPEN'" class="text-button" type="button" :disabled="learningTaskDeferringId === task.id" @click="deferLearningTask(task)">{{ learningTaskDeferringId === task.id ? '延期中…' : '明天再复习' }}</button>
                     </div>
                   </article>
@@ -8239,7 +8249,7 @@ onBeforeUnmount(() => {
                 </button>
               </div>
               <div v-if="activeLearningGoal && learningRecommendation" class="learning-recommendation">
-                <div class="learning-recommendation-heading"><div><span>下一步学习动作</span><strong>{{ learningRecommendation.nextActionTitle }}</strong></div><div><button class="secondary-button" type="button" :title="learningGoalSourceBlockReason(learningRecommendation.learningGoalId)" :disabled="Boolean(learningGoalSourceBlockReason(learningRecommendation.learningGoalId))" @click="useLearningRecommendation">{{ learningGoalSourceBlockReason(learningRecommendation.learningGoalId) ? '需课程资料' : '带着建议开始' }}</button><button v-if="learningGoalSourceBlockReason(learningRecommendation.learningGoalId)" class="text-button" type="button" @click="openEducationAgentSetup">配置课程资料</button></div></div>
+                <div class="learning-recommendation-heading"><div><span>下一步学习动作</span><strong>{{ learningRecommendation.nextActionTitle }}</strong></div><div><button class="secondary-button" type="button" :title="learningGoalSourceBlockReason(learningRecommendation.learningGoalId)" :disabled="Boolean(learningGoalSourceBlockReason(learningRecommendation.learningGoalId))" @click="useLearningRecommendation">{{ learningGoalSourceBlockReason(learningRecommendation.learningGoalId) ? educationSetupActionLabel : '带着建议开始' }}</button><button v-if="learningGoalSourceBlockReason(learningRecommendation.learningGoalId)" class="text-button" type="button" @click="openEducationAgentSetup">{{ educationSetupActionLabel }}</button></div></div>
                 <p>{{ learningRecommendation.rationale }}</p>
                 <small>掌握度 {{ Math.round(learningRecommendation.currentMastery * 100) }}% / 目标 {{ Math.round(learningRecommendation.targetMastery * 100) }}% · 测评 {{ learningRecommendation.attemptCount }} 次 · 正确 {{ learningRecommendation.correctAttemptCount }} 次</small>
                 <small v-if="learningRecommendation.reviewPlanId">保持度复习 {{ learningRecommendation.reviewCount }} 次 · 成功 {{ learningRecommendation.successfulReviewCount }} 次 · 下次 {{ formatDate(learningRecommendation.nextReviewAt) }}</small>
