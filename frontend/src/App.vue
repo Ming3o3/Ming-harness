@@ -318,6 +318,7 @@ const currentRoles = computed(() => new Set(
 const isAdminRole = computed(() => currentRoles.value.has('ADMIN'))
 const isTeacherRole = computed(() => currentRoles.value.has('TEACHER'))
 const isStudentRole = computed(() => currentRoles.value.has('STUDENT'))
+const isTeacherOnlyRole = computed(() => isTeacherRole.value && !isAdminRole.value)
 const canViewRuntimeConsole = computed(() => isAdminRole.value)
 const canViewEducationConsole = computed(() => isAdminRole.value || isTeacherRole.value || isStudentRole.value)
 const roleWorkspaceTitle = computed(() => ({
@@ -349,7 +350,7 @@ const roleWorkspaceSteps = computed(() => ({
 }[currentPrimaryRole.value] || []))
 const roleQuickStartAction = computed(() => {
   if (currentPrimaryRole.value === 'TEACHER') {
-    return { label: '开始配置课程资料', detail: '先上传资料，再补充课程版本和知识点元数据。', section: 'education' }
+    return { label: teacherNextAction.value.label, detail: teacherNextAction.value.detail, section: 'education' }
   }
   if (currentPrimaryRole.value === 'STUDENT') {
     return { label: '开始我的学习', detail: '先建立学习档案，再接受教师布置的课程作业。', section: 'education' }
@@ -982,8 +983,15 @@ const educationAssignmentsForView = computed(() => educationWorkspaceMode.value 
   : learningAssignments.value.filter((assignment) => assignment.learnerUserId === form.userId))
 const ownedKnowledgeDocuments = computed(() => documents.value
   .filter((document) => document.ownerUserId === form.userId))
+const ownedEducationSources = computed(() => educationSources.value
+  .filter((source) => ownedKnowledgeDocuments.value.some(
+    (document) => document.id === source.documentId,
+  )))
 const teacherActiveLearnerCount = computed(() => teacherEducationCourses.value
   .reduce((total, course) => total + Number(course.activeEnrollmentCount || 0), 0))
+const teacherAssignmentCount = computed(() => learningAssignments.value
+  .filter((assignment) => assignment.teacherUserId === form.userId
+    || teacherEducationCourses.value.some((course) => course.id === assignment.courseId)).length)
 const teacherCoursePendingCount = computed(() => {
   const metrics = educationMetrics.value || {}
   return Number(metrics.assignmentReviewPending || 0)
@@ -992,6 +1000,47 @@ const teacherCoursePendingCount = computed(() => {
     + Number(metrics.taskAwaitingEvidence || 0)
     + learningEvaluationQueue.value.length
 })
+const teacherAgentReady = computed(() => ownedEducationSources.value.length > 0)
+const teacherNextAction = computed(() => {
+  if (!ownedKnowledgeDocuments.value.length) {
+    return { label: '上传课程资料', detail: '先导入 PDF/DOCX，建立课程知识库。', kind: 'upload' }
+  }
+  if (!ownedEducationSources.value.length) {
+    return { label: '维护课程元数据', detail: '为资料补充学科、版本、章节、知识点和难度。', kind: 'metadata' }
+  }
+  if (!teacherEducationCourses.value.length) {
+    return { label: '创建课程实例', detail: '把课程资料绑定到一门可运营的课程。', kind: 'course' }
+  }
+  if (!teacherActiveLearnerCount.value) {
+    return { label: '加入学生', detail: '先维护活跃名单，课程作业才有接收人。', kind: 'roster' }
+  }
+  if (!teacherAssignmentCount.value) {
+    return { label: '布置第一份作业', detail: '把课程约束和目标知识点下发给学生。', kind: 'assignment' }
+  }
+  if (teacherCoursePendingCount.value) {
+    return { label: '处理待办复核', detail: `当前有 ${teacherCoursePendingCount.value} 项证据、返工或复核待处理。`, kind: 'review' }
+  }
+  return { label: '查看课程进度', detail: '课程状态正常，可继续跟进学生掌握度。', kind: 'progress' }
+})
+function runTeacherNextAction() {
+  const action = teacherNextAction.value
+  if (action.kind === 'upload') {
+    openEducationDocumentUpload()
+    return
+  }
+  if (action.kind === 'metadata') {
+    openEducationAgentSetup()
+    return
+  }
+  navigateConsoleSection('education')
+  void nextTick(() => {
+    if (action.kind === 'roster') focusEducationCourseRoster()
+    else if (action.kind === 'assignment') focusEducationCourseAssignment()
+    else if (action.kind === 'review') focusCourseBlocker('review')
+    else if (action.kind === 'progress') document.querySelector('.education-course-progress')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    else document.querySelector('.education-course-workbench')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
+}
 const activeChatCourse = computed(() => educationCourses.value
   .find((course) => course.id === chatEducation.courseId) || null)
 const availableChatCourses = computed(() => {
@@ -1462,7 +1511,10 @@ const currentEducationRetrievalScope = computed(() => {
     filterSummary: filters.length ? filters.join(' · ') : '未附加知识点或难度过滤',
   }
 })
-const currentEducationSourceCount = computed(() => currentEducationRetrievalScope.value.sourceCount)
+const currentEducationSourceCount = computed(() => {
+  if (isTeacherRole.value && !activeLearnerProfile.value) return ownedEducationSources.value.length
+  return currentEducationRetrievalScope.value.sourceCount
+})
 // 不只告诉学习者“有几份资料”，还把本轮实际允许 Agent 检索的课程条目摆到
 // 决策面板中。这样课程边界是可见、可核对的，而不是隐藏在一次请求的参数里。
 const currentEducationSourcePreview = computed(() => {
@@ -1729,6 +1781,43 @@ const educationAgentTrace = computed(() => [
     detail: activeLearningGoal.value ? '结果会累计到学习目标并触发下一步动作' : '绑定学习目标后，Agent 会追踪进度和复习任务',
     state: activeLearningGoal.value ? 'ready' : 'pending',
     icon: ListChecks,
+  },
+])
+const teacherOperationsTrace = computed(() => [
+  {
+    id: 'source',
+    label: '课程资料',
+    value: ownedEducationSources.value.length ? `${ownedEducationSources.value.length} 个来源已配置` : '待上传与维护',
+    detail: ownedEducationSources.value.length ? '课程资料已经具备可检索的元数据边界。' : '上传文档并补充学科、版本、章节、知识点和难度。',
+    state: ownedEducationSources.value.length ? 'ready' : 'pending',
+  },
+  {
+    id: 'course',
+    label: '课程实例',
+    value: teacherEducationCourses.value.length ? `${teacherEducationCourses.value.length} 门课程` : '待创建课程',
+    detail: teacherEducationCourses.value.length ? '课程已进入运营工作台。' : '创建课程实例，绑定课程版本和教学范围。',
+    state: teacherEducationCourses.value.length ? 'ready' : 'pending',
+  },
+  {
+    id: 'roster',
+    label: '学生名单',
+    value: `${teacherActiveLearnerCount.value} 名活跃学生`,
+    detail: teacherActiveLearnerCount.value ? '名单可以接收课程作业。' : '加入学生后才能批量布置作业。',
+    state: teacherActiveLearnerCount.value ? 'ready' : 'pending',
+  },
+  {
+    id: 'assignment',
+    label: '课程作业',
+    value: teacherAssignmentCount.value ? `${teacherAssignmentCount.value} 份作业` : '待布置作业',
+    detail: teacherAssignmentCount.value ? '作业已下发，可继续查看完成和提交证据。' : '把目标知识点和作业说明下发给活跃名单。',
+    state: teacherAssignmentCount.value ? 'ready' : 'pending',
+  },
+  {
+    id: 'review',
+    label: '复核与反馈',
+    value: teacherCoursePendingCount.value ? `${teacherCoursePendingCount.value} 项待处理` : '暂无待办',
+    detail: teacherCoursePendingCount.value ? '依据提交物和测评证据确认、退回或反馈。' : '新的学生提交后会出现在这里。',
+    state: teacherCoursePendingCount.value ? 'attention' : 'ready',
   },
 ])
 const matchingEducationSourceCount = computed(() => {
@@ -7019,7 +7108,7 @@ onBeforeUnmount(() => {
               <ShieldCheck :size="15" /><span>系统治理与审计</span>
             </button>
           </nav>
-          <section class="learning-sidebar-contract" :class="{ ready: educationAgentReady }" aria-label="当前学习契约">
+          <section v-if="!isTeacherOnlyRole" class="learning-sidebar-contract" :class="{ ready: educationAgentReady }" aria-label="当前学习契约">
             <div class="learning-sidebar-contract-heading">
               <div><p class="eyebrow">CURRENT LEARNING CONTRACT</p><strong>当前学习契约</strong></div>
               <span><i></i>{{ educationAgentReady ? '已生效' : '待补齐' }}</span>
@@ -7949,7 +8038,7 @@ onBeforeUnmount(() => {
           </div>
           <button v-if="isAdminRole" class="secondary-button top-config-button" type="button" title="配置大语言模型" @click="showModelSettings = true"><Settings2 :size="15" />大语言模型</button>
           <button v-if="isAdminRole" class="secondary-button top-config-button" type="button" title="配置向量模型" @click="showEmbeddingSettings = true"><Settings2 :size="15" />向量模型</button>
-          <button v-if="!isAdminRole" class="secondary-button" type="button" title="打开学习对话" @click="chatMode = true"><MessageSquarePlus :size="15" />学习对话</button>
+          <button v-if="isStudentRole && !isAdminRole" class="secondary-button" type="button" title="打开学习对话" @click="chatMode = true"><MessageSquarePlus :size="15" />学习对话</button>
         </div>
       </div>
     </header>
@@ -8499,19 +8588,43 @@ onBeforeUnmount(() => {
               <div><p class="eyebrow">EDUCATION AGENT</p><h3>{{ educationWorkspaceMode === 'teacher' ? '课程运营与 Agent 状态' : '学习契约与 Agent 状态' }}</h3></div>
               <span class="context-mode-chip">{{ educationWorkspaceModeLabel }}</span>
             </div>
-            <p class="context-workbench-help">{{ educationWorkspaceModeDetail }} 课程元数据决定检索范围，学习者状态和形成性证据决定 Agent 的教学动作。</p>
+            <p class="context-workbench-help">{{ educationWorkspaceModeDetail }}<template v-if="!isTeacherOnlyRole">课程元数据决定检索范围，学习者状态和形成性证据决定 Agent 的教学动作。</template><template v-else>课程元数据决定 Agent 的知识边界，学生提交物和测评证据决定后续复核动作。</template></p>
             <p v-if="educationError" class="policy-error">{{ educationError }}</p>
             <section v-if="educationWorkspaceMode === 'teacher' || (activeEducationCourse && !currentEducationSourceCount)" class="education-knowledge-base-bridge" :class="{ ready: currentEducationSourceCount }" aria-label="课程知识库入口">
               <div class="education-knowledge-base-bridge-icon"><BookOpen :size="16" /></div>
               <div class="education-knowledge-base-bridge-copy">
                 <p class="eyebrow">COURSE KNOWLEDGE BASE</p>
-                <strong>{{ currentEducationSourceCount ? `${currentEducationSourceCount} 个来源已进入当前课程约束` : (educationWorkspaceMode === 'teacher' ? '先把课程资料接入知识库' : '当前课程还没有可检索的知识来源') }}</strong>
+                <strong>{{ currentEducationSourceCount ? (isTeacherOnlyRole ? `${currentEducationSourceCount} 个课程来源已配置` : `${currentEducationSourceCount} 个来源已进入当前课程约束`) : (educationWorkspaceMode === 'teacher' ? '先把课程资料接入知识库' : '当前课程还没有可检索的知识来源') }}</strong>
                 <span>{{ currentEducationSourceCount ? 'Agent 会只从匹配学科、年级、课程版本、知识点和难度的来源中检索。' : (educationWorkspaceMode === 'teacher' ? '上传 PDF/DOCX 后，继续补充章节、知识点、前置知识和难度元数据，课程才可以启动教学 Run。' : '请联系课程负责人补充课程资料；没有授权来源时，Agent 不会退化成通用问答。') }}</span>
               </div>
               <button v-if="educationWorkspaceMode === 'teacher' && !ownedKnowledgeDocuments.length" class="secondary-button" type="button" @click="openEducationDocumentUpload">上传课程资料 <ArrowUp :size="12" /></button>
               <button v-else-if="educationWorkspaceMode === 'teacher'" class="secondary-button" type="button" @click="openEducationAgentSetup">维护课程元数据 <ArrowUp :size="12" /></button>
             </section>
-            <section class="education-agent-state-card" :class="{ ready: educationAgentReady }" aria-label="教育 Agent 当前状态">
+            <section v-if="isTeacherOnlyRole" class="education-agent-state-card education-teacher-state-card" :class="{ ready: teacherAgentReady }" aria-label="教师课程运营状态">
+              <div class="education-agent-state-heading">
+                <div><p class="eyebrow">CURRENT TEACHING STATE</p><h4>课程运营状态与下一步</h4><span>教师只需要关注课程资料、学生名单、作业证据和复核结果；学生画像由学生本人维护。</span></div>
+                <span class="education-agent-state-pill"><i></i>{{ teacherAgentReady ? '课程资料已接入' : '等待课程配置' }}</span>
+              </div>
+              <div class="education-agent-state-grid">
+                <article class="education-agent-state-item">
+                  <small>01 · 课程资料</small><strong>{{ ownedEducationSources.length ? `${ownedEducationSources.length} 个来源已配置` : '尚未配置课程资料' }}</strong><p>{{ ownedEducationSources.length ? '资料已经具备课程边界，可继续绑定课程和学生。' : '先上传 PDF/DOCX，再维护课程元数据。' }}</p>
+                </article>
+                <article class="education-agent-state-item">
+                  <small>02 · 课程与学生</small><strong>{{ teacherEducationCourses.length }} 门课程 · {{ teacherActiveLearnerCount }} 名学生</strong><p>{{ teacherEducationCourses.length ? (teacherActiveLearnerCount ? '课程名单已建立，可继续布置课程作业。' : '课程已创建，但还没有活跃学生名单。') : '创建课程实例，把课程资料变成可运营的教学单元。' }}</p>
+                </article>
+                <article class="education-agent-state-item">
+                  <small>03 · 教师下一动作</small><strong>{{ teacherNextAction.label }}</strong><p>{{ teacherNextAction.detail }}</p>
+                </article>
+                <article class="education-agent-state-item">
+                  <small>04 · 待处理证据</small><strong>{{ teacherCoursePendingCount }} 项课程待办</strong><p>{{ teacherCoursePendingCount ? '请查看提交物、测评证据和反馈，再确认或退回作业。' : '当前没有待处理复核；可以继续布置或查看课程进度。' }}</p>
+                </article>
+              </div>
+              <footer class="education-agent-state-footer">
+                <span>{{ teacherNextAction.detail }}</span>
+                <button class="secondary-button" type="button" @click="runTeacherNextAction">{{ teacherNextAction.label }} <ArrowUp :size="12" /></button>
+              </footer>
+            </section>
+            <section v-else class="education-agent-state-card" :class="{ ready: educationAgentReady }" aria-label="教育 Agent 当前状态">
               <div class="education-agent-state-heading">
                 <div><p class="eyebrow">CURRENT AGENT STATE</p><h4>当前学习状态与下一步</h4><span>Agent 将课程边界、学习者证据和教学动作串成一条可追踪的学习回路。</span></div>
                 <span class="education-agent-state-pill"><i></i>{{ educationAgentReady ? '课程与学情已接入' : '等待配置' }}</span>
@@ -8536,7 +8649,7 @@ onBeforeUnmount(() => {
               </footer>
             </section>
             <ol class="education-agent-loop" aria-label="教育 Agent 学习闭环">
-              <li v-for="(trace, index) in educationAgentTrace" :key="trace.id" :class="`is-${trace.state}`">
+              <li v-for="(trace, index) in (isTeacherOnlyRole ? teacherOperationsTrace : educationAgentTrace)" :key="trace.id" :class="`is-${trace.state}`">
                 <span class="education-agent-loop-index">{{ String(index + 1).padStart(2, '0') }}</span>
                 <div><strong>{{ trace.label }}</strong><small>{{ trace.value }}</small></div>
                 <ArrowDown v-if="index < educationAgentTrace.length - 1" class="education-agent-loop-arrow" :size="13" />
@@ -8563,7 +8676,7 @@ onBeforeUnmount(() => {
               <div><span>保持度正确率</span><strong>{{ formatRate(educationMetrics.reviewAssessmentAccuracyRate) }}</strong><small>平均掌握度提升 {{ formatRate(educationMetrics.averageMasteryGain) }}</small></div>
               </div>
             </details>
-            <details class="education-profile-setup" :open="!activeLearnerProfile">
+            <details v-if="!isTeacherOnlyRole" class="education-profile-setup" :open="!activeLearnerProfile">
               <summary><span><strong>学习者画像与目标</strong><small>{{ activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel} · ${activeLearnerProfile.curriculumVersion}` : '建立 Agent 可持续读取的学习上下文' }}</small></span><em>{{ activeLearnerProfile ? '已绑定' : '待建立' }}</em></summary>
               <div class="education-profile-setup-content">
                 <form class="education-profile-form" @submit.prevent="saveLearnerProfile">
@@ -8588,7 +8701,7 @@ onBeforeUnmount(() => {
                 <div><h4>{{ educationWorkspaceMode === 'teacher' ? '课程运营工作台' : '我的课程与学习路径' }}</h4><span>{{ teacherEducationCourses.length }} 个我创建 · {{ enrolledEducationCourses.length }} 个已加入</span></div>
                 <span v-if="activeEducationCourse" class="context-mode-chip">{{ educationCourseStatusLabel(activeEducationCourse.status) }}</span>
               </div>
-              <p class="learning-task-help">课程约束决定学习范围；Agent 会结合每次作业、提交物和对话证据更新学习状态。{{ educationWorkspaceMode === 'teacher' ? '班级进度、名单和布置动作只在课程负责人入口中展开。' : '你只需要关注自己的课程行动、证据和结课结果。' }}</p>
+              <p class="learning-task-help">课程约束决定学习范围；Agent 会结合每次作业、提交物和对话证据更新学习状态。{{ educationWorkspaceMode === 'teacher' ? '班级进度、名单和布置动作只在课程负责人入口中展开；学生画像由学生本人维护。' : '你只需要关注自己的课程行动、证据和结课结果。' }}</p>
               <details v-if="isAdminRole || isTeacherRole" class="education-teacher-entry" :open="educationWorkspaceMode === 'teacher'">
                 <summary><span><strong>课程负责人入口</strong><small>创建课程、维护名单、批量布置作业</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '管理模式' : '需要教师 / 组织权限' }}</em></summary>
                 <p class="education-teacher-entry-help">这是课程管理操作，不会改变学习者的 Agent 状态；提交后仍由 Runtime 做最终权限校验。</p>
@@ -8825,7 +8938,7 @@ onBeforeUnmount(() => {
                 <button class="secondary-button" type="submit" :disabled="learningAssignmentSubmissionSavingId === learningAssignmentSubmissionForm.assignmentId">{{ learningAssignmentSubmissionSavingId ? '提交中…' : '保存提交物' }}</button>
               </form>
             </section>
-            <div class="learning-goal-workbench">
+            <div v-if="!isTeacherOnlyRole" class="learning-goal-workbench">
               <div class="learning-task-workbench">
                 <div class="subsection-title learning-task-heading"><div><h4>待处理学习任务</h4><span>{{ learningTasks.filter((task) => ['OPEN', 'IN_PROGRESS', 'AWAITING_EVIDENCE', 'DEFERRED', 'FAILED'].includes(task.status)).length }} 条</span></div><div class="learning-notification-heading-actions"><span>{{ learningNotificationUnreadCount }} 条未读</span><button v-if="learningNotificationUnreadCount" class="text-button" type="button" @click="markAllLearningNotificationsRead">全部已读</button></div></div>
                 <p class="learning-task-help">复习计划到期后会自动生成任务；Run 失败会进入可重试，Run 成功但没有测评证据会进入待补证据。</p>
