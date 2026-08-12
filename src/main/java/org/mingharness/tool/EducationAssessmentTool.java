@@ -2,6 +2,7 @@ package org.mingharness.tool;
 
 import org.mingharness.education.EducationAssessmentService;
 import org.mingharness.education.AssessmentAttempt;
+import org.mingharness.common.BusinessException;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
@@ -38,14 +39,16 @@ public class EducationAssessmentTool implements HarnessTool {
                 false,
                 Map.of(
                         "type", "object",
-                        "required", List.of("conceptKey", "correct", "evidenceText", "learnerEvidenceQuote"),
+                        // learnerEvidenceQuote 缺失也要作为可恢复结果交回模型，不能在
+                        // schema 层直接终止整个教育 Run。
+                        "required", List.of("conceptKey", "correct"),
                         "additionalProperties", false,
                         "properties", Map.of(
                                 "conceptKey", Map.of("type", "string", "minLength", 1, "maxLength", 255),
                                 "correct", Map.of("type", "boolean"),
                                 "observedMastery", Map.of("type", "number", "minimum", 0, "maximum", 1),
-                                "evidenceText", Map.of("type", "string", "minLength", 1, "maxLength", 4000),
-                                "learnerEvidenceQuote", Map.of("type", "string", "minLength", 1, "maxLength", 2000),
+                                "evidenceText", Map.of("type", "string", "maxLength", 4000),
+                                "learnerEvidenceQuote", Map.of("type", "string", "maxLength", 2000),
                                 "feedback", Map.of("type", "string", "maxLength", 1000)
                         )
                 ),
@@ -55,9 +58,14 @@ public class EducationAssessmentTool implements HarnessTool {
                 "DENY_EXTERNAL",
                 Map.of(
                         "type", "object",
-                        "required", List.of("ok", "conceptKey", "masteryScore"),
+                        // 形成性证据校验失败是可恢复的业务结果：先把错误交回模型，
+                        // 允许它修正原话引用，而不是让整个教育 Run 直接失败。
+                        "required", List.of("ok"),
                         "properties", Map.of(
                                 "ok", Map.of("type", "boolean"),
+                                "recoverable", Map.of("type", "boolean"),
+                                "code", Map.of("type", "string"),
+                                "message", Map.of("type", "string"),
                                 "attemptId", Map.of("type", "string"),
                                 "conceptKey", Map.of("type", "string"),
                                 "masteryBefore", Map.of("type", "number", "minimum", 0, "maximum", 1),
@@ -80,9 +88,10 @@ public class EducationAssessmentTool implements HarnessTool {
                 || context.educationLearnerProfileId().isBlank()) {
             throw new IllegalStateException("教育评价工具缺少冻结的学习者画像");
         }
+        String conceptKey = "";
         try {
             JsonNode request = objectMapper.reader().readTree(input);
-            String conceptKey = request == null || request.get("conceptKey") == null
+            conceptKey = request == null || request.get("conceptKey") == null
                     ? "" : request.get("conceptKey").asText("").trim();
             if (conceptKey.isBlank() || request.get("correct") == null || !request.get("correct").isBoolean()) {
                 throw new IllegalArgumentException("形成性评价必须包含 conceptKey 和 boolean correct");
@@ -90,12 +99,16 @@ public class EducationAssessmentTool implements HarnessTool {
             String evidenceText = request.get("evidenceText") == null
                     ? "" : request.get("evidenceText").asText("").trim();
             if (evidenceText.isBlank()) {
-                throw new IllegalArgumentException("形成性评价必须包含学生作答或推理依据 evidenceText");
+                return recoverableEvidenceResult(
+                        "ASSESSMENT_EVIDENCE_REQUIRED",
+                        "形成性评价必须包含学生作答或推理依据 evidenceText", conceptKey);
             }
             String learnerEvidenceQuote = request.get("learnerEvidenceQuote") == null
                     ? "" : request.get("learnerEvidenceQuote").asText("").trim();
             if (learnerEvidenceQuote.isBlank()) {
-                throw new IllegalArgumentException("形成性评价必须包含本轮学习者原话 learnerEvidenceQuote");
+                return recoverableEvidenceResult(
+                        "ASSESSMENT_LEARNER_EVIDENCE_QUOTE_REQUIRED",
+                        "模型评价必须逐字引用本轮学习者的作答或推理原话", conceptKey);
             }
             boolean correct = request.get("correct").asBoolean();
             double observedMastery = request.get("observedMastery") == null
@@ -114,8 +127,38 @@ public class EducationAssessmentTool implements HarnessTool {
             result.put("evidenceSource", attempt.getEvidenceSource());
             result.put("feedback", attempt.getFeedback());
             return objectMapper.writeValueAsString(result);
+        } catch (BusinessException exception) {
+            if (!isRecoverableEvidenceError(exception)) {
+                throw exception;
+            }
+            // 这是模型参数与本轮输入不一致，而不是基础设施故障或权限故障。
+            // 以结构化工具结果返回，下一轮模型可以修正 learnerEvidenceQuote；
+            // 若仍无法补齐，Run 也能正常返回教学回答，后续由人工复核补证据。
+            return recoverableEvidenceResult(exception.getCode(), exception.getMessage(), conceptKey);
         } catch (JacksonException exception) {
             throw new IllegalArgumentException("形成性评价输入不是有效 JSON", exception);
+        }
+    }
+
+    private boolean isRecoverableEvidenceError(BusinessException exception) {
+        return Set.of(
+                "ASSESSMENT_LEARNER_EVIDENCE_QUOTE_MISMATCH",
+                "ASSESSMENT_LEARNER_EVIDENCE_QUOTE_REQUIRED",
+                "ASSESSMENT_EVIDENCE_REQUIRED"
+        ).contains(exception.getCode());
+    }
+
+    private String recoverableEvidenceResult(String code, String message, String conceptKey) {
+        try {
+            Map<String, Object> recoverable = new LinkedHashMap<>();
+            recoverable.put("ok", false);
+            recoverable.put("recoverable", true);
+            recoverable.put("code", code);
+            recoverable.put("message", message);
+            recoverable.put("conceptKey", conceptKey);
+            return objectMapper.writeValueAsString(recoverable);
+        } catch (JacksonException exception) {
+            throw new IllegalStateException("无法序列化可恢复的形成性评价结果", exception);
         }
     }
 }

@@ -92,6 +92,7 @@ public class RunService {
                     + "先结合目标知识点、前置知识、掌握度和指定教学策略决定行动：低掌握度优先诊断和分步提示，正在形成理解时用追问与小练习，达到目标后用迁移题或保持度复习确认。"
                     + "每轮回答都应给出学习者下一步可执行的动作；除非已经获得学习者本轮可验证的作答、推理过程或明确自述，否则不要猜测掌握度，也不要调用 education.record_assessment。"
                     + "确有证据时，调用 education.record_assessment 必须在 evidenceText 中简明记录实际观察到的学生作答或推理依据，并在 learnerEvidenceQuote 中逐字摘录本轮用户输入里的作答或推理原话；不能把 Agent 自己生成的题目、讲解或结论当成 learnerEvidenceQuote。"
+                    + "如果 education.record_assessment 返回 ok=false 且 recoverable=true，说明只是证据引用校验未通过：不要再次猜测或改写学习者原话，必须从本轮用户输入中复制一段连续原文作为 learnerEvidenceQuote；如果找不到可引用的作答原文，就停止调用测评工具，保留教学回答并明确说明本轮暂未更新掌握度。"
                     + "不要泄露内部 citation、chunk、数据库标识、工作区路径、凭证或密钥；引用课程资料时仅使用来源标题。";
     private static final String AGENT_HISTORY_COMPRESSION_NOTICE =
             "\n\n（较早的模型和工具上下文已压缩，仅保留最近可用结果。）";
