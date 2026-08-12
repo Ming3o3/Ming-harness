@@ -492,6 +492,10 @@ async function runLearningOverviewNextAction() {
     focusLearningTask(activeLearningTask.value)
     return
   }
+  if (action.kind === 'assignment') {
+    await takeLearnerCourseNextAction()
+    return
+  }
   if (action.kind === 'recommendation') {
     await useLearningRecommendation()
     return
@@ -899,7 +903,7 @@ const activeEducationCourseLearnerProgress = computed(() => {
   return {
     total: assignments.length,
     completed: assignments.filter((assignment) => assignment.status === 'COMPLETED').length,
-    attention: assignments.filter((assignment) => ['AWAITING_EVIDENCE', 'RETRY_REQUIRED', 'OVERDUE'].includes(assignment.status)
+    attention: assignments.filter((assignment) => ['ASSIGNED', 'AWAITING_EVIDENCE', 'RETRY_REQUIRED', 'OVERDUE'].includes(assignment.status)
       || ['PENDING', 'REVISION_REQUIRED'].includes(assignment.reviewStatus)
       || learningAssignmentHasOpenIntervention(assignment)).length,
     averageMasteryProgress: progressValues.length
@@ -941,6 +945,8 @@ function learningAssignmentDetailsLoaded(assignmentId) {
 }
 const learningAssignmentIssueLabel = computed(() => ({
   completion: '结课待处理',
+  assigned: '待接受',
+  accepted: '学习中',
   evidence: '待补证据',
   retry: '待重试',
   review: '待教师确认',
@@ -972,10 +978,7 @@ const activeChatLearningAssignment = computed(() => {
 })
 const chatCourseAssignment = computed(() => activeChatLearningAssignment.value || nextLearnerCourseAssignment.value)
 const chatCourseAssignmentOpenFeedback = computed(() => {
-  const assignment = chatCourseAssignment.value
-  if (!assignment) return null
-  return (learningAssignmentFeedbackMap.value[assignment.id] || [])
-    .find((feedback) => feedback.status === 'OPEN') || null
+  return learningAssignmentOpenFeedback(chatCourseAssignment.value)
 })
 const chatCourseAssignmentLatestSubmission = computed(() => {
   const assignment = chatCourseAssignment.value
@@ -1039,6 +1042,10 @@ const learningOverviewNextAction = computed(() => {
   }
   if (educationSendBlockReason.value) {
     return { kind: 'setup', label: educationSetupActionLabel.value, detail: educationSendBlockReason.value }
+  }
+  const assignmentAction = learningAssignmentNextAction(nextLearnerCourseAssignment.value)
+  if (assignmentAction.actionable && nextLearnerCourseAssignment.value) {
+    return { kind: 'assignment', label: assignmentAction.label, detail: assignmentAction.detail }
   }
   if (!activeLearningGoal.value) {
     return { kind: 'expand', label: '设定学习目标', detail: '设定知识点和达标标准，后续作答才能形成学习证据。' }
@@ -4267,12 +4274,14 @@ function learningAssignmentMatchesIssue(assignment, issue) {
     return assignment.status !== 'CANCELLED'
       && (assignment.status !== 'COMPLETED' || assignment.reviewStatus !== 'VERIFIED')
   }
+  if (issue === 'assigned') return assignment.status === 'ASSIGNED'
+  if (issue === 'accepted') return assignment.status === 'ACCEPTED'
   if (issue === 'evidence') return assignment.status === 'AWAITING_EVIDENCE'
   if (issue === 'retry') return assignment.status === 'RETRY_REQUIRED'
   if (issue === 'review') return assignment.status === 'COMPLETED' && assignment.reviewStatus === 'PENDING'
   if (issue === 'revision') return assignment.reviewStatus === 'REVISION_REQUIRED'
   if (issue === 'submission') return !learningAssignmentSubmissionMap.value[assignment.id]?.length
-  if (issue === 'intervention') return learningAssignmentHasOpenIntervention(assignment)
+  if (issue === 'intervention') return learningAssignmentHasOpenInterventionForView(assignment)
   if (issue === 'overdue') return assignment.status === 'OVERDUE'
   return true
 }
@@ -4287,9 +4296,10 @@ function courseLearnerAttentionCount(learner) {
 
 function courseLearnerNextAction(learner) {
   if (!learner) return { label: '查看作业', issue: '' }
+  if (Number(learner.assigned || 0)) return { label: '看待接受', issue: 'assigned' }
   if (Number(learner.awaitingEvidence || 0)) return { label: '补证据', issue: 'evidence' }
-  if (Number(learner.retryRequired || 0)) return { label: '看重试', issue: 'retry' }
   if (Number(learner.revisionRequired || 0)) return { label: '看返工', issue: 'revision' }
+  if (Number(learner.retryRequired || 0)) return { label: '看重试', issue: 'retry' }
   if (Number(learner.openInterventionCount || 0)) return { label: '看干预', issue: 'intervention' }
   if (Number(learner.reviewPending || 0)) return { label: '去确认', issue: 'review' }
   if (Number(learner.overdue || 0)) return { label: '看逾期', issue: 'overdue' }
@@ -4309,7 +4319,7 @@ function focusCourseLearnerAction(learner) {
   const action = courseLearnerNextAction(learner)
   learningAssignmentCourseFilter.value = activeEducationCourseId.value
   learningAssignmentLearnerFilter.value = learner.learnerUserId
-  learningAssignmentIssueFilter.value = ['evidence', 'retry', 'revision', 'review', 'intervention', 'overdue'].includes(action.issue)
+  learningAssignmentIssueFilter.value = ['assigned', 'accepted', 'evidence', 'retry', 'revision', 'review', 'intervention', 'overdue'].includes(action.issue)
     ? action.issue : ''
   nextTick(() => document.getElementById('learning-assignment-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
 }
@@ -4610,7 +4620,7 @@ function learningAssignmentHasOpenIntervention(assignment) {
 function learningAssignmentHasOpenInterventionForView(assignment) {
   if (!assignment) return false
   return (learningAssignmentFeedbackMap.value[assignment.id] || [])
-    .some((feedback) => feedback.status === 'OPEN'
+    .some((feedback) => ['OPEN', 'ACKNOWLEDGED'].includes(feedback.status)
       && ['REQUEST_EVIDENCE', 'RECOMMEND_RETRY'].includes(feedback.action))
 }
 
