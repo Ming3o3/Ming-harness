@@ -4377,6 +4377,12 @@ function learningAssignmentFeedbackActionLabel(action) {
   }[action] || action || '反馈'
 }
 
+function learningAssignmentFeedbackContinueLabel(feedback) {
+  return ['REQUEST_EVIDENCE', 'RECOMMEND_RETRY'].includes(feedback?.action)
+    ? '确认并开始下一步'
+    : '确认反馈'
+}
+
 function assessmentRetrievalEvidenceLabel(attempt) {
   return (attempt?.retrievalEvidence || [])
     .map((evidence) => evidence.title || evidence.citation || evidence.documentId)
@@ -4577,6 +4583,12 @@ async function acknowledgeLearningAssignmentFeedback(assignment, feedback) {
         .map((item) => item.id === updated.id ? updated : item),
     }
     await refreshLearningAssignmentProgress(assignment.id)
+    if (['REQUEST_EVIDENCE', 'RECOMMEND_RETRY'].includes(feedback.action)) {
+      // 可执行反馈的确认不是终点：直接启动同一份作业约束下的下一轮 Run，
+      // 让“教师反馈 → 学习者行动 → 新证据”在一次点击内连起来。
+      await startLearningAssignment(assignment)
+      return
+    }
     noticeMessage.value = '已确认教师反馈。'
   } catch (error) {
     errorMessage.value = errorText(error)
@@ -4891,8 +4903,8 @@ async function createLearningAssignment() {
 }
 
 async function startLearningAssignment(assignment) {
-  if (!assignment?.id || learningAssignmentAcceptingId.value) return
-  if (notifyEducationActionBlocked(learningAssignmentSourceBlockReason(assignment))) return
+  if (!assignment?.id || learningAssignmentAcceptingId.value) return false
+  if (notifyEducationActionBlocked(learningAssignmentSourceBlockReason(assignment))) return false
   learningAssignmentAcceptingId.value = assignment.id
   clearMessages()
   try {
@@ -4913,8 +4925,10 @@ async function startLearningAssignment(assignment) {
     await loadEducationData()
     void loadConversations(started.conversation.conversation.id)
     noticeMessage.value = `已开始课程作业：${started.assignment.title}`
+    return true
   } catch (error) {
     errorMessage.value = errorText(error)
+    return false
   } finally {
     learningAssignmentAcceptingId.value = ''
   }
@@ -6780,7 +6794,7 @@ onBeforeUnmount(() => {
               <span><BookOpen :size="14" /></span>
               <div><small>课程作业</small><strong>{{ nextLearnerCourseAssignment.title }}</strong><p>{{ learningAssignmentStatusLabel(nextLearnerCourseAssignment.status) }} · {{ nextLearnerCourseAssignment.conceptKey }}<span v-if="nextLearnerCourseAssignment.dueAt"> · 截止 {{ formatDate(nextLearnerCourseAssignment.dueAt) }}</span></p><p v-if="nextLearnerCourseAssignment.teacherReviewNote" class="learning-agent-assignment-review-note"><b>{{ learningAssignmentReviewNoteLabel(nextLearnerCourseAssignment) }}：</b>{{ nextLearnerCourseAssignment.teacherReviewNote }}</p></div>
               <button v-if="['ASSIGNED', 'RETRY_REQUIRED'].includes(nextLearnerCourseAssignment.status)" class="secondary-button" type="button" :title="learningAssignmentSourceBlockReason(nextLearnerCourseAssignment)" :disabled="learningAssignmentAcceptingId === nextLearnerCourseAssignment.id || chatSending || chatUploading || Boolean(learningAssignmentSourceBlockReason(nextLearnerCourseAssignment))" @click="startLearningAssignment(nextLearnerCourseAssignment)">{{ learningAssignmentSourceBlockReason(nextLearnerCourseAssignment) ? '需课程资料' : learningAssignmentStartLabel(nextLearnerCourseAssignment, learningAssignmentAcceptingId === nextLearnerCourseAssignment.id) }}</button>
-              <button v-else-if="nextLearnerCourseAssignmentOpenFeedback" class="secondary-button" type="button" :disabled="learningAssignmentFeedbackAcknowledgingId === nextLearnerCourseAssignmentOpenFeedback.id" @click="acknowledgeLearningAssignmentFeedback(nextLearnerCourseAssignment, nextLearnerCourseAssignmentOpenFeedback)">{{ learningAssignmentFeedbackAcknowledgingId === nextLearnerCourseAssignmentOpenFeedback.id ? '确认中…' : '确认教师反馈' }}</button>
+              <button v-else-if="nextLearnerCourseAssignmentOpenFeedback" class="secondary-button" type="button" :disabled="learningAssignmentFeedbackAcknowledgingId === nextLearnerCourseAssignmentOpenFeedback.id || learningAssignmentAcceptingId === nextLearnerCourseAssignment.id" @click="acknowledgeLearningAssignmentFeedback(nextLearnerCourseAssignment, nextLearnerCourseAssignmentOpenFeedback)">{{ learningAssignmentFeedbackAcknowledgingId === nextLearnerCourseAssignmentOpenFeedback.id || learningAssignmentAcceptingId === nextLearnerCourseAssignment.id ? '处理中…' : learningAssignmentFeedbackContinueLabel(nextLearnerCourseAssignmentOpenFeedback) }}</button>
               <button v-else-if="learningAssignmentSubmissionOpen(nextLearnerCourseAssignment)" class="secondary-button" type="button" @click="openChatLearningAssignmentSubmission(nextLearnerCourseAssignment)">提交作业内容</button>
               <button v-else class="text-button" type="button" @click="focusLearnerCourseAssignment(nextLearnerCourseAssignment)">{{ nextLearnerCourseAssignment.status === 'COMPLETED' && nextLearnerCourseAssignment.reviewStatus === 'PENDING' ? '查看教师确认' : '查看完整记录' }}</button>
             </div>
@@ -6824,7 +6838,7 @@ onBeforeUnmount(() => {
             <div v-if="chatCourseAssignmentOpenFeedback" class="chat-course-assignment-feedback">
               <span class="chat-course-assignment-feedback-icon"><CircleAlert :size="15" /></span>
               <div><strong>{{ learningAssignmentFeedbackActionLabel(chatCourseAssignmentOpenFeedback.action) }}</strong><p>{{ chatCourseAssignmentOpenFeedback.message }}</p><small v-if="chatCourseAssignmentOpenFeedback.suggestedDueAt">建议截止：{{ formatDate(chatCourseAssignmentOpenFeedback.suggestedDueAt) }}</small></div>
-              <button class="secondary-button" type="button" :disabled="learningAssignmentFeedbackAcknowledgingId === chatCourseAssignmentOpenFeedback.id" @click="acknowledgeLearningAssignmentFeedback(chatCourseAssignment, chatCourseAssignmentOpenFeedback)">{{ learningAssignmentFeedbackAcknowledgingId === chatCourseAssignmentOpenFeedback.id ? '确认中…' : '确认并继续' }}</button>
+              <button class="secondary-button" type="button" :disabled="learningAssignmentFeedbackAcknowledgingId === chatCourseAssignmentOpenFeedback.id || learningAssignmentAcceptingId === chatCourseAssignment.id" @click="acknowledgeLearningAssignmentFeedback(chatCourseAssignment, chatCourseAssignmentOpenFeedback)">{{ learningAssignmentFeedbackAcknowledgingId === chatCourseAssignmentOpenFeedback.id || learningAssignmentAcceptingId === chatCourseAssignment.id ? '处理中…' : learningAssignmentFeedbackContinueLabel(chatCourseAssignmentOpenFeedback) }}</button>
             </div>
             <div class="chat-course-assignment-actions">
               <button v-if="['ASSIGNED', 'RETRY_REQUIRED', 'AWAITING_EVIDENCE'].includes(chatCourseAssignment.status)" class="primary-button" type="button" :title="learningAssignmentSourceBlockReason(chatCourseAssignment)" :disabled="learningAssignmentAcceptingId === chatCourseAssignment.id || chatSending || chatUploading || Boolean(learningAssignmentSourceBlockReason(chatCourseAssignment))" @click="startLearningAssignment(chatCourseAssignment)">{{ learningAssignmentSourceBlockReason(chatCourseAssignment) ? '需课程资料' : learningAssignmentStartLabel(chatCourseAssignment, learningAssignmentAcceptingId === chatCourseAssignment.id) }}</button>
