@@ -4281,8 +4281,14 @@ function learningAssignmentMatchesIssue(assignment, issue) {
   if (issue === 'retry') return assignment.status === 'RETRY_REQUIRED'
   if (issue === 'review') return assignment.status === 'COMPLETED' && assignment.reviewStatus === 'PENDING'
   if (issue === 'revision') return assignment.reviewStatus === 'REVISION_REQUIRED'
-  if (issue === 'submission') return !learningAssignmentSubmissionMap.value[assignment.id]?.length
-  if (issue === 'submitted') return Boolean(learningAssignmentSubmissionMap.value[assignment.id]?.length)
+  if (issue === 'submission') {
+    return assignment.status === 'COMPLETED'
+      && !learningAssignmentSubmissionMap.value[assignment.id]?.length
+  }
+  if (issue === 'submitted') {
+    return assignment.status === 'COMPLETED'
+      && Boolean(learningAssignmentSubmissionMap.value[assignment.id]?.length)
+  }
   if (issue === 'intervention') return learningAssignmentHasOpenInterventionForView(assignment)
   if (issue === 'overdue') return assignment.status === 'OVERDUE'
   return true
