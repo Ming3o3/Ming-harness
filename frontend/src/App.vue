@@ -1561,6 +1561,24 @@ const runtimeAlerts = computed(() => {
   ].filter(Boolean)
 })
 const desktopWorkspaceAvailable = computed(() => api.isDesktop())
+const learningRuntimeState = computed(() => {
+  if (health.value?.error) {
+    return { state: 'down', label: 'Runtime 不可用', detail: health.value.error }
+  }
+  if (!health.value) {
+    return { state: 'checking', label: '正在检查 Runtime', detail: '等待本地教育 Runtime 返回健康状态。' }
+  }
+  if (educationRuntimeDiagnostic.value) {
+    return { state: 'warning', label: '教育接口未就绪', detail: educationRuntimeDiagnostic.value }
+  }
+  return {
+    state: 'ready',
+    label: desktopWorkspaceAvailable.value ? '桌面 Runtime 在线' : '浏览器 Runtime 在线',
+    detail: desktopWorkspaceAvailable.value
+      ? '本地课程资料和工作区能力已连接到当前桌面 Runtime。'
+      : '当前页面通过浏览器代理连接 Runtime。',
+  }
+})
 const activeConversationWorkspaceId = computed(() => activeConversation.value?.conversation?.workspaceId || '')
 const activeRegisteredWorkspace = computed(() => localWorkspaces.value
   .find((item) => item.id === activeConversationWorkspaceId.value) || null)
@@ -6415,6 +6433,15 @@ onBeforeUnmount(() => {
                 <div><small>课程资料</small><strong>{{ currentEducationSourceCount }} <em>份</em></strong></div>
                 <div><small>学习目标</small><strong>{{ activeLearningGoal ? '已绑定' : '待设定' }}</strong></div>
               </div>
+              <button
+                class="learning-sidebar-runtime-state"
+                :class="`is-${learningRuntimeState.state}`"
+                type="button"
+                :title="learningRuntimeState.detail"
+                @click="chatMode = false; navigateConsoleSection('runtime')"
+              >
+                <i></i><span>{{ learningRuntimeState.label }}</span><small>{{ learningRuntimeState.detail }}</small>
+              </button>
               <button type="button" @click="educationAgentReady ? (showChatAgentSettings = true) : openEducationAgentSetup()">{{ educationAgentReady ? '调整本轮约束' : '配置课程资料' }} <ArrowUp :size="12" /></button>
             </template>
             <template v-else>
