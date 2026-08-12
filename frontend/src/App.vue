@@ -7124,6 +7124,7 @@ onBeforeUnmount(() => {
       <p v-if="localDemoLoginError" class="local-demo-login-error">{{ localDemoLoginError }}</p>
     </div>
   </section>
+  <template v-else>
   <template v-if="chatMode">
     <div class="chat-app">
       <header class="chat-topbar">
@@ -9375,4 +9376,5 @@ onBeforeUnmount(() => {
       <footer class="command-palette-footer"><span><kbd>↑</kbd><kbd>↓</kbd> 选择</span><span><kbd>Enter</kbd> 执行</span><span><kbd>Esc</kbd> 关闭</span></footer>
     </section>
   </div>
+  </template>
 </template>
