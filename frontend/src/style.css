@@ -2170,6 +2170,7 @@ button svg {
 .learning-sidebar-learning-state-heading > strong.is-observed { color: var(--orange); }
 .learning-sidebar-learning-state-heading > strong.is-unverified,
 .learning-sidebar-learning-state-heading > strong.is-pending { color: var(--muted); }
+.learning-sidebar-learning-state-heading > strong.is-unverified { color: var(--orange); }
 .learning-sidebar-mastery { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; position: relative; }
 .learning-sidebar-mastery > div { display: grid; gap: 2px; }
 .learning-sidebar-mastery b { color: var(--heading); font-size: 12px; font-weight: 600; }

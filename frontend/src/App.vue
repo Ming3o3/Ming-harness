@@ -1245,7 +1245,9 @@ const learnerStateDiagnosis = computed(() => {
     const gap = Math.max(0, targetMastery - currentMastery)
     return {
       state: evidenceCount ? (gap > 0.01 ? 'observed' : 'ready') : 'unverified',
-      title: gap > 0.01 ? `距离目标还差 ${formatRate(gap)}` : '当前证据已达到目标',
+      title: !evidenceCount
+        ? `待建立基线 · 初始差距 ${formatRate(gap)}`
+        : (gap > 0.01 ? `距离目标还差 ${formatRate(gap)}` : '当前证据已达到目标'),
       detail: evidenceCount
         ? `围绕「${activeLearningGoal.value.conceptKey}」已有 ${evidenceCount} 次形成性证据；Agent 会按此状态调整难度与动作。`
         : '尚无形成性证据；当前数值只作为初始状态，下一轮需要用作答或评分验证。',
