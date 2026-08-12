@@ -825,7 +825,21 @@ h3 { margin: 0; font-size: 13px; }
 .conversation-search button { width: 18px; height: 18px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); padding: 0; font-size: 14px; line-height: 1; }
 .conversation-search button:hover { background: rgba(141,124,255,.14); color: var(--accent-light); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
-.conversation-list { display: grid; min-height: 0; flex: 1 1 auto; gap: 4px; overflow: auto; overscroll-behavior: contain; padding-right: 2px; scrollbar-gutter: stable; }
+.conversation-list {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  align-content: start;
+  grid-auto-rows: max-content;
+  gap: 4px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  /* Let the scrollbar live in the sidebar's outer gutter while the task
+   * cards keep the same content width as the learning-contract card. */
+  margin-right: -12px;
+  padding-right: 2px;
+  scrollbar-gutter: stable;
+}
 .conversation-row { display: grid; position: relative; grid-template-columns: 24px minmax(0, 1fr) 7px; gap: 8px; width: 100%; border: 1px solid transparent; border-radius: 8px; background: transparent; color: inherit; padding: 11px 9px; text-align: left; transition: .2s ease; }
 .conversation-row:hover { border-color: var(--line); background: var(--hover-bg); }
 .conversation-row.active { border-color: rgba(141,124,255,.34); background: var(--selected-bg); }
@@ -1750,7 +1764,7 @@ h3 { margin: 0; font-size: 13px; }
   .workspace-explorer-layout.has-preview { grid-template-columns: minmax(145px, 34%) minmax(0, 1fr); gap: 10px; }
   .workspace-file-inspector { padding-left: 10px; }
   .conversation-sidebar { min-height: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 13px 12px; }
-  .conversation-list { display: flex; min-height: auto; flex: 0 1 auto; overflow-x: auto; padding-bottom: 2px; }
+  .conversation-list { display: flex; min-height: auto; flex: 0 1 auto; margin-right: 0; overflow-x: auto; padding-bottom: 2px; }
   .conversation-row { min-width: 215px; }
   .conversation-sidebar-foot { display: none; }
   .chat-turn-navigation { display: none; }
@@ -2024,6 +2038,30 @@ button svg {
 
 .conversation-sidebar {
   padding: 20px 12px 15px;
+}
+
+/* The contract card, trajectory heading, search control and learning-task
+ * cards share the same sidebar content rail. Keep their outer edges aligned;
+ * inner padding remains local to each component. */
+.conversation-sidebar > .learning-sidebar-contract,
+.conversation-sidebar > .chat-teaching-brief {
+  margin-right: 0;
+  margin-left: 0;
+}
+
+.conversation-sidebar > .conversation-sidebar-heading {
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.conversation-sidebar > .conversation-search {
+  margin-right: 0;
+  margin-left: 0;
+}
+
+.conversation-sidebar > .chat-turn-navigation {
+  margin-right: 0;
+  margin-left: 0;
 }
 
 .chat-primary-nav {
@@ -2788,7 +2826,7 @@ button svg {
 .education-agent-context-strip {
   display: grid;
   gap: 10px;
-  margin: 0 32px 4px;
+  margin: 0 0 4px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: linear-gradient(135deg, var(--panel-soft), var(--panel));

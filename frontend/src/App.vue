@@ -503,6 +503,20 @@ function scrollToConsoleSection(section, behavior = 'smooth') {
   })
 }
 
+// 教育工作台的内容位于独立的 .main-content 滚动容器内。直接调用
+// Element.scrollIntoView() 会把外层窗口也纳入滚动链，在 Electron 的原生
+// 标题栏下方造成页面顶部被遮住的偏移；这里只调整工作台自己的滚动位置。
+function scrollConsoleTargetIntoView(target, behavior = 'smooth') {
+  if (typeof document === 'undefined' || !(target instanceof HTMLElement)) return
+  const container = document.querySelector('.console-layout .main-content')
+  if (!(container instanceof HTMLElement)) return
+  const containerRect = container.getBoundingClientRect()
+  const targetRect = target.getBoundingClientRect()
+  const centeredOffset = (container.clientHeight - targetRect.height) / 2
+  const top = container.scrollTop + targetRect.top - containerRect.top - Math.max(24, centeredOffset)
+  container.scrollTo({ top: Math.max(0, top), behavior })
+}
+
 function navigateConsoleSection(section) {
   if (section === 'education') showGovernance.value = true
   setActiveConsoleSection(section)
@@ -526,9 +540,7 @@ function openEducationDocumentUpload() {
     window.history.pushState({ consoleSection: 'runtime' }, '', '#runtime')
   }
   scrollToConsoleSection('runtime', 'auto')
-  void nextTick(() => {
-    document.getElementById('education-document-upload')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  })
+  void nextTick(() => scrollConsoleTargetIntoView(document.getElementById('education-document-upload')))
 }
 
 /**
@@ -548,7 +560,7 @@ function openEducationAgentSetup() {
       : '.education-profile-setup'
     const target = document.querySelector(selector)
     if (target instanceof HTMLDetailsElement) target.open = true
-    target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    scrollConsoleTargetIntoView(target)
   })
 }
 
@@ -6388,7 +6400,7 @@ onBeforeUnmount(() => {
           </div>
 
           <section class="chat-learning-overview" :class="{ 'is-collapsed': learningOverviewCollapsed && activeLearnerProfile }" aria-label="本轮学习概览">
-          <section v-if="activeLearnerProfile" class="education-agent-context-strip" aria-label="当前教育 Agent 上下文">
+          <section v-if="activeLearnerProfile" v-show="!learningOverviewCollapsed" class="education-agent-context-strip" aria-label="当前教育 Agent 上下文">
             <div class="education-agent-context-heading">
               <div>
                 <p class="eyebrow">EDUCATION AGENT CONTEXT</p>
