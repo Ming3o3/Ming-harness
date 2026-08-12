@@ -100,7 +100,13 @@ public class EducationCourseProgressService {
                             || feedback.getAction() == LearningAssignmentFeedbackAction.RECOMMEND_RETRY)
                     .count();
             totals.openInterventions += openInterventions;
-            accumulator.accept(assignment, progress, openInterventions);
+            // 提交物只在作业已达到完成条件后成为教师的当前阻塞；
+            // ASSIGNED/ACCEPTED 作业尚未产出作答，不能提前显示“补提交物”。
+            boolean submissionMissing = submissionRepository != null
+                    && assignment.getStatus() == LearningAssignmentStatus.COMPLETED
+                    && !submissionRepository.existsByTenantIdAndLearningAssignmentId(
+                    tenantId, assignment.getId());
+            accumulator.accept(assignment, progress, openInterventions, submissionMissing);
         }
 
         long effectiveAssignmentTotal = effectiveAssignments.size();
@@ -109,7 +115,10 @@ public class EducationCourseProgressService {
                 .filter(item -> item.getStatus() != LearningAssignmentStatus.COMPLETED
                         || item.getReviewStatus() != LearningAssignmentReviewStatus.VERIFIED)
                 .count();
+        // 未完成作业还没有合法提交窗口；它们由 completionBlockers 负责提示。
+        // 只有已完成作业缺少提交物时，教师才需要进入“补齐提交物”入口。
         long submissionBlockers = submissionRepository == null ? 0 : effectiveAssignments.stream()
+                .filter(item -> item.getStatus() == LearningAssignmentStatus.COMPLETED)
                 .filter(item -> !submissionRepository.existsByTenantIdAndLearningAssignmentId(
                         tenantId, item.getId()))
                 .count();
@@ -189,6 +198,8 @@ public class EducationCourseProgressService {
         private long reviewVerified;
         private long revisionRequired;
         private long openInterventionCount;
+        private long submissionMissing;
+        private long attentionCount;
         private double masteryProgress;
         private double masteryGain;
         private Instant lastActivityAt;
@@ -198,7 +209,7 @@ public class EducationCourseProgressService {
         }
 
         void accept(LearningAssignment assignment, LearningAssignmentProgressView progress,
-                    long openInterventions) {
+                    long openInterventions, boolean submissionMissing) {
             assignmentTotal++;
             switch (assignment.getStatus()) {
                 case ASSIGNED -> assigned++;
@@ -216,6 +227,10 @@ public class EducationCourseProgressService {
                 case NOT_REQUIRED -> { }
             }
             openInterventionCount += openInterventions;
+            if (submissionMissing) this.submissionMissing++;
+            if (isAttentionAssignment(assignment, openInterventions, submissionMissing)) {
+                attentionCount++;
+            }
             masteryProgress += progress.masteryProgress();
             masteryGain += progress.masteryGain();
             lastActivityAt = latest(lastActivityAt, assignment.getUpdatedAt(), progress.lastAssessmentAt(),
@@ -225,7 +240,7 @@ public class EducationCourseProgressService {
         EducationCourseLearnerProgressView view() {
             return new EducationCourseLearnerProgressView(learnerUserId, assignmentTotal, assigned, accepted,
                     awaitingEvidence, retryRequired, overdue, completed, cancelled, reviewPending,
-                    reviewVerified, revisionRequired, openInterventionCount,
+                    reviewVerified, revisionRequired, openInterventionCount, submissionMissing, attentionCount,
                     assignmentTotal == 0 ? 0.0 : masteryProgress / assignmentTotal,
                     assignmentTotal == 0 ? 0.0 : masteryGain / assignmentTotal, lastActivityAt);
         }
@@ -236,6 +251,18 @@ public class EducationCourseProgressService {
                 if (value != null && (latest == null || value.isAfter(latest))) latest = value;
             }
             return latest;
+        }
+
+        private boolean isAttentionAssignment(LearningAssignment assignment, long openInterventions,
+                                               boolean submissionMissing) {
+            return assignment.getStatus() == LearningAssignmentStatus.ASSIGNED
+                    || assignment.getStatus() == LearningAssignmentStatus.AWAITING_EVIDENCE
+                    || assignment.getStatus() == LearningAssignmentStatus.RETRY_REQUIRED
+                    || assignment.getStatus() == LearningAssignmentStatus.OVERDUE
+                    || assignment.getReviewStatus() == LearningAssignmentReviewStatus.PENDING
+                    || assignment.getReviewStatus() == LearningAssignmentReviewStatus.REVISION_REQUIRED
+                    || openInterventions > 0
+                    || submissionMissing;
         }
     }
 }

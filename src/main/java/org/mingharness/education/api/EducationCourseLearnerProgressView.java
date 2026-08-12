@@ -17,6 +17,8 @@ public record EducationCourseLearnerProgressView(
         long reviewVerified,
         long revisionRequired,
         long openInterventionCount,
+        long submissionMissing,
+        long attentionCount,
         double averageMasteryProgress,
         double averageMasteryGain,
         Instant lastActivityAt

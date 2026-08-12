@@ -25,6 +25,7 @@ class EducationCourseProgressServiceTests {
         LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
         LearningAssignmentProgressService progress = mock(LearningAssignmentProgressService.class);
         LearningAssignmentFeedbackRepository feedbacks = mock(LearningAssignmentFeedbackRepository.class);
+        LearningAssignmentSubmissionRepository submissions = mock(LearningAssignmentSubmissionRepository.class);
         EducationCourse course = new EducationCourse("tenant-a", "teacher-1", "math-g1", "高一数学",
                 "数学", "高中一年级", "人教A版");
         LearningAssignment completed = new LearningAssignment("tenant-a", "teacher-1", "student-1",
@@ -47,8 +48,9 @@ class EducationCourseProgressServiceTests {
                 progress(invocation.getArgument(2)));
         when(feedbacks.findByTenantIdAndLearningAssignmentIdOrderByCreatedAtDesc(
                 anyString(), anyString(), any())).thenReturn(List.of());
+        when(submissions.existsByTenantIdAndLearningAssignmentId(anyString(), anyString())).thenReturn(false);
 
-        var result = new EducationCourseProgressService(courses, enrollments, assignments, progress, feedbacks)
+        var result = new EducationCourseProgressService(courses, enrollments, assignments, progress, feedbacks, submissions)
                 .get("tenant-a", "teacher-1", course.getId(), 500);
 
         assertEquals(2, result.assignmentTotal());
@@ -62,7 +64,17 @@ class EducationCourseProgressServiceTests {
         assertEquals(1, result.rosterCoverageBlockerCount());
         assertEquals(false, result.readyToComplete());
         assertEquals(2, result.completionBlockerCount());
-        assertEquals(0, result.submissionBlockerCount());
+        assertEquals(1, result.submissionBlockerCount());
+        assertEquals(1, result.learners().stream()
+                .filter(item -> item.learnerUserId().equals("student-1"))
+                .findFirst().orElseThrow().submissionMissing());
+        assertEquals(1, result.learners().stream()
+                .filter(item -> item.learnerUserId().equals("student-1"))
+                .findFirst().orElseThrow().attentionCount());
+        EducationCourseLearnerProgressView assignedLearner = result.learners().stream()
+                .filter(item -> item.learnerUserId().equals("student-2")).findFirst().orElseThrow();
+        assertEquals(0, assignedLearner.submissionMissing());
+        assertEquals(1, assignedLearner.attentionCount());
         assertEquals(3, result.learners().size());
         EducationCourseLearnerProgressView emptyLearner = result.learners().stream()
                 .filter(item -> item.learnerUserId().equals("student-3")).findFirst().orElseThrow();

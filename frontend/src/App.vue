@@ -4290,10 +4290,7 @@ function learningAssignmentMatchesIssue(assignment, issue) {
 
 function courseLearnerAttentionCount(learner) {
   if (!learner) return 0
-  return Number(learner.awaitingEvidence || 0) + Number(learner.retryRequired || 0)
-    + Number(learner.overdue || 0) + Number(learner.reviewPending || 0)
-    + Number(learner.revisionRequired || 0)
-    + Number(learner.openInterventionCount || 0)
+  return Number(learner.attentionCount || 0)
 }
 
 function courseLearnerNextAction(learner) {
@@ -4303,6 +4300,7 @@ function courseLearnerNextAction(learner) {
   if (Number(learner.revisionRequired || 0)) return { label: '看返工', issue: 'revision' }
   if (Number(learner.retryRequired || 0)) return { label: '看重试', issue: 'retry' }
   if (Number(learner.openInterventionCount || 0)) return { label: '看干预', issue: 'intervention' }
+  if (Number(learner.submissionMissing || 0)) return { label: '看提交物', issue: 'submission' }
   if (Number(learner.reviewPending || 0)) return { label: '去确认', issue: 'review' }
   if (Number(learner.overdue || 0)) return { label: '看逾期', issue: 'overdue' }
   return { label: '查看作业', issue: '' }
@@ -4321,7 +4319,7 @@ function focusCourseLearnerAction(learner) {
   const action = courseLearnerNextAction(learner)
   learningAssignmentCourseFilter.value = activeEducationCourseId.value
   learningAssignmentLearnerFilter.value = learner.learnerUserId
-  learningAssignmentIssueFilter.value = ['assigned', 'accepted', 'evidence', 'retry', 'revision', 'review', 'intervention', 'overdue'].includes(action.issue)
+  learningAssignmentIssueFilter.value = ['assigned', 'accepted', 'evidence', 'retry', 'revision', 'review', 'submission', 'intervention', 'overdue'].includes(action.issue)
     ? action.issue : ''
   nextTick(() => document.getElementById('learning-assignment-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
 }
@@ -8405,7 +8403,7 @@ onBeforeUnmount(() => {
                     <div class="education-course-progress-header"><span>学习者</span><span>作业状态</span><span>掌握度进度</span><span>下一步</span></div>
                     <div v-for="learner in educationCourseProgress.learners" :key="learner.learnerUserId" class="education-course-progress-row">
                       <span><strong>{{ learner.learnerUserId }}</strong><small>{{ learner.lastActivityAt ? `最近 ${formatDate(learner.lastActivityAt)}` : '尚无作业活动' }}</small></span>
-                      <span class="education-course-status-copy">{{ learner.completed }} 完成 · {{ learner.awaitingEvidence }} 待证据 · {{ learner.retryRequired }} 待重试 · {{ learner.reviewPending }} 待确认</span>
+                      <span class="education-course-status-copy">{{ learner.assigned }} 待接受 · {{ learner.completed }} 完成 · {{ learner.awaitingEvidence }} 待证据 · {{ learner.retryRequired }} 待重试 · {{ learner.reviewPending }} 待确认 · {{ learner.submissionMissing }} 缺提交物</span>
                       <span><strong>{{ formatRate(learner.averageMasteryProgress) }}</strong><small>提升 {{ learner.averageMasteryGain >= 0 ? '+' : '' }}{{ formatRate(learner.averageMasteryGain) }}</small></span>
                       <button class="text-button education-course-next-action" type="button" @click="focusCourseLearnerAction(learner)">{{ courseLearnerNextAction(learner).label }}<small v-if="courseLearnerAttentionCount(learner)">{{ courseLearnerAttentionCount(learner) }} 项待处理</small></button>
                     </div>
