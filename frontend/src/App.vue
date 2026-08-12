@@ -347,6 +347,15 @@ const roleWorkspaceSteps = computed(() => ({
     { title: '完成下一步行动', detail: '进入学习对话，提交作业并查看反馈与掌握度。' },
   ],
 }[currentPrimaryRole.value] || []))
+const roleQuickStartAction = computed(() => {
+  if (currentPrimaryRole.value === 'TEACHER') {
+    return { label: '开始配置课程资料', detail: '先上传资料，再补充课程版本和知识点元数据。', section: 'education' }
+  }
+  if (currentPrimaryRole.value === 'STUDENT') {
+    return { label: '开始我的学习', detail: '先建立学习档案，再接受教师布置的课程作业。', section: 'education' }
+  }
+  return { label: '查看系统状态', detail: '先确认模型、索引和基础设施，再处理治理配置。', section: 'runtime' }
+})
 const showLocalDemoLogin = computed(() => Boolean(
   !identityLoading.value
   && currentUser.value?.localDemo
@@ -7975,6 +7984,10 @@ onBeforeUnmount(() => {
             <div><strong>{{ step.title }}</strong><small>{{ step.detail }}</small></div>
           </li>
         </ol>
+        <div class="role-welcome-action">
+          <div><strong>现在就开始</strong><small>{{ roleQuickStartAction.detail }}</small></div>
+          <button class="primary-button" type="button" @click="navigateConsoleSection(roleQuickStartAction.section)">{{ roleQuickStartAction.label }} <ArrowRight :size="13" /></button>
+        </div>
       </section>
 
       <section v-if="isAdminRole" class="infra-strip panel" aria-label="基础设施状态">

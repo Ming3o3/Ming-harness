@@ -761,6 +761,11 @@ h3 { margin: 0; font-size: 13px; }
 .role-welcome-steps li > div { display: grid; gap: 5px; min-width: 0; }
 .role-welcome-steps strong { color: var(--soft); font-size: 10px; }
 .role-welcome-steps small { color: var(--muted); font-size: 9px; line-height: 1.5; }
+.role-welcome-action { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); padding-top: 14px; }
+.role-welcome-action > div { display: grid; gap: 4px; min-width: 0; }
+.role-welcome-action strong { color: var(--soft); font-size: 11px; }
+.role-welcome-action small { color: var(--muted); font-size: 9px; line-height: 1.5; }
+.role-welcome-action .primary-button { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
 .role-welcome-teacher { border-color: color-mix(in srgb, var(--cyan) 30%, var(--line)); }
 .role-welcome-teacher .role-welcome-copy .eyebrow, .role-welcome-teacher .role-welcome-steps li > span { color: var(--cyan); }
 .role-welcome-student { border-color: color-mix(in srgb, var(--orange) 26%, var(--line)); }
@@ -773,6 +778,8 @@ h3 { margin: 0; font-size: 13px; }
 
 @media (max-width: 520px) {
   .role-welcome-steps { grid-template-columns: 1fr; }
+  .role-welcome-action { align-items: stretch; flex-direction: column; }
+  .role-welcome-action .primary-button { justify-content: center; }
 }
 
 /* 白天模式覆盖色板，保留状态色和品牌紫色的识别度。 */
