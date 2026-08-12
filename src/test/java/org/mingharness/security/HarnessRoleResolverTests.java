@@ -43,4 +43,20 @@ class HarnessRoleResolverTests {
         assertEquals(Set.of(HarnessUserRole.ADMIN, HarnessUserRole.STUDENT), roles);
         assertEquals(HarnessUserRole.ADMIN, resolver.primaryRole(roles));
     }
+
+    @Test
+    void genericContextWriterShouldNotBeMisclassifiedAsTeacher() {
+        HarnessIdentity identity = new HarnessIdentity("tenant-a", "operator-001",
+                Set.of("context.write"), "api-key");
+
+        assertEquals(Set.of(), resolver.resolve(identity, null));
+    }
+
+    @Test
+    void anyGovernancePermissionShouldExposeAdminWorkspace() {
+        HarnessIdentity identity = new HarnessIdentity("tenant-a", "operator-001",
+                Set.of("model.configure"), "api-key");
+
+        assertEquals(Set.of(HarnessUserRole.ADMIN), resolver.resolve(identity, null));
+    }
 }

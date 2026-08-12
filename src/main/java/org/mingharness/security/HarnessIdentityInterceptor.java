@@ -226,7 +226,8 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
         }
         if (path.equals("/api/context/preview")) return "context.read";
         if (path.matches("/api/education/sources(?:/[^/]+)?")) {
-            return "GET".equalsIgnoreCase(method) ? "education.read" : "education.write";
+            // 课程资料元数据属于教师课程运营能力，不应与学生的学习状态写入混用。
+            return "GET".equalsIgnoreCase(method) ? "education.read" : "education.assign";
         }
         if (path.matches("/api/education/profiles(?:/[^/]+)?(?:/mastery)?")) {
             return "GET".equalsIgnoreCase(method) ? "education.read" : "education.write";
@@ -247,6 +248,9 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
         }
         if (path.matches("/api/education/assignments/[^/]+/evaluations")) {
             return "GET".equalsIgnoreCase(method) ? "education.read" : "education.evaluate";
+        }
+        if (path.matches("/api/education/assignments/[^/]+/submissions")) {
+            return "GET".equalsIgnoreCase(method) ? "education.read" : "education.write";
         }
         if (path.matches("/api/education/assignments(?:/[^/]+)?(?:/(accept|start|progress|evidence|feedback|cancel|review)(?:/[^/]+/acknowledge)?)?")) {
             if ("GET".equalsIgnoreCase(method)) return "education.read";

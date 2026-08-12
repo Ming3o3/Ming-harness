@@ -23,14 +23,18 @@ public class HarnessRoleResolver {
         }
 
         Set<HarnessUserRole> roles = new LinkedHashSet<>();
-        if (identity.hasPermission("auth.key.manage")
+        if (identity.hasPermission("auth.key.read")
+                || identity.hasPermission("auth.key.manage")
+                || identity.hasPermission("tenant.policy.read")
                 || identity.hasPermission("tenant.policy.write")
-                || identity.hasPermission("ops.read")) {
+                || identity.hasPermission("ops.read")
+                || identity.hasPermission("model.configure")
+                || identity.hasPermission("context.configure")
+                || identity.hasPermission("context.reindex")) {
             roles.add(HarnessUserRole.ADMIN);
         }
         if (identity.hasPermission("education.assign")
-                || identity.hasPermission("education.evaluate")
-                || identity.hasPermission("context.write")) {
+                || identity.hasPermission("education.evaluate")) {
             roles.add(HarnessUserRole.TEACHER);
         }
         if (identity.hasPermission("education.read")

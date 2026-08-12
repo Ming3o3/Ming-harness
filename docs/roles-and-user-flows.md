@@ -32,6 +32,16 @@ Ming Harness 面向三类用户：管理员、老师、学生。三类用户使�
 
 一个正式用户可以同时拥有多个角色，例如“老师 + 学生”；系统以管理员、老师、学生的优先级确定主工作台，但资源权限仍由后端逐接口校验。
 
+正式环境建议为三类账号发放最小权限：
+
+| 角色 | 必要权限 | 主要可做的事 |
+| --- | --- | --- |
+| 管理员 | `ops.read`、`model.configure`、`context.configure`、`context.reindex`、`tenant.policy.*`、`auth.key.*` | 系统、模型、索引、组织策略、凭证和审计治理 |
+| 老师 | `education.read`、`education.write`、`education.assign`、`education.evaluate`、`context.read`、`context.write` | 上传资料、维护课程元数据、开课、加入学生、布置、复核和反馈 |
+| 学生 | `education.read`、`education.write`、`run.create`、`run.execute` | 建立画像、接受作业、学习、提交作业、查看证据和反馈 |
+
+`context.write` 单独不会把普通上下文操作员识别成老师；老师角色必须具备课程运营或评价权限。管理员权限也不等于自动拥有某位老师的课程所有权，课程名单和作业仍按课程负责人绑定的用户 ID 校验。
+
 ## 管理员完整流程
 
 1. 登录管理员账号，进入“管理员治理中心”。

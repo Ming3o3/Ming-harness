@@ -59,8 +59,8 @@ class HarnessAuthWebTests {
         assertTrue(response.body().contains("\"primaryRole\":\"ADMIN\""), response.body());
         assertTrue(response.body().contains("\"localDemo\":false"), response.body());
         assertTrue(response.body().contains("\"ADMIN\""), response.body());
-        assertTrue(response.body().contains("\"TEACHER\""), response.body());
         assertTrue(response.body().contains("\"STUDENT\""), response.body());
+        assertFalse(response.body().contains("\"TEACHER\""), response.body());
     }
 
     @Test

@@ -255,6 +255,31 @@ class HarnessIdentityInterceptorTests {
         assertEquals("PERMISSION_DENIED", exception.getCode());
     }
 
+    @Test
+    void educationWriteShouldAllowStudentSubmissionButNotCourseSourceConfiguration() throws Exception {
+        HarnessAuthProperties properties = new HarnessAuthProperties();
+        properties.setMode("api-key");
+        properties.setApiKeys("teacher-key|tenant-a|teacher|education.assign;student-key|tenant-a|student|education.read,education.write");
+        HarnessIdentityInterceptor interceptor = interceptor(properties);
+
+        MockHttpServletRequest submit = request(
+                "POST", "/api/education/assignments/assignment-1/submissions");
+        submit.addHeader("X-Api-Key", "student-key");
+        assertTrue(interceptor.preHandle(submit, new MockHttpServletResponse(), null));
+        interceptor.afterCompletion(submit, new MockHttpServletResponse(), null, null);
+
+        MockHttpServletRequest source = request("POST", "/api/education/sources");
+        source.addHeader("X-Api-Key", "student-key");
+        BusinessException sourceDenied = assertThrows(BusinessException.class,
+                () -> interceptor.preHandle(source, new MockHttpServletResponse(), null));
+        assertEquals("PERMISSION_DENIED", sourceDenied.getCode());
+
+        MockHttpServletRequest teacherSource = request("POST", "/api/education/sources");
+        teacherSource.addHeader("X-Api-Key", "teacher-key");
+        assertTrue(interceptor.preHandle(teacherSource, new MockHttpServletResponse(), null));
+        interceptor.afterCompletion(teacherSource, new MockHttpServletResponse(), null, null);
+    }
+
     private MockHttpServletRequest request(String method, String uri) {
         MockHttpServletRequest request = new MockHttpServletRequest(method, uri);
         request.setRequestURI(uri);
