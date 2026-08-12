@@ -27,6 +27,14 @@ function localDemoPermissions() {
   const role = String(localStorage.getItem('harnessDemoRole') || configuredDemoRole).toUpperCase()
   return (demoRolePermissions[role] || demoRolePermissions.STUDENT).join(',')
 }
+
+function localIdentityPermissions() {
+  // 演示角色是本地身份选择器；一旦选择了角色，就不能让旧的手工权限快照
+  // 继续覆盖角色权限，否则会出现“页面显示学生、请求却带老师权限”的错觉。
+  const role = String(localStorage.getItem('harnessDemoRole') || configuredDemoRole).toUpperCase()
+  const hasDemoRole = Boolean(demoRolePermissions[role])
+  return hasDemoRole ? localDemoPermissions() : (localStorage.getItem('harnessChatPermissions') || defaultChatPermissions)
+}
 // 本地聊天工作台默认开放工作区读写权限；写入和命令执行仍由后端策略要求人工审批。
 const defaultChatPermissions = import.meta.env.VITE_HARNESS_CHAT_PERMISSIONS
   || 'workspace.read,workspace.write,workspace.exec,workspace.manage,education.read,education.write,education.assign'
@@ -40,7 +48,7 @@ function identityHeaders(requestHeaders = {}) {
           'X-Tenant-Id': localStorage.getItem('harnessTenantId') || 'tenant-demo',
           'X-User-Id': localStorage.getItem('harnessUserId') || 'operator',
           'X-Harness-Role': localStorage.getItem('harnessDemoRole') || configuredDemoRole,
-          'X-Permissions': localStorage.getItem('harnessChatPermissions') || localDemoPermissions(),
+          'X-Permissions': localIdentityPermissions(),
         }),
     ...(requestHeaders || {}),
   }
@@ -53,7 +61,7 @@ function desktopIdentityPayload(payload = {}) {
     apiKey: configuredApiKey,
     tenantId: localStorage.getItem('harnessTenantId') || 'tenant-demo',
     userId: localStorage.getItem('harnessUserId') || 'operator',
-    permissions: localStorage.getItem('harnessChatPermissions') || defaultChatPermissions,
+    permissions: localIdentityPermissions(),
   }
 }
 
@@ -175,7 +183,7 @@ export const api = {
     if (workspaceId) params.set('workspaceId', workspaceId)
     return request(`/workspace/files/editor-content?${params.toString()}`, {
       headers: configuredApiKey ? {} : {
-        'X-Permissions': localStorage.getItem('harnessChatPermissions') || defaultChatPermissions,
+        'X-Permissions': localIdentityPermissions(),
       },
     })
   },
@@ -185,7 +193,7 @@ export const api = {
     return request(`/workspace/files/editor-content?${params.toString()}`, {
       method: 'PUT',
       headers: configuredApiKey ? {} : {
-        'X-Permissions': localStorage.getItem('harnessChatPermissions') || defaultChatPermissions,
+        'X-Permissions': localIdentityPermissions(),
       },
       body: JSON.stringify({ path, content, expectedSha256 }),
     })
@@ -279,7 +287,7 @@ export const api = {
       headers: {
         ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
         // api-key/OIDC 模式下后端会忽略该请求头，使用认证身份中的可信权限。
-        ...(configuredApiKey ? {} : { 'X-Permissions': localStorage.getItem('harnessChatPermissions') || defaultChatPermissions }),
+        ...(configuredApiKey ? {} : { 'X-Permissions': localIdentityPermissions() }),
       },
       body: JSON.stringify(payload),
     },
@@ -410,7 +418,7 @@ export const api = {
       headers: {
         ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
         ...(configuredApiKey ? {} : {
-          'X-Permissions': localStorage.getItem('harnessChatPermissions') || defaultChatPermissions,
+          'X-Permissions': localIdentityPermissions(),
         }),
       },
       body: JSON.stringify(payload),
@@ -506,7 +514,7 @@ export const api = {
       headers: {
         ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
         ...(configuredApiKey ? {} : {
-          'X-Permissions': localStorage.getItem('harnessChatPermissions') || defaultChatPermissions,
+          'X-Permissions': localIdentityPermissions(),
         }),
       },
       body: JSON.stringify(payload),
