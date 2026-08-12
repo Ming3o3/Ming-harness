@@ -477,6 +477,36 @@ function toggleLearningOverview() {
   }
 }
 
+async function runLearningOverviewNextAction() {
+  const action = learningOverviewNextAction.value
+  if (action.kind === 'setup') {
+    openEducationAgentSetup()
+    return
+  }
+  if (action.kind === 'task') {
+    await startLearningTask(activeLearningTask.value)
+    return
+  }
+  if (action.kind === 'recommendation') {
+    await useLearningRecommendation()
+    return
+  }
+  if (action.kind === 'focus') {
+    chatInputRef.value?.focus()
+    return
+  }
+  learningOverviewCollapsed.value = false
+  try {
+    window.localStorage.setItem(LEARNING_OVERVIEW_COLLAPSED_STORAGE_KEY, 'false')
+  } catch {
+    // 浏览器禁用本地存储时，当前页面仍会展开学习计划。
+  }
+  await nextTick()
+  if (action.kind === 'expand') {
+    document.querySelector('#learning-overview-content')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
+
 function setActiveConsoleSection(section) {
   activeConsoleSection.value = section
 }
@@ -939,6 +969,34 @@ const activeLearningTask = computed(() => {
   return learningTasks.value
     .filter((task) => task.learningGoalId === goalId && activeStatuses.has(task.status))
     .sort((left, right) => new Date(left.scheduledAt || left.createdAt) - new Date(right.scheduledAt || right.createdAt))[0] || null
+})
+// 折叠学习概览时仍保留一条可执行的主路径；按钮复用展开面板使用的任务、
+// 推荐和课程资料阻断状态，避免用户看到“下一步”却还要再找一次入口。
+const learningOverviewNextAction = computed(() => {
+  if (!activeLearnerProfile.value) {
+    return { kind: 'expand', label: '建立学习画像', detail: '先告诉 Agent 你正在学习的课程和年级。' }
+  }
+  if (educationSendBlockReason.value) {
+    return { kind: 'setup', label: '配置课程资料', detail: educationSendBlockReason.value }
+  }
+  if (!activeLearningGoal.value) {
+    return { kind: 'expand', label: '设定学习目标', detail: '设定知识点和达标标准，后续作答才能形成学习证据。' }
+  }
+  if (activeLearningTask.value) {
+    return {
+      kind: 'task',
+      label: activeLearningTask.value.status === 'AWAITING_EVIDENCE' ? '补充本轮证据' : '开始学习任务',
+      detail: activeLearningTask.value.title,
+    }
+  }
+  if (activeLearningRecommendation.value) {
+    return {
+      kind: 'recommendation',
+      label: activeLearningRecommendation.value.nextActionType === 'WAIT' ? '查看复习安排' : '开始下一步',
+      detail: activeLearningRecommendation.value.nextActionTitle,
+    }
+  }
+  return { kind: 'focus', label: '进入本轮作答', detail: agentTeachingAction.value.title }
 })
 const pedagogicalModeLabel = computed(() => ({
   AUTO: '自动选择（基于学习状态）',
@@ -6426,10 +6484,19 @@ onBeforeUnmount(() => {
             <div class="learning-overview-collapse-copy">
               <p class="eyebrow">CURRENT LEARNING PLAN</p>
               <strong>{{ activeLearningGoal?.title || '本轮学习计划' }}</strong>
-              <span>{{ activeChatCourse?.title || `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` }} · {{ educationAgentReady ? '课程与学情已接入' : '还缺少课程资料' }}</span>
+              <span>{{ activeChatCourse?.title || `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` }} · {{ learningOverviewNextAction.detail }}</span>
             </div>
             <div class="learning-overview-collapse-actions">
               <span class="learning-overview-collapse-status" :class="{ ready: educationAgentReady }"><i></i>{{ educationAgentReady ? '已就绪' : '待配置' }}</span>
+              <button
+                class="learning-overview-next-action"
+                type="button"
+                :disabled="chatSending || chatUploading || (learningOverviewNextAction.kind === 'task' && learningTaskStartingId)"
+                @click="runLearningOverviewNextAction"
+              >
+                {{ learningOverviewNextAction.label }}
+                <ArrowUp :size="12" aria-hidden="true" />
+              </button>
               <button
                 class="learning-overview-toggle"
                 type="button"

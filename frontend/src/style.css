@@ -2321,6 +2321,33 @@ button svg {
   background: currentColor;
 }
 
+.learning-overview-next-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  border: 1px solid color-mix(in srgb, var(--cyan) 42%, var(--line));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--cyan) 10%, var(--panel));
+  color: var(--cyan);
+  padding: 5px 8px;
+  font-size: 9px;
+  font-weight: 650;
+  white-space: nowrap;
+  transition: border-color .16s ease, background .16s ease, color .16s ease, opacity .16s ease;
+}
+
+.learning-overview-next-action:hover:not(:disabled) {
+  border-color: var(--cyan);
+  background: color-mix(in srgb, var(--cyan) 17%, var(--panel));
+  color: var(--heading);
+}
+
+.learning-overview-next-action:disabled {
+  cursor: wait;
+  opacity: .55;
+}
+
 .learning-overview-toggle {
   display: inline-flex;
   align-items: center;
