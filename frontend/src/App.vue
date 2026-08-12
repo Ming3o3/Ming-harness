@@ -4359,6 +4359,11 @@ async function openLearningNotification(notification) {
     noticeMessage.value = '通知对应的学习任务已不在当前列表中，请刷新教育状态。'
     return
   }
+  if (learningTaskIsScheduled(task)) {
+    focusLearningTask(task)
+    noticeMessage.value = `复习任务已安排在 ${formatDate(task.scheduledAt)} 开放。`
+    return
+  }
   if (['OPEN', 'IN_PROGRESS', 'AWAITING_EVIDENCE', 'FAILED'].includes(task.status)) {
     await startLearningTask(task)
     return
@@ -8287,7 +8292,7 @@ onBeforeUnmount(() => {
                 <div v-if="learningNotifications.length" class="learning-notification-list" aria-label="学习任务通知">
                   <article v-for="notification in learningNotifications.slice(0, 5)" :key="notification.id" class="learning-notification-row" :class="{ unread: notification.unread }">
                     <div class="learning-notification-main"><div class="learning-notification-meta"><strong>{{ notification.title }}</strong><small>{{ formatDate(notification.createdAt) }}</small></div><p>{{ notification.body }}</p></div>
-                    <div class="learning-notification-actions"><button class="secondary-button" type="button" @click="openLearningNotification(notification)">{{ notification.notificationType === 'EVIDENCE_REQUIRED' ? '补充证据' : (notification.notificationType === 'FAILED' ? '重试任务' : '打开任务') }}</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningNotificationRead(notification)">标记已读</button></div>
+                    <div class="learning-notification-actions"><button class="secondary-button" type="button" @click="openLearningNotification(notification)">{{ notification.notificationType === 'EVIDENCE_REQUIRED' ? '补充证据' : (notification.notificationType === 'FAILED' ? '重试任务' : (notification.taskStatus === 'DEFERRED' ? '查看复习安排' : '打开任务')) }}</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningNotificationRead(notification)">标记已读</button></div>
                   </article>
                 </div>
                 <div v-if="learningTasks.length" class="learning-task-list">
