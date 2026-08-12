@@ -903,6 +903,14 @@ const learnerCourseAssignments = computed(() => learningAssignments.value
       || new Date(left.dueAt || left.createdAt) - new Date(right.dueAt || right.createdAt)
   }))
 const nextLearnerCourseAssignment = computed(() => learnerCourseAssignments.value[0] || null)
+// 首页课程作业卡片需要和聊天作业卡片共享同一份“待确认反馈”判断。
+// 之前模板引用了未定义的状态，教师反馈虽已写入数据，却不会出现“确认并继续”入口。
+const nextLearnerCourseAssignmentOpenFeedback = computed(() => {
+  const assignment = nextLearnerCourseAssignment.value
+  if (!assignment) return null
+  return (learningAssignmentFeedbackMap.value[assignment.id] || [])
+    .find((feedback) => feedback.status === 'OPEN') || null
+})
 const activeChatLearningAssignment = computed(() => {
   const assignmentId = chatEducation.learningAssignmentId
   return assignmentId
