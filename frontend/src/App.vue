@@ -1238,7 +1238,12 @@ function learningAssignmentNotificationIsCurrent(notification) {
   if (['FEEDBACK', 'FEEDBACK_ACKNOWLEDGED', 'SUBMISSION_RECEIVED'].includes(notification.notificationType)) {
     return true
   }
-  const status = notification.assignmentStatus
+  // 新 Runtime 会直接在通知中返回 assignmentStatus；旧 Runtime 没有这个字段时，
+  // 仍然可以从已经加载的作业列表拿到最新状态，避免旧的“接受并开始”入口残留。
+  const assignment = notification.learningAssignmentId
+    ? learningAssignments.value.find((item) => item.id === notification.learningAssignmentId)
+    : null
+  const status = notification.assignmentStatus || assignment?.status
   const currentStatusByType = {
     ASSIGNED: 'ASSIGNED',
     ACCEPTED: 'ACCEPTED',
@@ -1258,6 +1263,8 @@ const learningAssignmentNotificationsForView = computed(() => learningAssignment
   .filter((notification) => learningAssignmentNotificationIsCurrent(notification)
     && (notification.unread
       || ['FEEDBACK', 'FEEDBACK_ACKNOWLEDGED', 'SUBMISSION_RECEIVED'].includes(notification.notificationType))))
+const learningAssignmentNotificationUnreadCountForView = computed(() =>
+  learningAssignmentNotificationsForView.value.filter((notification) => notification.unread).length)
 
 function toggleAllAllowedTools() {
   selectedAllowedTools.value = allAllowedToolsSelected.value
@@ -4827,7 +4834,7 @@ async function markLearningAssignmentNotificationRead(notification) {
 }
 
 async function markAllLearningAssignmentNotificationsRead() {
-  if (!learningAssignmentNotificationUnreadCount.value) return
+  if (!learningAssignmentNotificationUnreadCountForView.value) return
   try {
     await api.markAllLearningAssignmentNotificationsRead()
     learningAssignmentNotifications.value = learningAssignmentNotifications.value.map((item) => ({
@@ -8993,7 +9000,7 @@ onBeforeUnmount(() => {
             <section class="learning-assignment-workbench" aria-label="课程作业入口">
               <div class="subsection-title"><h4>{{ isAdminWorkspace ? '课程作业概览' : (educationWorkspaceMode === 'teacher' ? '课程作业与复核' : '我的课程作业与反馈') }}</h4><div><span v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter || learningAssignmentIssueFilter">{{ learningAssignmentIssueFilter ? `正在处理：${learningAssignmentIssueLabel}` : '当前已筛选' }}</span><button v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter || learningAssignmentIssueFilter" class="text-button" type="button" @click="clearLearningAssignmentFilter">清除筛选</button><span v-else>{{ educationAssignmentsForView.length }} 个作业</span></div></div>
               <p class="learning-task-help">{{ isAdminWorkspace ? '管理员只读查看作业状态与证据覆盖；确认、返工和反馈由课程教师执行。' : (educationWorkspaceMode === 'teacher' ? '围绕课程约束布置作业，并根据提交物、测评证据和反馈决定确认、返工或重试。' : '接受课程作业后，Agent 会把课程边界、目标知识点和当前掌握度汇总成下一步行动。') }}</p>
-              <div v-if="!isAdminWorkspace" class="subsection-title learning-task-heading"><div><h4>作业通知</h4><span>{{ learningAssignmentNotificationsForView.length }} 条</span></div><div class="learning-notification-heading-actions"><span>{{ learningAssignmentNotificationUnreadCount }} 条未读</span><button v-if="learningAssignmentNotificationUnreadCount" class="text-button" type="button" @click="markAllLearningAssignmentNotificationsRead">全部已读</button></div></div>
+              <div v-if="!isAdminWorkspace" class="subsection-title learning-task-heading"><div><h4>作业通知</h4><span>{{ learningAssignmentNotificationsForView.length }} 条</span></div><div class="learning-notification-heading-actions"><span>{{ learningAssignmentNotificationUnreadCountForView }} 条未读</span><button v-if="learningAssignmentNotificationUnreadCountForView" class="text-button" type="button" @click="markAllLearningAssignmentNotificationsRead">全部已读</button></div></div>
               <div v-if="!isAdminWorkspace && learningAssignmentNotificationsForView.length" class="learning-notification-list" aria-label="课程作业通知">
                 <article v-for="notification in learningAssignmentNotificationsForView.slice(0, 5)" :key="notification.id" class="learning-notification-row" :class="{ unread: notification.unread }">
                   <div class="learning-notification-main"><div class="learning-notification-meta"><strong>{{ notification.title }}</strong><small>{{ formatDate(notification.createdAt) }}</small></div><p>{{ notification.body }}</p></div>
