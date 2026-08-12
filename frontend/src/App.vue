@@ -1059,6 +1059,7 @@ function courseSourceAvailability(scope) {
     return {
       sourceCount: 0,
       courseSourceCount: 0,
+      conceptSourceCount: 0,
       sameSubjectGradeSourceCount: 0,
       availableCurriculumVersions: [],
     }
@@ -1072,6 +1073,7 @@ function courseSourceAvailability(scope) {
   return {
     sourceCount: courseSources.filter((source) => sourceMatchesEducationScope(source, scope)).length,
     courseSourceCount: courseSources.length,
+    conceptSourceCount: courseSources.filter((source) => sourceHasConcept(source, scope.conceptKey)).length,
     sameSubjectGradeSourceCount: sameSubjectGradeSources.length,
     availableCurriculumVersions: [...new Set(sameSubjectGradeSources
       .map((source) => String(source.curriculumVersion || '').trim())
@@ -1093,9 +1095,27 @@ function courseSourceBlockReason(scope) {
     return `课程版本「${scope.curriculumVersion}」还没有可检索的课程资料。请先绑定与当前课程匹配的知识文档。`
   }
   if (scope.conceptKey) {
+    if (!availability.conceptSourceCount) {
+      return `课程版本「${scope.curriculumVersion}」已有 ${availability.courseSourceCount} 个来源，但没有标注知识点「${scope.conceptKey}」。请补充课程来源的知识点标签，或调整当前学习目标。`
+    }
+    if (scope.minDifficulty !== null || scope.maxDifficulty !== null) {
+      return `知识点「${scope.conceptKey}」已有匹配来源，但没有落在当前难度范围（${formatDifficultyRange(scope)}）。请放宽难度范围，或维护课程来源难度。`
+    }
     return `知识点「${scope.conceptKey}」没有匹配的课程资料。请补充对应来源或调整知识点范围。`
   }
+  if (scope.minDifficulty !== null || scope.maxDifficulty !== null) {
+    return `当前课程版本已有 ${availability.courseSourceCount} 个来源，但没有落在难度范围（${formatDifficultyRange(scope)}）。请放宽难度范围，或维护课程来源难度。`
+  }
   return '当前课程约束下没有可检索的课程资料，请先补充匹配的知识文档。'
+}
+
+function formatDifficultyRange(scope) {
+  if (scope?.minDifficulty !== null && scope?.maxDifficulty !== null) {
+    return `${scope.minDifficulty}–${scope.maxDifficulty}`
+  }
+  if (scope?.minDifficulty !== null) return `≥ ${scope.minDifficulty}`
+  if (scope?.maxDifficulty !== null) return `≤ ${scope.maxDifficulty}`
+  return '未设置'
 }
 
 function learningGoalSourceBlockReason(goalId) {
@@ -1351,7 +1371,9 @@ const currentEducationRetrievalDetail = computed(() => {
   if (!scope.configured) return '先配置学习者画像，Agent 才能锁定课程知识范围'
   const base = `${scope.subject} · ${scope.gradeLevel} · ${scope.curriculumVersion}`
   const available = scope.courseSourceCount
-    ? `当前版本下 ${scope.courseSourceCount} 个来源`
+    ? (scope.sourceCount === scope.courseSourceCount
+      ? `当前版本下 ${scope.courseSourceCount} 个来源`
+      : `当前版本 ${scope.sourceCount} 个可用 · ${scope.courseSourceCount} 个候选`)
     : scope.sameSubjectGradeSourceCount
       ? `当前版本 0 个来源 · 同学科/年级另有 ${scope.sameSubjectGradeSourceCount} 个（${scope.availableCurriculumVersions.join('、')}）`
       : '当前版本 0 个来源'
