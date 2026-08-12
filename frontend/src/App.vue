@@ -1230,11 +1230,34 @@ const chatCourseAssignmentLatestSubmission = computed(() => {
   if (!assignment) return null
   return (learningAssignmentSubmissionMap.value[assignment.id] || [])[0] || null
 })
-// 作业状态通知是行动入口；状态已经推进后，旧的已读通知不应继续显示旧按钮。
+// 作业状态通知是行动入口；状态已经推进后，旧的通知不应继续显示旧按钮。
+// assignmentStatus 让前端在旧 Runtime 尚未完成通知收敛时也能安全过滤，
 // 反馈和提交物属于证据历史，即使已读也保留，方便回看教师与学习者之间的闭环。
+function learningAssignmentNotificationIsCurrent(notification) {
+  if (!notification) return false
+  if (['FEEDBACK', 'FEEDBACK_ACKNOWLEDGED', 'SUBMISSION_RECEIVED'].includes(notification.notificationType)) {
+    return true
+  }
+  const status = notification.assignmentStatus
+  const currentStatusByType = {
+    ASSIGNED: 'ASSIGNED',
+    ACCEPTED: 'ACCEPTED',
+    EVIDENCE_REQUIRED: 'AWAITING_EVIDENCE',
+    RETRY_REQUIRED: 'RETRY_REQUIRED',
+    REVISION_REQUIRED: 'RETRY_REQUIRED',
+    OVERDUE: 'OVERDUE',
+    REVIEW_REQUIRED: 'COMPLETED',
+    REVIEW_VERIFIED: 'COMPLETED',
+    COMPLETED: 'COMPLETED',
+    CANCELLED: 'CANCELLED',
+  }[notification.notificationType]
+  return !currentStatusByType || !status || status === currentStatusByType
+}
+
 const learningAssignmentNotificationsForView = computed(() => learningAssignmentNotifications.value
-  .filter((notification) => notification.unread
-    || ['FEEDBACK', 'FEEDBACK_ACKNOWLEDGED', 'SUBMISSION_RECEIVED'].includes(notification.notificationType)))
+  .filter((notification) => learningAssignmentNotificationIsCurrent(notification)
+    && (notification.unread
+      || ['FEEDBACK', 'FEEDBACK_ACKNOWLEDGED', 'SUBMISSION_RECEIVED'].includes(notification.notificationType))))
 
 function toggleAllAllowedTools() {
   selectedAllowedTools.value = allAllowedToolsSelected.value
