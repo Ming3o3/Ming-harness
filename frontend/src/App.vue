@@ -550,6 +550,15 @@ function roleLabel(role) {
   }[String(role || '').toUpperCase()] || '未分配角色'
 }
 
+function resetRoleNavigation() {
+  if (typeof window === 'undefined') return
+  // 角色切换不是普通页面导航：清除上一角色留下的 hash，避免管理员继承
+  // 学生/教师的教育入口，或学生继承管理员的运行追踪位置。
+  if (window.location.hash) {
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
+  }
+}
+
 async function loadCurrentUser() {
   identityLoading.value = true
   localDemoLoginError.value = ''
@@ -582,6 +591,7 @@ function beginLocalDemoSession(user) {
     localStorage.setItem('harnessDemoRole', user.role)
     localStorage.setItem('harnessUserId', user.userId)
     localStorage.setItem('harnessLocalSession', 'active')
+    resetRoleNavigation()
     demoRole.value = user.role
     localDemoSessionActive.value = true
     window.location.reload()
@@ -597,6 +607,7 @@ function endLocalDemoSession() {
   localDemoLoginBusy.value = true
   try {
     localStorage.removeItem('harnessLocalSession')
+    resetRoleNavigation()
     localDemoSessionActive.value = false
     window.location.reload()
   } finally {
@@ -612,6 +623,7 @@ function switchDemoRole(nextRole) {
     localStorage.setItem('harnessDemoRole', normalized)
     localStorage.setItem('harnessUserId', demoRoleUserIds[normalized])
     localStorage.setItem('harnessLocalSession', 'active')
+    resetRoleNavigation()
     form.userId = demoRoleUserIds[normalized]
     window.location.reload()
   } finally {
