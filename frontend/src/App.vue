@@ -6433,6 +6433,22 @@ onBeforeUnmount(() => {
                 <div><small>课程资料</small><strong>{{ currentEducationSourceCount }} <em>份</em></strong></div>
                 <div><small>学习目标</small><strong>{{ activeLearningGoal ? '已绑定' : '待设定' }}</strong></div>
               </div>
+              <section class="learning-sidebar-learning-state" aria-label="学习状态摘要">
+                <div class="learning-sidebar-learning-state-heading">
+                  <small>学习状态</small>
+                  <strong :class="`is-${learnerStateDiagnosis.state}`">{{ learnerStateDiagnosis.title }}</strong>
+                </div>
+                <div v-if="Number.isFinite(learnerStateDiagnosis.currentMastery) && Number.isFinite(learnerStateDiagnosis.targetMastery)" class="learning-sidebar-mastery">
+                  <div><small>当前掌握度</small><b>{{ formatRate(learnerStateDiagnosis.currentMastery) }}</b></div>
+                  <div><small>目标掌握度</small><b>{{ formatRate(learnerStateDiagnosis.targetMastery) }}</b></div>
+                  <i aria-hidden="true"><span :style="{ width: `${Math.min(100, Math.max(0, learnerStateDiagnosis.currentMastery / Math.max(learnerStateDiagnosis.targetMastery, 0.01) * 100))}%` }"></span></i>
+                </div>
+                <p>{{ learnerStateDiagnosis.detail }}</p>
+                <button class="learning-sidebar-next-action" type="button" :disabled="chatSending || chatUploading || (learningOverviewNextAction.kind === 'task' && learningTaskStartingId)" @click="runLearningOverviewNextAction">
+                  <span><small>下一步</small><strong>{{ learningOverviewNextAction.label }}</strong></span>
+                  <ArrowUp :size="12" />
+                </button>
+              </section>
               <button
                 class="learning-sidebar-runtime-state"
                 :class="`is-${learningRuntimeState.state}`"
