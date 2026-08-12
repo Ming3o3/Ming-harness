@@ -840,6 +840,46 @@ const activeEducationCourseLearnerResult = computed(() => {
   return educationCourseResult.value?.learners
     ?.find((learner) => learner.learnerUserId === form.userId) || null
 })
+
+function learningAssignmentNextAction(assignment) {
+  if (!assignment) return { label: '查看作业', detail: '', issue: '', actionable: false }
+  const openFeedback = learningAssignmentOpenFeedback(assignment)
+  if (['REQUEST_EVIDENCE', 'RECOMMEND_RETRY'].includes(openFeedback?.action)) {
+    return {
+      label: learningAssignmentFeedbackContinueLabel(openFeedback),
+      detail: openFeedback.action === 'REQUEST_EVIDENCE'
+        ? '教师要求补充可验证证据。确认反馈后会直接启动下一轮。'
+        : '教师建议重新学习。确认反馈后会直接启动下一轮。',
+      issue: 'intervention',
+      actionable: true,
+    }
+  }
+  if (assignment.status === 'ASSIGNED') {
+    return { label: '接受并开始', detail: '按课程约束启动第一轮学习。', issue: 'assigned', actionable: true }
+  }
+  if (assignment.status === 'AWAITING_EVIDENCE') {
+    return { label: '补充证据并继续', detail: '上一轮已结束，但还缺少测评证据。', issue: 'evidence', actionable: true }
+  }
+  if (assignment.status === 'RETRY_REQUIRED') {
+    return assignment.reviewStatus === 'REVISION_REQUIRED'
+      ? { label: '按要求返工', detail: '教师已退回作业，请按说明重新完成。', issue: 'revision', actionable: true }
+      : { label: '重试课程作业', detail: '上一轮未完成，先重新启动课程作业。', issue: 'retry', actionable: true }
+  }
+  if (assignment.status === 'OVERDUE') {
+    return { label: '查看逾期作业', detail: '作业已逾期，需提交已有成果或联系教师重新安排。', issue: 'overdue', actionable: true }
+  }
+  if (assignment.status === 'COMPLETED' && assignment.reviewStatus === 'PENDING') {
+    const hasSubmission = (learningAssignmentSubmissionMap.value[assignment.id] || []).length > 0
+    return hasSubmission
+      ? { label: '等待教师确认', detail: '提交物已收到，当前等待教师依据证据完成确认。', issue: 'review', actionable: false }
+      : { label: '补齐提交物', detail: '学习目标已达到完成条件，但还缺少可追溯作答。', issue: 'submission', actionable: true }
+  }
+  if (assignment.status === 'ACCEPTED') {
+    return { label: '继续课程作业', detail: '继续当前学习对话，完成后再提交作业内容。', issue: 'accepted', actionable: true }
+  }
+  return { label: '查看完整记录', detail: '当前没有需要立即处理的动作。', issue: '', actionable: false }
+}
+
 const activeEducationCourseLearnerProgress = computed(() => {
   const course = activeEducationCourse.value
   if (!course || course.ownerUserId === form.userId) return null
@@ -847,18 +887,27 @@ const activeEducationCourseLearnerProgress = computed(() => {
     .filter((assignment) => assignment.courseId === course.id
       && assignment.learnerUserId === form.userId
       && assignment.status !== 'CANCELLED')
-  if (!assignments.length) return { total: 0, completed: 0, attention: 0, averageMasteryProgress: null }
+  if (!assignments.length) return {
+    total: 0, completed: 0, attention: 0, averageMasteryProgress: null, nextAction: null,
+  }
   const progressValues = assignments
     .map((assignment) => Number(learningAssignmentProgressMap.value[assignment.id]?.masteryProgress))
     .filter((value) => Number.isFinite(value))
+  const nextAssignment = assignments
+    .map((assignment) => ({ assignment, action: learningAssignmentNextAction(assignment) }))
+    .find(({ action }) => action.actionable)
   return {
     total: assignments.length,
     completed: assignments.filter((assignment) => assignment.status === 'COMPLETED').length,
     attention: assignments.filter((assignment) => ['AWAITING_EVIDENCE', 'RETRY_REQUIRED', 'OVERDUE'].includes(assignment.status)
-      || ['PENDING', 'REVISION_REQUIRED'].includes(assignment.reviewStatus)).length,
+      || ['PENDING', 'REVISION_REQUIRED'].includes(assignment.reviewStatus)
+      || learningAssignmentHasOpenIntervention(assignment)).length,
     averageMasteryProgress: progressValues.length
       ? progressValues.reduce((sum, value) => sum + value, 0) / progressValues.length
       : null,
+    nextAction: nextAssignment
+      ? { ...nextAssignment.action, assignmentId: nextAssignment.assignment.id }
+      : { label: '查看我的作业', detail: '当前没有需要立即处理的作业。', issue: '' },
   }
 })
 function canEditEducationSource(source) {
@@ -898,6 +947,7 @@ const learningAssignmentIssueLabel = computed(() => ({
   revision: '待返工',
   submission: '缺提交物',
   intervention: '开放干预',
+  overdue: '已逾期',
 }[learningAssignmentIssueFilter.value] || '问题作业'))
 const learnerCourseAssignments = computed(() => learningAssignments.value
   .filter((assignment) => assignment.learnerUserId === form.userId && assignment.status !== 'CANCELLED')
@@ -4223,6 +4273,7 @@ function learningAssignmentMatchesIssue(assignment, issue) {
   if (issue === 'revision') return assignment.reviewStatus === 'REVISION_REQUIRED'
   if (issue === 'submission') return !learningAssignmentSubmissionMap.value[assignment.id]?.length
   if (issue === 'intervention') return learningAssignmentHasOpenIntervention(assignment)
+  if (issue === 'overdue') return assignment.status === 'OVERDUE'
   return true
 }
 
@@ -4230,7 +4281,19 @@ function courseLearnerAttentionCount(learner) {
   if (!learner) return 0
   return Number(learner.awaitingEvidence || 0) + Number(learner.retryRequired || 0)
     + Number(learner.overdue || 0) + Number(learner.reviewPending || 0)
+    + Number(learner.revisionRequired || 0)
     + Number(learner.openInterventionCount || 0)
+}
+
+function courseLearnerNextAction(learner) {
+  if (!learner) return { label: '查看作业', issue: '' }
+  if (Number(learner.awaitingEvidence || 0)) return { label: '补证据', issue: 'evidence' }
+  if (Number(learner.retryRequired || 0)) return { label: '看重试', issue: 'retry' }
+  if (Number(learner.revisionRequired || 0)) return { label: '看返工', issue: 'revision' }
+  if (Number(learner.openInterventionCount || 0)) return { label: '看干预', issue: 'intervention' }
+  if (Number(learner.reviewPending || 0)) return { label: '去确认', issue: 'review' }
+  if (Number(learner.overdue || 0)) return { label: '看逾期', issue: 'overdue' }
+  return { label: '查看作业', issue: '' }
 }
 
 function focusCourseLearner(learner) {
@@ -4239,6 +4302,43 @@ function focusCourseLearner(learner) {
   learningAssignmentLearnerFilter.value = learner.learnerUserId
   learningAssignmentIssueFilter.value = ''
   nextTick(() => document.getElementById('learning-assignment-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+}
+
+function focusCourseLearnerAction(learner) {
+  if (!learner?.learnerUserId) return
+  const action = courseLearnerNextAction(learner)
+  learningAssignmentCourseFilter.value = activeEducationCourseId.value
+  learningAssignmentLearnerFilter.value = learner.learnerUserId
+  learningAssignmentIssueFilter.value = ['evidence', 'retry', 'revision', 'review', 'intervention', 'overdue'].includes(action.issue)
+    ? action.issue : ''
+  nextTick(() => document.getElementById('learning-assignment-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+}
+
+async function takeLearnerCourseNextAction() {
+  const course = activeEducationCourse.value
+  const nextAction = activeEducationCourseLearnerProgress.value?.nextAction
+  const assignment = nextAction?.assignmentId
+    ? learningAssignments.value.find((item) => item.id === nextAction.assignmentId)
+    : null
+  if (!course || !assignment) {
+    focusMyCourseAssignments()
+    return
+  }
+  const openFeedback = learningAssignmentOpenFeedback(assignment)
+  if (['REQUEST_EVIDENCE', 'RECOMMEND_RETRY'].includes(openFeedback?.action)) {
+    await acknowledgeLearningAssignmentFeedback(assignment, openFeedback)
+    return
+  }
+  if (['ASSIGNED', 'ACCEPTED', 'AWAITING_EVIDENCE', 'RETRY_REQUIRED'].includes(assignment.status)) {
+    await startLearningAssignment(assignment)
+    return
+  }
+  if (learningAssignmentSubmissionOpen(assignment)) {
+    startLearningAssignmentSubmission(assignment)
+    focusMyCourseAssignments()
+    return
+  }
+  focusLearnerCourseAssignment(assignment)
 }
 
 function focusMyCourseAssignments() {
@@ -4504,6 +4604,11 @@ function learningGoalTitleForAssessment(attempt) {
 
 function learningAssignmentHasOpenIntervention(assignment) {
   if (!assignment || assignment.learnerUserId !== form.userId) return false
+  return learningAssignmentHasOpenInterventionForView(assignment)
+}
+
+function learningAssignmentHasOpenInterventionForView(assignment) {
+  if (!assignment) return false
   return (learningAssignmentFeedbackMap.value[assignment.id] || [])
     .some((feedback) => feedback.status === 'OPEN'
       && ['REQUEST_EVIDENCE', 'RECOMMEND_RETRY'].includes(feedback.action))
@@ -8202,7 +8307,7 @@ onBeforeUnmount(() => {
                       <span><strong>{{ learner.learnerUserId }}</strong><small>{{ learner.lastActivityAt ? `最近 ${formatDate(learner.lastActivityAt)}` : '尚无作业活动' }}</small></span>
                       <span class="education-course-status-copy">{{ learner.completed }} 完成 · {{ learner.awaitingEvidence }} 待证据 · {{ learner.retryRequired }} 待重试 · {{ learner.reviewPending }} 待确认</span>
                       <span><strong>{{ formatRate(learner.averageMasteryProgress) }}</strong><small>提升 {{ learner.averageMasteryGain >= 0 ? '+' : '' }}{{ formatRate(learner.averageMasteryGain) }}</small></span>
-                      <button class="text-button" type="button" @click="focusCourseLearner(learner)">{{ courseLearnerAttentionCount(learner) ? `处理 ${courseLearnerAttentionCount(learner)} 项` : '查看作业' }}</button>
+                      <button class="text-button education-course-next-action" type="button" @click="focusCourseLearnerAction(learner)">{{ courseLearnerNextAction(learner).label }}<small v-if="courseLearnerAttentionCount(learner)">{{ courseLearnerAttentionCount(learner) }} 项待处理</small></button>
                     </div>
                   </div>
                   <div v-else class="context-preview-empty">名单中的学习者还没有作业；布置作业后，这里会显示每人的业务状态。</div>
@@ -8249,10 +8354,10 @@ onBeforeUnmount(() => {
                   <div><strong>{{ activeEducationCourse.status === 'ACTIVE' ? '课程进行中' : '结课结果尚未读取' }}</strong><small>{{ activeEducationCourse.status === 'ACTIVE' ? 'Agent 正在依据你的作业、提交物与对话证据更新学习状态；结课后这里会出现个人结果。' : '请刷新课程工作台；若仍不可用，请联系课程负责人确认结课快照。' }}</small></div>
                   <div v-if="activeEducationCourse.status === 'ACTIVE' && activeEducationCourseLearnerProgress" class="education-course-learner-live">
                     <div><small>课程作业</small><strong>{{ activeEducationCourseLearnerProgress.completed }} / {{ activeEducationCourseLearnerProgress.total }} 已完成</strong></div>
-                    <div><small>待处理</small><strong>{{ activeEducationCourseLearnerProgress.attention }} 项</strong></div>
+                    <div><small>待处理</small><strong>{{ activeEducationCourseLearnerProgress.attention }} 项</strong><span v-if="activeEducationCourseLearnerProgress.nextAction?.detail">{{ activeEducationCourseLearnerProgress.nextAction.detail }}</span></div>
                     <div><small>目标进度</small><strong>{{ activeEducationCourseLearnerProgress.averageMasteryProgress === null ? '待测评' : formatRate(activeEducationCourseLearnerProgress.averageMasteryProgress) }}</strong></div>
                   </div>
-                  <button v-if="activeEducationCourse.status === 'ACTIVE'" class="secondary-button" type="button" @click="focusMyCourseAssignments">查看我的作业</button>
+                  <button v-if="activeEducationCourse.status === 'ACTIVE'" class="secondary-button" type="button" @click="takeLearnerCourseNextAction">{{ activeEducationCourseLearnerProgress?.nextAction?.label || '查看我的作业' }} <ArrowUp :size="12" /></button>
                   <button v-else class="text-button" type="button" :disabled="educationCourseLoading" @click="loadEducationCourseWorkspace(activeEducationCourse.id)">{{ educationCourseLoading ? '刷新中…' : '刷新结果' }}</button>
                 </div>
               </div>
