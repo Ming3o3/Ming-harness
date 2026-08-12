@@ -2593,6 +2593,12 @@ async function submitManualAssessment() {
       [run.educationLearningGoalId]: recommendation,
     }
     await refreshLearnerMastery(run.educationLearnerProfileId)
+    // 人工复核会让待补证据任务进入下一状态；同步任务和通知列表，
+    // 让“提交证据 → 状态更新 → 下一步推荐”在当前页面立即闭环。
+    await Promise.all([
+      loadLearningTasks(),
+      loadLearningNotifications(),
+    ])
     manualAssessmentForm.correct = ''
     manualAssessmentForm.observedMastery = ''
     manualAssessmentForm.evidenceText = ''
@@ -4973,10 +4979,23 @@ async function startLearningTask(task) {
     rememberConversation(result.conversation.conversation.id)
     chatMode.value = true
     const runId = latestConversationRun(result.conversation)
-    if (runId) void selectRun(runId, false, false)
+    if (runId) {
+      if (task.status === 'AWAITING_EVIDENCE') {
+        // 待补证据任务已经有一个成功 Run；把学习者直接带到复核表单，
+        // 不要求用户先理解“打开 Run 详情”这一内部概念。
+        await openRunPanel(runId, false)
+        await nextTick()
+        document.querySelector('.chat-run-panel .manual-assessment-panel')
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      } else {
+        void selectRun(runId, false, false)
+      }
+    }
     await loadLearningTasks()
     await loadLearningNotifications()
-    noticeMessage.value = `已开始学习任务：${result.task.title}`
+    noticeMessage.value = task.status === 'AWAITING_EVIDENCE'
+      ? `已打开证据复核：${result.task.title}`
+      : `已开始学习任务：${result.task.title}`
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
