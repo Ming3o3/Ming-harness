@@ -1154,6 +1154,20 @@ function learningTaskSourceBlockReason(task) {
   return task?.learningGoalId ? learningGoalSourceBlockReason(task.learningGoalId) : '学习任务缺少学习目标。'
 }
 
+function learningTaskIsScheduled(task) {
+  return task?.status === 'DEFERRED'
+    && new Date(task.scheduledAt).getTime() > Date.now()
+}
+
+function learningTaskActionLabel(task, starting = false) {
+  if (starting) return '启动中…'
+  if (task?.status === 'FAILED') return '重试任务'
+  if (task?.status === 'AWAITING_EVIDENCE') return '补充证据'
+  if (task?.status === 'IN_PROGRESS') return '继续复习'
+  if (learningTaskIsScheduled(task)) return '查看复习安排'
+  return '开始复习'
+}
+
 function learningAssignmentSourceBlockReason(assignment) {
   if (!assignment) return '课程作业不可用。'
   return courseSourceBlockReason({
@@ -6798,7 +6812,7 @@ onBeforeUnmount(() => {
                   <div>
                     <button v-if="agentTeachingAction.state === 'blocked'" class="secondary-button" type="button" @click="openEducationAgentSetup">{{ educationSetupActionLabel }}</button>
                     <button v-else-if="!activeLearningGoal" class="secondary-button" type="button" @click="showQuickLearningGoalForm = true">设定学习目标</button>
-                    <button v-else-if="activeLearningTask" class="primary-button" type="button" :title="learningTaskSourceBlockReason(activeLearningTask)" :disabled="learningTaskStartingId === activeLearningTask.id || chatSending || chatUploading || Boolean(learningTaskSourceBlockReason(activeLearningTask))" @click="startLearningTask(activeLearningTask)">{{ learningTaskSourceBlockReason(activeLearningTask) ? '补充课程资料' : (learningTaskStartingId === activeLearningTask.id ? '启动中…' : '执行本轮计划') }} <ArrowUp :size="12" /></button>
+                    <button v-else-if="activeLearningTask" class="primary-button" type="button" :title="learningTaskIsScheduled(activeLearningTask) ? `任务将在 ${formatDate(activeLearningTask.scheduledAt)} 开放` : learningTaskSourceBlockReason(activeLearningTask)" :disabled="learningTaskStartingId === activeLearningTask.id || chatSending || chatUploading || Boolean(learningTaskSourceBlockReason(activeLearningTask))" @click="learningTaskIsScheduled(activeLearningTask) ? focusLearningTask(activeLearningTask) : startLearningTask(activeLearningTask)">{{ learningTaskSourceBlockReason(activeLearningTask) ? '补充课程资料' : learningTaskActionLabel(activeLearningTask, learningTaskStartingId === activeLearningTask.id) }} <ArrowUp :size="12" /></button>
                     <button v-else-if="activeLearningRecommendation" class="primary-button" type="button" :title="learningGoalSourceBlockReason(activeLearningRecommendation.learningGoalId)" :disabled="chatSending || chatUploading || Boolean(learningGoalSourceBlockReason(activeLearningRecommendation.learningGoalId))" @click="useLearningRecommendation">按 Agent 建议开始 <ArrowUp :size="12" /></button>
                     <button v-else class="secondary-button" type="button" @click="chatInputRef?.focus()">提出学习问题 <ArrowUp :size="12" /></button>
                   </div>
@@ -8266,7 +8280,7 @@ onBeforeUnmount(() => {
                   <article v-for="task in learningTasks.filter((item) => ['OPEN', 'IN_PROGRESS', 'AWAITING_EVIDENCE', 'DEFERRED', 'FAILED'].includes(item.status)).slice(0, 8)" :id="`learning-task-${task.id}`" :key="task.id" class="learning-task-row">
                     <div class="learning-task-main"><strong>{{ task.title }}</strong><small>{{ task.status === 'IN_PROGRESS' ? '进行中' : (task.status === 'AWAITING_EVIDENCE' ? '待补测评证据' : (task.status === 'FAILED' ? `执行失败${task.failureReason ? `：${task.failureReason}` : ''}` : (task.status === 'DEFERRED' ? `延期至 ${formatDate(task.scheduledAt)}` : `到期 ${formatDate(task.scheduledAt)}`))) }} · 第 {{ task.reviewSequence + 1 }} 次复习</small><p>{{ task.prompt }}</p></div>
                     <div class="learning-task-actions">
-                    <button class="secondary-button" type="button" :title="learningTaskSourceBlockReason(task)" :disabled="learningTaskStartingId === task.id || learningTaskDeferringId === task.id || Boolean(learningTaskSourceBlockReason(task))" @click="startLearningTask(task)">{{ learningTaskSourceBlockReason(task) ? '需课程资料' : (learningTaskStartingId === task.id ? '启动中…' : (task.status === 'FAILED' ? '重试任务' : (task.status === 'AWAITING_EVIDENCE' ? '补充证据' : (task.status === 'IN_PROGRESS' ? '继续复习' : '开始复习')))) }}</button>
+                    <button class="secondary-button" type="button" :title="learningTaskIsScheduled(task) ? `任务将在 ${formatDate(task.scheduledAt)} 开放` : learningTaskSourceBlockReason(task)" :disabled="learningTaskStartingId === task.id || learningTaskDeferringId === task.id || Boolean(learningTaskSourceBlockReason(task))" @click="learningTaskIsScheduled(task) ? focusLearningTask(task) : startLearningTask(task)">{{ learningTaskSourceBlockReason(task) ? '需课程资料' : learningTaskActionLabel(task, learningTaskStartingId === task.id) }}</button>
                     <button v-if="learningTaskSourceBlockReason(task)" class="text-button" type="button" @click="openEducationAgentSetup">{{ educationSetupActionLabel }}</button>
                       <button v-if="task.status === 'OPEN'" class="text-button" type="button" :disabled="learningTaskDeferringId === task.id" @click="deferLearningTask(task)">{{ learningTaskDeferringId === task.id ? '延期中…' : '明天再复习' }}</button>
                     </div>
