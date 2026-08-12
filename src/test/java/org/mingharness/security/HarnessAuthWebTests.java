@@ -45,6 +45,25 @@ class HarnessAuthWebTests {
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
     @Test
+    void shouldExposeTrustedIdentityAndDerivedProductRoles() throws Exception {
+        HttpResponse<String> response = httpClient.send(
+                HttpRequest.newBuilder(URI.create(baseUrl() + "/api/me"))
+                        .header("Authorization", "Bearer web-test-key")
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertEquals(200, response.statusCode(), response.body());
+        assertTrue(response.body().contains("\"tenantId\":\"tenant-web\""), response.body());
+        assertTrue(response.body().contains("\"userId\":\"web-user\""), response.body());
+        assertTrue(response.body().contains("\"primaryRole\":\"ADMIN\""), response.body());
+        assertTrue(response.body().contains("\"localDemo\":false"), response.body());
+        assertTrue(response.body().contains("\"ADMIN\""), response.body());
+        assertTrue(response.body().contains("\"TEACHER\""), response.body());
+        assertTrue(response.body().contains("\"STUDENT\""), response.body());
+    }
+
+    @Test
     void shouldUploadDocxThroughAuthenticatedKnowledgeDocumentEndpoint() throws Exception {
         byte[] docx;
         try (XWPFDocument document = new XWPFDocument()) {

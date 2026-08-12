@@ -276,6 +276,53 @@ const defaultApiKeyPermissions = [
 ]
 // 工作区状态用于告知用户 Agent 是否直接连接到本地项目；接口不会返回绝对路径。
 const workspace = ref(null)
+// 当前身份用于决定工作台入口；正式 API Key/OIDC 模式由 Runtime 返回，local 模式可切换演示角色。
+const currentUser = ref(null)
+const demoRole = ref(readStoredValue('harnessDemoRole', import.meta.env.VITE_HARNESS_DEMO_ROLE || 'STUDENT'))
+const demoRoleSwitching = ref(false)
+const demoRoleUserIds = {
+  ADMIN: 'admin-demo',
+  TEACHER: 'teacher-demo',
+  STUDENT: 'student-demo',
+}
+const currentPrimaryRole = computed(() => String(
+  currentUser.value?.primaryRole || demoRole.value || 'STUDENT',
+).toUpperCase())
+const currentRoles = computed(() => new Set(
+  (currentUser.value?.roles || [currentPrimaryRole.value]).map((role) => String(role).toUpperCase()),
+))
+const isAdminRole = computed(() => currentRoles.value.has('ADMIN'))
+const isTeacherRole = computed(() => currentRoles.value.has('TEACHER'))
+const isStudentRole = computed(() => currentRoles.value.has('STUDENT'))
+const canViewRuntimeConsole = computed(() => isAdminRole.value)
+const canViewEducationConsole = computed(() => isAdminRole.value || isTeacherRole.value || isStudentRole.value)
+const roleWorkspaceTitle = computed(() => ({
+  ADMIN: '管理员治理中心',
+  TEACHER: '教师课程工作台',
+  STUDENT: '学生学习工作台',
+}[currentPrimaryRole.value] || '工作台'))
+const roleWorkspaceDetail = computed(() => ({
+  ADMIN: '管理用户权限、模型连接、知识库索引、组织策略和审计记录。',
+  TEACHER: '配置课程资料，维护课程边界，布置作业并跟进学生进度。',
+  STUDENT: '查看我的课程、学习任务和反馈，按下一步行动完成学习。',
+}[currentPrimaryRole.value] || '选择一个入口开始使用系统。'))
+const roleWorkspaceSteps = computed(() => ({
+  ADMIN: [
+    { title: '确认系统状态', detail: '检查模型、向量库和基础设施是否正常。' },
+    { title: '配置组织能力', detail: '维护模型、知识库索引、策略和 API Key。' },
+    { title: '核对审计记录', detail: '追踪高风险 Run、审批和关键配置变更。' },
+  ],
+  TEACHER: [
+    { title: '上传课程资料', detail: '导入 PDF/DOCX，建立可检索的知识文档。' },
+    { title: '补充课程元数据', detail: '填写学科、年级、版本、章节、知识点和难度。' },
+    { title: '开课并布置作业', detail: '加入学生、发布作业，再根据证据确认或退回。' },
+  ],
+  STUDENT: [
+    { title: '建立学习档案', detail: '填写学科、年级和课程版本，绑定你的学习目标。' },
+    { title: '加入一门课程', detail: '在“我的课程”中查看教师发布的课程和作业。' },
+    { title: '完成下一步行动', detail: '进入学习对话，提交作业并查看反馈与掌握度。' },
+  ],
+}[currentPrimaryRole.value] || []))
 // 已登记工作区是用户明确在桌面端授权的项目；选择只影响后续创建的会话。
 const localWorkspaces = ref([])
 const newConversationWorkspaceId = ref('')
@@ -453,6 +500,48 @@ function applyTheme(nextTheme) {
     } catch {
       // 浏览器禁用本地存储时仍然允许本次会话切换主题。
     }
+  }
+}
+
+function roleLabel(role) {
+  return {
+    ADMIN: '管理员',
+    TEACHER: '老师',
+    STUDENT: '学生',
+  }[String(role || '').toUpperCase()] || '未分配角色'
+}
+
+async function loadCurrentUser() {
+  try {
+    currentUser.value = await api.currentUser()
+    if (currentUser.value?.localDemo && currentUser.value.primaryRole) {
+      demoRole.value = currentUser.value.primaryRole
+    }
+    // 管理员的第一入口是治理中心；老师和学生从教育工作台开始。
+    if (currentUser.value?.primaryRole === 'ADMIN' && !window.location.hash) {
+      chatMode.value = false
+    } else if (currentUser.value?.primaryRole !== 'ADMIN') {
+      chatMode.value = false
+      showGovernance.value = true
+      activeConsoleSection.value = 'education'
+    }
+  } catch (error) {
+    // 身份摘要失败不阻断已有本地演示能力；具体接口仍会返回真实权限错误。
+    currentUser.value = null
+  }
+}
+
+function switchDemoRole(nextRole) {
+  const normalized = String(nextRole || '').toUpperCase()
+  if (!currentUser.value?.localDemo || !demoRoleUserIds[normalized] || demoRoleSwitching.value) return
+  demoRoleSwitching.value = true
+  try {
+    localStorage.setItem('harnessDemoRole', normalized)
+    localStorage.setItem('harnessUserId', demoRoleUserIds[normalized])
+    form.userId = demoRoleUserIds[normalized]
+    window.location.reload()
+  } finally {
+    demoRoleSwitching.value = false
   }
 }
 
@@ -793,6 +882,10 @@ const hasLearnerEducationContext = computed(() => enrolledEducationCourses.value
   || learnerProfiles.value.length > 0
   || learningGoals.value.length > 0)
 const educationWorkspaceMode = computed(() => {
+  // 角色决定工作台的默认心智模型；是否已经有课程只决定空状态提示，
+  // 不能让一位刚加入系统的老师被误导成“学习者模式”。
+  if (isTeacherRole.value && !isAdminRole.value) return 'teacher'
+  if (isStudentRole.value && !isAdminRole.value) return 'learner'
   if (hasTeacherEducationContext.value) return 'teacher'
   if (hasLearnerEducationContext.value) return 'learner'
   return 'setup'
@@ -3822,28 +3915,39 @@ async function refreshActiveConversation() {
 async function loadDashboard() {
   clearMessages()
   try {
-    const [, toolData, summaryData, documentData, memoryData, contextConfigurationData] = await Promise.all([
-      loadRunsPage(),
-      api.listTools(),
-      api.dashboardSummary(),
-      api.listDocuments(),
-      api.listMemories(),
-      api.contextConfiguration(),
-    ])
-    tools.value = toolData
-    summary.value = summaryData
-    documents.value = documentData
-    if (!documentData.some((document) => document.ownerUserId === form.userId
+    const commonRequests = [
+      api.listDocuments().catch(() => []),
+      api.listMemories().catch(() => []),
+      api.contextConfiguration().catch(() => null),
+    ]
+    const [documentData, memoryData, contextConfigurationData] = await Promise.all(commonRequests)
+    const visibleDocuments = documentData || []
+    documents.value = visibleDocuments
+    if (!visibleDocuments.some((document) => document.ownerUserId === form.userId
       && document.id === educationSourceForm.documentId)) {
       educationSourceForm.documentId = ''
     }
-    memories.value = memoryData
+    memories.value = memoryData || []
     contextConfiguration.value = contextConfigurationData
     await loadEducationData()
-    if (selectedRun.value) {
-      await selectRun(selectedRun.value.run.id, false)
-    } else if (runs.value.length) {
-      await selectRun(runs.value[0].id, false)
+    if (isAdminRole.value) {
+      const [runData, toolData, summaryData] = await Promise.all([
+        loadRunsPage(),
+        api.listTools().catch(() => []),
+        api.dashboardSummary().catch(() => null),
+      ])
+      tools.value = toolData || []
+      summary.value = summaryData
+      if (selectedRun.value) {
+        await selectRun(selectedRun.value.run.id, false)
+      } else if (runData?.items?.length || runs.value.length) {
+        await selectRun((runData?.items || runs.value)[0].id, false)
+      }
+    } else {
+      tools.value = []
+      summary.value = null
+      runs.value = []
+      selectedRun.value = null
     }
   } catch (error) {
     errorMessage.value = errorText(error)
@@ -6723,7 +6827,25 @@ onMounted(async () => {
       void handleDesktopWorkspaceDropped(result)
     })
   }
-  await Promise.all([loadDashboard(), loadHealth(), loadModelConfig(), loadEmbeddingConfig(), loadWorkspace(), loadTenantPolicy(), loadApiKeys(), loadLocalWorkspaces()])
+  await loadCurrentUser()
+  if (!isAdminRole.value) {
+    await nextTick()
+    navigateConsoleSection('education', 'auto')
+  }
+  if (isAdminRole.value) {
+    await Promise.all([
+      loadDashboard(),
+      loadHealth(),
+      loadModelConfig(),
+      loadEmbeddingConfig(),
+      loadWorkspace(),
+      loadTenantPolicy(),
+      loadApiKeys(),
+      loadLocalWorkspaces(),
+    ])
+  } else {
+    await Promise.all([loadDashboard(), loadWorkspace()])
+  }
   await loadConversations()
   runPollTimer = window.setInterval(pollSelectedRun, 1500)
   conversationPollTimer = window.setInterval(pollConversation, 1200)
@@ -6768,7 +6890,15 @@ onBeforeUnmount(() => {
           <button class="theme-toggle" type="button" :aria-label="theme === 'dark' ? '切换到白天模式' : '切换到黑夜模式'" @click="toggleTheme">
             <Sun v-if="theme === 'dark'" :size="15" aria-hidden="true" /><Moon v-else :size="15" aria-hidden="true" />{{ theme === 'dark' ? '白天' : '黑夜' }}
           </button>
-          <button class="secondary-button chat-console-button" type="button" title="管理课程、资料、作业与运行记录" @click="chatMode = false; navigateConsoleSection('education')"><Settings2 :size="15" />教学工作台</button>
+          <div v-if="currentUser" class="current-user-chip" :title="`${currentUser.userId} · ${currentUser.tenantId}`">
+            <span>{{ roleLabel(currentUser.primaryRole) }}</span><strong>{{ currentUser.userId }}</strong>
+            <select v-if="currentUser.localDemo" v-model="demoRole" aria-label="切换本地演示角色" :disabled="demoRoleSwitching" @change="switchDemoRole(demoRole)">
+              <option value="STUDENT">学生</option>
+              <option value="TEACHER">老师</option>
+              <option value="ADMIN">管理员</option>
+            </select>
+          </div>
+          <button class="secondary-button chat-console-button" type="button" :title="roleWorkspaceDetail" @click="chatMode = false; navigateConsoleSection('education')"><Settings2 :size="15" />{{ roleWorkspaceTitle }}</button>
         </div>
       </header>
 
@@ -6782,14 +6912,17 @@ onBeforeUnmount(() => {
             <button class="chat-primary-nav-item chat-primary-nav-item-primary" type="button" :disabled="chatLoading || chatSending || chatUploading" @click="createChatConversation">
               <MessageSquarePlus :size="15" /><span>新建学习任务</span><kbd>⌘N</kbd>
             </button>
-            <button class="chat-primary-nav-item chat-primary-nav-item-education" type="button" @click="chatMode = false; navigateConsoleSection('education')">
-              <Sparkles :size="15" /><span>学习计划与目标</span>
+            <button v-if="!isAdminRole" class="chat-primary-nav-item chat-primary-nav-item-education" type="button" @click="chatMode = false; navigateConsoleSection('education')">
+              <Sparkles :size="15" /><span>{{ isTeacherRole ? '课程运营' : '学习计划与目标' }}</span>
             </button>
-            <button class="chat-primary-nav-item" type="button" @click="chatMode = false; navigateConsoleSection('education')">
-              <CircleDot :size="15" /><span>学习档案</span>
+            <button v-if="!isAdminRole" class="chat-primary-nav-item" type="button" @click="chatMode = false; navigateConsoleSection('education')">
+              <CircleDot :size="15" /><span>{{ isTeacherRole ? '课程与学生' : '学习档案' }}</span>
             </button>
-            <button class="chat-primary-nav-item" type="button" @click="chatMode = false; navigateConsoleSection('education')">
-              <Check :size="15" /><span>测评证据与反馈</span>
+            <button v-if="!isAdminRole" class="chat-primary-nav-item" type="button" @click="chatMode = false; navigateConsoleSection('education')">
+              <Check :size="15" /><span>{{ isTeacherRole ? '作业复核' : '测评证据与反馈' }}</span>
+            </button>
+            <button v-if="isAdminRole" class="chat-primary-nav-item" type="button" @click="chatMode = false; navigateConsoleSection('runtime')">
+              <ShieldCheck :size="15" /><span>系统治理与审计</span>
             </button>
           </nav>
           <section class="learning-sidebar-contract" :class="{ ready: educationAgentReady }" aria-label="当前学习契约">
@@ -7711,9 +7844,17 @@ onBeforeUnmount(() => {
             <Sun v-if="theme === 'dark'" :size="15" aria-hidden="true" /><Moon v-else :size="15" aria-hidden="true" />
             {{ theme === 'dark' ? '白天' : '黑夜' }}
           </button>
-          <button class="secondary-button top-config-button" type="button" title="配置大语言模型" @click="showModelSettings = true"><Settings2 :size="15" />大语言模型</button>
-          <button class="secondary-button top-config-button" type="button" title="配置向量模型" @click="showEmbeddingSettings = true"><Settings2 :size="15" />向量模型</button>
-          <button class="secondary-button" type="button" title="打开学习对话" @click="chatMode = true"><MessageSquarePlus :size="15" />学习对话</button>
+          <div v-if="currentUser" class="current-user-chip" :title="`${currentUser.userId} · ${currentUser.tenantId}`">
+            <span>{{ roleLabel(currentUser.primaryRole) }}</span><strong>{{ currentUser.userId }}</strong>
+            <select v-if="currentUser.localDemo" v-model="demoRole" aria-label="切换本地演示角色" :disabled="demoRoleSwitching" @change="switchDemoRole(demoRole)">
+              <option value="STUDENT">学生</option>
+              <option value="TEACHER">老师</option>
+              <option value="ADMIN">管理员</option>
+            </select>
+          </div>
+          <button v-if="isAdminRole" class="secondary-button top-config-button" type="button" title="配置大语言模型" @click="showModelSettings = true"><Settings2 :size="15" />大语言模型</button>
+          <button v-if="isAdminRole" class="secondary-button top-config-button" type="button" title="配置向量模型" @click="showEmbeddingSettings = true"><Settings2 :size="15" />向量模型</button>
+          <button v-if="!isAdminRole" class="secondary-button" type="button" title="打开学习对话" @click="chatMode = true"><MessageSquarePlus :size="15" />学习对话</button>
         </div>
       </div>
     </header>
@@ -7721,9 +7862,9 @@ onBeforeUnmount(() => {
     <div class="console-layout">
       <aside class="sidebar">
       <nav class="side-nav" aria-label="主导航">
-        <a class="nav-item" :class="{ active: activeConsoleSection === 'runtime' }" href="#runtime" :aria-current="activeConsoleSection === 'runtime' ? 'page' : undefined" @click.prevent="navigateConsoleSection('runtime')"><span class="nav-icon"><CircleDot :size="16" /></span>运行追踪</a>
-        <a class="nav-item" :class="{ active: activeConsoleSection === 'education' }" href="#education" :aria-current="activeConsoleSection === 'education' ? 'page' : undefined" @click.prevent="navigateConsoleSection('education')"><span class="nav-icon"><Sparkles :size="16" /></span>教育工作台</a>
-        <a class="nav-item" :class="{ active: activeConsoleSection === 'audit' }" href="#audit" :aria-current="activeConsoleSection === 'audit' ? 'page' : undefined" @click.prevent="navigateConsoleSection('audit')"><span class="nav-icon"><Check :size="16" /></span>证据审计</a>
+        <a v-if="isAdminRole" class="nav-item" :class="{ active: activeConsoleSection === 'runtime' }" href="#runtime" :aria-current="activeConsoleSection === 'runtime' ? 'page' : undefined" @click.prevent="navigateConsoleSection('runtime')"><span class="nav-icon"><CircleDot :size="16" /></span>运行追踪</a>
+        <a v-if="canViewEducationConsole" class="nav-item" :class="{ active: activeConsoleSection === 'education' }" href="#education" :aria-current="activeConsoleSection === 'education' ? 'page' : undefined" @click.prevent="navigateConsoleSection('education')"><span class="nav-icon"><Sparkles :size="16" /></span>{{ isAdminRole ? '教育概览' : (isTeacherRole ? '课程管理' : '我的学习') }}</a>
+        <a v-if="isAdminRole" class="nav-item" :class="{ active: activeConsoleSection === 'audit' }" href="#audit" :aria-current="activeConsoleSection === 'audit' ? 'page' : undefined" @click.prevent="navigateConsoleSection('audit')"><span class="nav-icon"><Check :size="16" /></span>审计与证据</a>
       </nav>
 
       <div class="sidebar-foot">
@@ -7736,7 +7877,21 @@ onBeforeUnmount(() => {
       <div v-if="noticeMessage" :key="`notice-${noticeMessage}`" class="message notice-message console-message-banner">{{ noticeMessage }}</div>
       <div v-if="educationRuntimeDiagnostic" class="message education-runtime-message console-message-banner" role="alert">{{ educationRuntimeDiagnostic }}</div>
 
-      <section class="infra-strip panel" aria-label="基础设施状态">
+      <section class="role-welcome panel" :class="`role-welcome-${currentPrimaryRole.toLowerCase()}`" aria-label="当前角色工作台">
+        <div class="role-welcome-copy">
+          <p class="eyebrow">{{ currentPrimaryRole }} WORKSPACE</p>
+          <h1>{{ roleWorkspaceTitle }}</h1>
+          <p>{{ roleWorkspaceDetail }}</p>
+        </div>
+        <ol class="role-welcome-steps">
+          <li v-for="(step, index) in roleWorkspaceSteps" :key="step.title">
+            <span>{{ String(index + 1).padStart(2, '0') }}</span>
+            <div><strong>{{ step.title }}</strong><small>{{ step.detail }}</small></div>
+          </li>
+        </ol>
+      </section>
+
+      <section v-if="isAdminRole" class="infra-strip panel" aria-label="基础设施状态">
         <div><p class="eyebrow">INFRASTRUCTURE</p><h2>本地依赖状态</h2></div>
         <div class="infra-status">
           <div class="health-items">
@@ -7754,7 +7909,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section class="stats-grid" aria-label="运行统计">
+      <section v-if="isAdminRole" class="stats-grid" aria-label="运行统计">
         <div class="stat-card stat-running">
           <div class="stat-top"><span>活动 Run</span><span class="stat-icon"><Activity :size="16" /></span></div>
           <strong>{{ stats.running + stats.queued }}</strong>
@@ -7772,7 +7927,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section class="create-panel" :class="{ 'create-panel-collapsed': !showCreateForm }">
+      <section v-if="isAdminRole" class="create-panel" :class="{ 'create-panel-collapsed': !showCreateForm }">
         <div class="section-heading">
           <div>
             <p class="eyebrow">CREATE EXECUTION</p>
@@ -7881,7 +8036,7 @@ onBeforeUnmount(() => {
         </form>
       </section>
 
-      <section class="workspace-grid">
+      <section v-if="isAdminRole" class="workspace-grid">
         <div class="runs-panel panel">
           <div class="panel-heading run-panel-heading">
             <div><p class="eyebrow">RECENT RUNS</p><h2>最近执行</h2></div>
@@ -8068,7 +8223,7 @@ onBeforeUnmount(() => {
         </div>
       </section>
 
-      <section class="tool-section panel" id="tools">
+      <section v-if="isAdminRole" class="tool-section panel" id="tools">
         <div class="panel-heading"><div><p class="eyebrow">TOOL REGISTRY</p><h2>已注册工具</h2></div><span class="registry-count">{{ tools.length }} tools</span></div>
         <div class="tool-grid">
           <div v-for="tool in tools" :key="tool.name" class="tool-card">
@@ -8083,11 +8238,11 @@ onBeforeUnmount(() => {
 
       <section class="governance-section panel" id="governance">
         <div class="panel-heading">
-          <div><p class="eyebrow">ADVANCED GOVERNANCE</p><h2>高级治理设置</h2><p class="panel-heading-help">知识源、索引、组织策略和凭证设置只在这里维护。</p></div>
-          <button class="secondary-button" type="button" @click="showGovernance = !showGovernance">{{ showGovernance ? '收起高级设置' : '展开高级设置' }}</button>
+          <div><p class="eyebrow">{{ isAdminRole ? 'ADVANCED GOVERNANCE' : 'EDUCATION WORKSPACE' }}</p><h2>{{ isAdminRole ? '高级治理设置' : roleWorkspaceTitle }}</h2><p class="panel-heading-help">{{ isAdminRole ? '知识源、索引、组织策略和凭证设置只在这里维护。' : roleWorkspaceDetail }}</p></div>
+          <button v-if="isAdminRole" class="secondary-button" type="button" @click="showGovernance = !showGovernance">{{ showGovernance ? '收起高级设置' : '展开高级设置' }}</button>
         </div>
         <div v-if="showGovernance" class="governance-grid">
-          <section class="governance-card context-workbench-card">
+          <section v-if="isAdminRole" class="governance-card context-workbench-card">
             <div class="context-workbench-heading">
               <div>
                 <p class="eyebrow">VECTOR SEARCH</p>
@@ -8136,7 +8291,7 @@ onBeforeUnmount(() => {
             </div>
             <div v-else class="context-preview-empty context-preview-empty-initial">尚未运行查询。这里的结果与模型步骤实际收到的上下文格式一致。</div>
           </section>
-          <section class="governance-card governance-fixed-card context-index-card">
+          <section v-if="isAdminRole" class="governance-card governance-fixed-card context-index-card">
             <div class="context-workbench-heading">
               <div>
                 <p class="eyebrow">INDEX OPERATIONS</p>
@@ -8165,7 +8320,7 @@ onBeforeUnmount(() => {
             </div>
             <small class="form-hint">需要 <code>context.reindex</code> 权限；开启“重新分块”后建议在低峰期执行。</small>
           </section>
-          <section class="governance-card governance-fixed-card context-config-card">
+          <section v-if="isAdminRole" class="governance-card governance-fixed-card context-config-card">
             <div class="context-workbench-heading">
               <div>
                 <p class="eyebrow">RUNTIME CONFIG</p>
@@ -8188,7 +8343,7 @@ onBeforeUnmount(() => {
             <div v-else class="context-preview-empty">正在读取 Runtime 配置…</div>
             <small class="form-hint">配置按组织保存；修改后旧向量会失效，请使用上方索引操作重新建立向量。</small>
           </section>
-          <form id="education-document-upload" class="governance-card governance-fixed-card" @submit.prevent="createDocument">
+          <form v-if="isAdminRole || isTeacherRole" id="education-document-upload" class="governance-card governance-fixed-card" @submit.prevent="createDocument">
             <div class="context-workbench-heading">
               <div><h3>添加授权知识文档</h3><small class="form-hint">仅支持 PDF/DOCX 上传解析，上传后自动建立索引。</small></div>
               <span class="context-mode-chip">文件 → 文本 → 向量</span>
@@ -8335,7 +8490,7 @@ onBeforeUnmount(() => {
                 <span v-if="activeEducationCourse" class="context-mode-chip">{{ educationCourseStatusLabel(activeEducationCourse.status) }}</span>
               </div>
               <p class="learning-task-help">课程约束决定学习范围；Agent 会结合每次作业、提交物和对话证据更新学习状态。{{ educationWorkspaceMode === 'teacher' ? '班级进度、名单和布置动作只在课程负责人入口中展开。' : '你只需要关注自己的课程行动、证据和结课结果。' }}</p>
-              <details class="education-teacher-entry" :open="educationWorkspaceMode === 'teacher'">
+              <details v-if="isAdminRole || isTeacherRole" class="education-teacher-entry" :open="educationWorkspaceMode === 'teacher'">
                 <summary><span><strong>课程负责人入口</strong><small>创建课程、维护名单、批量布置作业</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '管理模式' : '需要教师 / 组织权限' }}</em></summary>
                 <p class="education-teacher-entry-help">这是课程管理操作，不会改变学习者的 Agent 状态；提交后仍由 Runtime 做最终权限校验。</p>
                 <form class="education-course-form" @submit.prevent="createEducationCourse">
@@ -8513,7 +8668,7 @@ onBeforeUnmount(() => {
                   <div class="learning-notification-actions"><button class="secondary-button" type="button" @click="openLearningAssignmentNotification(notification)">{{ learningAssignmentNotificationActionLabel(notification) }}</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningAssignmentNotificationRead(notification)">标记已读</button></div>
                 </article>
               </div>
-              <details class="education-teacher-entry education-assignment-entry" :open="educationWorkspaceMode === 'teacher'">
+              <details v-if="isAdminRole || isTeacherRole" class="education-teacher-entry education-assignment-entry" :open="educationWorkspaceMode === 'teacher'">
                 <summary><span><strong>教师布置入口</strong><small>把课程约束和目标知识点下发给指定学习者</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '管理模式' : '需要教师 / 组织权限' }}</em></summary>
                 <form class="learning-assignment-form" @submit.prevent="createLearningAssignment">
                   <label class="field"><span>学习者 ID</span><input v-model="learningAssignmentForm.learnerUserId" required maxlength="255" placeholder="例如：student-1" /></label>
@@ -8615,7 +8770,7 @@ onBeforeUnmount(() => {
                 <details v-if="learningGoalAssessments.length" class="learning-assessment-history"><summary>查看测评历史（{{ learningGoalAssessments.length }}）</summary><div v-for="attempt in learningGoalAssessments.slice().reverse().slice(0, 5)" :key="attempt.id"><span :class="attempt.correct ? 'assessment-correct' : 'assessment-wrong'">{{ attempt.correct ? '正确' : '错误' }}</span><span>{{ Math.round(attempt.masteryBefore * 100) }}% → {{ Math.round(attempt.masteryAfter * 100) }}%</span><small>{{ attempt.assessmentType === 'REVIEW' ? '保持度复习' : (attempt.evidenceSource === 'MANUAL_REVIEW' ? '人工复核' : 'Agent观察') }} · {{ formatDate(attempt.createdAt) }}</small></div></details>
               </div>
             </div>
-            <details class="education-source-editor education-teacher-entry" :open="educationWorkspaceMode === 'teacher'">
+            <details v-if="isAdminRole || isTeacherRole" class="education-source-editor education-teacher-entry" :open="educationWorkspaceMode === 'teacher'">
               <summary><span><strong>课程资料维护入口</strong><small>为知识文档补充学科、版本、章节和知识点边界</small></span><em>{{ educationSources.length }} 个课程来源</em></summary>
               <form v-if="ownedKnowledgeDocuments.length" class="education-source-form" @submit.prevent="saveEducationSource">
                 <label class="field field-wide"><span>知识文档</span><select v-model="educationSourceForm.documentId" required><option value="">选择你拥有的知识文档</option><option v-for="document in ownedKnowledgeDocuments" :key="document.id" :value="document.id">{{ document.title }}</option></select></label>
@@ -8639,7 +8794,7 @@ onBeforeUnmount(() => {
               </div>
             </details>
           </section>
-          <form class="governance-card governance-fixed-card memory-card" @submit.prevent="createMemory">
+          <form v-if="isAdminRole" class="governance-card governance-fixed-card memory-card" @submit.prevent="createMemory">
             <div class="context-workbench-heading">
               <div>
                 <p class="eyebrow">PERSONAL CONTEXT</p>
@@ -8663,7 +8818,7 @@ onBeforeUnmount(() => {
             </div>
             <div v-else class="context-preview-empty">还没有当前用户的长期记忆。</div>
           </form>
-          <form class="governance-card policy-card" @submit.prevent="saveTenantPolicy">
+          <form v-if="isAdminRole" class="governance-card policy-card" @submit.prevent="saveTenantPolicy">
             <div class="subsection-title"><h3>组织资源策略</h3><span v-if="tenantPolicy">{{ tenantPolicy.defaulted ? '平台默认' : '组织覆盖' }}</span></div>
             <p v-if="tenantPolicyError" class="policy-error">{{ tenantPolicyError }}</p>
             <label class="field"><span>最大活动 Run 数</span><input v-model.number="tenantPolicyForm.maxActiveRuns" type="number" min="1" required /></label>
@@ -8699,7 +8854,7 @@ onBeforeUnmount(() => {
             <div class="policy-actions"><button class="secondary-button" type="button" :disabled="loading" @click="loadTenantPolicy">读取策略</button><button class="secondary-button" type="submit" :disabled="loading">保存策略</button><button class="danger-button" type="button" :disabled="loading" @click="resetTenantPolicy">恢复默认</button></div>
             <small class="form-hint">策略只能收紧平台硬上限；最近 {{ tenantPolicyAudits.length }} 条变更已留痕。</small>
           </form>
-          <form class="governance-card api-key-card" @submit.prevent="createManagedApiKey">
+          <form v-if="isAdminRole" class="governance-card api-key-card" @submit.prevent="createManagedApiKey">
             <div class="subsection-title">
               <div><h3>API Key 生命周期</h3><span>数据库凭证</span></div>
               <button class="refresh-button" type="button" :disabled="loading" aria-label="刷新 API Key" @click="loadApiKeys">⟳</button>

@@ -65,6 +65,11 @@ h1 { margin-bottom: 0; font-size: 31px; letter-spacing: -.055em; }
 h2 { margin-bottom: 0; font-size: 17px; letter-spacing: -.035em; }
 h3 { margin: 0; font-size: 13px; }
 .topbar-actions { display: flex; align-items: center; gap: 12px; }
+.current-user-chip { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 20px; background: var(--hover-bg); color: var(--soft); padding: 6px 9px 6px 11px; font-size: 10px; white-space: nowrap; }
+.current-user-chip > span { color: var(--accent-light); font-size: 10px; }
+.current-user-chip strong { color: var(--text); font: 10px "DM Mono", monospace; font-weight: 500; }
+.current-user-chip select { max-width: 78px; border: 0; outline: 0; background: transparent; color: var(--soft); font-size: 10px; }
+.current-user-chip select option { color: #172033; }
 .theme-toggle { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 20px; background: var(--hover-bg); color: var(--soft); padding: 8px 12px; font: 10px "DM Mono", monospace; transition: .2s ease; }
 .theme-toggle:hover { border-color: var(--accent); color: var(--accent-light); transform: translateY(-1px); }
 .theme-toggle span { font-size: 15px; line-height: 1; }
@@ -718,6 +723,32 @@ h3 { margin: 0; font-size: 13px; }
   .education-course-progress-row > span:nth-child(2) { grid-column: 1 / -1; }
 }
 .footer { padding: 28px 0 0; color: #4d5b75; font: 9px "DM Mono", monospace; letter-spacing: .04em; }
+
+/* 角色首页把“我是谁、我该做什么、下一步是什么”固定在首屏，
+   避免管理员、教师和学生都落入同一套技术控制台。 */
+.role-welcome { display: grid; grid-template-columns: minmax(260px, .9fr) minmax(0, 1.5fr); gap: 22px; align-items: stretch; margin-bottom: 18px; border-color: color-mix(in srgb, var(--accent) 22%, var(--line)); background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, var(--panel)), var(--panel)); }
+.role-welcome-copy { display: grid; align-content: center; gap: 8px; min-width: 0; }
+.role-welcome-copy h1 { margin: 0; color: var(--heading); font-size: clamp(22px, 3vw, 32px); letter-spacing: -.03em; }
+.role-welcome-copy p:last-child { max-width: 520px; margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.role-welcome-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.role-welcome-steps li { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-content: start; border: 1px solid var(--line); border-radius: 9px; background: var(--input-bg); padding: 12px; }
+.role-welcome-steps li > span { color: var(--accent-light); font: 10px "DM Mono", monospace; }
+.role-welcome-steps li > div { display: grid; gap: 5px; min-width: 0; }
+.role-welcome-steps strong { color: var(--soft); font-size: 10px; }
+.role-welcome-steps small { color: var(--muted); font-size: 9px; line-height: 1.5; }
+.role-welcome-teacher { border-color: color-mix(in srgb, var(--cyan) 30%, var(--line)); }
+.role-welcome-teacher .role-welcome-copy .eyebrow, .role-welcome-teacher .role-welcome-steps li > span { color: var(--cyan); }
+.role-welcome-student { border-color: color-mix(in srgb, var(--orange) 26%, var(--line)); }
+.role-welcome-student .role-welcome-copy .eyebrow, .role-welcome-student .role-welcome-steps li > span { color: var(--orange); }
+.role-welcome-admin .role-welcome-copy .eyebrow { color: var(--accent-light); }
+
+@media (max-width: 850px) {
+  .role-welcome { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 520px) {
+  .role-welcome-steps { grid-template-columns: 1fr; }
+}
 
 /* 白天模式覆盖色板，保留状态色和品牌紫色的识别度。 */
 :root[data-theme="light"] {

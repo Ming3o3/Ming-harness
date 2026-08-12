@@ -2,6 +2,31 @@
 const desktopBridge = typeof window !== 'undefined' ? window.harnessDesktop : null
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || desktopBridge?.apiBaseUrl || '/api'
 const configuredApiKey = import.meta.env.VITE_HARNESS_API_KEY || ''
+const configuredDemoRole = import.meta.env.VITE_HARNESS_DEMO_ROLE || 'STUDENT'
+const demoRolePermissions = {
+  ADMIN: [
+    'run.read', 'run.create', 'run.execute', 'run.approve', 'run.cancel', 'audit.read',
+    'context.read', 'context.write', 'context.configure', 'context.reindex', 'tool.read',
+    'workspace.read', 'workspace.write', 'workspace.exec', 'workspace.manage', 'ops.read',
+    'model.configure', 'tenant.policy.read', 'tenant.policy.write', 'auth.key.read',
+    'auth.key.manage', 'education.read', 'education.write', 'education.assign',
+    'education.evaluate',
+  ],
+  TEACHER: [
+    'run.read', 'run.create', 'run.execute', 'run.approve', 'run.cancel', 'audit.read',
+    'context.read', 'context.write', 'tool.read', 'education.read', 'education.write',
+    'education.assign', 'education.evaluate',
+  ],
+  STUDENT: [
+    'run.read', 'run.create', 'run.execute', 'run.cancel', 'context.read',
+    'education.read', 'education.write',
+  ],
+}
+
+function localDemoPermissions() {
+  const role = String(localStorage.getItem('harnessDemoRole') || configuredDemoRole).toUpperCase()
+  return (demoRolePermissions[role] || demoRolePermissions.STUDENT).join(',')
+}
 // 本地聊天工作台默认开放工作区读写权限；写入和命令执行仍由后端策略要求人工审批。
 const defaultChatPermissions = import.meta.env.VITE_HARNESS_CHAT_PERMISSIONS
   || 'workspace.read,workspace.write,workspace.exec,workspace.manage,education.read,education.write,education.assign'
@@ -14,6 +39,8 @@ function identityHeaders(requestHeaders = {}) {
       : {
           'X-Tenant-Id': localStorage.getItem('harnessTenantId') || 'tenant-demo',
           'X-User-Id': localStorage.getItem('harnessUserId') || 'operator',
+          'X-Harness-Role': localStorage.getItem('harnessDemoRole') || configuredDemoRole,
+          'X-Permissions': localStorage.getItem('harnessChatPermissions') || localDemoPermissions(),
         }),
     ...(requestHeaders || {}),
   }
@@ -104,6 +131,7 @@ async function streamRunEvents(runId, { signal, onEvent } = {}) {
 }
 
 export const api = {
+  currentUser: () => request('/me'),
   // 控制台使用受 ops.read 保护的摘要接口，避免直接暴露 Actuator 组件详情。
   health: () => request('/health'),
   // 模型密钥只在保存时提交给后端；读取接口仅返回是否配置和掩码。
