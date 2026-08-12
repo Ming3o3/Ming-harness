@@ -589,9 +589,9 @@ function openEducationAgentSetup() {
   chatMode.value = false
   navigateConsoleSection('education')
   void nextTick(() => {
-    const selector = activeLearnerProfile.value
-      ? '.education-source-editor'
-      : '.education-profile-setup'
+    const selector = educationWorkspaceMode.value === 'learner' || !activeLearnerProfile.value
+      ? '.education-profile-setup'
+      : '.education-source-editor'
     const target = document.querySelector(selector)
     if (target instanceof HTMLDetailsElement) target.open = true
     scrollConsoleTargetIntoView(target)
@@ -1441,6 +1441,12 @@ const currentEducationRetrievalDetail = computed(() => {
       ? `当前版本 0 个来源 · 同学科/年级另有 ${scope.sameSubjectGradeSourceCount} 个（${scope.availableCurriculumVersions.join('、')}）`
       : '当前版本 0 个来源'
   return `${base} · ${scope.filterSummary} · ${available}`
+})
+const educationVersionRepairHint = computed(() => {
+  const scope = currentEducationRetrievalScope.value
+  const availability = courseSourceAvailability(scope)
+  if (!scope.configured || availability.courseSourceCount || !availability.sameSubjectGradeSourceCount) return ''
+  return `可用课程版本：${availability.availableCurriculumVersions.join('、')}。${educationWorkspaceMode.value === 'learner' ? '请在学习者画像中选择与课程资料一致的版本。' : '请在课程资料元数据中统一版本。'}`
 })
 const educationAgentTrace = computed(() => [
   {
@@ -7989,7 +7995,7 @@ onBeforeUnmount(() => {
               </div>
               <div class="education-agent-state-grid">
                 <article class="education-agent-state-item">
-                  <small>01 · 课程边界</small><strong>{{ currentEducationSourceLabel }}</strong><p>{{ currentEducationRetrievalDetail }}</p>
+                  <small>01 · 课程边界</small><strong>{{ currentEducationSourceLabel }}</strong><p>{{ currentEducationRetrievalDetail }}</p><small v-if="educationVersionRepairHint" class="education-version-repair-hint">{{ educationVersionRepairHint }}</small>
                 </article>
                 <article class="education-agent-state-item">
                   <small>02 · 学习者状态</small><strong>{{ learnerStateDiagnosis.title }}</strong><p>{{ learnerStateDiagnosis.detail }}</p>

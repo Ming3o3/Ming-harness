@@ -2194,6 +2194,7 @@ button svg {
 .learning-sidebar-next-action strong { overflow: hidden; color: var(--heading); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .learning-sidebar-next-action:hover:not(:disabled) { border-color: currentColor; }
 .learning-sidebar-next-action:disabled { cursor: wait; opacity: .55; }
+.education-version-repair-hint { display: block; margin-top: 4px; color: var(--orange); font-size: 8px; line-height: 1.45; }
 .learning-sidebar-contract > button {
   display: inline-flex;
   align-items: center;
