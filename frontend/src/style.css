@@ -688,6 +688,16 @@ h3 { margin: 0; font-size: 13px; }
 .education-source-row strong, .education-source-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .education-source-row strong { color: var(--soft); font-size: 10px; }
 .education-source-row small { margin-top: 4px; color: var(--muted); font: 8px "DM Mono", monospace; }
+.education-source-overview { display: grid; gap: 9px; border-top: 1px solid var(--line); padding-top: 12px; }
+.education-source-overview-list { display: grid; gap: 6px; max-height: 260px; overflow-y: auto; }
+.education-source-overview-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, .9fr); gap: 14px; border: 1px solid rgba(153,174,218,.12); border-radius: 8px; background: var(--input-bg); padding: 10px 12px; }
+.education-source-overview-main, .education-source-overview-scope { display: grid; min-width: 0; gap: 4px; align-content: center; }
+.education-source-overview-row strong { overflow: hidden; color: var(--soft); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.education-source-overview-row span { overflow: hidden; color: var(--soft); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.education-source-overview-row small { overflow: hidden; color: var(--muted); font: 8px/1.45 "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 760px) {
+  .education-source-overview-row { grid-template-columns: 1fr; gap: 8px; }
+}
 .education-run-field { border: 1px solid rgba(76,226,213,.18); border-radius: 8px; background: rgba(76,226,213,.035); padding: 11px; }
 .education-run-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 4px; }
 .education-difficulty-range { display: flex; align-items: center; gap: 6px; }

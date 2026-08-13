@@ -1293,8 +1293,12 @@ const availableChatCourses = computed(() => {
     && course.gradeLevel === profile.gradeLevel
     && course.curriculumVersion === profile.curriculumVersion)
 })
+// 管理员工作台始终是治理只读视角。即使旧数据里管理员曾经创建过课程，
+// 也不能因为“课程所有者”字段让管理员重新看到教师运营写入口；课程运营由教师角色负责。
 const activeEducationCourseIsOwner = computed(() => Boolean(
-  activeEducationCourse.value && activeEducationCourse.value.ownerUserId === form.userId,
+  !isAdminRole.value
+    && activeEducationCourse.value
+    && activeEducationCourse.value.ownerUserId === form.userId,
 ))
 const activeEducationCourseLearnerResult = computed(() => {
   const course = activeEducationCourse.value
@@ -9144,6 +9148,26 @@ onBeforeUnmount(() => {
                 <div><span>保持度正确率</span><strong>{{ formatRate(educationMetrics.reviewAssessmentAccuracyRate) }}</strong><small>平均掌握度提升 {{ formatRate(educationMetrics.averageMasteryGain) }}</small></div>
               </div>
             </details>
+            <section v-if="isAdminWorkspace" class="education-source-overview" aria-label="组织课程知识源概览">
+              <div class="subsection-title">
+                <div><h4>课程知识源概览</h4><span>只读元数据；课程资料维护由教师负责</span></div>
+                <span class="context-mode-chip">{{ educationSources.length }} 个来源</span>
+              </div>
+              <p class="learning-task-help">这里显示资料名称、课程边界和所有者，帮助管理员确认 Agent 的知识来源；不会展示课程正文，也不能在此修改资料。</p>
+              <div v-if="educationSources.length" class="education-source-overview-list">
+                <article v-for="source in educationSources" :key="source.id" class="education-source-overview-row">
+                  <div class="education-source-overview-main">
+                    <strong>{{ educationSourceLabel(source) }}</strong>
+                    <small>{{ source.documentId }}<template v-if="source.documentOwnerUserId"> · 资料所有者：{{ source.documentOwnerUserId }}</template></small>
+                  </div>
+                  <div class="education-source-overview-scope">
+                    <span>{{ source.subject }} · {{ source.gradeLevel }} · {{ source.curriculumVersion }}</span>
+                    <small>{{ source.chapter || '未标注章节' }} · {{ source.conceptTags || '未标注知识点' }} · 难度 {{ source.difficultyLevel }}</small>
+                  </div>
+                </article>
+              </div>
+              <div v-else class="context-preview-empty">组织内还没有配置课程知识源；请让教师上传资料并补充课程元数据。</div>
+            </section>
             <details v-if="isLearnerOnlyRole" class="education-profile-setup" :open="!activeLearnerProfile">
               <summary><span><strong>学习者画像与目标</strong><small>{{ activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel} · ${activeLearnerProfile.curriculumVersion}` : '建立 Agent 可持续读取的学习上下文' }}</small></span><em>{{ activeLearnerProfile ? '已绑定' : '待建立' }}</em></summary>
               <div class="education-profile-setup-content">
@@ -9192,6 +9216,7 @@ onBeforeUnmount(() => {
               <div v-if="activeEducationCourse && (activeEducationCourseIsOwner || isAdminWorkspace)" class="education-course-detail">
                 <div class="education-course-detail-heading">
                   <div><strong>{{ activeEducationCourse.title }}</strong><small>{{ activeEducationCourse.code }} · 课程负责人 {{ activeEducationCourse.ownerUserId }}</small></div>
+                  <span v-if="isAdminWorkspace" class="context-mode-chip">管理员只读</span>
                   <div class="education-course-detail-actions">
                     <button v-if="activeEducationCourseIsOwner && activeEducationCourse.status === 'ACTIVE'" class="secondary-button" type="button" :title="educationCourseProgress?.readyToComplete ? '结课结果会固化当前课程证据快照' : '请先处理下方结课阻塞清单；Runtime 仍会在提交时做最终校验'" :disabled="educationCourseActionId === activeEducationCourse.id || !educationCourseProgress?.readyToComplete" @click="completeEducationCourse(activeEducationCourse)">{{ educationCourseActionId === activeEducationCourse.id ? '结课中…' : '完成结课' }}</button>
                     <button v-if="activeEducationCourseIsOwner && ['ACTIVE', 'COMPLETED'].includes(activeEducationCourse.status)" class="text-button" type="button" :disabled="educationCourseActionId === activeEducationCourse.id" @click="archiveEducationCourse(activeEducationCourse)">{{ educationCourseActionId === activeEducationCourse.id ? '处理中…' : '归档课程' }}</button>
