@@ -360,10 +360,31 @@ const roleQuickStartAction = computed(() => {
     return { label: teacherNextAction.value.label, detail: teacherNextAction.value.detail, section: 'education' }
   }
   if (currentPrimaryRole.value === 'STUDENT') {
-    return { label: '开始我的学习', detail: '先建立学习档案，再接受教师布置的课程作业。', section: 'education' }
+    return studentQuickStartAction.value
   }
   return { label: '查看系统状态', detail: '先确认模型、索引和基础设施，再处理治理配置。', section: 'runtime' }
 })
+
+async function runRoleQuickStartAction() {
+  const action = roleQuickStartAction.value
+  if (currentPrimaryRole.value === 'STUDENT') {
+    if (action.kind === 'assignment') {
+      await takeLearnerCourseNextAction()
+      return
+    }
+    if (action.kind === 'profile') {
+      openEducationAgentSetup()
+      return
+    }
+    if (action.kind === 'goal') {
+      chatMode.value = false
+      navigateConsoleSection('education')
+      showQuickLearningGoalForm.value = true
+      return
+    }
+  }
+  navigateConsoleSection(action.section)
+}
 const showLocalDemoLogin = computed(() => Boolean(
   !identityLoading.value
   && currentUser.value?.localDemo
@@ -1757,6 +1778,19 @@ const educationSetupActionLabel = computed(() => {
     return '统一课程版本'
   }
   return '配置课程资料'
+})
+const studentQuickStartAction = computed(() => {
+  if (!activeLearnerProfile.value) {
+    return { kind: 'profile', label: '建立学习画像', detail: '先告诉 Agent 你正在学习的学科、年级和课程版本。', section: 'education' }
+  }
+  const assignmentAction = learningAssignmentNextAction(nextLearnerCourseAssignment.value)
+  if (assignmentAction.actionable && nextLearnerCourseAssignment.value) {
+    return { kind: 'assignment', label: assignmentAction.label, detail: assignmentAction.detail, section: 'education' }
+  }
+  if (!activeLearningGoal.value) {
+    return { kind: 'goal', label: '设定学习目标', detail: '设定知识点和达标标准，后续作答才能形成学习证据。', section: 'education' }
+  }
+  return { kind: 'education', label: '进入我的学习', detail: '查看课程边界、学习状态和下一步行动。', section: 'education' }
 })
 const educationAgentReady = computed(() => !educationSendBlockReason.value)
 const educationComposerPlaceholder = computed(() => {
@@ -8209,7 +8243,7 @@ onBeforeUnmount(() => {
         </ol>
         <div class="role-welcome-action">
           <div><strong>现在就开始</strong><small>{{ roleQuickStartAction.detail }}</small></div>
-          <button class="primary-button" type="button" @click="navigateConsoleSection(roleQuickStartAction.section)">{{ roleQuickStartAction.label }} <ArrowRight :size="13" /></button>
+          <button class="primary-button" type="button" @click="runRoleQuickStartAction">{{ roleQuickStartAction.label }} <ArrowRight :size="13" /></button>
         </div>
       </section>
 
