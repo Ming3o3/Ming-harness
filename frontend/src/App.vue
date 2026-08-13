@@ -9517,6 +9517,7 @@ onBeforeUnmount(() => {
                 <span><strong>{{ educationExperiment.totalRunCount }}</strong>教育 Run</span>
                 <span><strong>{{ educationExperiment.totalAssessmentCount }}</strong>条测评</span>
                 <span><strong>{{ educationExperimentBest ? educationExperimentStrategyLabel(educationExperimentBest.retrievalStrategy) : '—' }}</strong>当前掌握度增益最高</span>
+                <span><strong>{{ educationExperiment.pairedLearnerGoalCount || 0 }}</strong>学习者目标有多策略配对</span>
               </div>
               <div v-if="educationExperimentStrategies.length" class="education-experiment-table-wrap">
                 <table class="education-experiment-table">

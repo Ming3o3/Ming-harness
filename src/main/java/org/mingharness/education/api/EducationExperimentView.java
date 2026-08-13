@@ -10,6 +10,8 @@ public record EducationExperimentView(
         long successfulRunCount,
         long totalAssessmentCount,
         boolean tenantScope,
+        long pairedLearnerGoalCount,
+        long fullyPairedLearnerGoalCount,
         List<EducationExperimentStrategyView> strategies
 ) {
 

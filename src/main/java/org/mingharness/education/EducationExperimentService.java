@@ -87,8 +87,18 @@ public class EducationExperimentService {
                 .map(entry -> summarizeStrategy(entry.getKey(), entry.getValue(), attemptsByRun))
                 .toList();
         long successfulRuns = runs.stream().filter(run -> run.getStatus() == RunStatus.SUCCEEDED).count();
+        Map<String, Set<String>> strategiesByLearnerGoal = new HashMap<>();
+        for (Run run : runs) {
+            if (run.getEducationLearningGoalId() == null || run.getEducationLearningGoalId().isBlank()) continue;
+            String key = run.getUserId() + "\u0000" + run.getEducationLearningGoalId();
+            strategiesByLearnerGoal.computeIfAbsent(key, ignored -> new LinkedHashSet<>())
+                    .add(run.getEducationRetrievalStrategy());
+        }
+        long paired = strategiesByLearnerGoal.values().stream().filter(value -> value.size() > 1).count();
+        long fullyPaired = strategiesByLearnerGoal.values().stream()
+                .filter(value -> value.size() == EducationRetrievalStrategy.values().length).count();
         return new EducationExperimentView(Instant.now(), runs.size(), successfulRuns,
-                scopedAttempts.size(), tenantScope, summaries);
+                scopedAttempts.size(), tenantScope, paired, fullyPaired, summaries);
     }
 
     @Transactional(readOnly = true)

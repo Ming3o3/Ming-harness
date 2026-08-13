@@ -86,5 +86,6 @@ class EducationExperimentServiceTests {
                 view.strategies().stream().map(item -> item.retrievalStrategy()).toList());
         assertEquals(0, view.totalRunCount());
         assertEquals("NO_DATA", view.strategies().get(0).sampleStatus());
+        assertEquals(0, view.pairedLearnerGoalCount());
     }
 }
