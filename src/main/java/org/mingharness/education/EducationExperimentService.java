@@ -87,6 +87,39 @@ public class EducationExperimentService {
                 scopedAttempts.size(), tenantScope, summaries);
     }
 
+    @Transactional(readOnly = true)
+    public String exportCsv(String tenantId, String userId, boolean tenantScope) {
+        EducationExperimentView view = summarize(tenantId, userId, tenantScope);
+        StringBuilder csv = new StringBuilder();
+        csv.append("retrieval_strategy,run_count,successful_run_count,runs_with_evidence,"
+                + "evidence_coverage_rate,average_evidence_count,average_unique_evidence_count,"
+                + "prerequisite_gap_coverage_rate,evidence_redundancy_rate,average_ranking_score,"
+                + "average_marginal_coverage,average_target_concept_match,average_graph_coverage,"
+                + "average_difficulty_fit,assessment_count,correct_assessment_count,"
+                + "assessment_accuracy_rate,average_mastery_gain,target_goal_count,"
+                + "target_reached_goal_count,target_reach_rate,average_rounds_to_target\n");
+        for (EducationExperimentStrategyView item : view.strategies()) {
+            csv.append(csv(item.retrievalStrategy())).append(',')
+                    .append(item.runCount()).append(',').append(item.successfulRunCount()).append(',')
+                    .append(item.runsWithEvidence()).append(',').append(item.evidenceCoverageRate()).append(',')
+                    .append(item.averageEvidenceCount()).append(',').append(item.averageUniqueEvidenceCount()).append(',')
+                    .append(item.prerequisiteGapCoverageRate()).append(',').append(item.evidenceRedundancyRate()).append(',')
+                    .append(item.averageRankingScore()).append(',').append(item.averageMarginalCoverage()).append(',')
+                    .append(item.averageTargetConceptMatch()).append(',').append(item.averageGraphCoverage()).append(',')
+                    .append(item.averageDifficultyFit()).append(',').append(item.assessmentCount()).append(',')
+                    .append(item.correctAssessmentCount()).append(',').append(item.assessmentAccuracyRate()).append(',')
+                    .append(item.averageMasteryGain()).append(',').append(item.targetGoalCount()).append(',')
+                    .append(item.targetReachedGoalCount()).append(',').append(item.targetReachRate()).append(',')
+                    .append(item.averageRoundsToTarget()).append('\n');
+        }
+        return csv.toString();
+    }
+
+    private String csv(String value) {
+        String safe = value == null ? "" : value.replace("\"", "\"\"");
+        return "\"" + safe + "\"";
+    }
+
     private EducationExperimentStrategyView summarizeStrategy(
             String strategy, List<Run> runs,
             Map<String, List<AssessmentAttempt>> attemptsByRun) {

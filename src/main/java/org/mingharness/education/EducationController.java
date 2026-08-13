@@ -355,6 +355,18 @@ public class EducationController {
         return experimentService.summarize(identity.tenantId(), identity.userId(), tenantScope);
     }
 
+    @GetMapping(value = "/experiments.csv", produces = "text/csv")
+    public ResponseEntity<byte[]> exportExperiments() {
+        HarnessIdentity identity = identity();
+        boolean tenantScope = identity.hasPermission("ops.read");
+        String csv = experimentService.exportCsv(identity.tenantId(), identity.userId(), tenantScope);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"education-experiments.csv\"")
+                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .body(csv.getBytes(StandardCharsets.UTF_8));
+    }
+
     @PostMapping("/courses")
     @ResponseStatus(HttpStatus.CREATED)
     public EducationCourseView createCourse(@Valid @RequestBody EducationCourseRequest request) {

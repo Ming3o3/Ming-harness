@@ -562,6 +562,8 @@ h3 { margin: 0; font-size: 13px; }
 .education-operations-metrics > summary::before { content: '▸'; color: var(--cyan); font-size: 12px; }
 .education-operations-metrics[open] > summary::before { content: '▾'; }
 .education-operations-metrics > summary small { margin-left: auto; color: var(--muted); font: 8px "DM Mono", monospace; }
+.education-operations-metrics > summary .inline-summary-action { margin-left: 7px; border: 1px solid rgba(76,226,213,.28); border-radius: 5px; background: transparent; color: var(--cyan); cursor: pointer; font: 8px "DM Mono", monospace; padding: 4px 7px; }
+.education-operations-metrics > summary .inline-summary-action:disabled { cursor: wait; opacity: .6; }
 .education-experiment-panel { overflow: hidden; }
 .education-experiment-overview { display: flex; flex-wrap: wrap; gap: 7px; }
 .education-experiment-overview span { border: 1px solid rgba(76,226,213,.16); border-radius: 7px; background: rgba(76,226,213,.035); color: var(--muted); padding: 7px 9px; font-size: 9px; }

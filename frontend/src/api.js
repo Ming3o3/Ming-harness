@@ -398,6 +398,22 @@ export const api = {
   },
   getEducationMetrics: () => request('/education/metrics'),
   getEducationExperiments: () => request('/education/experiments'),
+  downloadEducationExperiments: async () => {
+    const response = await fetch(`${apiBaseUrl}/education/experiments.csv`, {
+      headers: identityHeaders({ Accept: 'text/csv' }),
+    })
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}))
+      const error = new Error(payload.message || `请求失败（${response.status}）`)
+      error.code = payload.code
+      throw error
+    }
+    return {
+      blob: await response.blob(),
+      filename: response.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1]
+        || 'education-experiments.csv',
+    }
+  },
   listEducationCourses: () => request('/education/courses'),
   createEducationCourse: (payload) => request('/education/courses', {
     method: 'POST',
