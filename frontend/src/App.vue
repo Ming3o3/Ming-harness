@@ -7075,6 +7075,24 @@ async function refreshAfterTerminalRunEvent(runId) {
 }
 
 /**
+ * Run 终态和教育作业收敛在服务端同一条业务链路中，但两者的事务提交可能与
+ * SSE/聊天刷新竞速。对当前作业再读几次权威详情，避免学生在短暂旧快照上看到
+ * “提交作业内容”，随后才变成“重试课程作业”。
+ */
+async function refreshLearningAssignmentAfterTerminalRun(assignmentId) {
+  if (!assignmentId) return null
+  let latest = null
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    latest = await api.getLearningAssignment(assignmentId).catch(() => latest)
+    if (!latest || !['ACCEPTED', 'OVERDUE'].includes(latest.status)) return latest
+    if (attempt < 2) {
+      await new Promise((resolve) => window.setTimeout(resolve, 180 * (attempt + 1)))
+    }
+  }
+  return latest
+}
+
+/**
  * 将一次教育 Run 的评价结果局部回写到聊天页。这里不调用 loadEducationData，
  * 以免每轮对话重新加载整套课程工作台；只更新学习者此刻能感知到的状态。
  */
@@ -7093,7 +7111,7 @@ function refreshEducationAfterChatRun(runId, runSnapshot = selectedRun.value?.ru
     const goalId = run.educationLearningGoalId
     const profileId = run.educationLearnerProfileId
     const assignmentId = run.educationLearningAssignmentId
-    const [assessments, recommendation, mastery, tasks, assignments] = await Promise.all([
+    let [assessments, recommendation, mastery, tasks, assignments] = await Promise.all([
       api.listGoalAssessments(goalId),
       api.getGoalRecommendation(goalId).catch(() => null),
       profileId ? api.listLearnerMastery(profileId).catch(() => null) : Promise.resolve(null),
@@ -7127,6 +7145,11 @@ function refreshEducationAfterChatRun(runId, runSnapshot = selectedRun.value?.ru
     ])
     if (!assignmentId || !assignments) return
 
+    const authoritativeAssignment = await refreshLearningAssignmentAfterTerminalRun(assignmentId)
+    if (authoritativeAssignment) {
+      assignments = assignments.map((item) => item.id === assignmentId
+        ? authoritativeAssignment : item)
+    }
     learningAssignments.value = assignments
     const assignment = assignments.find((item) => item.id === assignmentId)
     if (!assignment) {
@@ -7165,7 +7188,10 @@ function refreshEducationAfterChatRun(runId, runSnapshot = selectedRun.value?.ru
         [assignmentId]: feedback,
       }
     }
-    if (['COMPLETED', 'CANCELLED'].includes(assignment.status)
+    // Run 已进入终态后，服务端会把课程作业同步收敛为待重试、待补证据或待教师确认。
+    // 清理已结束的聊天绑定，避免回到课程页时继续沿用上一轮旧上下文；失败/超时作业
+    // 必须保留在作业列表中，才能让学生看到“重试课程作业”而不是提交未完成结果。
+    if (['COMPLETED', 'CANCELLED', 'RETRY_REQUIRED', 'AWAITING_EVIDENCE'].includes(assignment.status)
       && chatEducation.learningAssignmentId === assignmentId) {
       chatEducation.learningAssignmentId = ''
     }

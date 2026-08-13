@@ -442,6 +442,8 @@ export const api = {
     method: 'POST',
   }),
   listLearningAssignments: () => request('/education/assignments'),
+  getLearningAssignment: (assignmentId) => request(
+    `/education/assignments/${encodeURIComponent(assignmentId)}`),
   createLearningAssignment: (payload) => request('/education/assignments', {
     method: 'POST',
     body: JSON.stringify(payload),
