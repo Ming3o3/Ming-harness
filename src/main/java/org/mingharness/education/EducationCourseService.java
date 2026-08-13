@@ -67,6 +67,14 @@ public class EducationCourseService {
                 .toList();
     }
 
+    /** 管理员只读查看同租户全量课程，不能借此获得课程负责人写权限。 */
+    @Transactional(readOnly = true)
+    public List<EducationCourseView> listForGovernance(String tenantId) {
+        return courseRepository.findByTenantIdOrderByUpdatedAtDesc(tenantId).stream()
+                .map(this::view)
+                .toList();
+    }
+
     @Transactional(readOnly = true)
     public EducationCourseView getForParticipant(String tenantId, String userId, String courseId) {
         EducationCourse course = find(tenantId, courseId);

@@ -13,5 +13,7 @@ public interface EducationCourseRepository extends JpaRepository<EducationCourse
 
     List<EducationCourse> findByTenantIdAndOwnerUserIdOrderByUpdatedAtDesc(String tenantId, String ownerUserId);
 
+    List<EducationCourse> findByTenantIdOrderByUpdatedAtDesc(String tenantId);
+
     List<EducationCourse> findByTenantIdAndIdInOrderByUpdatedAtDesc(String tenantId, List<String> ids);
 }

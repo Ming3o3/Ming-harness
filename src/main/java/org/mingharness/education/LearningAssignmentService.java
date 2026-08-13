@@ -134,6 +134,12 @@ public class LearningAssignmentService {
                 .toList();
     }
 
+    /** 管理员治理页只读查看同租户全量作业；课程操作仍由教师权限接口负责。 */
+    @Transactional(readOnly = true)
+    public List<LearningAssignment> listForGovernance(String tenantId) {
+        return assignmentRepository.findByTenantIdOrderByCreatedAtDesc(tenantId);
+    }
+
     @Transactional
     public LearningAssignment getForParticipant(String tenantId, String userId, String assignmentId) {
         LearningAssignment assignment = assignmentRepository.findByTenantIdAndId(tenantId, assignmentId)

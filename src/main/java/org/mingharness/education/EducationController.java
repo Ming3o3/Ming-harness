@@ -291,6 +291,9 @@ public class EducationController {
     @GetMapping("/courses")
     public List<EducationCourseView> listCourses() {
         HarnessIdentity identity = identity();
+        if (identity.hasPermission("ops.read")) {
+            return courseService.listForGovernance(identity.tenantId());
+        }
         return courseService.list(identity.tenantId(), identity.userId());
     }
 
@@ -383,7 +386,10 @@ public class EducationController {
     @GetMapping("/assignments")
     public List<LearningAssignmentView> listAssignments() {
         HarnessIdentity identity = identity();
-        return assignmentService.list(identity.tenantId(), identity.userId()).stream()
+        List<LearningAssignment> assignments = identity.hasPermission("ops.read")
+                ? assignmentService.listForGovernance(identity.tenantId())
+                : assignmentService.list(identity.tenantId(), identity.userId());
+        return assignments.stream()
                 .map(LearningAssignmentView::from).toList();
     }
 
