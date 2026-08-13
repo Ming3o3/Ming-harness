@@ -33,6 +33,10 @@ import java.util.function.ToDoubleFunction;
 @Service
 public class EducationExperimentService {
 
+    /** 仅表示是否达到进入基础统计分析的样本门槛，不等价于显著性检验。 */
+    private static final int MIN_RUNS_FOR_ANALYSIS = 30;
+    private static final int MIN_ASSESSMENTS_FOR_ANALYSIS = 30;
+
     private final RunRepository runRepository;
     private final AssessmentAttemptRepository assessmentRepository;
 
@@ -97,7 +101,7 @@ public class EducationExperimentService {
                 + "average_marginal_coverage,average_target_concept_match,average_graph_coverage,"
                 + "average_difficulty_fit,assessment_count,correct_assessment_count,"
                 + "assessment_accuracy_rate,average_mastery_gain,target_goal_count,"
-                + "target_reached_goal_count,target_reach_rate,average_rounds_to_target\n");
+                + "target_reached_goal_count,target_reach_rate,average_rounds_to_target,sample_status\n");
         for (EducationExperimentStrategyView item : view.strategies()) {
             csv.append(csv(item.retrievalStrategy())).append(',')
                     .append(item.runCount()).append(',').append(item.successfulRunCount()).append(',')
@@ -110,7 +114,7 @@ public class EducationExperimentService {
                     .append(item.correctAssessmentCount()).append(',').append(item.assessmentAccuracyRate()).append(',')
                     .append(item.averageMasteryGain()).append(',').append(item.targetGoalCount()).append(',')
                     .append(item.targetReachedGoalCount()).append(',').append(item.targetReachRate()).append(',')
-                    .append(item.averageRoundsToTarget()).append('\n');
+                    .append(item.averageRoundsToTarget()).append(',').append(csv(item.sampleStatus())).append('\n');
         }
         return csv.toString();
     }
@@ -161,7 +165,16 @@ public class EducationExperimentService {
                 attempts.stream().mapToDouble(item -> item.getMasteryAfter() - item.getMasteryBefore())
                         .average().orElse(0.0),
                 goalRuns.size(), reached, ratio(reached, goalRuns.size()),
-                rounds.stream().mapToDouble(Double::doubleValue).average().orElse(0.0));
+                rounds.stream().mapToDouble(Double::doubleValue).average().orElse(0.0),
+                sampleStatus(runs.size(), attempts.size()));
+    }
+
+    private String sampleStatus(int runCount, int assessmentCount) {
+        if (runCount == 0) return "NO_DATA";
+        if (runCount < MIN_RUNS_FOR_ANALYSIS || assessmentCount < MIN_ASSESSMENTS_FOR_ANALYSIS) {
+            return "INSUFFICIENT_SAMPLE";
+        }
+        return "ANALYSIS_READY";
     }
 
     private Map<String, List<Run>> targetGoalRuns(List<Run> runs,

@@ -23,6 +23,7 @@ public record EducationExperimentStrategyView(
         long targetGoalCount,
         long targetReachedGoalCount,
         double targetReachRate,
-        double averageRoundsToTarget
+        double averageRoundsToTarget,
+        String sampleStatus
 ) {
 }

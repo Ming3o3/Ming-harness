@@ -2437,6 +2437,11 @@ const educationExperimentStrategyLabel = (strategy) => ({
   NO_LEARNER_STATE: '去学习者状态',
   STATIC_WEIGHT: '固定权重消融',
 }[strategy] || strategy || '未知策略')
+const educationExperimentSampleLabel = (status) => ({
+  NO_DATA: '无数据',
+  INSUFFICIENT_SAMPLE: '样本不足',
+  ANALYSIS_READY: '可分析',
+}[status] || '待确认')
 const educationExperimentBest = computed(() => educationExperimentStrategies.value
   .filter((item) => Number(item.runCount || 0) > 0)
   .slice()
@@ -9518,7 +9523,7 @@ onBeforeUnmount(() => {
                   <thead><tr><th>策略</th><th>样本</th><th>证据</th><th>缺口覆盖</th><th>冗余</th><th>正确率</th><th>掌握度增益</th><th>达标率</th></tr></thead>
                   <tbody>
                     <tr v-for="item in educationExperimentStrategies" :key="item.retrievalStrategy" :class="{ 'is-best': item === educationExperimentBest }">
-                      <td><strong>{{ educationExperimentStrategyLabel(item.retrievalStrategy) }}</strong><small>{{ item.retrievalStrategy }}</small></td>
+                      <td><strong>{{ educationExperimentStrategyLabel(item.retrievalStrategy) }}</strong><small>{{ item.retrievalStrategy }} · {{ educationExperimentSampleLabel(item.sampleStatus) }}</small></td>
                       <td>{{ item.runCount }} <small>{{ item.successfulRunCount }} 成功</small></td>
                       <td>{{ formatRate(item.evidenceCoverageRate) }} <small>均 {{ Number(item.averageEvidenceCount || 0).toFixed(1) }}</small></td>
                       <td>{{ formatRate(item.prerequisiteGapCoverageRate) }}</td>
