@@ -274,6 +274,63 @@ const defaultApiKeyPermissions = [
   'education.read', 'education.write',
   'education.assign', 'education.evaluate',
 ]
+// 管理员创建正式登录凭证时优先选择角色模板；权限仍由服务端校验，模板不会绕过 RBAC。
+// 模板使用一组稳定的最小权限，避免把“角色”退化成让管理员逐项猜权限名称。
+const apiKeyRoleTemplates = [
+  {
+    value: 'ADMIN',
+    label: '管理员',
+    description: '系统治理、模型、策略、凭证和审计。',
+    permissions: [...defaultApiKeyPermissions],
+  },
+  {
+    value: 'TEACHER',
+    label: '教师',
+    description: '课程资料、课程作业、学生进度和复核。',
+    permissions: [
+      'run.read', 'run.create', 'run.execute', 'run.approve', 'run.cancel', 'audit.read',
+      'context.read', 'context.write', 'tool.read', 'education.read', 'education.write',
+      'education.assign', 'education.evaluate',
+    ],
+  },
+  {
+    value: 'STUDENT',
+    label: '学生',
+    description: '我的课程、学习对话、作业和学习证据。',
+    permissions: [
+      'run.read', 'run.create', 'run.execute', 'run.cancel', 'context.read',
+      'education.read', 'education.write',
+    ],
+  },
+]
+
+function samePermissionSet(left, right) {
+  const normalize = (values) => [...new Set((values || []).map((item) => String(item).trim()).filter(Boolean))].sort()
+  const a = normalize(left)
+  const b = normalize(right)
+  return a.length === b.length && a.every((item, index) => item === b[index])
+}
+
+const selectedApiKeyRoleTemplate = computed(() => {
+  const match = apiKeyRoleTemplates.find((template) => samePermissionSet(apiKeyForm.permissions, template.permissions))
+  return match?.value || 'CUSTOM'
+})
+
+function applyApiKeyRoleTemplate(role) {
+  const template = apiKeyRoleTemplates.find((item) => item.value === role)
+  if (!template) return
+  apiKeyForm.permissions = [...template.permissions]
+}
+
+function apiKeyRoleFromPermissions(permissions) {
+  const values = permissions || []
+  if (values.some((permission) => ['auth.key.manage', 'tenant.policy.write', 'model.configure', 'context.configure', 'ops.read'].includes(permission))) {
+    return '管理员'
+  }
+  if (values.includes('education.assign') || values.includes('education.evaluate')) return '教师'
+  if (values.includes('education.read') || values.includes('education.write')) return '学生'
+  return '自定义'
+}
 // 工作区状态用于告知用户 Agent 是否直接连接到本地项目；接口不会返回绝对路径。
 const workspace = ref(null)
 // 当前身份用于决定工作台入口；正式 API Key/OIDC 模式由 Runtime 返回，local 模式可切换演示角色。
@@ -9236,16 +9293,24 @@ onBeforeUnmount(() => {
           </form>
           <form v-if="isAdminRole" class="governance-card api-key-card" @submit.prevent="createManagedApiKey">
             <div class="subsection-title">
-              <div><h3>API Key 生命周期</h3><span>数据库凭证</span></div>
+              <div><h3>登录凭证管理</h3><span>API Key 生命周期</span></div>
               <button class="refresh-button" type="button" :disabled="loading" aria-label="刷新 API Key" @click="loadApiKeys">⟳</button>
             </div>
+            <p class="api-key-card-intro">为教师或学生创建一把登录凭证。角色模板会自动填充最小权限；正式环境建议把生成的密钥交给学校统一认证或安全的密码管理器保存。</p>
             <p v-if="apiKeyError" class="policy-error">{{ apiKeyError }}</p>
             <div class="api-key-create-grid">
               <label class="field"><span>组织 ID</span><input v-model="apiKeyForm.tenantId" required maxlength="128" /></label>
-              <label class="field"><span>用户 ID</span><input v-model="apiKeyForm.userId" required maxlength="128" /></label>
+              <label class="field"><span>用户 ID（登录名）</span><input v-model="apiKeyForm.userId" required maxlength="128" placeholder="例如：teacher-zhang" /></label>
+              <label class="field api-key-role-field"><span>用户角色</span>
+                <select :value="selectedApiKeyRoleTemplate" @change="applyApiKeyRoleTemplate($event.target.value)">
+                  <option v-for="template in apiKeyRoleTemplates" :key="template.value" :value="template.value">{{ template.label }}</option>
+                  <option value="CUSTOM">自定义权限</option>
+                </select>
+                <small class="form-hint">{{ apiKeyRoleTemplates.find((template) => template.value === selectedApiKeyRoleTemplate)?.description || '已手动调整权限，请确认范围。' }}</small>
+              </label>
               <label class="field api-key-expiry-field"><span>过期时间（可选）</span><input v-model="apiKeyForm.expiresAt" type="datetime-local" /></label>
               <div class="field api-key-permissions-field">
-                <span>权限（可多选）</span>
+                <span>权限（模板可自动填充，也可手动调整）</span>
                 <details class="api-key-permission-picker">
                   <summary>
                     <span>{{ apiKeyPermissionCount ? `已选择 ${apiKeyPermissionCount} 项` : '请选择权限' }}</span>
@@ -9267,7 +9332,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
             <div class="policy-actions">
-              <button class="secondary-button" type="submit" :disabled="loading">{{ loading ? '生成中…' : '生成数据库 API Key' }}</button>
+              <button class="secondary-button" type="submit" :disabled="loading">{{ loading ? '创建中…' : `创建${selectedApiKeyRoleTemplate === 'CUSTOM' ? '' : apiKeyRoleTemplates.find((template) => template.value === selectedApiKeyRoleTemplate)?.label || ''}登录凭证` }}</button>
               <button class="secondary-button" type="button" :disabled="loading" @click="loadApiKeys">刷新列表</button>
             </div>
             <div v-if="createdApiKeySecret" class="api-key-secret-banner">
@@ -9279,7 +9344,7 @@ onBeforeUnmount(() => {
               <div class="subsection-title"><h3>当前组织密钥</h3><span>{{ apiKeys.length }} keys</span></div>
               <div v-if="!apiKeys.length" class="muted-line">暂无数据库 API Key，或当前身份没有读取权限。</div>
               <div v-for="key in apiKeys" :key="key.id" class="api-key-row">
-                <div class="api-key-row-main"><strong>{{ key.keyPrefix }}…</strong><small>{{ key.userId }} · 创建于 {{ formatDate(key.createdAt) }}</small></div>
+                <div class="api-key-row-main"><strong>{{ key.keyPrefix }}…</strong><small>{{ key.userId }} · {{ apiKeyRoleFromPermissions(key.permissions) }} · 创建于 {{ formatDate(key.createdAt) }}</small></div>
                 <div class="api-key-row-meta"><span class="api-key-status" :class="apiKeyStatusClass(key.status)">{{ apiKeyStatusLabel(key.status) }}</span><small>{{ key.expiresAt ? `到期 ${formatDate(key.expiresAt)}` : '永不过期' }}</small></div>
                 <div class="api-key-row-permissions">{{ key.permissions?.length ? key.permissions.join('、') : '未授予接口权限' }}</div>
                 <div class="api-key-row-actions">

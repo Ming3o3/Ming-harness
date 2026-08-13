@@ -410,7 +410,11 @@ h3 { margin: 0; font-size: 13px; }
 .tenant-policy-tool-option code { color: var(--muted); font: 9px "DM Mono", monospace; white-space: nowrap; }
 .tenant-policy-tool-empty { padding: 8px 5px; color: var(--muted); font-size: 10px; line-height: 1.45; }
 .api-key-card { grid-column: 1 / -1; }
+.api-key-card-intro { max-width: 840px; margin: -4px 0 3px; color: var(--muted); font-size: 10px; line-height: 1.6; }
 .api-key-create-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; }
+.api-key-role-field { grid-column: span 2; }
+.api-key-role-field select { min-width: 0; width: 100%; }
+.api-key-role-field .form-hint { display: block; margin-top: 5px; line-height: 1.45; }
 .api-key-permissions-field { grid-column: span 2; }
 .api-key-permission-picker { position: relative; min-width: 0; }
 .api-key-permission-picker summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 39px; box-sizing: border-box; border: 1px solid rgba(153,174,218,.16); border-radius: 7px; outline: 0; background: var(--input-bg); color: var(--text); padding: 10px 11px; font-size: 12px; cursor: pointer; list-style: none; }
