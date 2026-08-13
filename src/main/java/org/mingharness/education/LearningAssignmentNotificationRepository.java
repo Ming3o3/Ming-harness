@@ -18,6 +18,8 @@ public interface LearningAssignmentNotificationRepository
     List<LearningAssignmentNotification> findByTenantIdAndUserIdOrderByCreatedAtDesc(
             String tenantId, String userId, Pageable pageable);
 
+    List<LearningAssignmentNotification> findByTenantIdOrderByCreatedAtAsc(String tenantId);
+
     List<LearningAssignmentNotification> findByTenantIdAndUserIdAndStatusOrderByCreatedAtDesc(
             String tenantId, String userId, LearningAssignmentNotificationStatus status,
             Pageable pageable);

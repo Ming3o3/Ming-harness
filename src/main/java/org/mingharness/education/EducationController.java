@@ -286,7 +286,9 @@ public class EducationController {
     @GetMapping("/metrics")
     public EducationMetricsView metrics() {
         HarnessIdentity identity = identity();
-        return metricsService.summarize(identity.tenantId(), identity.userId());
+        return identity.hasPermission("ops.read")
+                ? metricsService.summarizeForGovernance(identity.tenantId())
+                : metricsService.summarize(identity.tenantId(), identity.userId());
     }
 
     @PostMapping("/courses")

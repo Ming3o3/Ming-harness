@@ -3,6 +3,9 @@ package org.mingharness.education;
 import org.junit.jupiter.api.Test;
 import org.mingharness.education.api.EducationMetricsView;
 
+import java.time.Instant;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -180,6 +183,51 @@ class EducationMetricsServiceTests {
         assertEquals(4.0, metrics.averageTeacherContentCorrectnessScore());
         assertEquals(3.0, metrics.averageTeacherEvidenceQualityScore());
         assertEquals(3.5, metrics.averageTeacherTransferReadinessScore());
+    }
+
+    @Test
+    void shouldAggregateAdministratorMetricsAcrossTenantInsteadOfAdminUser() {
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        LearningTaskRepository tasks = mock(LearningTaskRepository.class);
+        LearningTaskNotificationRepository notifications = mock(LearningTaskNotificationRepository.class);
+        LearningAssignmentNotificationRepository assignmentNotifications =
+                mock(LearningAssignmentNotificationRepository.class);
+        LearningAssignmentFeedbackRepository feedbacks = mock(LearningAssignmentFeedbackRepository.class);
+        LearningAssignmentSubmissionRepository submissions = mock(LearningAssignmentSubmissionRepository.class);
+        AssessmentAttemptRepository assessments = mock(AssessmentAttemptRepository.class);
+        LearningAssignmentEvaluationRepository evaluations = mock(LearningAssignmentEvaluationRepository.class);
+
+        LearningAssignment assignment = new LearningAssignment("tenant-a", "teacher-1", "student-1",
+                "函数练习", "完成练习", "数学", "高中一年级", "人教A版", "函数定义域", 0.8,
+                Instant.now());
+        assignment.accept("profile-1", "goal-1", Instant.now());
+        assignment.complete(Instant.now());
+        assignment.verifyByTeacher("teacher-1", "已确认", Instant.now());
+        LearningAssignmentSubmission submission = new LearningAssignmentSubmission(
+                "tenant-a", assignment.getId(), "student-1", "run-1", "答案", Instant.now());
+        AssessmentAttempt assessment = new AssessmentAttempt("tenant-a", "student-1", "run-1", "step-1",
+                "goal-1", "profile-1", "函数定义域", true, 0.9, 0.2, 0.8,
+                AssessmentAttemptType.FORMATIVE, null, "MODEL_TOOL", "依据", "正确",
+                assignment.getId());
+        when(assignments.findByTenantIdOrderByCreatedAtDesc("tenant-a")).thenReturn(List.of(assignment));
+        when(tasks.findByTenantIdOrderByUpdatedAtAsc("tenant-a")).thenReturn(List.of());
+        when(notifications.findByTenantIdOrderByCreatedAtAsc("tenant-a")).thenReturn(List.of());
+        when(assignmentNotifications.findByTenantIdOrderByCreatedAtAsc("tenant-a")).thenReturn(List.of());
+        when(feedbacks.findByTenantIdOrderByCreatedAtAsc("tenant-a")).thenReturn(List.of());
+        when(submissions.findByTenantIdOrderBySubmittedAtAsc("tenant-a")).thenReturn(List.of(submission));
+        when(assessments.findByTenantIdOrderByCreatedAtAsc("tenant-a")).thenReturn(List.of(assessment));
+        when(evaluations.findByTenantIdOrderByCreatedAtAsc("tenant-a")).thenReturn(List.of());
+
+        EducationMetricsView metrics = new EducationMetricsService(
+                assignments, tasks, notifications, assignmentNotifications, feedbacks, submissions,
+                assessments, evaluations).summarizeForGovernance("tenant-a");
+
+        assertEquals(1, metrics.assignmentTotal());
+        assertEquals(1, metrics.assignmentCompleted());
+        assertEquals(1, metrics.assignmentSubmissionCovered());
+        assertEquals(1.0, metrics.assignmentSubmissionCoverageRate());
+        assertEquals(1, metrics.assessmentTotal());
+        assertEquals(1.0, metrics.assessmentAccuracyRate());
     }
 
     private EducationMetricsService service() {

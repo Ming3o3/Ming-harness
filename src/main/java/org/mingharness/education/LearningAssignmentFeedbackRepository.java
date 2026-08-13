@@ -16,6 +16,8 @@ public interface LearningAssignmentFeedbackRepository extends JpaRepository<Lear
     Optional<LearningAssignmentFeedback> findByTenantIdAndLearningAssignmentIdAndId(
             String tenantId, String learningAssignmentId, String id);
 
+    List<LearningAssignmentFeedback> findByTenantIdOrderByCreatedAtAsc(String tenantId);
+
     @Query("select f from LearningAssignmentFeedback f where f.tenantId = :tenantId "
             + "and (f.teacherUserId = :userId or f.learnerUserId = :userId) order by f.createdAt asc")
     List<LearningAssignmentFeedback> findByTenantIdAndParticipantOrderByCreatedAtAsc(

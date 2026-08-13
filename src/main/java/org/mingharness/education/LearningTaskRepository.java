@@ -28,6 +28,9 @@ public interface LearningTaskRepository extends JpaRepository<LearningTask, Stri
     List<LearningTask> findByStatusInOrderByUpdatedAtAsc(Collection<LearningTaskStatus> statuses,
                                                           Pageable pageable);
 
+    /** 管理员治理页按租户读取任务事实，不按管理员自身 userId 过滤。 */
+    List<LearningTask> findByTenantIdOrderByUpdatedAtAsc(String tenantId);
+
     long countByTenantIdAndUserId(String tenantId, String userId);
 
     long countByTenantIdAndUserIdAndStatus(String tenantId, String userId, LearningTaskStatus status);

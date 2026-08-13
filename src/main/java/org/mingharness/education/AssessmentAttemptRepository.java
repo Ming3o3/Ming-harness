@@ -37,5 +37,7 @@ public interface AssessmentAttemptRepository extends JpaRepository<AssessmentAtt
     List<AssessmentAttempt> findByTenantIdAndUserIdOrderByCreatedAtAsc(
             @Param("tenantId") String tenantId, @Param("userId") String userId);
 
+    List<AssessmentAttempt> findByTenantIdOrderByCreatedAtAsc(String tenantId);
+
     long countByTenantIdAndUserIdAndCorrectTrue(String tenantId, String userId);
 }

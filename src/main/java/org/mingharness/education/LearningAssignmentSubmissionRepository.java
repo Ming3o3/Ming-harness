@@ -16,6 +16,8 @@ public interface LearningAssignmentSubmissionRepository
     Optional<LearningAssignmentSubmission> findByTenantIdAndLearningAssignmentIdAndRunId(
             String tenantId, String learningAssignmentId, String runId);
 
+    List<LearningAssignmentSubmission> findByTenantIdOrderBySubmittedAtAsc(String tenantId);
+
     long countByTenantIdAndLearningAssignmentId(String tenantId, String learningAssignmentId);
 
     boolean existsByTenantIdAndLearningAssignmentId(String tenantId, String learningAssignmentId);

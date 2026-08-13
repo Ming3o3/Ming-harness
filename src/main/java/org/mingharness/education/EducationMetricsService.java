@@ -203,6 +203,111 @@ public class EducationMetricsService {
                 averageTeacherTransferReadinessScore);
     }
 
+    /**
+     * 管理员治理页使用组织口径，而不是把管理员自己的 userId 当成教育参与者。
+     * 这组指标只读聚合同租户事实，避免管理员看到课程总量却看到一组全为 0 的个人指标。
+     */
+    @Transactional(readOnly = true)
+    public EducationMetricsView summarizeForGovernance(String tenantId) {
+        List<LearningAssignment> assignments = assignmentRepository
+                .findByTenantIdOrderByCreatedAtDesc(tenantId);
+        List<LearningTask> tasks = taskRepository.findByTenantIdOrderByUpdatedAtAsc(tenantId);
+        List<LearningTaskNotification> taskNotifications = notificationRepository
+                .findByTenantIdOrderByCreatedAtAsc(tenantId);
+        List<LearningAssignmentNotification> assignmentNotifications =
+                assignmentNotificationRepository == null ? List.of()
+                        : assignmentNotificationRepository.findByTenantIdOrderByCreatedAtAsc(tenantId);
+        List<LearningAssignmentFeedback> feedbacks = feedbackRepository == null ? List.of()
+                : feedbackRepository.findByTenantIdOrderByCreatedAtAsc(tenantId);
+        List<LearningAssignmentSubmission> submissions = submissionRepository == null ? List.of()
+                : submissionRepository.findByTenantIdOrderBySubmittedAtAsc(tenantId);
+        List<AssessmentAttempt> assessments = assessmentRepository.findByTenantIdOrderByCreatedAtAsc(tenantId);
+        List<LearningAssignmentEvaluation> evaluations = evaluationRepository == null ? List.of()
+                : evaluationRepository.findByTenantIdOrderByCreatedAtAsc(tenantId);
+
+        long assignmentAccepted = assignments.stream().filter(item ->
+                item.getStatus() == LearningAssignmentStatus.ACCEPTED
+                        || item.getStatus() == LearningAssignmentStatus.AWAITING_EVIDENCE
+                        || item.getStatus() == LearningAssignmentStatus.RETRY_REQUIRED
+                        || item.getStatus() == LearningAssignmentStatus.OVERDUE
+                        || item.getStatus() == LearningAssignmentStatus.COMPLETED).count();
+        long assignmentCompleted = assignments.stream()
+                .filter(item -> item.getStatus() == LearningAssignmentStatus.COMPLETED).count();
+        long assignmentRetryRequired = assignments.stream()
+                .filter(item -> item.getStatus() == LearningAssignmentStatus.RETRY_REQUIRED).count();
+        Set<String> submittedAssignmentIds = submissions.stream()
+                .map(LearningAssignmentSubmission::getLearningAssignmentId)
+                .collect(java.util.stream.Collectors.toSet());
+        long assignmentReviewPending = assignments.stream()
+                .filter(item -> item.getReviewStatus() == LearningAssignmentReviewStatus.PENDING).count();
+        long assignmentReviewVerified = assignments.stream()
+                .filter(item -> item.getReviewStatus() == LearningAssignmentReviewStatus.VERIFIED).count();
+        long assignmentReviewRevisionRequired = assignments.stream()
+                .filter(item -> item.getReviewStatus() == LearningAssignmentReviewStatus.REVISION_REQUIRED).count();
+
+        long taskStarted = tasks.stream().filter(item -> item.getStartedAt() != null).count();
+        long taskCompleted = tasks.stream().filter(item -> item.getCompletedAt() != null).count();
+        long taskAwaitingEvidence = tasks.stream()
+                .filter(item -> item.getStatus() == LearningTaskStatus.AWAITING_EVIDENCE).count();
+        long taskFailed = tasks.stream().filter(item -> item.getStatus() == LearningTaskStatus.FAILED).count();
+        long taskRetryCount = tasks.stream().mapToLong(LearningTask::getFailureCount).sum();
+        long retriedTaskTotal = tasks.stream().filter(item -> item.getFailureCount() > 0).count();
+        long retriedTaskCompleted = tasks.stream()
+                .filter(item -> item.getFailureCount() > 0 && item.getCompletedAt() != null).count();
+        long taskEvidenceCovered = tasks.stream()
+                .filter(item -> item.getStartedAt() != null && item.getRunId() != null)
+                .filter(task -> assessments.stream().anyMatch(attempt ->
+                        tenantId.equals(attempt.getTenantId())
+                                && task.getUserId().equals(attempt.getUserId())
+                                && task.getRunId().equals(attempt.getRunId())))
+                .count();
+
+        long notificationSeen = taskNotifications.stream().filter(item -> item.getSeenAt() != null).count()
+                + assignmentNotifications.stream().filter(item -> item.getSeenAt() != null).count();
+        long notificationRead = taskNotifications.stream().filter(item -> item.getReadAt() != null).count()
+                + assignmentNotifications.stream().filter(item -> item.getReadAt() != null).count();
+        long notificationTotal = taskNotifications.size() + assignmentNotifications.size();
+        long assessmentTotal = assessments.size();
+        long formativeAssessmentTotal = assessments.stream()
+                .filter(item -> item.getAssessmentType() == AssessmentAttemptType.FORMATIVE).count();
+        long reviewAssessmentTotal = assessments.stream()
+                .filter(item -> item.getAssessmentType() == AssessmentAttemptType.REVIEW).count();
+        long correctAssessmentTotal = assessments.stream().filter(AssessmentAttempt::isCorrect).count();
+        long correctReviewAssessmentTotal = assessments.stream()
+                .filter(item -> item.getAssessmentType() == AssessmentAttemptType.REVIEW)
+                .filter(AssessmentAttempt::isCorrect).count();
+        long feedbackAcknowledged = feedbacks.stream()
+                .filter(item -> item.getAcknowledgedAt() != null).count();
+        long feedbackResolved = feedbacks.stream()
+                .filter(item -> item.getStatus() == LearningAssignmentFeedbackStatus.RESOLVED).count();
+        Set<String> evaluatedAssignmentIds = evaluations.stream()
+                .map(LearningAssignmentEvaluation::getLearningAssignmentId)
+                .collect(java.util.stream.Collectors.toSet());
+
+        return new EducationMetricsView(
+                assignments.size(), assignmentAccepted, assignmentCompleted,
+                submissions.size(), submittedAssignmentIds.size(),
+                ratio(submittedAssignmentIds.size(), assignments.size()),
+                ratio(assignmentAccepted, assignments.size()), ratio(assignmentCompleted, assignments.size()),
+                tasks.size(), taskStarted, taskCompleted, taskAwaitingEvidence, taskFailed, taskRetryCount,
+                ratio(taskStarted, tasks.size()), ratio(taskCompleted, tasks.size()), taskEvidenceCovered,
+                ratio(taskEvidenceCovered, taskStarted), notificationTotal, notificationSeen, notificationRead,
+                ratio(notificationRead, notificationTotal), assessmentTotal, formativeAssessmentTotal,
+                reviewAssessmentTotal, correctAssessmentTotal, ratio(correctAssessmentTotal, assessmentTotal),
+                assignmentReviewPending, assignmentReviewVerified, assignmentReviewRevisionRequired,
+                ratio(assignmentReviewVerified,
+                        assignmentReviewPending + assignmentReviewRevisionRequired + assignmentReviewVerified),
+                feedbacks.size(), feedbackAcknowledged, ratio(feedbackAcknowledged, feedbacks.size()),
+                feedbackResolved, ratio(feedbackResolved, feedbacks.size()),
+                averageAcknowledgementLatencySeconds(feedbacks), retriedTaskTotal, retriedTaskCompleted,
+                ratio(retriedTaskCompleted, retriedTaskTotal), averageMasteryGain(assessments),
+                ratio(correctReviewAssessmentTotal, reviewAssessmentTotal), assignmentRetryRequired,
+                evaluations.size(), evaluatedAssignmentIds.size(), ratio(evaluatedAssignmentIds.size(), assignments.size()),
+                averageTeacherScore(evaluations, ScoreDimension.CONTENT_CORRECTNESS),
+                averageTeacherScore(evaluations, ScoreDimension.EVIDENCE_QUALITY),
+                averageTeacherScore(evaluations, ScoreDimension.TRANSFER_READINESS));
+    }
+
     private long averageAcknowledgementLatencySeconds(List<LearningAssignmentFeedback> feedbacks) {
         List<Long> latencies = feedbacks.stream()
                 .filter(item -> item.getAcknowledgedAt() != null)

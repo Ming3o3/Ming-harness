@@ -23,6 +23,8 @@ public interface LearningTaskNotificationRepository extends JpaRepository<Learni
     List<LearningTaskNotification> findByTenantIdAndUserIdOrderByCreatedAtDesc(
             String tenantId, String userId, Pageable pageable);
 
+    List<LearningTaskNotification> findByTenantIdOrderByCreatedAtAsc(String tenantId);
+
     List<LearningTaskNotification> findByTenantIdAndUserIdAndLearningTaskIdAndStatus(
             String tenantId, String userId, String learningTaskId, LearningTaskNotificationStatus status);
 

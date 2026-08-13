@@ -204,6 +204,11 @@ class EducationRoleWebFlowTests {
                 "/api/education/courses/" + courseId, null);
         assertEquals(200, adminCourse.statusCode(), adminCourse.body());
 
+        HttpResponse<String> adminMetrics = request("admin-flow-key", "GET",
+                "/api/education/metrics", null);
+        assertEquals(200, adminMetrics.statusCode(), adminMetrics.body());
+        assertTrue(json(adminMetrics).path("assignmentTotal").asInt() >= 1, adminMetrics.body());
+
         HttpResponse<String> adminCreate = request("admin-flow-key", "POST", "/api/education/courses",
                 "{\"code\":\"admin-must-not-create\",\"title\":\"越权课程\",\"subject\":\"数学\","
                         + "\"gradeLevel\":\"高中一年级\",\"curriculumVersion\":\"人教A版\"}");

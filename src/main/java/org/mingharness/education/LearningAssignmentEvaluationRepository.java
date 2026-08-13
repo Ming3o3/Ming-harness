@@ -21,6 +21,8 @@ public interface LearningAssignmentEvaluationRepository
     List<LearningAssignmentEvaluation> findByTenantIdAndCourseIdOrderByCreatedAtAsc(
             String tenantId, String courseId);
 
+    List<LearningAssignmentEvaluation> findByTenantIdOrderByCreatedAtAsc(String tenantId);
+
     boolean existsByTenantIdAndLearningAssignmentIdAndEvaluatorUserIdAndDecision(
             String tenantId, String learningAssignmentId, String evaluatorUserId,
             LearningAssignmentEvaluationDecision decision);
