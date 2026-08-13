@@ -1510,6 +1510,73 @@ function learningAssignmentNextAction(assignment) {
   return { label: '查看完整记录', detail: '当前没有需要立即处理的动作。', issue: '', actionable: false }
 }
 
+// 学生不需要记住后端状态枚举；作业卡片把同一条业务链路翻译成四个阶段，
+// 并突出当前唯一需要行动的阶段。状态仍由 Runtime 权威返回，轨迹只负责解释。
+function learningAssignmentJourney(assignment) {
+  if (!assignment) return { current: '', currentDetail: '', steps: [] }
+  if (assignment.status === 'CANCELLED') {
+    return {
+      current: 'cancelled',
+      currentDetail: '这份作业已被取消，不能继续启动或提交；如需继续学习，请等待教师重新布置。',
+      steps: [
+        { id: 'accept', label: '接受作业', state: 'cancelled' },
+        { id: 'learn', label: '课程学习', state: 'cancelled' },
+        { id: 'evidence', label: '提交证据', state: 'cancelled' },
+        { id: 'review', label: '教师确认', state: 'cancelled' },
+        { id: 'done', label: '已取消', state: 'current' },
+      ],
+    }
+  }
+  const openFeedback = learningAssignmentOpenFeedback(assignment)
+  const hasSubmission = (learningAssignmentSubmissionMap.value[assignment.id] || []).length > 0
+  const verified = assignment.status === 'COMPLETED' && assignment.reviewStatus === 'VERIFIED'
+  const reviewPending = assignment.status === 'COMPLETED' && assignment.reviewStatus === 'PENDING'
+  const intervention = ['REQUEST_EVIDENCE', 'RECOMMEND_RETRY'].includes(openFeedback?.action)
+  const retry = assignment.status === 'RETRY_REQUIRED' || intervention
+  const accepted = assignment.status !== 'ASSIGNED'
+  const learningDone = ['AWAITING_EVIDENCE', 'COMPLETED'].includes(assignment.status) && !retry
+  const evidenceDone = verified || (reviewPending && hasSubmission)
+  let current = 'accept'
+  let currentDetail = '接受后，Agent 才会按课程约束启动学习。'
+  if (retry) {
+    current = 'learn'
+    currentDetail = assignment.reviewStatus === 'REVISION_REQUIRED'
+      ? '教师已退回返工，请按反馈重新学习。'
+      : '上一轮未完成，请重新启动课程作业。'
+  } else if (assignment.status === 'ASSIGNED') {
+    current = 'accept'
+  } else if (assignment.status === 'ACCEPTED') {
+    current = 'learn'
+    currentDetail = '继续课程对话，完成讲解、练习或诊断。'
+  } else if (assignment.status === 'AWAITING_EVIDENCE') {
+    current = 'evidence'
+    currentDetail = '补充作答、推理或测评依据，才能更新学习状态。'
+  } else if (reviewPending && !hasSubmission) {
+    current = 'evidence'
+    currentDetail = '先提交可追溯的作答内容，教师才能完成确认。'
+  } else if (reviewPending) {
+    current = 'review'
+    currentDetail = '提交物已收到，等待教师依据证据确认。'
+  } else if (verified) {
+    current = 'done'
+    currentDetail = '教师已确认结果，可以进入后续复习。'
+  } else if (assignment.status === 'OVERDUE') {
+    current = 'evidence'
+    currentDetail = '作业已逾期；提交已有成果，或等待教师重新安排。'
+  }
+  return {
+    current,
+    currentDetail,
+    steps: [
+    { id: 'accept', label: '接受作业', state: current === 'accept' ? 'current' : (accepted ? 'ready' : 'pending') },
+    { id: 'learn', label: retry ? '返工 / 重试' : '课程学习', state: current === 'learn' ? 'current' : (learningDone || evidenceDone ? 'ready' : 'pending') },
+    { id: 'evidence', label: '提交证据', state: current === 'evidence' ? 'current' : (evidenceDone ? 'ready' : 'pending') },
+    { id: 'review', label: verified ? '教师已确认' : '教师确认', state: current === 'review' ? 'current' : (verified ? 'ready' : 'pending') },
+    { id: 'done', label: '完成 / 复习', state: current === 'done' ? 'current' : (verified ? 'ready' : 'pending') },
+    ],
+  }
+}
+
 const activeEducationCourseLearnerProgress = computed(() => {
   const course = activeEducationCourse.value
   if (!course || course.ownerUserId === form.userId) return null
@@ -9586,6 +9653,12 @@ onBeforeUnmount(() => {
                     <small v-if="assignment.reviewStatus !== 'NOT_REQUIRED'" class="learning-assignment-progress">业务结果：{{ learningAssignmentReviewStatusLabel(assignment.reviewStatus) }}<span v-if="assignment.teacherReviewedAt"> · {{ formatDate(assignment.teacherReviewedAt) }}</span></small>
                     <p>{{ assignment.instructions }}</p>
                     <small v-if="learningAssignmentActionHint(assignment)" class="learning-assignment-action-hint"><ArrowRight :size="12" />{{ learningAssignmentActionHint(assignment) }}</small>
+                    <div v-if="isLearnerOnlyRole" class="learning-assignment-journey" aria-label="作业学习阶段">
+                      <div class="learning-assignment-journey-steps">
+                        <span v-for="(step, index) in learningAssignmentJourney(assignment).steps" :key="step.id" :class="`is-${step.state}`"><i>{{ String(index + 1).padStart(2, '0') }}</i>{{ step.label }}</span>
+                      </div>
+                      <small class="learning-assignment-journey-current"><ArrowRight :size="11" /><strong>当前阶段</strong>{{ learningAssignmentJourney(assignment).currentDetail }}</small>
+                    </div>
                     <div v-if="assignment.teacherReviewNote" class="learning-assignment-review-note" :class="{ revision: assignment.reviewStatus === 'REVISION_REQUIRED' }"><CircleAlert :size="13" /><div><strong>{{ learningAssignmentReviewNoteLabel(assignment) }}</strong><span>{{ assignment.teacherReviewNote }}</span></div></div>
                     <small v-if="!learningAssignmentDetailsLoaded(assignment.id)" class="learning-assignment-progress">正在补齐提交物、测评和反馈证据…</small>
                     <small v-if="learningAssignmentProgressMap[assignment.id]" class="learning-assignment-progress">掌握度 {{ formatRate(learningAssignmentProgressMap[assignment.id].currentMastery) }} / {{ formatRate(learningAssignmentProgressMap[assignment.id].targetMastery) }} · 提升 {{ learningAssignmentProgressMap[assignment.id].masteryGain >= 0 ? '+' : '' }}{{ formatRate(learningAssignmentProgressMap[assignment.id].masteryGain) }} · 目标进度 {{ formatRate(learningAssignmentProgressMap[assignment.id].masteryProgress) }} · 测评 {{ learningAssignmentProgressMap[assignment.id].assessmentTotal }} 次 · 任务 {{ learningAssignmentProgressMap[assignment.id].taskCompleted }} / {{ learningAssignmentProgressMap[assignment.id].taskTotal }}</small>
