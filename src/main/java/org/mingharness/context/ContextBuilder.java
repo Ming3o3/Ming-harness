@@ -4,6 +4,7 @@ import org.mingharness.config.ContextRetrievalProperties;
 import org.mingharness.context.api.ContextEvidence;
 import org.mingharness.context.api.ContextResult;
 import org.mingharness.context.api.EducationRankingBreakdown;
+import org.mingharness.context.api.EducationRankingWeights;
 import org.mingharness.education.EducationKnowledgeSourceRepository;
 import org.mingharness.education.EducationKnowledgeSource;
 import org.mingharness.education.EducationDependencyGraph;
@@ -317,8 +318,14 @@ public class ContextBuilder {
                 : targetMastery < 0.70 ? 3.0 : 4.0;
         double difficultyFit = 1.0 - Math.min(1.0,
                 Math.abs(source.getDifficultyLevel() - preferredDifficulty) / 4.0);
+        double deficit = graphGaps.isEmpty() ? prerequisiteGap
+                : dependencyGraph.prerequisites().stream()
+                .filter(path -> graphGaps.contains(normalizeConcept(path.conceptKey())))
+                .mapToDouble(EducationDependencyPath::deficit).average().orElse(prerequisiteGap);
+        EducationRankingWeights weights = EducationRankingWeights.conditioned(targetMastery,
+                deficit, !graphGaps.isEmpty());
         return new EducationRankingBreakdown(retrievalRelevance, targetConceptMatch,
-                prerequisiteGap, graphCoverage, difficultyFit, 0.0, 0.0, 0.0);
+                prerequisiteGap, graphCoverage, difficultyFit, 0.0, 0.0, 0.0, weights);
     }
 
     private Set<String> coveredGapSet(String tenantId, ContextEvidence evidence,
@@ -379,6 +386,7 @@ public class ContextBuilder {
         if (breakdown.targetConceptMatch() >= 0.5) reasons.add("匹配目标知识点");
         if (breakdown.difficultyFit() >= 0.75) reasons.add("难度适配");
         if (!displayGaps.isEmpty()) reasons.add("覆盖前置缺口：" + String.join("、", displayGaps));
+        reasons.add("状态权重=" + breakdown.weights().conditioning());
         String reason = "满足课程硬约束" + (reasons.isEmpty() ? "" : "；" + String.join("；", reasons));
         return new ContextEvidence(evidence.documentId(), evidence.title(), evidence.citation(),
                 evidence.excerpt(), breakdown.finalScore(), reason, displayGaps, breakdown);

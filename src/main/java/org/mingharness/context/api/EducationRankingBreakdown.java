@@ -15,8 +15,19 @@ public record EducationRankingBreakdown(
         double difficultyFit,
         double marginalCoverageScore,
         double redundancyPenalty,
-        double finalScore
+        double finalScore,
+        EducationRankingWeights weights
 ) {
+
+    /** 兼容旧版八分量排序快照，使用固定权重。 */
+    public EducationRankingBreakdown(double retrievalRelevance, double targetConceptMatch,
+                                     double prerequisiteGap, double graphCoverage,
+                                     double difficultyFit, double marginalCoverageScore,
+                                     double redundancyPenalty, double finalScore) {
+        this(retrievalRelevance, targetConceptMatch, prerequisiteGap, graphCoverage,
+                difficultyFit, marginalCoverageScore, redundancyPenalty, finalScore,
+                EducationRankingWeights.fixed());
+    }
 
     public EducationRankingBreakdown {
         retrievalRelevance = bounded(retrievalRelevance);
@@ -27,6 +38,7 @@ public record EducationRankingBreakdown(
         marginalCoverageScore = bounded(marginalCoverageScore);
         redundancyPenalty = bounded(redundancyPenalty);
         finalScore = Double.isFinite(finalScore) ? Math.max(0.0, Math.min(1.0, finalScore)) : 0.0;
+        weights = weights == null ? EducationRankingWeights.fixed() : weights;
     }
 
     public static EducationRankingBreakdown empty() {
@@ -36,11 +48,8 @@ public record EducationRankingBreakdown(
 
     /** 固定排序分量，不含证据集合选择阶段的边际覆盖和冗余惩罚。 */
     public double baseScore() {
-        return 0.35 * retrievalRelevance
-                + 0.20 * targetConceptMatch
-                + 0.15 * prerequisiteGap
-                + 0.15 * graphCoverage
-                + 0.15 * difficultyFit;
+        return weights.score(retrievalRelevance, targetConceptMatch, prerequisiteGap,
+                graphCoverage, difficultyFit);
     }
 
     public EducationRankingBreakdown withSelection(double marginalCoverage,
@@ -48,7 +57,7 @@ public record EducationRankingBreakdown(
                                                    double selectionScore) {
         return new EducationRankingBreakdown(retrievalRelevance, targetConceptMatch,
                 prerequisiteGap, graphCoverage, difficultyFit, marginalCoverage,
-                redundancy, selectionScore);
+                redundancy, selectionScore, weights);
     }
 
     private static double bounded(double value) {

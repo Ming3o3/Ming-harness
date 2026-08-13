@@ -335,6 +335,8 @@ class ContextBuilderTests {
         assertEquals(List.of("定义域"), prerequisiteEvidence.prerequisiteGaps());
         assertTrue(targetEvidence.prerequisiteGaps().isEmpty());
         assertTrue(prerequisiteEvidence.rankingBreakdown().graphCoverage() > 0.0);
+        assertEquals("MID_MASTERY_BALANCED",
+                prerequisiteEvidence.rankingBreakdown().weights().conditioning());
     }
 
     @Test

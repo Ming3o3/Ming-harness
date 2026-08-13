@@ -2,6 +2,7 @@ package org.mingharness.context;
 
 import org.mingharness.context.api.ContextEvidence;
 import org.mingharness.context.api.EducationRankingBreakdown;
+import org.mingharness.context.api.EducationRankingWeights;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -87,7 +88,16 @@ public final class ContextEvidenceSnapshotCodec {
                 number(value, "retrievalRelevance"), number(value, "targetConceptMatch"),
                 number(value, "prerequisiteGap"), number(value, "graphCoverage"),
                 number(value, "difficultyFit"), number(value, "marginalCoverageScore"),
-                number(value, "redundancyPenalty"), number(value, "finalScore"));
+                number(value, "redundancyPenalty"), number(value, "finalScore"), weights(value));
+    }
+
+    private static EducationRankingWeights weights(JsonNode value) {
+        JsonNode weights = value.get("weights");
+        if (weights == null || !weights.isObject()) return EducationRankingWeights.fixed();
+        return new EducationRankingWeights(
+                number(weights, "retrievalRelevance"), number(weights, "targetConceptMatch"),
+                number(weights, "prerequisiteGap"), number(weights, "graphCoverage"),
+                number(weights, "difficultyFit"), text(weights, "conditioning"));
     }
 
     private static String safe(String value) {
