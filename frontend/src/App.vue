@@ -5003,6 +5003,11 @@ async function selectEducationCourse(course) {
   learningAssignmentCourseFilter.value = course.id
   learningAssignmentLearnerFilter.value = ''
   learningAssignmentIssueFilter.value = ''
+  // 通用作业入口仅用于无课程作业或单独补发；选中课程后复用课程边界，
+  // 避免教师在两个入口之间来回抄写学科、年级和课程版本。
+  learningAssignmentForm.subject = course.subject || learningAssignmentForm.subject
+  learningAssignmentForm.gradeLevel = course.gradeLevel || learningAssignmentForm.gradeLevel
+  learningAssignmentForm.curriculumVersion = course.curriculumVersion || learningAssignmentForm.curriculumVersion
   await loadEducationCourseWorkspace(course.id)
   noticeMessage.value = `已打开课程：${course.title}`
 }
@@ -9497,7 +9502,7 @@ onBeforeUnmount(() => {
                     <div v-else class="context-preview-empty">名单为空；请先加入学习者。</div>
                   </div>
                   <div id="education-course-assignment" class="education-course-assignment">
-                    <div class="subsection-title"><div><h4>批量布置作业</h4><span>一次提交，逐人追踪</span></div></div>
+                    <div class="subsection-title"><div><h4>课程批量布置作业</h4><span>首选入口 · 一次提交，逐人追踪</span></div></div>
                     <form v-if="activeEducationCourseIsOwner" class="education-course-assignment-form" @submit.prevent="assignEducationCourse">
                       <label class="field"><span>作业标题</span><input v-model="educationCourseAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域练习" /></label>
                       <label class="field"><span>目标知识点</span><input v-model="educationCourseAssignmentForm.conceptKey" required maxlength="255" placeholder="函数定义域" /></label>
@@ -9506,6 +9511,7 @@ onBeforeUnmount(() => {
                       <label class="field education-course-wide"><span>作业说明</span><textarea v-model="educationCourseAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作答范围、提交要求或迁移任务"></textarea></label>
                       <button class="secondary-button" type="submit" :disabled="educationCourseAssignmentSaving || !educationCourseEnrollments.some((item) => item.status === 'ACTIVE')">{{ educationCourseAssignmentSaving ? '布置中…' : '向活跃名单布置' }}</button>
                     </form>
+                    <p v-if="activeEducationCourseIsOwner" class="learning-task-help">已有课程和活跃名单时，请优先使用这里；系统会自动把同一份作业下发给所有活跃学生，并保留课程约束。</p>
                     <p v-else class="learning-task-help">管理员只读查看作业规模与证据覆盖；布置作业由课程教师执行。</p>
                   </div>
                 </div>
@@ -9633,8 +9639,9 @@ onBeforeUnmount(() => {
                   <div class="learning-notification-actions"><button class="secondary-button" type="button" @click="openLearningAssignmentNotification(notification)">{{ learningAssignmentNotificationActionLabel(notification) }}</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningAssignmentNotificationRead(notification)">标记已读</button></div>
                 </article>
               </div>
-              <details v-if="canManageEducationOperations" class="education-teacher-entry education-assignment-entry" :open="educationWorkspaceMode === 'teacher'">
-                <summary><span><strong>教师布置入口</strong><small>把课程约束和目标知识点下发给指定学习者</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '管理模式' : '需要教师 / 组织权限' }}</em></summary>
+              <details v-if="canManageEducationOperations" class="education-teacher-entry education-assignment-entry" :open="false">
+                <summary><span><strong>单独补发作业</strong><small>无课程时，或只给一名学生补发一份作业</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '次要入口' : '需要教师 / 组织权限' }}</em></summary>
+                <p class="education-teacher-entry-help">正常课程作业请回到上方选中课程后，使用“课程批量布置作业”。这里不会自动加入课程名单，适合临时补发、个别学生或尚未建立课程实例的作业。</p>
                 <form class="learning-assignment-form" @submit.prevent="createLearningAssignment">
                   <label class="field"><span>学习者 ID</span><input v-model="learningAssignmentForm.learnerUserId" required maxlength="255" placeholder="例如：student-1" /></label>
                   <label class="field"><span>作业标题</span><input v-model="learningAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域作业" /></label>
@@ -9645,7 +9652,7 @@ onBeforeUnmount(() => {
                   <label class="field"><span>目标掌握度</span><input v-model="learningAssignmentForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required /></label>
                   <label class="field"><span>截止时间（可选）</span><input v-model="learningAssignmentForm.dueAt" type="datetime-local" /></label>
                   <label class="field learning-assignment-wide"><span>作业说明</span><textarea v-model="learningAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作业要求、作答范围或迁移任务"></textarea></label>
-                  <button class="secondary-button learning-assignment-submit" type="submit" :disabled="learningAssignmentSaving">{{ learningAssignmentSaving ? '布置中…' : '布置课程作业' }}</button>
+                  <button class="secondary-button learning-assignment-submit" type="submit" :disabled="learningAssignmentSaving">{{ learningAssignmentSaving ? '补发中…' : '单独补发作业' }}</button>
                 </form>
               </details>
               <div v-if="visibleLearningAssignments.length" id="learning-assignment-list" class="learning-assignment-list">
