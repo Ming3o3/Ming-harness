@@ -1204,6 +1204,46 @@ function runTeacherNextAction() {
     else document.querySelector('.education-course-workbench')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   })
 }
+
+/**
+ * 聊天侧栏的角色入口必须落到对应业务模块，而不是都只回到教育页顶部。
+ * 入口只负责定位，不改变当前角色权限；真正的读写校验仍由 Runtime 处理。
+ */
+function openRoleWorkspaceEntry(entry) {
+  chatMode.value = false
+  navigateConsoleSection('education')
+  void nextTick(() => {
+    if (entry === 'teacher-course') {
+      document.querySelector('.education-course-workbench')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return
+    }
+    if (entry === 'teacher-roster') {
+      focusEducationCourseRoster()
+      return
+    }
+    if (entry === 'teacher-review') {
+      if (teacherPendingAction.value?.issue) {
+        focusCourseBlocker(teacherPendingAction.value.issue)
+      } else {
+        document.querySelector('#learning-assignment-list')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+      return
+    }
+    if (entry === 'student-plan') {
+      document.querySelector('[aria-label="教育 Agent 当前状态"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return
+    }
+    if (entry === 'student-profile') {
+      const profile = document.querySelector('.education-profile-setup')
+      if (profile instanceof HTMLDetailsElement) profile.open = true
+      profile?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return
+    }
+    if (entry === 'student-evidence') {
+      document.querySelector('#learning-assignment-list, .learning-goal-workbench')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  })
+}
 const activeChatCourse = computed(() => educationCourses.value
   .find((course) => course.id === chatEducation.courseId) || null)
 const availableChatCourses = computed(() => {
@@ -7381,13 +7421,13 @@ onBeforeUnmount(() => {
             <button class="chat-primary-nav-item chat-primary-nav-item-primary" type="button" :disabled="chatLoading || chatSending || chatUploading" @click="createChatConversation">
               <MessageSquarePlus :size="15" /><span>新建学习任务</span><kbd>⌘N</kbd>
             </button>
-            <button v-if="!isAdminRole" class="chat-primary-nav-item chat-primary-nav-item-education" type="button" @click="chatMode = false; navigateConsoleSection('education')">
+            <button v-if="!isAdminRole" class="chat-primary-nav-item chat-primary-nav-item-education" type="button" @click="openRoleWorkspaceEntry(isTeacherRole ? 'teacher-course' : 'student-plan')">
               <Sparkles :size="15" /><span>{{ isTeacherRole ? '课程运营' : '学习计划与目标' }}</span>
             </button>
-            <button v-if="!isAdminRole" class="chat-primary-nav-item" type="button" @click="chatMode = false; navigateConsoleSection('education')">
+            <button v-if="!isAdminRole" class="chat-primary-nav-item" type="button" @click="openRoleWorkspaceEntry(isTeacherRole ? 'teacher-roster' : 'student-profile')">
               <CircleDot :size="15" /><span>{{ isTeacherRole ? '课程与学生' : '学习档案' }}</span>
             </button>
-            <button v-if="!isAdminRole" class="chat-primary-nav-item" type="button" @click="chatMode = false; navigateConsoleSection('education')">
+            <button v-if="!isAdminRole" class="chat-primary-nav-item" type="button" @click="openRoleWorkspaceEntry(isTeacherRole ? 'teacher-review' : 'student-evidence')">
               <Check :size="15" /><span>{{ isTeacherRole ? '作业复核' : '测评证据与反馈' }}</span>
             </button>
             <button v-if="isAdminRole" class="chat-primary-nav-item" type="button" @click="chatMode = false; navigateConsoleSection('runtime')">
