@@ -75,10 +75,18 @@ public class EducationCourseCompletionService {
             return view(course);
         }
 
+        List<EducationEnrollment> activeEnrollments = enrollmentRepository
+                .findByTenantIdAndCourseIdAndStatus(tenantId, course.getId(), EducationEnrollmentStatus.ACTIVE);
+        // 进度页、结课校验和结果快照必须共享同一份活跃名单边界：被移除学习者的历史作业
+        // 仍然保留用于审计，但不能继续阻塞当前班级结课。
+        java.util.Set<String> activeLearnerIds = activeEnrollments.stream()
+                .map(EducationEnrollment::getLearnerUserId)
+                .collect(java.util.stream.Collectors.toSet());
         List<LearningAssignment> assignments = assignmentRepository
                 .findByTenantIdAndCourseIdOrderByCreatedAtDesc(tenantId, course.getId());
         List<LearningAssignment> effective = assignments.stream()
                 .filter(item -> item.getStatus() != LearningAssignmentStatus.CANCELLED)
+                .filter(item -> activeLearnerIds.contains(item.getLearnerUserId()))
                 .toList();
         if (effective.isEmpty()) {
             throw new BusinessException(HttpStatus.CONFLICT,
@@ -94,15 +102,11 @@ public class EducationCourseCompletionService {
                     "EDUCATION_COURSE_NOT_READY_TO_COMPLETE",
                     "仍有 " + blocked + " 份作业未完成教师确认，暂不能结课");
         }
-        List<EducationEnrollment> activeEnrollments = enrollmentRepository
-                .findByTenantIdAndCourseIdAndStatus(tenantId, course.getId(), EducationEnrollmentStatus.ACTIVE);
         if (activeEnrollments.isEmpty()) {
             throw new BusinessException(HttpStatus.CONFLICT,
                     "EDUCATION_COURSE_ROSTER_EMPTY",
                     "课程没有活跃学习者，暂不能结课");
         }
-        java.util.Set<String> activeLearnerIds = activeEnrollments.stream()
-                .map(EducationEnrollment::getLearnerUserId).collect(java.util.stream.Collectors.toSet());
         java.util.Set<String> assignedLearnerIds = effective.stream()
                 .map(LearningAssignment::getLearnerUserId)
                 .filter(activeLearnerIds::contains)

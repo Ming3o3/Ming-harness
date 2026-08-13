@@ -92,13 +92,15 @@ class EducationCourseCompletionServiceTests {
         when(courses.findByTenantIdAndId("tenant-a", course.getId())).thenReturn(Optional.of(course));
         when(assignments.findByTenantIdAndCourseIdOrderByCreatedAtDesc(
                 "tenant-a", course.getId())).thenReturn(List.of(assigned));
+        when(enrollments.findByTenantIdAndCourseIdAndStatus(
+                "tenant-a", course.getId(), EducationEnrollmentStatus.ACTIVE)).thenReturn(List.of(
+                new EducationEnrollment("tenant-a", course.getId(), "student-1", Instant.now())));
 
         BusinessException exception = assertThrows(BusinessException.class, () ->
                 new EducationCourseCompletionService(courses, assignments, enrollments,
                         new SensitiveDataSanitizer()).complete("tenant-a", "teacher-1", course.getId(), null));
 
         assertEquals("EDUCATION_COURSE_NOT_READY_TO_COMPLETE", exception.getCode());
-        verifyNoInteractions(enrollments);
     }
 
     @Test
@@ -168,6 +170,42 @@ class EducationCourseCompletionServiceTests {
                         new SensitiveDataSanitizer()).complete("tenant-a", "teacher-1", course.getId(), null));
 
         assertEquals("EDUCATION_COURSE_ROSTER_ASSIGNMENTS_REQUIRED", exception.getCode());
+    }
+
+    @Test
+    void shouldIgnoreHistoricalAssignmentOfRemovedLearnerWhenCompletingCourse() {
+        EducationCourseRepository courses = mock(EducationCourseRepository.class);
+        LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
+        LearningAssignmentSubmissionRepository submissions = mock(LearningAssignmentSubmissionRepository.class);
+        EducationEnrollmentRepository enrollments = mock(EducationEnrollmentRepository.class);
+        EducationCourseResultService resultService = mock(EducationCourseResultService.class);
+        EducationCourse course = course();
+        LearningAssignment activeAssignment = completedAssignment(course, "student-1");
+        activeAssignment.verifyByTeacher("teacher-1", "已核验", Instant.now());
+        LearningAssignment historicalAssignment = completedAssignment(course, "student-2");
+        historicalAssignment.verifyByTeacher("teacher-1", "已核验", Instant.now());
+        EducationEnrollment active = new EducationEnrollment(
+                "tenant-a", course.getId(), "student-1", Instant.now());
+        EducationEnrollment removed = new EducationEnrollment(
+                "tenant-a", course.getId(), "student-2", Instant.now());
+        removed.remove(Instant.now());
+
+        when(courses.findByTenantIdAndId("tenant-a", course.getId())).thenReturn(Optional.of(course));
+        when(assignments.findByTenantIdAndCourseIdOrderByCreatedAtDesc(
+                "tenant-a", course.getId())).thenReturn(List.of(activeAssignment, historicalAssignment));
+        when(enrollments.findByTenantIdAndCourseIdAndStatus(
+                "tenant-a", course.getId(), EducationEnrollmentStatus.ACTIVE)).thenReturn(List.of(active));
+        when(submissions.existsByTenantIdAndLearningAssignmentId(any(), any())).thenReturn(true);
+        when(courses.save(any(EducationCourse.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(enrollments.countByTenantIdAndCourseIdAndStatus(
+                "tenant-a", course.getId(), EducationEnrollmentStatus.ACTIVE)).thenReturn(1L);
+
+        var result = new EducationCourseCompletionService(courses, assignments, submissions, enrollments,
+                new SensitiveDataSanitizer(), resultService).complete("tenant-a", "teacher-1", course.getId(),
+                new EducationCourseCompletionRequest("移除成员后的正常结课"));
+
+        assertEquals("COMPLETED", result.status());
+        verify(resultService).capture("tenant-a", "teacher-1", course);
     }
 
     private EducationCourse course() {
