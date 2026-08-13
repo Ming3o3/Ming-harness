@@ -251,7 +251,10 @@ public class EducationRunConfigurationService {
                 course == null ? null : course.getTitle(),
                 normalizeRetrievalStrategy(options.effectiveRetrievalStrategy()));
         requireKnowledgeSource(tenantId, userId, configuration.retrievalFilter());
-        return configuration;
+        EducationDependencyGraph graph = knowledgeService == null
+                ? EducationDependencyGraph.empty(configuration.conceptKey())
+                : knowledgeService.resolveDependencyGraph(tenantId, configuration.retrievalFilter());
+        return configuration.withDependencyGraphSnapshot(EducationDependencyGraphSnapshotCodec.encode(graph));
     }
 
     private String normalizeRetrievalStrategy(String value) {

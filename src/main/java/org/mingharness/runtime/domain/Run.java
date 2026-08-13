@@ -89,6 +89,8 @@ public class Run {
     private String educationLearnerState;
     @Column(name = "education_retrieval_strategy", length = 32)
     private String educationRetrievalStrategy;
+    @Column(name = "education_dependency_graph", columnDefinition = "text")
+    private String educationDependencyGraph;
     /** 创建 Run 时固化的用户模型供应商快照；为空表示沿用环境默认模型或旧数据兼容路径。 */
     @Column(name = "model_config_snapshot_id", length = 128)
     private String modelConfigSnapshotId;
@@ -231,6 +233,7 @@ public class Run {
         this.educationPedagogicalMode = value.pedagogicalMode();
         this.educationLearnerState = value.learnerStateSummary();
         this.educationRetrievalStrategy = value.retrievalStrategyValue().name();
+        this.educationDependencyGraph = value.dependencyGraphSnapshot();
     }
 
     public EducationRunConfiguration educationConfiguration() {
@@ -247,7 +250,8 @@ public class Run {
                 educationPedagogicalMode == null ? "AUTO" : educationPedagogicalMode,
                 educationLearnerState == null ? "" : educationLearnerState,
                 educationCourseId, educationCourseCode, educationCourseTitle,
-                educationRetrievalStrategy == null ? "FULL" : educationRetrievalStrategy);
+                educationRetrievalStrategy == null ? "FULL" : educationRetrievalStrategy,
+                educationDependencyGraph);
     }
 
     /** Worker 成功获取执行锁后建立租约。 */
@@ -403,6 +407,7 @@ public class Run {
     public String getEducationPedagogicalMode() { return educationPedagogicalMode; }
     public String getEducationLearnerState() { return educationLearnerState; }
     public String getEducationRetrievalStrategy() { return educationRetrievalStrategy == null ? "FULL" : educationRetrievalStrategy; }
+    public String getEducationDependencyGraph() { return educationDependencyGraph; }
     public String getModelConfigSnapshotId() { return modelConfigSnapshotId; }
     public String getIdempotencyKey() { return idempotencyKey; }
     public String getPermissionsSnapshot() { return permissionsSnapshot; }

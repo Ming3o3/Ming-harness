@@ -21,13 +21,22 @@ public record EducationRetrievalFilter(
         String conceptKey,
         Integer minDifficulty,
         Integer maxDifficulty,
-        Map<String, Double> masteryScores
+        Map<String, Double> masteryScores,
+        EducationDependencyGraph dependencyGraph
 ) {
 
     /** 保持旧调用方的六参数构造方式；学习者状态默认为空。 */
     public EducationRetrievalFilter(String subject, String gradeLevel, String curriculumVersion,
                                     String conceptKey, Integer minDifficulty, Integer maxDifficulty) {
         this(subject, gradeLevel, curriculumVersion, conceptKey, minDifficulty, maxDifficulty, Map.of());
+    }
+
+    /** 兼容已携带掌握度快照但尚未冻结依赖图的调用方。 */
+    public EducationRetrievalFilter(String subject, String gradeLevel, String curriculumVersion,
+                                    String conceptKey, Integer minDifficulty, Integer maxDifficulty,
+                                    Map<String, Double> masteryScores) {
+        this(subject, gradeLevel, curriculumVersion, conceptKey, minDifficulty, maxDifficulty,
+                masteryScores, null);
     }
 
     public EducationRetrievalFilter {
@@ -43,6 +52,7 @@ public record EducationRetrievalFilter(
             maxDifficulty = temporary;
         }
         masteryScores = normalizeMasteryScores(masteryScores);
+        dependencyGraph = dependencyGraph;
     }
 
     public boolean active() {
@@ -73,6 +83,9 @@ public record EducationRetrievalFilter(
 
     /** 返回不可变的知识点掌握度快照，分数已限制在 [0,1]。 */
     public Map<String, Double> masteryScores() { return masteryScores; }
+
+    /** Run 创建时冻结的图快照；旧请求为 null，允许服务回退到实时图查询。 */
+    public EducationDependencyGraph dependencyGraphOrNull() { return dependencyGraph; }
 
     /** 供教育重排使用：没有观测过的知识点按中性掌握度处理。 */
     public double masteryFor(String concept) {

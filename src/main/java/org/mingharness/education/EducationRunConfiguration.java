@@ -32,12 +32,13 @@ public record EducationRunConfiguration(
         String courseId,
         String courseCode,
         String courseTitle,
-        String retrievalStrategy
+        String retrievalStrategy,
+        String dependencyGraphSnapshot
 ) {
 
     public static EducationRunConfiguration disabled() {
         return new EducationRunConfiguration(false, null, null, null, null, null, null, null, null, 0.0, 0.0,
-                null, null, null, null, null, null, "AUTO", "", null, null, null, "FULL");
+                null, null, null, null, null, null, "AUTO", "", null, null, null, "FULL", null);
     }
 
     /** 兼容增加课程实例快照前的完整配置构造方式。 */
@@ -55,7 +56,26 @@ public record EducationRunConfiguration(
                 learningAssignmentTeacherReviewNote, reviewPlanId, learningGoalTitle,
                 learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
                 curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
-                learnerStateSummary, null, null, null, "FULL");
+                learnerStateSummary, null, null, null, "FULL", null);
+    }
+
+    /** 兼容显式检索策略但尚未冻结知识依赖图的旧调用方。 */
+    public EducationRunConfiguration(boolean enabled, String learnerProfileId, String learningGoalId,
+                                     String learningAssignmentId, String learningAssignmentTitle,
+                                     String learningAssignmentInstructions,
+                                     String learningAssignmentTeacherReviewNote, String reviewPlanId,
+                                     String learningGoalTitle, double learningGoalBaselineMastery,
+                                     double learningGoalTargetMastery, String subject, String gradeLevel,
+                                     String curriculumVersion, String conceptKey, Integer minDifficulty,
+                                     Integer maxDifficulty, String pedagogicalMode,
+                                     String learnerStateSummary, String courseId, String courseCode,
+                                     String courseTitle, String retrievalStrategy) {
+        this(enabled, learnerProfileId, learningGoalId, learningAssignmentId,
+                learningAssignmentTitle, learningAssignmentInstructions,
+                learningAssignmentTeacherReviewNote, reviewPlanId, learningGoalTitle,
+                learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
+                curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
+                learnerStateSummary, courseId, courseCode, courseTitle, retrievalStrategy, null);
     }
 
     /** 兼容已携带课程实例快照、但尚未冻结检索策略的旧版调用方。 */
@@ -74,7 +94,7 @@ public record EducationRunConfiguration(
                 learningAssignmentTeacherReviewNote, reviewPlanId, learningGoalTitle,
                 learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
                 curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
-                learnerStateSummary, courseId, courseCode, courseTitle, "FULL");
+                learnerStateSummary, courseId, courseCode, courseTitle, "FULL", null);
     }
 
     /** 兼容未绑定教师返工说明的既有完整快照构造方式。 */
@@ -90,7 +110,7 @@ public record EducationRunConfiguration(
                 learningAssignmentInstructions, null, reviewPlanId, learningGoalTitle,
                 learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
                 curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
-                learnerStateSummary, null, null, null, "FULL");
+                learnerStateSummary, null, null, null, "FULL", null);
     }
 
     /** 兼容未绑定保持度复习计划的既有调用方。 */
@@ -103,7 +123,7 @@ public record EducationRunConfiguration(
         this(enabled, learnerProfileId, learningGoalId, null, null, null, null, null, learningGoalTitle,
                 learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
                 curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
-                learnerStateSummary, null, null, null, "FULL");
+                learnerStateSummary, null, null, null, "FULL", null);
     }
 
     /** 兼容旧版携带保持度复习计划的快照构造方式。 */
@@ -116,18 +136,32 @@ public record EducationRunConfiguration(
         this(enabled, learnerProfileId, learningGoalId, null, null, null, null, reviewPlanId, learningGoalTitle,
                 learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
                 curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
-                learnerStateSummary, null, null, null, "FULL");
+                learnerStateSummary, null, null, null, "FULL", null);
     }
 
     public EducationRetrievalFilter retrievalFilter() {
         return enabled ? new EducationRetrievalFilter(subject, gradeLevel, curriculumVersion,
                 conceptKey, minDifficulty, maxDifficulty,
                 EducationRetrievalStrategy.parse(retrievalStrategy).usesLearnerState()
-                        ? masteryScores() : Map.of()) : null;
+                        ? masteryScores() : Map.of(), dependencyGraph()) : null;
     }
 
     public EducationRetrievalStrategy retrievalStrategyValue() {
         return EducationRetrievalStrategy.parse(retrievalStrategy);
+    }
+
+    public EducationDependencyGraph dependencyGraph() {
+        return EducationDependencyGraphSnapshotCodec.decode(dependencyGraphSnapshot, conceptKey);
+    }
+
+    public EducationRunConfiguration withDependencyGraphSnapshot(String snapshot) {
+        return new EducationRunConfiguration(enabled, learnerProfileId, learningGoalId,
+                learningAssignmentId, learningAssignmentTitle, learningAssignmentInstructions,
+                learningAssignmentTeacherReviewNote, reviewPlanId, learningGoalTitle,
+                learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
+                curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
+                learnerStateSummary, courseId, courseCode, courseTitle,
+                retrievalStrategyValue().name(), snapshot);
     }
 
     /** 从随 Run 冻结的摘要恢复轻量掌握度快照，保证重启 Worker 后重排结果稳定。 */

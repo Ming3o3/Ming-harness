@@ -94,6 +94,14 @@ public class EducationKnowledgeService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public EducationDependencyGraph resolveDependencyGraph(String tenantId,
+                                                           EducationRetrievalFilter filter) {
+        return graphService == null || filter == null
+                ? EducationDependencyGraph.empty(filter == null ? null : filter.conceptKeyOrNull())
+                : graphService.resolve(tenantId, filter);
+    }
+
     /** 管理员治理页只读查看同租户课程元数据；正文仍不从此接口暴露。 */
     @Transactional(readOnly = true)
     public List<EducationKnowledgeSource> listSourcesForGovernance(String tenantId) {

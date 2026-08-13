@@ -127,7 +127,11 @@ public class ContextBuilder {
                 ? buildKeyword(tenantId, userId, query, maxChars, educationFilter)
                 : new ContextResult("", List.of());
         if (educationFilter != null && educationFilter.active()) {
-            EducationDependencyGraph dependencyGraph = !strategy.usesLearnerState() || knowledgeGraphService == null
+            EducationDependencyGraph dependencyGraph = !strategy.usesLearnerState()
+                    ? EducationDependencyGraph.empty(educationFilter.conceptKeyOrNull())
+                    : educationFilter.dependencyGraphOrNull() != null
+                    ? educationFilter.dependencyGraphOrNull()
+                    : knowledgeGraphService == null
                     ? EducationDependencyGraph.empty(educationFilter.conceptKeyOrNull())
                     : knowledgeGraphService.resolve(tenantId, educationFilter);
             // VECTOR_ONLY / KEYWORD_ONLY 是召回基线：只保留 SQL/元数据硬过滤，不叠加
