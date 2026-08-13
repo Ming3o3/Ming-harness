@@ -23,7 +23,9 @@ final class ContextEvidenceCodec {
                     .filter(evidence -> evidence != null)
                     .map(evidence -> new ContextEvidence(
                             safe(evidence.documentId()), safe(evidence.title()),
-                            safe(evidence.citation()), safe(evidence.excerpt())))
+                            safe(evidence.citation()), safe(evidence.excerpt()),
+                            evidence.retrievalScore(), safe(evidence.rankingReason()),
+                            evidence.prerequisiteGaps()))
                     .toList());
         } catch (JacksonException exception) {
             return "[]";
@@ -40,7 +42,9 @@ final class ContextEvidenceCodec {
                 if (item == null || !item.isObject()) continue;
                 result.add(new ContextEvidence(
                         text(item, "documentId"), text(item, "title"),
-                        text(item, "citation"), text(item, "excerpt")));
+                        text(item, "citation"), text(item, "excerpt"),
+                        number(item, "retrievalScore"), text(item, "rankingReason"),
+                        strings(item, "prerequisiteGaps")));
             }
             return List.copyOf(result);
         } catch (JacksonException exception) {
@@ -51,6 +55,23 @@ final class ContextEvidenceCodec {
     private static String text(JsonNode node, String field) {
         JsonNode value = node.get(field);
         return value == null ? "" : value.asText("");
+    }
+
+    private static double number(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        return value != null && value.isNumber() ? value.asDouble(0.0) : 0.0;
+    }
+
+    private static List<String> strings(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        if (value == null || !value.isArray()) return List.of();
+        List<String> result = new ArrayList<>();
+        for (JsonNode item : value) {
+            if (item != null && item.isTextual() && !item.asText().isBlank()) {
+                result.add(item.asText());
+            }
+        }
+        return List.copyOf(result);
     }
 
     private static String safe(String value) {

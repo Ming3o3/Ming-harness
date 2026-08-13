@@ -5,6 +5,9 @@ import org.mingharness.context.api.ContextEvidence;
 import org.mingharness.context.api.ContextResult;
 import org.mingharness.education.EducationKnowledgeSourceRepository;
 import org.mingharness.education.EducationKnowledgeSource;
+import org.mingharness.education.EducationDependencyGraph;
+import org.mingharness.education.EducationDependencyPath;
+import org.mingharness.education.EducationKnowledgeGraphService;
 import org.mingharness.education.EducationRetrievalFilter;
 import org.mingharness.observability.HarnessMetrics;
 import org.springframework.dao.DataAccessException;
@@ -31,6 +34,7 @@ public class ContextBuilder {
     private final HarnessMetrics metrics;
     private final ContextRetrievalProperties retrievalProperties;
     private final EducationKnowledgeSourceRepository educationSourceRepository;
+    private final EducationKnowledgeGraphService knowledgeGraphService;
 
     /** 兼容单元测试和本地调用；生产环境使用配置注入的构造器。 */
     public ContextBuilder(KnowledgeDocumentRepository documentRepository,
@@ -50,19 +54,31 @@ public class ContextBuilder {
                 retrievalProperties, null);
     }
 
-    @Autowired
     public ContextBuilder(KnowledgeDocumentRepository documentRepository,
                           MemoryEntryRepository memoryRepository,
                           VectorContextRetriever vectorContextRetriever,
                           HarnessMetrics metrics,
                           ContextRetrievalProperties retrievalProperties,
                           EducationKnowledgeSourceRepository educationSourceRepository) {
+        this(documentRepository, memoryRepository, vectorContextRetriever, metrics, retrievalProperties,
+                educationSourceRepository, null);
+    }
+
+    @Autowired
+    public ContextBuilder(KnowledgeDocumentRepository documentRepository,
+                          MemoryEntryRepository memoryRepository,
+                          VectorContextRetriever vectorContextRetriever,
+                          HarnessMetrics metrics,
+                          ContextRetrievalProperties retrievalProperties,
+                          EducationKnowledgeSourceRepository educationSourceRepository,
+                          EducationKnowledgeGraphService knowledgeGraphService) {
         this.documentRepository = documentRepository;
         this.memoryRepository = memoryRepository;
         this.vectorContextRetriever = vectorContextRetriever;
         this.metrics = metrics;
         this.retrievalProperties = retrievalProperties;
         this.educationSourceRepository = educationSourceRepository;
+        this.knowledgeGraphService = knowledgeGraphService;
     }
 
     public ContextResult build(String tenantId, String userId, String query, int maxChars) {
@@ -91,8 +107,11 @@ public class ContextBuilder {
         }
         ContextResult keywordResult = buildKeyword(tenantId, userId, query, maxChars, educationFilter);
         if (educationFilter != null && educationFilter.active()) {
-            vectorResult = rerankEducation(vectorResult, tenantId, educationFilter, maxChars);
-            keywordResult = rerankEducation(keywordResult, tenantId, educationFilter, maxChars);
+            EducationDependencyGraph dependencyGraph = knowledgeGraphService == null
+                    ? EducationDependencyGraph.empty(educationFilter.conceptKeyOrNull())
+                    : knowledgeGraphService.resolve(tenantId, educationFilter);
+            vectorResult = rerankEducation(vectorResult, tenantId, educationFilter, dependencyGraph, maxChars);
+            keywordResult = rerankEducation(keywordResult, tenantId, educationFilter, dependencyGraph, maxChars);
         }
         if (vectorResult.isEmpty()) {
             if (!keywordResult.isEmpty()) metrics.contextFallback();
@@ -190,13 +209,15 @@ public class ContextBuilder {
      * 和学习者掌握度转成可解释的软分数，避免高相似度但难度不合适的材料占据上下文。
      */
     private ContextResult rerankEducation(ContextResult result, String tenantId,
-                                          EducationRetrievalFilter filter, int maxChars) {
+                                          EducationRetrievalFilter filter,
+                                          EducationDependencyGraph dependencyGraph,
+                                          int maxChars) {
         if (result == null || result.isEmpty()) return result;
         // 无法确认来源课程元数据时宁可不给上下文，也不能退回通用知识库结果。
         if (educationSourceRepository == null) return new ContextResult("", List.of());
         List<RankedEducationEvidence> ranked = result.evidences().stream()
                 .map(evidence -> new RankedEducationEvidence(evidence,
-                        educationScore(tenantId, evidence, filter)))
+                        educationScore(tenantId, evidence, filter, dependencyGraph)))
                 .filter(item -> Double.isFinite(item.score()))
                 .sorted(Comparator.comparingDouble(RankedEducationEvidence::score).reversed())
                 .toList();
@@ -204,16 +225,19 @@ public class ContextBuilder {
         StringBuilder text = new StringBuilder();
         for (RankedEducationEvidence rankedEvidence : ranked) {
             ContextEvidence evidence = rankedEvidence.evidence();
-            String block = contextBlock(evidence.title(), evidence.excerpt());
+            ContextEvidence explained = explainEducationEvidence(evidence, rankedEvidence.score(),
+                    dependencyGraph);
+            String block = contextBlock(explained.title(), explained.excerpt());
             if (text.length() + block.length() > maxChars) continue;
             text.append(block);
-            evidences.add(evidence);
+            evidences.add(explained);
         }
         return new ContextResult(text.toString(), List.copyOf(evidences));
     }
 
     private double educationScore(String tenantId, ContextEvidence evidence,
-                                  EducationRetrievalFilter filter) {
+                                  EducationRetrievalFilter filter,
+                                  EducationDependencyGraph dependencyGraph) {
         if (evidence == null || evidence.citation() == null
                 || !evidence.citation().startsWith("document:")) return Double.NEGATIVE_INFINITY;
         String documentId = evidence.documentId();
@@ -237,12 +261,42 @@ public class ContextBuilder {
             prerequisiteGap /= prerequisites.length;
             score += 0.25 * prerequisiteGap;
         }
+        if (dependencyGraph != null && !dependencyGraph.prerequisites().isEmpty()) {
+            double graphGap = dependencyGraph.prerequisites().stream()
+                    .mapToDouble(EducationDependencyPath::deficit)
+                    .average().orElse(0.0);
+            double sourceCoverage = java.util.Arrays.stream(prerequisites)
+                    .map(this::normalizeConcept)
+                    .filter(dependencyGraph.byConcept()::containsKey)
+                    .count() / (double) Math.max(1, dependencyGraph.prerequisites().size());
+            score += 0.15 * graphGap * Math.min(1.0, sourceCoverage);
+        }
         double targetMastery = filter.masteryFor(filter.conceptKeyOrNull());
         double preferredDifficulty = targetMastery < 0.35 ? 2.0
                 : targetMastery < 0.70 ? 3.0 : 4.0;
         score += 0.30 * (1.0 - Math.min(1.0,
                 Math.abs(source.getDifficultyLevel() - preferredDifficulty) / 4.0));
         return score;
+    }
+
+    private ContextEvidence explainEducationEvidence(ContextEvidence evidence, double score,
+                                                     EducationDependencyGraph graph) {
+        if (evidence == null) return null;
+        // 来源元数据已在评分阶段校验；这里不依赖跨租户查询，只从 evidence 的上下文和图快照
+        // 生成稳定解释，避免把内部数据库字段暴露给前端。
+        List<String> gaps = graph == null ? List.of() : graph.prerequisites().stream()
+                .filter(path -> path.deficit() >= 0.5)
+                .map(EducationDependencyPath::conceptKey)
+                .toList();
+        String reason = gaps.isEmpty()
+                ? "匹配课程约束、目标知识点与当前掌握度"
+                : "匹配课程约束，并优先覆盖前置知识缺口：" + String.join("、", gaps);
+        return new ContextEvidence(evidence.documentId(), evidence.title(), evidence.citation(),
+                evidence.excerpt(), score, reason, gaps);
+    }
+
+    private String normalizeConcept(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
     private boolean containsConcept(String values, String expected) {

@@ -18,13 +18,23 @@ public class EducationKnowledgeService {
     private final EducationKnowledgeSourceRepository sourceRepository;
     private final KnowledgeDocumentRepository documentRepository;
     private final SensitiveDataSanitizer sanitizer;
+    private final EducationKnowledgeGraphService graphService;
 
     public EducationKnowledgeService(EducationKnowledgeSourceRepository sourceRepository,
                                      KnowledgeDocumentRepository documentRepository,
                                      SensitiveDataSanitizer sanitizer) {
+        this(sourceRepository, documentRepository, sanitizer, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public EducationKnowledgeService(EducationKnowledgeSourceRepository sourceRepository,
+                                     KnowledgeDocumentRepository documentRepository,
+                                     SensitiveDataSanitizer sanitizer,
+                                     EducationKnowledgeGraphService graphService) {
         this.sourceRepository = sourceRepository;
         this.documentRepository = documentRepository;
         this.sanitizer = sanitizer;
+        this.graphService = graphService;
     }
 
     @Transactional
@@ -72,7 +82,9 @@ public class EducationKnowledgeService {
                     clean(request.prerequisiteConcepts()), request.effectiveDifficultyLevel(),
                     clean(request.sourceType()));
         }
-        return sourceRepository.save(source);
+        EducationKnowledgeSource saved = sourceRepository.save(source);
+        if (graphService != null) graphService.replaceDerivedEdges(saved);
+        return saved;
     }
 
     @Transactional(readOnly = true)
@@ -117,6 +129,7 @@ public class EducationKnowledgeService {
         }
         source.markDeleted();
         sourceRepository.save(source);
+        if (graphService != null) graphService.removeDerivedEdges(tenantId, documentId);
     }
 
     private boolean visibleDocument(EducationKnowledgeSource source, String userId) {
