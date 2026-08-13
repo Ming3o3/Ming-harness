@@ -3,6 +3,31 @@ const desktopBridge = typeof window !== 'undefined' ? window.harnessDesktop : nu
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || desktopBridge?.apiBaseUrl || '/api'
 const configuredApiKey = import.meta.env.VITE_HARNESS_API_KEY || ''
 const configuredDemoRole = import.meta.env.VITE_HARNESS_DEMO_ROLE || 'STUDENT'
+const SESSION_API_KEY_STORAGE_KEY = 'harnessSessionApiKey'
+
+function sessionApiKey() {
+  if (typeof window === 'undefined') return ''
+  try {
+    return window.sessionStorage.getItem(SESSION_API_KEY_STORAGE_KEY) || ''
+  } catch {
+    return ''
+  }
+}
+
+export function setSessionApiKey(value) {
+  if (typeof window === 'undefined') return
+  try {
+    const normalized = String(value || '').trim()
+    if (normalized) window.sessionStorage.setItem(SESSION_API_KEY_STORAGE_KEY, normalized)
+    else window.sessionStorage.removeItem(SESSION_API_KEY_STORAGE_KEY)
+  } catch {
+    // 浏览器禁用会话存储时由调用方显示登录失败，不回退到持久化存储。
+  }
+}
+
+export function clearSessionApiKey() {
+  setSessionApiKey('')
+}
 const demoRolePermissions = {
   ADMIN: [
     'run.read', 'run.create', 'run.execute', 'run.approve', 'run.cancel', 'audit.read',
@@ -41,9 +66,10 @@ const defaultChatPermissions = import.meta.env.VITE_HARNESS_CHAT_PERMISSIONS
 
 /** API Key/OIDC 与本地请求头共用同一身份组装逻辑，SSE fetch 也能安全携带认证信息。 */
 function identityHeaders(requestHeaders = {}) {
+  const activeApiKey = sessionApiKey() || configuredApiKey
   return {
-    ...(configuredApiKey
-      ? { Authorization: `Bearer ${configuredApiKey}` }
+    ...(activeApiKey
+      ? { Authorization: `Bearer ${activeApiKey}` }
       : {
           'X-Tenant-Id': localStorage.getItem('harnessTenantId') || 'tenant-demo',
           'X-User-Id': localStorage.getItem('harnessUserId') || 'operator',
@@ -58,7 +84,7 @@ function identityHeaders(requestHeaders = {}) {
 function desktopIdentityPayload(payload = {}) {
   return {
     displayName: payload.displayName || '',
-    apiKey: configuredApiKey,
+    apiKey: sessionApiKey() || configuredApiKey,
     tenantId: localStorage.getItem('harnessTenantId') || 'tenant-demo',
     userId: localStorage.getItem('harnessUserId') || 'operator',
     permissions: localIdentityPermissions(),
@@ -81,6 +107,7 @@ async function request(path, options = {}) {
     const payload = await response.json().catch(() => ({}))
     const error = new Error(payload.message || `请求失败（${response.status}）`)
     error.code = payload.code
+    error.status = response.status
     error.traceId = payload.traceId || response.headers.get('X-Trace-Id')
     throw error
   }

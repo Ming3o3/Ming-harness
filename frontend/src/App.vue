@@ -33,7 +33,7 @@ import {
   Trash2,
   X,
 } from '@lucide/vue'
-import { api } from './api'
+import { api, clearSessionApiKey, setSessionApiKey } from './api'
 import { highlightCode, languageFromPath, languageLabel, renderMarkdown } from './markdown'
 
 // Monaco 只在打开项目文件或 Diff 审阅时加载，避免普通聊天首屏承担 3 MB+ 的编辑器包。
@@ -338,9 +338,13 @@ const currentUser = ref(null)
 const demoRole = ref(readStoredValue('harnessDemoRole', import.meta.env.VITE_HARNESS_DEMO_ROLE || 'STUDENT'))
 const demoRoleSwitching = ref(false)
 const identityLoading = ref(true)
+const identityLoadError = ref(null)
 const localDemoLoginBusy = ref(false)
 const localDemoLoginError = ref('')
 const localDemoSessionActive = ref(readStoredValue('harnessLocalSession', '') === 'active')
+const formalLoginBusy = ref(false)
+const formalLoginError = ref('')
+const formalLoginForm = reactive({ apiKey: '' })
 const demoRoleUserIds = {
   ADMIN: 'admin-demo',
   TEACHER: 'teacher-demo',
@@ -488,6 +492,11 @@ const showLocalDemoLogin = computed(() => Boolean(
   !identityLoading.value
   && currentUser.value?.localDemo
   && !localDemoSessionActive.value,
+))
+const showFormalLogin = computed(() => Boolean(
+  !identityLoading.value
+  && !currentUser.value
+  && [401, 403].includes(Number(identityLoadError.value?.status)),
 ))
 // 已登记工作区是用户明确在桌面端授权的项目；选择只影响后续创建的会话。
 const localWorkspaces = ref([])
@@ -689,6 +698,7 @@ function resetRoleNavigation() {
 async function loadCurrentUser() {
   identityLoading.value = true
   localDemoLoginError.value = ''
+  identityLoadError.value = null
   try {
     currentUser.value = await api.currentUser()
     if (currentUser.value?.localDemo && currentUser.value.primaryRole) {
@@ -706,11 +716,103 @@ async function loadCurrentUser() {
       activeConsoleSection.value = 'education'
     }
   } catch (error) {
-    // 身份摘要失败不阻断已有本地演示能力；具体接口仍会返回真实权限错误。
+    identityLoadError.value = error
+    // local 模式仍保留本地演示入口；正式认证模式则交给登录面板处理。
     currentUser.value = null
   } finally {
     identityLoading.value = false
   }
+}
+
+async function submitFormalLogin() {
+  const apiKey = String(formalLoginForm.apiKey || '').trim()
+  if (!apiKey || formalLoginBusy.value) return
+  formalLoginBusy.value = true
+  formalLoginError.value = ''
+  clearMessages()
+  try {
+    setSessionApiKey(apiKey)
+    await loadCurrentUser()
+    if (!currentUser.value) {
+      clearSessionApiKey()
+      formalLoginError.value = identityLoadError.value?.status === 403
+        ? '登录凭证有效，但当前账号没有可进入的系统权限。'
+        : '登录凭证无效或已过期，请联系管理员重新发放。'
+      return
+    }
+    formalLoginForm.apiKey = ''
+    await initializeAuthenticatedWorkspace()
+  } catch (error) {
+    clearSessionApiKey()
+    formalLoginError.value = errorText(error)
+  } finally {
+    formalLoginBusy.value = false
+  }
+}
+
+function currentUserHasPermission(permission) {
+  const requested = String(permission || '').trim()
+  if (!requested) return false
+  const permissions = (currentUser.value?.permissions || []).map((item) => String(item).trim())
+  if (permissions.includes('*') || permissions.includes(requested)) return true
+  const separator = requested.indexOf('.')
+  return separator > 0 && permissions.includes(`${requested.slice(0, separator)}.*`)
+}
+
+function endFormalSession() {
+  clearSessionApiKey()
+  window.clearInterval(runPollTimer)
+  window.clearInterval(conversationPollTimer)
+  window.clearInterval(healthPollTimer)
+  window.clearInterval(learningNotificationPollTimer)
+  stopRunEventStream()
+  currentUser.value = null
+  identityLoadError.value = { status: 401 }
+  formalLoginForm.apiKey = ''
+  clearMessages()
+}
+
+async function initializeAuthenticatedWorkspace() {
+  if (showLocalDemoLogin.value || showFormalLogin.value) return
+  clearMessages()
+  if (!isAdminRole.value) {
+    await nextTick()
+    navigateConsoleSection('education', 'auto')
+  }
+  if (isAdminRole.value) {
+    await Promise.all([
+      loadDashboard(),
+      loadHealth(),
+      loadModelConfig(),
+      loadEmbeddingConfig(),
+      loadWorkspace(),
+      loadTenantPolicy(),
+      loadApiKeys(),
+      loadLocalWorkspaces(),
+    ])
+  } else {
+    // 教师和学生的正式凭证通常没有工作区权限。工作区是可选的桌面能力，
+    // 不应在登录初始化时无条件请求并把 403 变成用户看到的全局错误。
+    const requests = [loadDashboard()]
+    if (currentUserHasPermission('workspace.read')) requests.push(loadWorkspace())
+    await Promise.all(requests)
+  }
+  await loadConversations()
+  runPollTimer = window.setInterval(pollSelectedRun, 1500)
+  conversationPollTimer = window.setInterval(pollConversation, 1200)
+  if (currentUserHasPermission('ops.read')) {
+    healthPollTimer = window.setInterval(loadHealth, 10000)
+  } else {
+    // 基础设施健康接口属于管理员运维能力；教师和学生不应周期性请求
+    // 该接口，更不能因为 403 让学习工作台看起来像登录失败。
+    health.value = null
+  }
+  learningNotificationPollTimer = window.setInterval(() => {
+    if (networkOnline.value) {
+      void loadLearningNotifications()
+      void loadLearningAssignmentNotifications()
+    }
+  }, 15000)
 }
 
 function beginLocalDemoSession(user) {
@@ -2247,7 +2349,7 @@ const canCancel = computed(() => ['QUEUED', 'RUNNING', 'WAITING_APPROVAL'].inclu
 const canApprove = computed(() => selectedStatus.value === 'WAITING_APPROVAL')
 const canRetry = computed(() => ['FAILED', 'TIMED_OUT'].includes(selectedStatus.value))
 const cancelActionLabel = computed(() => selectedStatus.value === 'WAITING_APPROVAL' ? '撤回审批' : '取消')
-const infraOnline = computed(() => health.value?.status === 'UP')
+const infraOnline = computed(() => !currentUserHasPermission('ops.read') || health.value?.status === 'UP')
 const educationRuntimeDiagnostic = computed(() => {
   const currentHealth = health.value
   if (!currentHealth || currentHealth.error) return ''
@@ -2255,6 +2357,7 @@ const educationRuntimeDiagnostic = computed(() => {
   return '当前连接的 Runtime 未包含教育知识库 Agent；请使用 npm run desktop:dev 启动当前源码。'
 })
 const infraLabel = computed(() => {
+  if (!currentUserHasPermission('ops.read')) return '平台状态由管理员维护'
   if (!health.value) return '检查基础设施'
   if (health.value.error) return health.value.error
   return infraOnline.value ? '基础设施在线' : '基础设施异常'
@@ -6182,6 +6285,10 @@ async function goToRunPage(delta) {
 }
 
 async function loadHealth() {
+  if (!currentUserHasPermission('ops.read')) {
+    health.value = null
+    return
+  }
   try {
     health.value = await api.health()
   } catch (error) {
@@ -7442,35 +7549,7 @@ onMounted(async () => {
     })
   }
   await loadCurrentUser()
-  if (showLocalDemoLogin.value) return
-  if (!isAdminRole.value) {
-    await nextTick()
-    navigateConsoleSection('education', 'auto')
-  }
-  if (isAdminRole.value) {
-    await Promise.all([
-      loadDashboard(),
-      loadHealth(),
-      loadModelConfig(),
-      loadEmbeddingConfig(),
-      loadWorkspace(),
-      loadTenantPolicy(),
-      loadApiKeys(),
-      loadLocalWorkspaces(),
-    ])
-  } else {
-    await Promise.all([loadDashboard(), loadWorkspace()])
-  }
-  await loadConversations()
-  runPollTimer = window.setInterval(pollSelectedRun, 1500)
-  conversationPollTimer = window.setInterval(pollConversation, 1200)
-  healthPollTimer = window.setInterval(loadHealth, 10000)
-  learningNotificationPollTimer = window.setInterval(() => {
-    if (networkOnline.value) {
-      void loadLearningNotifications()
-      void loadLearningAssignmentNotifications()
-    }
-  }, 15000)
+  await initializeAuthenticatedWorkspace()
 })
 
 onBeforeUnmount(() => {
@@ -7493,7 +7572,22 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section v-if="showLocalDemoLogin" class="local-demo-login" aria-labelledby="local-demo-login-title">
+  <section v-if="showFormalLogin" class="local-demo-login formal-login" aria-labelledby="formal-login-title">
+    <form class="local-demo-login-card" @submit.prevent="submitFormalLogin">
+      <div class="local-demo-login-brand">
+        <div class="brand-mark" aria-hidden="true"><Sparkles :size="17" :stroke-width="1.8" /></div>
+        <div><strong>Ming Harness</strong><span>SECURE LOGIN</span></div>
+      </div>
+      <p class="eyebrow">正式用户登录</p>
+      <h1 id="formal-login-title">使用管理员发放的登录凭证</h1>
+      <p class="local-demo-login-help">教师和学生使用各自的 API Key 登录。服务端会根据凭证绑定的组织、用户和权限自动进入对应工作台；密钥只保存在当前浏览器会话，退出或关闭会话后清除。</p>
+      <label class="field formal-login-field"><span>API Key</span><input v-model="formalLoginForm.apiKey" type="password" autocomplete="off" required placeholder="粘贴管理员发放的 API Key" /></label>
+      <p v-if="formalLoginError" class="local-demo-login-error" role="alert">{{ formalLoginError }}</p>
+      <button class="primary-button formal-login-submit" type="submit" :disabled="formalLoginBusy || !formalLoginForm.apiKey.trim()">{{ formalLoginBusy ? '验证中…' : '登录系统' }} <ArrowRight :size="14" /></button>
+      <p class="formal-login-note">企业已接入 OIDC 时，请从学校统一登录入口进入；本地演示请返回并选择演示账号。</p>
+    </form>
+  </section>
+  <section v-else-if="showLocalDemoLogin" class="local-demo-login" aria-labelledby="local-demo-login-title">
     <div class="local-demo-login-card">
       <div class="local-demo-login-brand">
         <div class="brand-mark" aria-hidden="true"><Sparkles :size="17" :stroke-width="1.8" /></div>
@@ -7525,14 +7619,14 @@ onBeforeUnmount(() => {
           <button class="theme-toggle" type="button" :aria-label="theme === 'dark' ? '切换到白天模式' : '切换到黑夜模式'" @click="toggleTheme">
             <Sun v-if="theme === 'dark'" :size="15" aria-hidden="true" /><Moon v-else :size="15" aria-hidden="true" />{{ theme === 'dark' ? '白天' : '黑夜' }}
           </button>
-          <div v-if="currentUser && localDemoSessionActive" class="current-user-chip" :title="`${currentUser.userId} · ${currentUser.tenantId}`">
+          <div v-if="currentUser" class="current-user-chip" :title="`${currentUser.userId} · ${currentUser.tenantId}`">
             <span>{{ roleLabel(currentUser.primaryRole) }}</span><strong>{{ currentUser.userId }}</strong>
             <select v-if="currentUser.localDemo" v-model="demoRole" aria-label="切换本地演示角色" :disabled="demoRoleSwitching" @change="switchDemoRole(demoRole)">
               <option value="STUDENT">学生</option>
               <option value="TEACHER">老师</option>
               <option value="ADMIN">管理员</option>
             </select>
-            <button v-if="currentUser.localDemo" class="current-user-logout" type="button" :disabled="localDemoLoginBusy" @click="endLocalDemoSession">退出</button>
+            <button class="current-user-logout" type="button" :disabled="localDemoLoginBusy || formalLoginBusy" @click="currentUser.localDemo ? endLocalDemoSession() : endFormalSession()">退出</button>
           </div>
           <button class="secondary-button chat-console-button" type="button" :title="roleWorkspaceDetail" @click="chatMode = false; navigateConsoleSection('education')"><Settings2 :size="15" />{{ roleWorkspaceTitle }}</button>
         </div>
@@ -8485,14 +8579,14 @@ onBeforeUnmount(() => {
             <Sun v-if="theme === 'dark'" :size="15" aria-hidden="true" /><Moon v-else :size="15" aria-hidden="true" />
             {{ theme === 'dark' ? '白天' : '黑夜' }}
           </button>
-          <div v-if="currentUser && localDemoSessionActive" class="current-user-chip" :title="`${currentUser.userId} · ${currentUser.tenantId}`">
+          <div v-if="currentUser" class="current-user-chip" :title="`${currentUser.userId} · ${currentUser.tenantId}`">
             <span>{{ roleLabel(currentUser.primaryRole) }}</span><strong>{{ currentUser.userId }}</strong>
             <select v-if="currentUser.localDemo" v-model="demoRole" aria-label="切换本地演示角色" :disabled="demoRoleSwitching" @change="switchDemoRole(demoRole)">
               <option value="STUDENT">学生</option>
               <option value="TEACHER">老师</option>
               <option value="ADMIN">管理员</option>
             </select>
-            <button v-if="currentUser.localDemo" class="current-user-logout" type="button" :disabled="localDemoLoginBusy" @click="endLocalDemoSession">退出</button>
+            <button class="current-user-logout" type="button" :disabled="localDemoLoginBusy || formalLoginBusy" @click="currentUser.localDemo ? endLocalDemoSession() : endFormalSession()">退出</button>
           </div>
           <button v-if="isAdminRole" class="secondary-button top-config-button" type="button" title="配置大语言模型" @click="showModelSettings = true"><Settings2 :size="15" />大语言模型</button>
           <button v-if="isAdminRole" class="secondary-button top-config-button" type="button" title="配置向量模型" @click="showEmbeddingSettings = true"><Settings2 :size="15" />向量模型</button>

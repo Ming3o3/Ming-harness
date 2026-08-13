@@ -93,6 +93,12 @@ h3 { margin: 0; font-size: 13px; }
 .local-demo-user-card em { color: var(--muted); font: 8px "DM Mono", monospace; font-style: normal; }
 .local-demo-user-card > svg { margin-top: 5px; color: var(--muted); }
 .local-demo-login-error { margin: 0; color: var(--red); font-size: 11px; }
+.formal-login { background: radial-gradient(circle at 50% 10%, rgba(141,124,255,.12), transparent 42%), color-mix(in srgb, var(--bg) 94%, transparent); }
+.formal-login .local-demo-login-card { max-width: 560px; }
+.formal-login-field { display: grid; gap: 7px; }
+.formal-login-field input { width: 100%; }
+.formal-login-submit { justify-content: center; }
+.formal-login-note { margin: -2px 0 0; color: var(--muted); font: 9px/1.55 "DM Mono", monospace; }
 .theme-toggle { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); border-radius: 20px; background: var(--hover-bg); color: var(--soft); padding: 8px 12px; font: 10px "DM Mono", monospace; transition: .2s ease; }
 .theme-toggle:hover { border-color: var(--accent); color: var(--accent-light); transform: translateY(-1px); }
 .theme-toggle span { font-size: 15px; line-height: 1; }
