@@ -4519,6 +4519,39 @@ async function ensureLearningAssignmentDetails(assignmentId) {
   return request.finally(() => educationAssignmentDetailRequests.delete(assignmentId))
 }
 
+/** 通知是跨角色写入后的入口，点击时必须绕过“已加载”缓存读取权威证据。 */
+async function refreshLearningAssignmentDetails(assignmentId) {
+  if (!assignmentId) return null
+  const [assignment, progress, evidence, submissions, feedback, evaluations] = await Promise.all([
+    api.getLearningAssignment(assignmentId).catch(() => null),
+    api.getLearningAssignmentProgress(assignmentId).catch(() => null),
+    api.getLearningAssignmentEvidence(assignmentId).catch(() => null),
+    api.listLearningAssignmentSubmissions(assignmentId).catch(() => null),
+    api.listLearningAssignmentFeedback(assignmentId).catch(() => null),
+    api.listLearningAssignmentEvaluations(assignmentId).catch(() => null),
+  ])
+  if (assignment) {
+    learningAssignments.value = learningAssignments.value.map((item) =>
+      item.id === assignment.id ? assignment : item)
+  }
+  if (progress) learningAssignmentProgressMap.value = {
+    ...learningAssignmentProgressMap.value, [assignmentId]: progress,
+  }
+  if (evidence) learningAssignmentEvidenceMap.value = {
+    ...learningAssignmentEvidenceMap.value, [assignmentId]: evidence,
+  }
+  if (submissions) learningAssignmentSubmissionMap.value = {
+    ...learningAssignmentSubmissionMap.value, [assignmentId]: submissions,
+  }
+  if (feedback) learningAssignmentFeedbackMap.value = {
+    ...learningAssignmentFeedbackMap.value, [assignmentId]: feedback,
+  }
+  if (evaluations) learningAssignmentEvaluationMap.value = {
+    ...learningAssignmentEvaluationMap.value, [assignmentId]: evaluations,
+  }
+  return assignment
+}
+
 async function ensureVisibleLearningAssignmentDetails() {
   await Promise.all(visibleLearningAssignments.value.map((assignment) =>
     ensureLearningAssignmentDetails(assignment.id)))
@@ -5509,6 +5542,8 @@ async function openLearningAssignmentNotification(notification) {
   if (!notification) return
   await markLearningAssignmentNotificationRead(notification)
   let assignment = learningAssignments.value.find((item) => item.id === notification.learningAssignmentId)
+  const refreshedAssignment = await refreshLearningAssignmentDetails(notification.learningAssignmentId)
+  if (refreshedAssignment) assignment = refreshedAssignment
   if (!assignment) {
     await loadEducationData()
     assignment = learningAssignments.value.find((item) => item.id === notification.learningAssignmentId)
