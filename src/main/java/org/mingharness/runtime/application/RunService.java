@@ -39,6 +39,8 @@ import org.mingharness.context.ContextBuilder;
 import org.mingharness.context.api.ContextResult;
 import org.mingharness.education.EducationRunConfiguration;
 import org.mingharness.education.EducationRunConfigurationService;
+import org.mingharness.education.EducationDependencyGraph;
+import org.mingharness.education.EducationDependencyGraphSnapshotCodec;
 import org.mingharness.config.RedisProperties;
 import org.mingharness.messaging.OutboxService;
 import org.mingharness.messaging.RunExecutionMessage;
@@ -1662,6 +1664,8 @@ public class RunService {
     }
 
     private RunSummary toSummary(Run run) {
+        EducationDependencyGraph dependencyGraph = EducationDependencyGraphSnapshotCodec.decode(
+                run.getEducationDependencyGraph(), run.getEducationConceptKey());
         return new RunSummary(
                 run.getId(), run.getTenantId(), run.getUserId(), run.getTitle(), run.getModelName(),
                 run.getPromptVersion(), run.getPolicyVersion(), run.getInput(),
@@ -1676,7 +1680,9 @@ public class RunService {
                 run.getEducationLearningGoalTarget(), run.getEducationConceptKey(),
                 run.getEducationReviewPlanId(), run.getEducationLearningAssignmentId(),
                 run.getEducationCourseId(), run.getEducationCourseCode(),
-                run.getEducationCourseTitle(), run.getEducationRetrievalStrategy()
+                run.getEducationCourseTitle(), run.getEducationRetrievalStrategy(),
+                dependencyGraph == null ? 0 : dependencyGraph.prerequisites().size(),
+                dependencyGraph != null && dependencyGraph.truncated()
         );
     }
 

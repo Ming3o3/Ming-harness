@@ -9108,6 +9108,7 @@ onBeforeUnmount(() => {
               <div><span>Prompt / 策略</span><strong>{{ selectedRun.run.promptVersion }} · {{ selectedRun.run.policyVersion }}</strong></div>
                       <div><span>模式 / 轮数</span><strong>{{ runModeLabel(selectedRun.run) }}</strong></div>
                       <div v-if="selectedRun.run.educationMode"><span>检索策略</span><strong>{{ selectedRun.run.educationRetrievalStrategy || 'FULL' }}</strong></div>
+                      <div v-if="selectedRun.run.educationMode"><span>依赖图快照</span><strong>{{ selectedRun.run.educationDependencyGraphNodeCount ? `${selectedRun.run.educationDependencyGraphNodeCount} 个前置节点${selectedRun.run.educationDependencyGraphTruncated ? ' · 已截断' : ''}` : '空图 / 旧 Run' }}</strong></div>
               <div><span>Trace / 耗时</span><strong>{{ selectedRun.run.traceId?.slice(0, 12) || '—' }} · {{ selectedRun.run.durationMs || 0 }} ms</strong></div>
             </div>
 
