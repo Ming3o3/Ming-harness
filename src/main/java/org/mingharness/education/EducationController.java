@@ -145,7 +145,8 @@ public class EducationController {
     @ResponseStatus(HttpStatus.CREATED)
     public EducationSourceView upsertSource(@Valid @RequestBody EducationSourceRequest request) {
         HarnessIdentity identity = identity();
-        return EducationSourceView.from(knowledgeService.upsertSource(identity.tenantId(), identity.userId(), request));
+        return EducationSourceView.from(knowledgeService.upsertSource(identity.tenantId(), identity.userId(), request,
+                identity.hasPermission("education.assign")));
     }
 
     @GetMapping("/sources")

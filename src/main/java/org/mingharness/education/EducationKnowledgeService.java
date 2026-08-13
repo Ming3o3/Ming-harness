@@ -30,13 +30,28 @@ public class EducationKnowledgeService {
     @Transactional
     public EducationKnowledgeSource upsertSource(String tenantId, String userId,
                                                   EducationSourceRequest request) {
+        return upsertSource(tenantId, userId, request, false);
+    }
+
+    /**
+     * 教师可以维护自己可见的组织共享资料元数据，但不能因此获得正文删除权限。
+     * 旧的三参数入口保留给内部调用和已有测试，默认仍按资料所有者校验。
+     */
+    @Transactional
+    public EducationKnowledgeSource upsertSource(String tenantId, String userId,
+                                                  EducationSourceRequest request,
+                                                  boolean canManageSharedDocument) {
         KnowledgeDocument document = documentRepository.findById(request.documentId())
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
                         "DOCUMENT_NOT_FOUND", "知识文档不存在: " + request.documentId()));
         assertTenant(document.getTenantId(), tenantId);
-        if (!document.getOwnerUserId().equals(userId)) {
+        if (!document.getOwnerUserId().equals(userId) && !canManageSharedDocument) {
             throw new BusinessException(HttpStatus.FORBIDDEN, "DOCUMENT_ACCESS_DENIED",
-                    "只有知识文档所有者可以维护课程元数据");
+                    "只有资料所有者或课程教师可以维护课程元数据");
+        }
+        if (!document.getOwnerUserId().equals(userId) && !document.isVisibleTo(userId)) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "DOCUMENT_ACCESS_DENIED",
+                    "课程教师只能维护自己可见的组织共享资料元数据");
         }
         if (document.getDeletedAt() != null) {
             throw new BusinessException(HttpStatus.CONFLICT, "DOCUMENT_DELETED",

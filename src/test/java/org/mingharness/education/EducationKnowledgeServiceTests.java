@@ -12,6 +12,8 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import org.mingharness.common.BusinessException;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -64,5 +66,30 @@ class EducationKnowledgeServiceTests {
         assertEquals(4, source.getDifficultyLevel());
         assertEquals("TEXTBOOK", source.getSourceType());
         assertEquals("函数正文", document.getContent());
+    }
+
+    @Test
+    void shouldAllowTeacherToConfigureVisibleSharedDocumentButRejectPrivateDocument() {
+        EducationKnowledgeSourceRepository sources = mock(EducationKnowledgeSourceRepository.class);
+        KnowledgeDocumentRepository documents = mock(KnowledgeDocumentRepository.class);
+        KnowledgeDocument shared = new KnowledgeDocument("tenant-a", "owner-1", "共享课件",
+                "函数正文", "INTERNAL", "teacher-1");
+        KnowledgeDocument privateDocument = new KnowledgeDocument("tenant-a", "owner-1", "私有课件",
+                "私有正文", "INTERNAL", "student-1");
+        when(documents.findById(shared.getId())).thenReturn(Optional.of(shared));
+        when(documents.findById(privateDocument.getId())).thenReturn(Optional.of(privateDocument));
+        when(sources.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", shared.getId()))
+                .thenReturn(Optional.empty());
+        when(sources.save(any(EducationKnowledgeSource.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        EducationKnowledgeService service = new EducationKnowledgeService(sources, documents,
+                new SensitiveDataSanitizer());
+        EducationSourceRequest request = new EducationSourceRequest(shared.getId(), "数学", "高中一年级",
+                "人教A版", "第一章", "理解函数", "函数", "集合", 3, "TEXTBOOK");
+
+        assertEquals(shared.getId(), service.upsertSource("tenant-a", "teacher-1", request, true).getDocumentId());
+        EducationSourceRequest privateRequest = new EducationSourceRequest(privateDocument.getId(), "数学",
+                "高中一年级", "人教A版", "第一章", "理解函数", "函数", "集合", 3, "TEXTBOOK");
+        assertThrows(BusinessException.class,
+                () -> service.upsertSource("tenant-a", "teacher-1", privateRequest, true));
     }
 }

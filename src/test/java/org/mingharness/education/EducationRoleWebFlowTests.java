@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(properties = {
         "harness.auth.mode=api-key",
-        "harness.auth.api-keys=teacher-flow-key|tenant-flow|teacher-flow|context.read,context.write,education.read,education.write,education.assign,education.evaluate,run.read,run.create,run.execute;student-flow-key|tenant-flow|student-flow|education.read,education.write,run.read,run.create,run.execute",
+        "harness.auth.api-keys=admin-flow-key|tenant-flow|admin-flow|context.read,context.write,education.read,education.assign;teacher-flow-key|tenant-flow|teacher-flow|context.read,context.write,education.read,education.write,education.assign,education.evaluate,run.read,run.create,run.execute;student-flow-key|tenant-flow|student-flow|education.read,education.write,run.read,run.create,run.execute",
         "harness.execution.mode=sync",
         "harness.local-execution.async=false",
         "harness.redis.enabled=false",
@@ -47,6 +47,24 @@ class EducationRoleWebFlowTests {
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Test
+    void shouldLetTeacherConfigureVisibleSharedDocumentButKeepStudentReadOnly() throws Exception {
+        HttpResponse<String> document = request("admin-flow-key", "POST", "/api/context/documents",
+                "{\"title\":\"组织共享函数教材\",\"content\":\"函数定义域课程规则\","
+                        + "\"sensitivity\":\"INTERNAL\",\"allowedUsers\":\"teacher-flow\"}");
+        assertEquals(201, document.statusCode(), document.body());
+        String documentId = json(document).path("id").asText();
+
+        HttpResponse<String> teacherSource = request("teacher-flow-key", "POST", "/api/education/sources",
+                sourceRequest(documentId));
+        assertEquals(201, teacherSource.statusCode(), teacherSource.body());
+        assertEquals("函数定义域", json(teacherSource).path("conceptTags").asText());
+
+        HttpResponse<String> studentSource = request("student-flow-key", "POST", "/api/education/sources",
+                sourceRequest(documentId));
+        assertError(studentSource, 403, "PERMISSION_DENIED");
+    }
 
     @Test
     void shouldCompleteTeacherStudentCourseBusinessLoopOverHttp() throws Exception {

@@ -774,7 +774,7 @@ function openEducationDocumentUpload() {
  * 教育工作台之间来回寻找。课程资料和画像仍由后端做最终权限校验。
  */
 function openEducationAgentSetup() {
-  if (educationWorkspaceMode.value === 'teacher' && !ownedKnowledgeDocuments.value.length) {
+  if (educationWorkspaceMode.value === 'teacher' && !manageableEducationDocuments.value.length) {
     openEducationDocumentUpload()
     return
   }
@@ -1014,6 +1014,13 @@ const ownedEducationSources = computed(() => educationSources.value
   .filter((source) => ownedKnowledgeDocuments.value.some(
     (document) => document.id === source.documentId,
   )))
+const manageableEducationDocuments = computed(() => isTeacherOnlyRole.value
+  ? documents.value
+  : ownedKnowledgeDocuments.value)
+const manageableEducationSources = computed(() => educationSources.value
+  .filter((source) => manageableEducationDocuments.value.some(
+    (document) => document.id === source.documentId,
+  )))
 const teacherActiveLearnerCount = computed(() => teacherEducationCourses.value
   .reduce((total, course) => total + Number(course.activeEnrollmentCount || 0), 0))
 const teacherAssignmentCount = computed(() => learningAssignments.value
@@ -1027,12 +1034,12 @@ const teacherCoursePendingCount = computed(() => {
     + Number(metrics.taskAwaitingEvidence || 0)
     + learningEvaluationQueue.value.length
 })
-const teacherAgentReady = computed(() => ownedEducationSources.value.length > 0)
+const teacherAgentReady = computed(() => manageableEducationSources.value.length > 0)
 const teacherNextAction = computed(() => {
-  if (!ownedKnowledgeDocuments.value.length) {
+  if (!manageableEducationDocuments.value.length) {
     return { label: '上传课程资料', detail: '先导入 PDF/DOCX，建立课程知识库。', kind: 'upload' }
   }
-  if (!ownedEducationSources.value.length) {
+  if (!manageableEducationSources.value.length) {
     return { label: '维护课程元数据', detail: '为资料补充学科、版本、章节、知识点和难度。', kind: 'metadata' }
   }
   if (!teacherEducationCourses.value.length) {
@@ -1159,7 +1166,7 @@ const activeEducationCourseLearnerProgress = computed(() => {
   }
 })
 function canEditEducationSource(source) {
-  return Boolean(source && ownedKnowledgeDocuments.value.some(
+  return Boolean(source && manageableEducationDocuments.value.some(
     (document) => document.id === source.documentId,
   ))
 }
@@ -1574,7 +1581,7 @@ const currentEducationRetrievalScope = computed(() => {
   }
 })
 const currentEducationSourceCount = computed(() => {
-  if (isTeacherRole.value && !activeLearnerProfile.value) return ownedEducationSources.value.length
+  if (isTeacherRole.value && !activeLearnerProfile.value) return manageableEducationSources.value.length
   return currentEducationRetrievalScope.value.sourceCount
 })
 // 不只告诉学习者“有几份资料”，还把本轮实际允许 Agent 检索的课程条目摆到
@@ -1742,7 +1749,7 @@ const educationSendBlockReason = computed(() => {
   return ''
 })
 const educationSetupActionLabel = computed(() => {
-  if (educationWorkspaceMode.value === 'teacher' && !ownedKnowledgeDocuments.value.length) return '上传课程资料'
+  if (educationWorkspaceMode.value === 'teacher' && !manageableEducationDocuments.value.length) return '上传课程资料'
   if (!activeLearnerProfile.value) return '建立学习画像'
   const scope = currentEducationRetrievalScope.value
   const availability = courseSourceAvailability(scope)
@@ -1849,9 +1856,9 @@ const teacherOperationsTrace = computed(() => [
   {
     id: 'source',
     label: '课程资料',
-    value: ownedEducationSources.value.length ? `${ownedEducationSources.value.length} 个来源已配置` : '待上传与维护',
-    detail: ownedEducationSources.value.length ? '课程资料已经具备可检索的元数据边界。' : '上传文档并补充学科、版本、章节、知识点和难度。',
-    state: ownedEducationSources.value.length ? 'ready' : 'pending',
+    value: manageableEducationSources.value.length ? `${manageableEducationSources.value.length} 个来源已配置` : '待上传与维护',
+    detail: manageableEducationSources.value.length ? '课程资料已经具备可检索的元数据边界。' : '上传文档并补充学科、版本、章节、知识点和难度。',
+    state: manageableEducationSources.value.length ? 'ready' : 'pending',
   },
   {
     id: 'course',
@@ -4206,8 +4213,8 @@ async function loadDashboard() {
     const [documentData, memoryData, contextConfigurationData] = await Promise.all(commonRequests)
     const visibleDocuments = documentData || []
     documents.value = visibleDocuments
-    if (!visibleDocuments.some((document) => document.ownerUserId === form.userId
-      && document.id === educationSourceForm.documentId)) {
+    if (!visibleDocuments.some((document) => document.id === educationSourceForm.documentId
+      && (document.ownerUserId === form.userId || isTeacherOnlyRole.value))) {
       educationSourceForm.documentId = ''
     }
     memories.value = memoryData || []
@@ -8724,7 +8731,7 @@ onBeforeUnmount(() => {
                 <strong>{{ currentEducationSourceCount ? (isTeacherOnlyRole ? `${currentEducationSourceCount} 个课程来源已配置` : `${currentEducationSourceCount} 个来源已进入当前课程约束`) : (educationWorkspaceMode === 'teacher' ? '先把课程资料接入知识库' : '当前课程还没有可检索的知识来源') }}</strong>
                 <span>{{ currentEducationSourceCount ? 'Agent 会只从匹配学科、年级、课程版本、知识点和难度的来源中检索。' : (educationWorkspaceMode === 'teacher' ? '上传 PDF/DOCX 后，继续补充章节、知识点、前置知识和难度元数据，课程才可以启动教学 Run。' : '请联系课程负责人补充课程资料；没有授权来源时，Agent 不会退化成通用问答。') }}</span>
               </div>
-              <button v-if="isTeacherOnlyRole && !ownedKnowledgeDocuments.length" class="secondary-button" type="button" @click="openEducationDocumentUpload">上传课程资料 <ArrowUp :size="12" /></button>
+              <button v-if="isTeacherOnlyRole && !manageableEducationDocuments.length" class="secondary-button" type="button" @click="openEducationDocumentUpload">上传课程资料 <ArrowUp :size="12" /></button>
               <button v-else-if="isTeacherOnlyRole" class="secondary-button" type="button" @click="openEducationAgentSetup">维护课程元数据 <ArrowUp :size="12" /></button>
             </section>
             <section v-if="isTeacherOnlyRole" class="education-agent-state-card education-teacher-state-card" :class="{ ready: teacherAgentReady }" aria-label="教师课程运营状态">
@@ -8734,7 +8741,7 @@ onBeforeUnmount(() => {
               </div>
               <div class="education-agent-state-grid">
                 <article class="education-agent-state-item">
-                  <small>01 · 课程资料</small><strong>{{ ownedEducationSources.length ? `${ownedEducationSources.length} 个来源已配置` : '尚未配置课程资料' }}</strong><p>{{ ownedEducationSources.length ? '资料已经具备课程边界，可继续绑定课程和学生。' : '先上传 PDF/DOCX，再维护课程元数据。' }}</p>
+                  <small>01 · 课程资料</small><strong>{{ manageableEducationSources.length ? `${manageableEducationSources.length} 个来源已配置` : '尚未配置课程资料' }}</strong><p>{{ manageableEducationSources.length ? '资料已经具备课程边界，可继续绑定课程和学生。' : '先上传 PDF/DOCX，再维护课程元数据。' }}</p>
                 </article>
                 <article class="education-agent-state-item">
                   <small>02 · 课程与学生</small><strong>{{ teacherEducationCourses.length }} 门课程 · {{ teacherActiveLearnerCount }} 名学生</strong><p>{{ teacherEducationCourses.length ? (teacherActiveLearnerCount ? '课程名单已建立，可继续布置课程作业。' : '课程已创建，但还没有活跃学生名单。') : '创建课程实例，把课程资料变成可运营的教学单元。' }}</p>
@@ -9110,9 +9117,9 @@ onBeforeUnmount(() => {
               </div>
             </div>
             <details v-if="canManageEducationOperations" class="education-source-editor education-teacher-entry" :open="educationWorkspaceMode === 'teacher'">
-              <summary><span><strong>课程资料维护入口</strong><small>为知识文档补充学科、版本、章节和知识点边界</small></span><em>{{ educationSources.length }} 个课程来源</em></summary>
-              <form v-if="ownedKnowledgeDocuments.length" class="education-source-form" @submit.prevent="saveEducationSource">
-                <label class="field field-wide"><span>知识文档</span><select v-model="educationSourceForm.documentId" required><option value="">选择你拥有的知识文档</option><option v-for="document in ownedKnowledgeDocuments" :key="document.id" :value="document.id">{{ document.title }}</option></select></label>
+              <summary><span><strong>课程资料维护入口</strong><small>为可见知识文档补充学科、版本、章节和知识点边界</small></span><em>{{ educationSources.length }} 个课程来源</em></summary>
+              <form v-if="manageableEducationDocuments.length" class="education-source-form" @submit.prevent="saveEducationSource">
+                <label class="field field-wide"><span>知识文档</span><select v-model="educationSourceForm.documentId" required><option value="">选择可见的知识文档</option><option v-for="document in manageableEducationDocuments" :key="document.id" :value="document.id">{{ document.title }}{{ document.ownerUserId !== form.userId ? ' · 组织共享' : '' }}</option></select></label>
                 <label class="field"><span>学科</span><input v-model="educationSourceForm.subject" required /></label>
                 <label class="field"><span>年级</span><input v-model="educationSourceForm.gradeLevel" required /></label>
                 <label class="field"><span>课程版本</span><input v-model="educationSourceForm.curriculumVersion" required /></label>
@@ -9123,12 +9130,12 @@ onBeforeUnmount(() => {
                 <label class="field field-wide"><span>学习目标</span><textarea v-model="educationSourceForm.learningObjectives" rows="2" maxlength="4000"></textarea></label>
                 <button class="secondary-button" type="submit" :disabled="educationLoading || !educationSourceForm.documentId">保存课程元数据</button>
               </form>
-              <div v-else class="context-preview-empty">当前没有你拥有的知识文档；可以先上传课程资料，或请资料所有者维护课程元数据。</div>
+              <div v-else class="context-preview-empty">当前没有可配置的知识文档；可以先上传课程资料，或请管理员授权课程资料。</div>
               <div v-if="educationSources.length" class="education-source-list">
                 <div v-for="source in educationSources" :key="source.id" class="education-source-row">
                   <div><strong>{{ documents.find((document) => document.id === source.documentId)?.title || source.documentId }}</strong><small>{{ source.subject }} · {{ source.gradeLevel }} · {{ source.curriculumVersion }} · 难度 {{ source.difficultyLevel }}</small></div>
                   <button v-if="canEditEducationSource(source)" class="text-button" type="button" @click="educationSourceForm.documentId = source.documentId; educationSourceForm.subject = source.subject; educationSourceForm.gradeLevel = source.gradeLevel; educationSourceForm.curriculumVersion = source.curriculumVersion; educationSourceForm.chapter = source.chapter || ''; educationSourceForm.conceptTags = source.conceptTags || ''; educationSourceForm.prerequisiteConcepts = source.prerequisiteConcepts || ''; educationSourceForm.learningObjectives = source.learningObjectives || ''; educationSourceForm.difficultyLevel = source.difficultyLevel">编辑</button>
-                  <small v-else class="document-owner-hint">仅资料所有者可维护</small>
+                  <small v-else class="document-owner-hint">仅资料所有者可删除正文</small>
                 </div>
               </div>
             </details>

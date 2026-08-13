@@ -48,6 +48,11 @@ public class KnowledgeDocument {
     }
 
     public boolean isVisibleTo(String userId) {
+        // 资料所有者必须始终能看到自己上传的正文；否则教师上传时限定学生可见，
+        // 下一次刷新就会把自己的课程资料从工作台中隐藏，无法继续维护或删除。
+        if (ownerUserId != null && ownerUserId.equals(userId)) {
+            return true;
+        }
         if (allowedUsers == null || allowedUsers.isBlank()) {
             return true;
         }
