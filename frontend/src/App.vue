@@ -439,6 +439,10 @@ async function runRoleQuickStartAction() {
       showQuickLearningGoalForm.value = true
       return
     }
+    if (action.kind === 'setup') {
+      openEducationAgentSetup()
+      return
+    }
   }
   navigateConsoleSection(action.section)
 }
@@ -859,8 +863,8 @@ function openEducationAgentSetup() {
   chatMode.value = false
   navigateConsoleSection('education')
   void nextTick(() => {
-    const selector = educationWorkspaceMode.value === 'learner' || !activeLearnerProfile.value
-      ? '.education-profile-setup'
+    const selector = educationWorkspaceMode.value === 'learner'
+      ? (activeLearnerProfile.value ? '.education-knowledge-base-bridge, .education-agent-state-card' : '.education-profile-setup')
       : '.education-source-editor'
     const target = document.querySelector(selector)
     if (target instanceof HTMLDetailsElement) target.open = true
@@ -1834,14 +1838,29 @@ const educationSetupActionLabel = computed(() => {
   if (scope.configured && !availability.courseSourceCount && availability.sameSubjectGradeSourceCount) {
     return '统一课程版本'
   }
+  if (educationWorkspaceMode.value === 'learner' && !scope.sourceCount) return '查看课程状态'
   return '配置课程资料'
 })
 const studentQuickStartAction = computed(() => {
   if (!activeLearnerProfile.value) {
     return { kind: 'profile', label: '建立学习画像', detail: '先告诉 Agent 你正在学习的学科、年级和课程版本。', section: 'education' }
   }
-  const assignmentAction = learningAssignmentNextAction(nextLearnerCourseAssignment.value)
-  if (assignmentAction.actionable && nextLearnerCourseAssignment.value) {
+  // 资料缺失时，作业和学习目标入口都无法真正启动；先把阻断原因交给学生，
+  // 避免首屏按钮看似可执行、点击后才得到资料错误。
+  const assignment = nextLearnerCourseAssignment.value
+  const assignmentAction = learningAssignmentNextAction(assignment)
+  const assignmentSourceBlockReason = assignmentAction.actionable
+    ? learningAssignmentSourceBlockReason(assignment)
+    : ''
+  if (educationSendBlockReason.value || assignmentSourceBlockReason) {
+    return {
+      kind: 'setup',
+      label: educationSetupActionLabel.value,
+      detail: educationSendBlockReason.value || assignmentSourceBlockReason,
+      section: 'education',
+    }
+  }
+  if (assignmentAction.actionable && assignment) {
     return { kind: 'assignment', label: assignmentAction.label, detail: assignmentAction.detail, section: 'education' }
   }
   if (!activeLearningGoal.value) {
