@@ -412,6 +412,27 @@ const roleWorkspaceSteps = computed(() => ({
     { title: '完成下一步行动', detail: '进入学习对话，提交作业并查看反馈与掌握度。' },
   ],
 }[currentPrimaryRole.value] || []))
+const adminNextAction = computed(() => {
+  if (!health.value) {
+    return { kind: 'health', label: '检查系统状态', detail: '先确认数据库、队列、模型和 Worker 是否正常。', section: 'runtime' }
+  }
+  if (health.value.error || !infraOnline.value) {
+    return { kind: 'health', label: '检查基础设施', detail: '基础设施存在异常，先确认 Runtime 依赖状态。', section: 'runtime' }
+  }
+  if (stats.waitingApproval > 0) {
+    return { kind: 'run-filter', status: 'WAITING_APPROVAL', label: '处理待审批 Run', detail: `${stats.waitingApproval} 个高风险 Run 等待人工确认。`, section: 'runtime' }
+  }
+  if (Number(health.value?.runtime?.timedOutRunCount || 0) > 0) {
+    return { kind: 'run-filter', status: 'TIMED_OUT', label: '查看超时 Run', detail: `${health.value.runtime.timedOutRunCount} 个 Run 已超时，需要确认是否重试或调整配置。`, section: 'runtime' }
+  }
+  if (stats.failed > 0) {
+    return { kind: 'run-filter', status: 'FAILED', label: '查看失败 Run', detail: `${stats.failed} 个 Run 执行失败，先检查错误与可恢复动作。`, section: 'runtime' }
+  }
+  if (contextConfiguration.value && contextConfiguration.value.embeddingReady === false) {
+    return { kind: 'embedding', label: '检查向量连接', detail: '向量服务尚未就绪，课程资料可能只能使用降级检索。', section: 'runtime' }
+  }
+  return { kind: 'education', label: '查看教育概览', detail: '系统运行正常，可以查看课程、作业和学习证据规模。', section: 'education' }
+})
 const roleQuickStartAction = computed(() => {
   if (currentPrimaryRole.value === 'TEACHER') {
     return { label: teacherNextAction.value.label, detail: teacherNextAction.value.detail, section: 'education' }
@@ -419,7 +440,7 @@ const roleQuickStartAction = computed(() => {
   if (currentPrimaryRole.value === 'STUDENT') {
     return studentQuickStartAction.value
   }
-  return { label: '查看系统状态', detail: '先确认模型、索引和基础设施，再处理治理配置。', section: 'runtime' }
+  return adminNextAction.value
 })
 
 async function runRoleQuickStartAction() {
@@ -445,6 +466,19 @@ async function runRoleQuickStartAction() {
     }
     if (action.kind === 'setup') {
       openEducationAgentSetup()
+      return
+    }
+  }
+  if (currentPrimaryRole.value === 'ADMIN') {
+    if (action.kind === 'run-filter') {
+      chatMode.value = false
+      runStatusFilter.value = action.status
+      runPage.page = 0
+      await changeRunStatusFilter()
+      return
+    }
+    if (action.kind === 'embedding') {
+      showEmbeddingSettings.value = true
       return
     }
   }
