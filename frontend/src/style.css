@@ -366,6 +366,9 @@ h3 { margin: 0; font-size: 13px; }
 .context-preview-result .subsection-title > div { display: flex; align-items: baseline; gap: 9px; }
 .context-preview-text { max-height: 230px; overflow: auto; margin: 0; border: 1px solid rgba(76,226,213,.15); border-radius: 8px; background: rgba(76,226,213,.045); color: var(--soft); padding: 11px 12px; white-space: pre-wrap; word-break: break-word; font: 10px/1.65 "DM Mono", monospace; }
 .context-preview-empty { border: 1px dashed var(--line); border-radius: 8px; color: var(--muted); padding: 12px; font: 10px/1.55 "DM Mono", monospace; }
+.context-preview-empty > strong, .context-preview-empty > span { display: block; }
+.context-preview-empty > strong { color: var(--soft); font-family: inherit; font-size: 10px; }
+.context-preview-empty > span { margin-top: 3px; }
 .context-preview-empty-initial { margin-top: 2px; }
 .context-evidence-list { display: grid; gap: 7px; }
 .context-evidence-row { border: 1px solid var(--line); border-radius: 8px; background: var(--input-bg); padding: 10px 11px; }
@@ -536,6 +539,17 @@ h3 { margin: 0; font-size: 13px; }
 .education-profile-setup > summary em, .education-teacher-entry > summary em { flex: 0 0 auto; color: var(--cyan); font: 8px "DM Mono", monospace; font-style: normal; }
 .education-profile-setup[open] > summary, .education-teacher-entry[open] > summary { border-bottom: 1px solid rgba(153,174,218,.14); }
 .education-profile-setup-content { display: grid; gap: 10px; padding: 10px 0 2px; }
+.education-profile-next-step { margin: 0; border-left: 2px solid color-mix(in srgb, var(--cyan) 45%, var(--line)); background: color-mix(in srgb, var(--cyan) 5%, transparent); color: var(--muted); padding: 7px 9px; font-size: 9px; line-height: 1.5; }
+.education-profile-next-step strong { color: var(--soft); font-weight: 600; }
+.learner-journey-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 0 0 10px; padding: 0; list-style: none; }
+.learner-journey-steps > li { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 6px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-soft); padding: 7px; }
+.learner-journey-steps > li > span { color: var(--muted); font: 8px "DM Mono", monospace; }
+.learner-journey-steps > li > div { display: grid; min-width: 0; gap: 2px; }
+.learner-journey-steps strong { color: var(--soft); font-size: 9px; }
+.learner-journey-steps small { color: var(--muted); font: 8px/1.4 "DM Mono", monospace; }
+.learner-journey-steps > li.is-current { border-color: color-mix(in srgb, var(--cyan) 45%, var(--line)); background: color-mix(in srgb, var(--cyan) 6%, var(--panel-soft)); }
+.learner-journey-steps > li.is-current > span, .learner-journey-steps > li.is-ready > span { color: var(--cyan); }
+@media (max-width: 760px) { .learner-journey-steps { grid-template-columns: 1fr; } }
 .education-teacher-entry { border-color: rgba(241,184,91,.24); background: rgba(241,184,91,.035); }
 .education-teacher-entry > summary em { color: #f1b85b; }
 .education-teacher-entry-help { margin: 9px 0 0; color: var(--muted); font: 8px/1.5 "DM Mono", monospace; }

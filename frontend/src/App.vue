@@ -472,6 +472,12 @@ async function runRoleQuickStartAction() {
       openEducationAgentSetup()
       return
     }
+    if (action.kind === 'courses') {
+      chatMode.value = false
+      navigateConsoleSection('education')
+      void nextTick(() => scrollConsoleTargetIntoView(document.querySelector('.education-course-workbench')))
+      return
+    }
   }
   if (currentPrimaryRole.value === 'ADMIN') {
     if (action.kind === 'run-filter') {
@@ -1000,6 +1006,15 @@ function openEducationAgentSetup() {
     openEducationDocumentUpload()
     return
   }
+  if (educationWorkspaceMode.value === 'learner'
+    && activeLearnerProfile.value
+    && !enrolledEducationCourses.value.length
+    && !learnerLearningAssignmentCount.value) {
+    chatMode.value = false
+    navigateConsoleSection('education')
+    void nextTick(() => scrollConsoleTargetIntoView(document.querySelector('.education-course-workbench')))
+    return
+  }
   chatMode.value = false
   navigateConsoleSection('education')
   void nextTick(() => {
@@ -1010,6 +1025,36 @@ function openEducationAgentSetup() {
     if (target instanceof HTMLDetailsElement) target.open = true
     scrollConsoleTargetIntoView(target)
   })
+}
+
+const learnerStateAction = computed(() => {
+  if (!activeLearnerProfile.value) {
+    return { kind: 'profile', label: '建立学习画像' }
+  }
+  if (!enrolledEducationCourses.value.length && !learnerLearningAssignmentCount.value) {
+    return { kind: 'courses', label: '查看我的课程' }
+  }
+  if (!educationSendBlockReason.value) {
+    return { kind: 'chat', label: '进入学习对话' }
+  }
+  return { kind: 'setup', label: educationSetupActionLabel.value }
+})
+
+function runLearnerStateAction() {
+  const action = learnerStateAction.value
+  if (action.kind === 'chat') {
+    chatMode.value = true
+    return
+  }
+  if (action.kind === 'profile') {
+    openEducationAgentSetup()
+    return
+  }
+  if (action.kind === 'courses') {
+    openEducationAgentSetup()
+    return
+  }
+  openEducationAgentSetup()
 }
 
 function syncActiveConsoleSectionFromHash() {
@@ -1227,6 +1272,23 @@ const educationWorkspaceModeDetail = computed(() => {
   }
   return '先建立学习者画像或加入课程，Agent 才能把知识检索和学习证据串起来。'
 })
+const learnerJourneySteps = computed(() => [
+  {
+    title: '建立学习画像',
+    detail: activeLearnerProfile.value ? '已完成' : '填写学科、年级和课程版本',
+    state: activeLearnerProfile.value ? 'ready' : 'current',
+  },
+  {
+    title: '加入课程',
+    detail: enrolledEducationCourses.value.length ? `${enrolledEducationCourses.value.length} 门课程` : '等待教师发布并加入',
+    state: enrolledEducationCourses.value.length ? 'ready' : (activeLearnerProfile.value ? 'current' : 'pending'),
+  },
+  {
+    title: '接受作业',
+    detail: learnerLearningAssignmentCount.value ? `${learnerLearningAssignmentCount.value} 份作业` : '课程作业会显示在下方',
+    state: learnerLearningAssignmentCount.value ? 'ready' : (enrolledEducationCourses.value.length ? 'current' : 'pending'),
+  },
+])
 const educationAssignmentsForView = computed(() => ['admin', 'teacher'].includes(educationWorkspaceMode.value)
   ? learningAssignments.value
   : learningAssignments.value.filter((assignment) => assignment.learnerUserId === form.userId))
@@ -2059,6 +2121,9 @@ const educationSendBlockReason = computed(() => {
   if (!activeLearnerProfile.value) {
     return '教育 Agent 尚未绑定学习者画像。画像提供学科、年级、课程版本和当前学习状态。'
   }
+  if (isLearnerOnlyRole.value && !enrolledEducationCourses.value.length && !learnerLearningAssignmentCount.value) {
+    return '学习画像已建立，等待教师加入课程；课程资料和作业会在课程授权后自动出现。'
+  }
   const scope = currentEducationRetrievalScope.value
   if (!scope.configured) {
     return '教育 Agent 缺少完整课程约束，请先补齐学科、年级和课程版本。'
@@ -2071,6 +2136,7 @@ const educationSendBlockReason = computed(() => {
 const educationSetupActionLabel = computed(() => {
   if (educationWorkspaceMode.value === 'teacher' && !manageableEducationDocuments.value.length) return '上传课程资料'
   if (!activeLearnerProfile.value) return '建立学习画像'
+  if (isLearnerOnlyRole.value && !enrolledEducationCourses.value.length && !learnerLearningAssignmentCount.value) return '查看我的课程'
   const scope = currentEducationRetrievalScope.value
   const availability = courseSourceAvailability(scope)
   if (scope.configured && !availability.courseSourceCount && availability.sameSubjectGradeSourceCount) {
@@ -2082,6 +2148,16 @@ const educationSetupActionLabel = computed(() => {
 const studentQuickStartAction = computed(() => {
   if (!activeLearnerProfile.value) {
     return { kind: 'profile', label: '建立学习画像', detail: '先告诉 Agent 你正在学习的学科、年级和课程版本。', section: 'education' }
+  }
+  // 画像完成后，课程由教师发布并把学生加入名单。此时学生的下一步是
+  // 查看课程入口/等待课程，而不是被“没有课程资料”误导去配置教师资源。
+  if (!enrolledEducationCourses.value.length && !learnerLearningAssignmentCount.value) {
+    return {
+      kind: 'courses',
+      label: '查看我的课程',
+      detail: '画像已建立；等待教师加入课程，课程作业会出现在这里。',
+      section: 'education',
+    }
   }
   // 资料缺失时，作业和学习目标入口都无法真正启动；先把阻断原因交给学生，
   // 避免首屏按钮看似可执行、点击后才得到资料错误。
@@ -2120,12 +2196,16 @@ const educationComposerPlaceholder = computed(() => {
 const currentEducationSourceLabel = computed(() => {
   const scope = currentEducationRetrievalScope.value
   if (!scope.configured) return '待配置学习上下文'
+  if (isLearnerOnlyRole.value && !enrolledEducationCourses.value.length && !learnerLearningAssignmentCount.value) return '等待教师加入课程'
   if (scope.sourceCount) return `${scope.sourceCount} 个当前可检索来源`
   return scope.conceptKey ? '当前知识点暂无匹配来源' : '当前约束下暂无匹配来源'
 })
 const currentEducationRetrievalDetail = computed(() => {
   const scope = currentEducationRetrievalScope.value
   if (!scope.configured) return '先配置学习者画像，Agent 才能锁定课程知识范围'
+  if (isLearnerOnlyRole.value && !enrolledEducationCourses.value.length && !learnerLearningAssignmentCount.value) {
+    return '画像已保存；教师加入课程后，系统会自动显示匹配的课程资料、作业和学习路径。'
+  }
   const base = `${scope.subject} · ${scope.gradeLevel} · ${scope.curriculumVersion}`
   const available = scope.courseSourceCount
     ? (scope.sourceCount === scope.courseSourceCount
@@ -9142,6 +9222,12 @@ onBeforeUnmount(() => {
             </div>
             <p class="context-workbench-help">{{ educationWorkspaceModeDetail }}<template v-if="isAdminWorkspace">教育数据用于治理观察，不改变教师课程所有权或学生学习状态。</template><template v-else-if="isTeacherOnlyRole">课程元数据决定 Agent 的知识边界，学生提交物和测评证据决定后续复核动作。</template><template v-else>课程元数据决定检索范围，学习者状态和形成性证据决定 Agent 的教学动作。</template></p>
             <p v-if="educationError" class="policy-error">{{ educationError }}</p>
+            <ol v-if="isLearnerOnlyRole" class="learner-journey-steps" aria-label="学生使用路径">
+              <li v-for="(step, index) in learnerJourneySteps" :key="step.title" :class="`is-${step.state}`">
+                <span>{{ String(index + 1).padStart(2, '0') }}</span>
+                <div><strong>{{ step.title }}</strong><small>{{ step.detail }}</small></div>
+              </li>
+            </ol>
             <section v-if="isTeacherOnlyRole || (isLearnerOnlyRole && activeEducationCourse && !currentEducationSourceCount)" class="education-knowledge-base-bridge" :class="{ ready: currentEducationSourceCount }" aria-label="课程知识库入口">
               <div class="education-knowledge-base-bridge-icon"><BookOpen :size="16" /></div>
               <div class="education-knowledge-base-bridge-copy">
@@ -9272,6 +9358,7 @@ onBeforeUnmount(() => {
                   <label class="field"><span>学习目标</span><input v-model="learnerProfileForm.learningGoal" maxlength="512" placeholder="例如：掌握函数基础并能独立完成练习" /></label>
                   <button class="secondary-button" type="submit" :disabled="educationLoading">{{ educationLoading ? '保存中…' : '保存学习者画像' }}</button>
                 </form>
+                <p class="education-profile-next-step"><strong>保存后怎么继续？</strong> 教师会把你加入课程并发布作业；课程和作业会自动出现在下方，你不需要自己上传课程资料。</p>
                 <div v-if="learnerProfiles.length" class="education-profile-list">
                   <div v-for="profile in learnerProfiles" :key="profile.id" class="education-profile-chip" :class="{ active: profile.id === activeLearnerProfile?.id }">
                     <button type="button" class="education-profile-select" @click="selectLearnerProfile(profile)">
@@ -9306,7 +9393,14 @@ onBeforeUnmount(() => {
                   <em>{{ isAdminWorkspace ? `组织课程 · ${course.activeEnrollmentCount} 人` : (course.ownerUserId === form.userId ? `我的课程 · ${course.activeEnrollmentCount} 人` : '已加入') }}</em>
                 </button>
               </div>
-              <div v-else class="context-preview-empty">{{ isAdminWorkspace ? '当前组织还没有课程实例；课程由教师创建并运营。' : (educationWorkspaceMode === 'learner' ? '还没有加入课程；课程负责人发布后，课程约束和学习路径会出现在这里。' : '还没有可访问的课程；如需开课，请展开课程负责人入口。') }}</div>
+              <div v-else class="context-preview-empty">
+                <template v-if="isAdminWorkspace">当前组织还没有课程实例；课程由教师创建并运营。</template>
+                <template v-else-if="educationWorkspaceMode === 'learner'">
+                  <strong>{{ activeLearnerProfile ? '学习画像已建立，等待教师加入课程' : '先建立学习画像，再等待教师加入课程' }}</strong>
+                  <span>{{ activeLearnerProfile ? '教师发布课程后，课程约束、作业和下一步行动会自动出现在这里。' : '保存学科、年级和课程版本后，教师才能把你加入匹配课程。' }}</span>
+                </template>
+                <template v-else>还没有可访问的课程；如需开课，请展开课程负责人入口。</template>
+              </div>
               <div v-if="activeEducationCourse && (activeEducationCourseIsOwner || isAdminWorkspace)" class="education-course-detail">
                 <div class="education-course-detail-heading">
                   <div><strong>{{ activeEducationCourse.title }}</strong><small>{{ activeEducationCourse.code }} · 课程负责人 {{ activeEducationCourse.ownerUserId }}</small></div>
