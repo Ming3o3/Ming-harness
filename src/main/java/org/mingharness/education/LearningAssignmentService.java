@@ -158,6 +158,20 @@ public class LearningAssignmentService {
         return assignment;
     }
 
+    /** 管理员治理页只读读取同租户作业详情；不改变参与者写权限。 */
+    @Transactional
+    public LearningAssignment getForGovernance(String tenantId, String assignmentId) {
+        LearningAssignment assignment = assignmentRepository.findByTenantIdAndId(tenantId, assignmentId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
+                        "LEARNING_ASSIGNMENT_NOT_FOUND", "课程作业不存在"));
+        if (assignment.isOverdue(Instant.now())) {
+            assignment.markOverdue(Instant.now());
+            assignmentRepository.save(assignment);
+            notifyState(assignment);
+        }
+        return assignment;
+    }
+
     @Transactional
     public LearningAssignmentAcceptView accept(String tenantId, String learnerUserId,
                                                String assignmentId) {

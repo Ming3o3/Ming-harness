@@ -56,6 +56,19 @@ public class EducationCourseProgressService {
     public EducationCourseProgressView get(String tenantId, String teacherUserId, String courseId,
                                            int requestedLimit) {
         EducationCourse course = courseService.requireOwnerCourse(tenantId, teacherUserId, courseId);
+        return getForCourse(tenantId, teacherUserId, course, requestedLimit);
+    }
+
+    /** 管理员治理页只读查看同租户课程进度，沿用教师口径但不获得写权限。 */
+    @Transactional(readOnly = true)
+    public EducationCourseProgressView getForGovernance(String tenantId, String courseId,
+                                                        int requestedLimit) {
+        EducationCourse course = courseService.requireGovernanceCourse(tenantId, courseId);
+        return getForCourse(tenantId, course.getOwnerUserId(), course, requestedLimit);
+    }
+
+    private EducationCourseProgressView getForCourse(String tenantId, String teacherUserId,
+                                                     EducationCourse course, int requestedLimit) {
         int limit = Math.max(1, Math.min(MAX_ASSIGNMENTS, requestedLimit <= 0 ? MAX_ASSIGNMENTS : requestedLimit));
         List<EducationEnrollment> enrollments = enrollmentRepository
                 .findByTenantIdAndCourseIdOrderByEnrolledAtAsc(tenantId, course.getId());

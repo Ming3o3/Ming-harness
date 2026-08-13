@@ -126,6 +126,13 @@ public class EducationCourseResultService {
         return EducationCourseResultView.from(result, course, learners);
     }
 
+    /** 管理员治理页只读查看全班结课快照。 */
+    @Transactional(readOnly = true)
+    public EducationCourseResultView getForGovernance(String tenantId, String courseId) {
+        EducationCourseView course = courseService.getForGovernance(tenantId, courseId);
+        return get(tenantId, course.ownerUserId(), courseId);
+    }
+
     /**
      * Export the teacher-visible immutable snapshot as an Excel-compatible CSV.
      * The export is deliberately owner-only: a learner can read their own result
@@ -139,6 +146,35 @@ public class EducationCourseResultService {
                     "只有课程教师可以导出全班结课结果");
         }
         EducationCourseResultView snapshot = get(tenantId, userId, courseId);
+        StringBuilder csv = new StringBuilder("\uFEFF");
+        appendRow(csv, "record_type", "course_id", "course_code", "course_title", "completed_at",
+                "completed_by_user_id", "active_learner_total", "learners_with_assignments",
+                "effective_assignment_total", "assignment_completed", "assignment_verified",
+                "submission_covered", "average_mastery_progress", "average_mastery_gain",
+                "learner_user_id", "learner_effective_assignment_total", "learner_assignment_completed",
+                "learner_assignment_verified", "learner_submission_covered",
+                "learner_average_mastery_progress", "learner_average_mastery_gain", "last_activity_at");
+        appendRow(csv, "COURSE", snapshot.courseId(), snapshot.courseCode(), snapshot.courseTitle(),
+                snapshot.completedAt(), snapshot.completedByUserId(), snapshot.activeLearnerTotal(),
+                snapshot.learnersWithAssignments(), snapshot.effectiveAssignmentTotal(),
+                snapshot.assignmentCompleted(), snapshot.assignmentVerified(), snapshot.submissionCovered(),
+                snapshot.averageMasteryProgress(), snapshot.averageMasteryGain(), null, null, null, null,
+                null, null, null, null);
+        for (EducationCourseLearnerResultView learner : snapshot.learners()) {
+            appendRow(csv, "LEARNER", snapshot.courseId(), snapshot.courseCode(), snapshot.courseTitle(),
+                    snapshot.completedAt(), snapshot.completedByUserId(), null, null, null, null, null,
+                    null, null, null, learner.learnerUserId(), learner.effectiveAssignmentTotal(),
+                    learner.assignmentCompleted(), learner.assignmentVerified(), learner.submissionCovered(),
+                    learner.averageMasteryProgress(), learner.averageMasteryGain(), learner.lastActivityAt());
+        }
+        return csv.toString();
+    }
+
+    /** 管理员治理导出同租户课程的只读快照，不借用课程教师身份绕过边界。 */
+    @Transactional(readOnly = true)
+    public String exportCsvForGovernance(String tenantId, String courseId) {
+        EducationCourseView course = courseService.getForGovernance(tenantId, courseId);
+        EducationCourseResultView snapshot = getForGovernance(tenantId, courseId);
         StringBuilder csv = new StringBuilder("\uFEFF");
         appendRow(csv, "record_type", "course_id", "course_code", "course_title", "completed_at",
                 "completed_by_user_id", "active_learner_total", "learners_with_assignments",

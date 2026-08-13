@@ -22,6 +22,16 @@ public class LearningAssignmentEvidenceService {
     @Transactional
     public List<AssessmentAttemptView> list(String tenantId, String userId, String assignmentId) {
         LearningAssignment assignment = assignmentService.getForParticipant(tenantId, userId, assignmentId);
+        return listForAssignment(tenantId, assignment);
+    }
+
+    /** 管理员治理页只读查看同租户作业测评证据。 */
+    @Transactional(readOnly = true)
+    public List<AssessmentAttemptView> listForGovernance(String tenantId, String assignmentId) {
+        return listForAssignment(tenantId, assignmentService.getForGovernance(tenantId, assignmentId));
+    }
+
+    private List<AssessmentAttemptView> listForAssignment(String tenantId, LearningAssignment assignment) {
         if (assignment.getLearningGoalId() == null) return List.of();
         List<AssessmentAttempt> attempts = assessmentRepository
                 .findByTenantIdAndUserIdAndLearningAssignmentIdOrderByCreatedAtAsc(

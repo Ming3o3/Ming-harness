@@ -52,6 +52,16 @@ public class LearningAssignmentProgressService {
     @Transactional
     public LearningAssignmentProgressView get(String tenantId, String userId, String assignmentId) {
         LearningAssignment assignment = assignmentService.getForParticipant(tenantId, userId, assignmentId);
+        return getForAssignment(tenantId, assignment);
+    }
+
+    /** 管理员治理页只读查看同租户作业进度。 */
+    @Transactional
+    public LearningAssignmentProgressView getForGovernance(String tenantId, String assignmentId) {
+        return getForAssignment(tenantId, assignmentService.getForGovernance(tenantId, assignmentId));
+    }
+
+    private LearningAssignmentProgressView getForAssignment(String tenantId, LearningAssignment assignment) {
         if (assignment.getLearningGoalId() == null) {
             return new LearningAssignmentProgressView(
                     assignment.getId(), assignment.getTitle(), assignment.getTeacherUserId(),

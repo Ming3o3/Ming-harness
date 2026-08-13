@@ -78,6 +78,16 @@ public class LearningAssignmentSubmissionService {
     public List<LearningAssignmentSubmissionView> list(String tenantId, String userId,
                                                        String assignmentId) {
         LearningAssignment assignment = assignmentService.getForParticipant(tenantId, userId, assignmentId);
+        return listForAssignment(tenantId, assignment);
+    }
+
+    /** 管理员治理页只读查看同租户提交物。 */
+    @Transactional(readOnly = true)
+    public List<LearningAssignmentSubmissionView> listForGovernance(String tenantId, String assignmentId) {
+        return listForAssignment(tenantId, assignmentService.getForGovernance(tenantId, assignmentId));
+    }
+
+    private List<LearningAssignmentSubmissionView> listForAssignment(String tenantId, LearningAssignment assignment) {
         return submissionRepository.findByTenantIdAndLearningAssignmentIdOrderBySubmittedAtDesc(
                         tenantId, assignment.getId()).stream()
                 .map(LearningAssignmentSubmissionView::from).toList();

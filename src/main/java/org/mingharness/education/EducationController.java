@@ -145,6 +145,7 @@ public class EducationController {
     @ResponseStatus(HttpStatus.CREATED)
     public EducationSourceView upsertSource(@Valid @RequestBody EducationSourceRequest request) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return EducationSourceView.from(knowledgeService.upsertSource(identity.tenantId(), identity.userId(), request,
                 identity.hasPermission("education.assign")));
     }
@@ -160,6 +161,7 @@ public class EducationController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteSource(@PathVariable String documentId) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         knowledgeService.deleteSource(identity.tenantId(), identity.userId(), documentId);
     }
 
@@ -167,6 +169,7 @@ public class EducationController {
     @ResponseStatus(HttpStatus.CREATED)
     public LearnerProfileView upsertProfile(@Valid @RequestBody LearnerProfileRequest request) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return LearnerProfileView.from(learnerService.upsertProfile(identity.tenantId(), identity.userId(), request));
     }
 
@@ -181,6 +184,7 @@ public class EducationController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteProfile(@PathVariable String profileId) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         learnerService.deleteProfile(identity.tenantId(), identity.userId(), profileId);
     }
 
@@ -194,6 +198,7 @@ public class EducationController {
     public LearnerMasteryView updateMastery(@PathVariable String profileId,
                                             @Valid @RequestBody MasteryUpdateRequest request) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return LearnerMasteryView.from(learnerService.updateMastery(identity.tenantId(), identity.userId(),
                 profileId, request));
     }
@@ -209,6 +214,7 @@ public class EducationController {
     @ResponseStatus(HttpStatus.CREATED)
     public LearningGoalView createGoal(@Valid @RequestBody LearningGoalRequest request) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return LearningGoalView.from(learningGoalService.create(identity.tenantId(), identity.userId(), request));
     }
 
@@ -229,6 +235,7 @@ public class EducationController {
     public LearningGoalView changeGoalStatus(@PathVariable String goalId,
                                              @Valid @RequestBody LearningGoalStatusRequest request) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return LearningGoalView.from(learningGoalService.changeStatus(identity.tenantId(), identity.userId(),
                 goalId, request.status()));
     }
@@ -245,6 +252,7 @@ public class EducationController {
     public AssessmentAttemptView submitAssessment(@PathVariable String goalId,
                                                    @Valid @RequestBody ManualAssessmentSubmissionRequest request) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         LearningGoal goal = learningGoalService.get(identity.tenantId(), identity.userId(), goalId);
         AssessmentAttempt attempt = assessmentService.recordForGoal(identity.tenantId(), identity.userId(),
                 goalId, request.runId(), request.stepId(), goal.getLearnerProfileId(), request.conceptKey(),
@@ -285,6 +293,7 @@ public class EducationController {
     @ResponseStatus(HttpStatus.CREATED)
     public EducationCourseView createCourse(@Valid @RequestBody EducationCourseRequest request) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return courseService.create(identity.tenantId(), identity.userId(), request);
     }
 
@@ -300,7 +309,9 @@ public class EducationController {
     @GetMapping("/courses/{courseId}")
     public EducationCourseView getCourse(@PathVariable String courseId) {
         HarnessIdentity identity = identity();
-        return courseService.getForParticipant(identity.tenantId(), identity.userId(), courseId);
+        return identity.hasPermission("ops.read")
+                ? courseService.getForGovernance(identity.tenantId(), courseId)
+                : courseService.getForParticipant(identity.tenantId(), identity.userId(), courseId);
     }
 
     @PostMapping("/courses/{courseId}/enrollments")
@@ -308,25 +319,30 @@ public class EducationController {
     public EducationEnrollmentView enrollLearner(@PathVariable String courseId,
                                                  @Valid @RequestBody EducationEnrollmentRequest request) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return courseService.enroll(identity.tenantId(), identity.userId(), courseId, request);
     }
 
     @GetMapping("/courses/{courseId}/enrollments")
     public List<EducationEnrollmentView> listCourseRoster(@PathVariable String courseId) {
         HarnessIdentity identity = identity();
-        return courseService.roster(identity.tenantId(), identity.userId(), courseId);
+        return identity.hasPermission("ops.read")
+                ? courseService.rosterForGovernance(identity.tenantId(), courseId)
+                : courseService.roster(identity.tenantId(), identity.userId(), courseId);
     }
 
     @PostMapping("/courses/{courseId}/enrollments/{learnerUserId}/remove")
     public EducationEnrollmentView removeLearner(@PathVariable String courseId,
                                                  @PathVariable String learnerUserId) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return courseService.removeEnrollment(identity.tenantId(), identity.userId(), courseId, learnerUserId);
     }
 
     @PostMapping("/courses/{courseId}/archive")
     public EducationCourseView archiveCourse(@PathVariable String courseId) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return courseService.archive(identity.tenantId(), identity.userId(), courseId);
     }
 
@@ -335,19 +351,24 @@ public class EducationController {
             @PathVariable String courseId,
             @Valid @RequestBody(required = false) EducationCourseCompletionRequest request) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return courseCompletionService.complete(identity.tenantId(), identity.userId(), courseId, request);
     }
 
     @GetMapping("/courses/{courseId}/result")
     public EducationCourseResultView courseResult(@PathVariable String courseId) {
         HarnessIdentity identity = identity();
-        return courseResultService.get(identity.tenantId(), identity.userId(), courseId);
+        return identity.hasPermission("ops.read")
+                ? courseResultService.getForGovernance(identity.tenantId(), courseId)
+                : courseResultService.get(identity.tenantId(), identity.userId(), courseId);
     }
 
     @GetMapping(value = "/courses/{courseId}/result.csv", produces = "text/csv")
     public ResponseEntity<byte[]> exportCourseResult(@PathVariable String courseId) {
         HarnessIdentity identity = identity();
-        String csv = courseResultService.exportCsv(identity.tenantId(), identity.userId(), courseId);
+        String csv = identity.hasPermission("ops.read")
+                ? courseResultService.exportCsvForGovernance(identity.tenantId(), courseId)
+                : courseResultService.exportCsv(identity.tenantId(), identity.userId(), courseId);
         String safeCourseId = courseId == null ? "course" : courseId.replaceAll("[^A-Za-z0-9._-]", "_");
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
@@ -363,6 +384,7 @@ public class EducationController {
             @Valid @RequestBody EducationCourseAssignmentRequest request,
             HttpServletRequest httpRequest) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return assignmentBatchService.assign(identity.tenantId(), identity.userId(), courseId,
                 request, httpRequest.getHeader("Idempotency-Key"));
     }
@@ -372,13 +394,16 @@ public class EducationController {
             @PathVariable String courseId,
             @RequestParam(defaultValue = "500") int limit) {
         HarnessIdentity identity = identity();
-        return courseProgressService.get(identity.tenantId(), identity.userId(), courseId, limit);
+        return identity.hasPermission("ops.read")
+                ? courseProgressService.getForGovernance(identity.tenantId(), courseId, limit)
+                : courseProgressService.get(identity.tenantId(), identity.userId(), courseId, limit);
     }
 
     @PostMapping("/assignments")
     @ResponseStatus(HttpStatus.CREATED)
     public LearningAssignmentView createAssignment(@Valid @RequestBody LearningAssignmentRequest request) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return LearningAssignmentView.from(assignmentService.create(
                 identity.tenantId(), identity.userId(), request));
     }
@@ -396,26 +421,33 @@ public class EducationController {
     @GetMapping("/assignments/{assignmentId}")
     public LearningAssignmentView getAssignment(@PathVariable String assignmentId) {
         HarnessIdentity identity = identity();
-        return LearningAssignmentView.from(assignmentService.getForParticipant(
-                identity.tenantId(), identity.userId(), assignmentId));
+        return LearningAssignmentView.from(identity.hasPermission("ops.read")
+                ? assignmentService.getForGovernance(identity.tenantId(), assignmentId)
+                : assignmentService.getForParticipant(identity.tenantId(), identity.userId(), assignmentId));
     }
 
     @GetMapping("/assignments/{assignmentId}/progress")
     public LearningAssignmentProgressView assignmentProgress(@PathVariable String assignmentId) {
         HarnessIdentity identity = identity();
-        return assignmentProgressService.get(identity.tenantId(), identity.userId(), assignmentId);
+        return identity.hasPermission("ops.read")
+                ? assignmentProgressService.getForGovernance(identity.tenantId(), assignmentId)
+                : assignmentProgressService.get(identity.tenantId(), identity.userId(), assignmentId);
     }
 
     @GetMapping("/assignments/{assignmentId}/evidence")
     public List<AssessmentAttemptView> assignmentEvidence(@PathVariable String assignmentId) {
         HarnessIdentity identity = identity();
-        return assignmentEvidenceService.list(identity.tenantId(), identity.userId(), assignmentId);
+        return identity.hasPermission("ops.read")
+                ? assignmentEvidenceService.listForGovernance(identity.tenantId(), assignmentId)
+                : assignmentEvidenceService.list(identity.tenantId(), identity.userId(), assignmentId);
     }
 
     @GetMapping("/assignments/{assignmentId}/submissions")
     public List<LearningAssignmentSubmissionView> assignmentSubmissions(@PathVariable String assignmentId) {
         HarnessIdentity identity = identity();
-        return submissionService.list(identity.tenantId(), identity.userId(), assignmentId);
+        return identity.hasPermission("ops.read")
+                ? submissionService.listForGovernance(identity.tenantId(), assignmentId)
+                : submissionService.list(identity.tenantId(), identity.userId(), assignmentId);
     }
 
     @PostMapping("/assignments/{assignmentId}/submissions")
@@ -424,13 +456,16 @@ public class EducationController {
             @PathVariable String assignmentId,
             @Valid @RequestBody LearningAssignmentSubmissionRequest request) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return submissionService.submit(identity.tenantId(), identity.userId(), assignmentId, request);
     }
 
     @GetMapping("/assignments/{assignmentId}/feedback")
     public List<LearningAssignmentFeedbackView> assignmentFeedback(@PathVariable String assignmentId) {
         HarnessIdentity identity = identity();
-        return assignmentFeedbackService.list(identity.tenantId(), identity.userId(), assignmentId);
+        return identity.hasPermission("ops.read")
+                ? assignmentFeedbackService.listForGovernance(identity.tenantId(), assignmentId)
+                : assignmentFeedbackService.list(identity.tenantId(), identity.userId(), assignmentId);
     }
 
     @PostMapping("/assignments/{assignmentId}/feedback")
@@ -438,6 +473,7 @@ public class EducationController {
             @PathVariable String assignmentId,
             @Valid @RequestBody LearningAssignmentFeedbackRequest request) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return assignmentFeedbackService.create(identity.tenantId(), identity.userId(), assignmentId, request);
     }
 
@@ -445,6 +481,7 @@ public class EducationController {
     public LearningAssignmentFeedbackView acknowledgeAssignmentFeedback(
             @PathVariable String assignmentId, @PathVariable String feedbackId) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return assignmentFeedbackService.acknowledge(
                 identity.tenantId(), identity.userId(), assignmentId, feedbackId);
     }
@@ -452,6 +489,7 @@ public class EducationController {
     @PostMapping("/assignments/{assignmentId}/accept")
     public LearningAssignmentAcceptView acceptAssignment(@PathVariable String assignmentId) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return assignmentService.accept(identity.tenantId(), identity.userId(), assignmentId);
     }
 
@@ -462,6 +500,7 @@ public class EducationController {
             @Valid @RequestBody(required = false) ExecuteLearningActionRequest request,
             HttpServletRequest httpRequest) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         String permissions = identity.usesTrustedPermissions()
                 ? identity.permissionsCsv() : httpRequest.getHeader("X-Permissions");
         return assignmentStartService.start(identity.tenantId(), identity.userId(), assignmentId,
@@ -473,13 +512,16 @@ public class EducationController {
             @PathVariable String assignmentId,
             @Valid @RequestBody LearningAssignmentReviewRequest request) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return assignmentReviewService.review(identity.tenantId(), identity.userId(), assignmentId, request);
     }
 
     @GetMapping("/assignments/{assignmentId}/evaluations")
     public List<LearningAssignmentEvaluationView> assignmentEvaluations(@PathVariable String assignmentId) {
         HarnessIdentity identity = identity();
-        return assignmentReviewService.evaluations(identity.tenantId(), identity.userId(), assignmentId);
+        return identity.hasPermission("ops.read")
+                ? assignmentReviewService.evaluationsForGovernance(identity.tenantId(), assignmentId)
+                : assignmentReviewService.evaluations(identity.tenantId(), identity.userId(), assignmentId);
     }
 
     @GetMapping("/evaluation-queue")
@@ -494,6 +536,7 @@ public class EducationController {
             @PathVariable String assignmentId,
             @Valid @RequestBody LearningAssignmentEvaluationRequest request) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return independentEvaluationService.evaluate(identity.tenantId(), identity.userId(),
                 assignmentId, request);
     }
@@ -508,6 +551,7 @@ public class EducationController {
     @PostMapping("/assignments/{assignmentId}/cancel")
     public LearningAssignmentView cancelAssignment(@PathVariable String assignmentId) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return LearningAssignmentView.from(assignmentService.cancel(
                 identity.tenantId(), identity.userId(), assignmentId));
     }
@@ -524,12 +568,14 @@ public class EducationController {
     public LearningAssignmentNotificationView markAssignmentNotificationRead(
             @PathVariable String notificationId) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return assignmentNotificationService.markRead(identity.tenantId(), identity.userId(), notificationId);
     }
 
     @PostMapping("/assignment-notifications/read-all")
     public java.util.Map<String, Long> markAllAssignmentNotificationsRead() {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return java.util.Map.of("markedRead", assignmentNotificationService.markAllRead(
                 identity.tenantId(), identity.userId()));
     }
@@ -540,6 +586,7 @@ public class EducationController {
                                            ExecuteLearningActionRequest request,
                                            HttpServletRequest httpRequest) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         String permissions = identity.usesTrustedPermissions()
                 ? identity.permissionsCsv() : httpRequest.getHeader("X-Permissions");
         return taskService.start(identity.tenantId(), identity.userId(), taskId, request,
@@ -551,6 +598,7 @@ public class EducationController {
                                       @Valid @RequestBody(required = false)
                                       DeferLearningTaskRequest request) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return LearningTaskView.from(taskService.defer(identity.tenantId(), identity.userId(), taskId, request));
     }
 
@@ -565,12 +613,14 @@ public class EducationController {
     @PostMapping("/notifications/{notificationId}/read")
     public LearningTaskNotificationView markNotificationRead(@PathVariable String notificationId) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return notificationService.markRead(identity.tenantId(), identity.userId(), notificationId);
     }
 
     @PostMapping("/notifications/read-all")
     public java.util.Map<String, Long> markAllNotificationsRead() {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         return java.util.Map.of("markedRead", notificationService.markAllRead(
                 identity.tenantId(), identity.userId()));
     }
@@ -581,6 +631,7 @@ public class EducationController {
                                                  ExecuteLearningActionRequest request,
                                                  HttpServletRequest httpRequest) {
         HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
         String permissions = identity.usesTrustedPermissions()
                 ? identity.permissionsCsv() : httpRequest.getHeader("X-Permissions");
         LearningGoal goal = learningGoalService.get(identity.tenantId(), identity.userId(), goalId);
@@ -597,6 +648,14 @@ public class EducationController {
 
     private HarnessIdentity identity() {
         return HarnessIdentityContext.require();
+    }
+
+    /** 管理员教育工作台是治理只读视图，课程和学习状态写入必须由教师或学生执行。 */
+    private void requireEducationOperator(HarnessIdentity identity) {
+        if (identity.hasPermission("ops.read")) {
+            throw new org.mingharness.common.BusinessException(HttpStatus.FORBIDDEN,
+                    "EDUCATION_ADMIN_READ_ONLY", "管理员教育工作台仅支持只读治理，课程操作请由教师执行");
+        }
     }
 
     private LearningTaskStatus parseTaskStatus(String raw) {

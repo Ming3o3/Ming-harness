@@ -82,6 +82,18 @@ public class EducationCourseService {
         return view(course);
     }
 
+    /** 管理员治理页只读读取同租户课程详情，不获得课程负责人写权限。 */
+    @Transactional(readOnly = true)
+    public EducationCourseView getForGovernance(String tenantId, String courseId) {
+        return view(find(tenantId, courseId));
+    }
+
+    /** 供同租户管理员只读聚合查询复用课程实体，不暴露课程写权限。 */
+    @Transactional(readOnly = true)
+    public EducationCourse requireGovernanceCourse(String tenantId, String courseId) {
+        return find(tenantId, courseId);
+    }
+
     @Transactional
     public EducationEnrollmentView enroll(String tenantId, String ownerUserId, String courseId,
                                           EducationEnrollmentRequest request) {
@@ -118,6 +130,14 @@ public class EducationCourseService {
     public List<EducationEnrollmentView> roster(String tenantId, String ownerUserId, String courseId) {
         EducationCourse course = find(tenantId, courseId);
         ensureOwner(course, ownerUserId);
+        return enrollmentRepository.findByTenantIdAndCourseIdOrderByEnrolledAtAsc(tenantId, courseId)
+                .stream().map(EducationEnrollmentView::from).toList();
+    }
+
+    /** 管理员只读查看课程名单；名单写入仍只能由课程教师执行。 */
+    @Transactional(readOnly = true)
+    public List<EducationEnrollmentView> rosterForGovernance(String tenantId, String courseId) {
+        find(tenantId, courseId);
         return enrollmentRepository.findByTenantIdAndCourseIdOrderByEnrolledAtAsc(tenantId, courseId)
                 .stream().map(EducationEnrollmentView::from).toList();
     }

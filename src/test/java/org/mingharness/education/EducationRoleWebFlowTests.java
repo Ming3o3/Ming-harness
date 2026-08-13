@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestPropertySource(properties = {
         "harness.auth.mode=api-key",
-        "harness.auth.api-keys=admin-flow-key|tenant-flow|admin-flow|context.read,context.write,education.read,education.assign;teacher-flow-key|tenant-flow|teacher-flow|context.read,context.write,education.read,education.write,education.assign,education.evaluate,run.read,run.create,run.execute;student-flow-key|tenant-flow|student-flow|education.read,education.write,run.read,run.create,run.execute",
+        "harness.auth.api-keys=admin-flow-key|tenant-flow|admin-flow|context.read,context.write,education.read,education.write,education.assign,ops.read;teacher-flow-key|tenant-flow|teacher-flow|context.read,context.write,education.read,education.write,education.assign,education.evaluate,run.read,run.create,run.execute;student-flow-key|tenant-flow|student-flow|education.read,education.write,run.read,run.create,run.execute",
         "harness.execution.mode=sync",
         "harness.local-execution.async=false",
         "harness.redis.enabled=false",
@@ -186,6 +186,32 @@ class EducationRoleWebFlowTests {
         assertEquals(200, progress.statusCode(), progress.body());
         assertEquals(1, json(progress).path("assignmentTotal").asInt(), progress.body());
         assertEquals(1, json(progress).path("reviewVerified").asInt(), progress.body());
+    }
+
+    @Test
+    void shouldKeepAdminEducationWorkspaceReadOnly() throws Exception {
+        HttpResponse<String> course = request("teacher-flow-key", "POST", "/api/education/courses",
+                "{\"code\":\"admin-read-only-flow\",\"title\":\"管理员只读验收课程\",\"subject\":\"数学\","
+                        + "\"gradeLevel\":\"高中一年级\",\"curriculumVersion\":\"人教A版\"}");
+        assertEquals(201, course.statusCode(), course.body());
+        String courseId = json(course).path("id").asText();
+
+        HttpResponse<String> adminCourses = request("admin-flow-key", "GET", "/api/education/courses", null);
+        assertEquals(200, adminCourses.statusCode(), adminCourses.body());
+        assertTrue(adminCourses.body().contains(courseId), adminCourses.body());
+
+        HttpResponse<String> adminCourse = request("admin-flow-key", "GET",
+                "/api/education/courses/" + courseId, null);
+        assertEquals(200, adminCourse.statusCode(), adminCourse.body());
+
+        HttpResponse<String> adminCreate = request("admin-flow-key", "POST", "/api/education/courses",
+                "{\"code\":\"admin-must-not-create\",\"title\":\"越权课程\",\"subject\":\"数学\","
+                        + "\"gradeLevel\":\"高中一年级\",\"curriculumVersion\":\"人教A版\"}");
+        assertError(adminCreate, 403, "EDUCATION_ADMIN_READ_ONLY");
+
+        HttpResponse<String> adminEnroll = request("admin-flow-key", "POST",
+                "/api/education/courses/" + courseId + "/enrollments", "{\"learnerUserId\":\"student-flow\"}");
+        assertError(adminEnroll, 403, "EDUCATION_ADMIN_READ_ONLY");
     }
 
     private String sourceRequest(String documentId) {

@@ -4707,10 +4707,11 @@ async function loadEducationCourseWorkspace(courseId) {
   activeEducationCourseId.value = course.id
   educationCourseLoading.value = true
   try {
-    // 班级名单与汇总进度属于课程教师；学习者只读取后端已按本人过滤的结课快照，
-    // 既避免越权请求，也让课程页成为学习者可用的状态入口。
+    // 班级名单与汇总进度属于课程教师；管理员使用同租户只读治理接口查看全班，
+    // 学习者只读取后端已按本人过滤的结课快照，避免把三种心智模型混在一起。
     const isOwner = course.ownerUserId === form.userId
-    const [enrollments, progress, result] = isOwner
+    const canViewGovernance = isOwner || isAdminWorkspace.value
+    const [enrollments, progress, result] = canViewGovernance
       ? await Promise.all([
         api.listEducationCourseEnrollments(course.id),
         api.getEducationCourseProgress(course.id),
@@ -9167,32 +9168,33 @@ onBeforeUnmount(() => {
                 </button>
               </div>
               <div v-else class="context-preview-empty">{{ isAdminWorkspace ? '当前组织还没有课程实例；课程由教师创建并运营。' : (educationWorkspaceMode === 'learner' ? '还没有加入课程；课程负责人发布后，课程约束和学习路径会出现在这里。' : '还没有可访问的课程；如需开课，请展开课程负责人入口。') }}</div>
-              <div v-if="activeEducationCourse && activeEducationCourseIsOwner" class="education-course-detail">
+              <div v-if="activeEducationCourse && (activeEducationCourseIsOwner || isAdminWorkspace)" class="education-course-detail">
                 <div class="education-course-detail-heading">
                   <div><strong>{{ activeEducationCourse.title }}</strong><small>{{ activeEducationCourse.code }} · 课程负责人 {{ activeEducationCourse.ownerUserId }}</small></div>
                   <div class="education-course-detail-actions">
-                    <button v-if="activeEducationCourse.status === 'ACTIVE'" class="secondary-button" type="button" :title="educationCourseProgress?.readyToComplete ? '结课结果会固化当前课程证据快照' : '请先处理下方结课阻塞清单；Runtime 仍会在提交时做最终校验'" :disabled="educationCourseActionId === activeEducationCourse.id || !educationCourseProgress?.readyToComplete" @click="completeEducationCourse(activeEducationCourse)">{{ educationCourseActionId === activeEducationCourse.id ? '结课中…' : '完成结课' }}</button>
-                    <button v-if="['ACTIVE', 'COMPLETED'].includes(activeEducationCourse.status)" class="text-button" type="button" :disabled="educationCourseActionId === activeEducationCourse.id" @click="archiveEducationCourse(activeEducationCourse)">{{ educationCourseActionId === activeEducationCourse.id ? '处理中…' : '归档课程' }}</button>
+                    <button v-if="activeEducationCourseIsOwner && activeEducationCourse.status === 'ACTIVE'" class="secondary-button" type="button" :title="educationCourseProgress?.readyToComplete ? '结课结果会固化当前课程证据快照' : '请先处理下方结课阻塞清单；Runtime 仍会在提交时做最终校验'" :disabled="educationCourseActionId === activeEducationCourse.id || !educationCourseProgress?.readyToComplete" @click="completeEducationCourse(activeEducationCourse)">{{ educationCourseActionId === activeEducationCourse.id ? '结课中…' : '完成结课' }}</button>
+                    <button v-if="activeEducationCourseIsOwner && ['ACTIVE', 'COMPLETED'].includes(activeEducationCourse.status)" class="text-button" type="button" :disabled="educationCourseActionId === activeEducationCourse.id" @click="archiveEducationCourse(activeEducationCourse)">{{ educationCourseActionId === activeEducationCourse.id ? '处理中…' : '归档课程' }}</button>
                   </div>
                 </div>
                 <div class="education-course-columns">
                   <div id="education-course-roster" class="education-course-roster">
                     <div class="subsection-title"><div><h4>活跃名单</h4><span>{{ educationCourseEnrollments.filter((item) => item.status === 'ACTIVE').length }} 人</span></div></div>
-                    <form class="education-course-enrollment-form" @submit.prevent="enrollEducationLearner">
+                    <form v-if="activeEducationCourseIsOwner" class="education-course-enrollment-form" @submit.prevent="enrollEducationLearner">
                       <label class="field"><span>学习者 ID</span><input v-model="educationCourseEnrollmentForm.learnerUserId" required maxlength="255" placeholder="例如：student-1" /></label>
                       <button class="secondary-button" type="submit" :disabled="educationCourseRosterSaving || activeEducationCourse.status !== 'ACTIVE'">{{ educationCourseRosterSaving ? '加入中…' : '加入名单' }}</button>
                     </form>
+                    <p v-else class="learning-task-help">管理员只读查看名单；加入或移除学习者由课程教师执行。</p>
                     <div v-if="educationCourseEnrollments.length" class="education-course-roster-list">
                       <div v-for="enrollment in educationCourseEnrollments" :key="enrollment.id" class="education-course-roster-row" :class="{ inactive: enrollment.status !== 'ACTIVE' }">
                         <span><strong>{{ enrollment.learnerUserId }}</strong><small>{{ enrollment.status === 'ACTIVE' ? '活跃成员' : '已移除' }} · {{ formatDate(enrollment.enrolledAt) }}</small></span>
-                        <button v-if="enrollment.status === 'ACTIVE' && activeEducationCourse.status === 'ACTIVE'" class="text-button" type="button" :disabled="educationCourseActionId === enrollment.learnerUserId" @click="removeEducationLearner(enrollment)">{{ educationCourseActionId === enrollment.learnerUserId ? '处理中…' : '移除' }}</button>
+                        <button v-if="activeEducationCourseIsOwner && enrollment.status === 'ACTIVE' && activeEducationCourse.status === 'ACTIVE'" class="text-button" type="button" :disabled="educationCourseActionId === enrollment.learnerUserId" @click="removeEducationLearner(enrollment)">{{ educationCourseActionId === enrollment.learnerUserId ? '处理中…' : '移除' }}</button>
                       </div>
                     </div>
                     <div v-else class="context-preview-empty">名单为空；请先加入学习者。</div>
                   </div>
                   <div id="education-course-assignment" class="education-course-assignment">
                     <div class="subsection-title"><div><h4>批量布置作业</h4><span>一次提交，逐人追踪</span></div></div>
-                    <form class="education-course-assignment-form" @submit.prevent="assignEducationCourse">
+                    <form v-if="activeEducationCourseIsOwner" class="education-course-assignment-form" @submit.prevent="assignEducationCourse">
                       <label class="field"><span>作业标题</span><input v-model="educationCourseAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域练习" /></label>
                       <label class="field"><span>目标知识点</span><input v-model="educationCourseAssignmentForm.conceptKey" required maxlength="255" placeholder="函数定义域" /></label>
                       <label class="field"><span>目标掌握度</span><input v-model="educationCourseAssignmentForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required /></label>
@@ -9200,6 +9202,7 @@ onBeforeUnmount(() => {
                       <label class="field education-course-wide"><span>作业说明</span><textarea v-model="educationCourseAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作答范围、提交要求或迁移任务"></textarea></label>
                       <button class="secondary-button" type="submit" :disabled="educationCourseAssignmentSaving || !educationCourseEnrollments.some((item) => item.status === 'ACTIVE')">{{ educationCourseAssignmentSaving ? '布置中…' : '向活跃名单布置' }}</button>
                     </form>
+                    <p v-else class="learning-task-help">管理员只读查看作业规模与证据覆盖；布置作业由课程教师执行。</p>
                   </div>
                 </div>
                 <div v-if="educationCourseProgress" class="education-course-progress">
@@ -9256,7 +9259,7 @@ onBeforeUnmount(() => {
                   </div>
                   <div v-else class="context-preview-empty">名单中的学习者还没有作业；布置作业后，这里会显示每人的业务状态。</div>
                   <div v-if="educationCourseResult" class="education-course-progress education-course-result">
-                    <div class="subsection-title"><div><h4>结课结果快照</h4><span>{{ formatDate(educationCourseResult.completedAt) }}</span></div><div><span class="context-mode-chip">不可被后续复习改写</span><button class="text-button" type="button" :disabled="educationCourseActionId === activeEducationCourse.id" @click="exportEducationCourseResult(activeEducationCourse)">{{ educationCourseActionId === activeEducationCourse.id ? '导出中…' : '导出报告' }}</button></div></div>
+                    <div class="subsection-title"><div><h4>结课结果快照</h4><span>{{ formatDate(educationCourseResult.completedAt) }}</span></div><div><span class="context-mode-chip">不可被后续复习改写</span><button v-if="activeEducationCourseIsOwner" class="text-button" type="button" :disabled="educationCourseActionId === activeEducationCourse.id" @click="exportEducationCourseResult(activeEducationCourse)">{{ educationCourseActionId === activeEducationCourse.id ? '导出中…' : '导出报告' }}</button></div></div>
                     <div class="education-course-summary-grid">
                       <div><span>有效作业</span><strong>{{ educationCourseResult.assignmentCompleted }} / {{ educationCourseResult.effectiveAssignmentTotal }}</strong><small>教师确认 {{ educationCourseResult.assignmentVerified }}</small></div>
                       <div><span>提交物覆盖</span><strong>{{ formatRate(educationCourseResult.effectiveAssignmentTotal ? educationCourseResult.submissionCovered / educationCourseResult.effectiveAssignmentTotal : 0) }}</strong><small>{{ educationCourseResult.submissionCovered }} 份</small></div>

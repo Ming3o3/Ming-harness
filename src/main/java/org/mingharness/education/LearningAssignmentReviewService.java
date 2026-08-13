@@ -167,6 +167,19 @@ public class LearningAssignmentReviewService {
                 .map(LearningAssignmentEvaluationView::from).toList();
     }
 
+    /** 管理员治理页只读查看同租户教师量规评价。 */
+    @Transactional(readOnly = true)
+    public List<LearningAssignmentEvaluationView> evaluationsForGovernance(String tenantId,
+                                                                            String assignmentId) {
+        assignmentRepository.findByTenantIdAndId(tenantId, assignmentId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
+                        "LEARNING_ASSIGNMENT_NOT_FOUND", "课程作业不存在"));
+        if (evaluationRepository == null) return List.of();
+        return evaluationRepository.findByTenantIdAndLearningAssignmentIdOrderByCreatedAtDesc(
+                        tenantId, assignmentId).stream()
+                .map(LearningAssignmentEvaluationView::from).toList();
+    }
+
     private RubricScores rubric(LearningAssignmentReviewRequest request) {
         if (request == null || request.contentCorrectnessScore() == null
                 || request.evidenceQualityScore() == null

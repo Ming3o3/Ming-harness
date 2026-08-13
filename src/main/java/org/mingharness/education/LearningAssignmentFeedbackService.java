@@ -93,6 +93,17 @@ public class LearningAssignmentFeedbackService {
     @Transactional
     public List<LearningAssignmentFeedbackView> list(String tenantId, String userId, String assignmentId) {
         assignmentService.getForParticipant(tenantId, userId, assignmentId);
+        return listForAssignment(tenantId, assignmentId);
+    }
+
+    /** 管理员治理页只读查看同租户教师反馈。 */
+    @Transactional(readOnly = true)
+    public List<LearningAssignmentFeedbackView> listForGovernance(String tenantId, String assignmentId) {
+        assignmentService.getForGovernance(tenantId, assignmentId);
+        return listForAssignment(tenantId, assignmentId);
+    }
+
+    private List<LearningAssignmentFeedbackView> listForAssignment(String tenantId, String assignmentId) {
         return feedbackRepository.findByTenantIdAndLearningAssignmentIdOrderByCreatedAtDesc(
                         tenantId, assignmentId, PageRequest.of(0, 100)).stream()
                 .map(LearningAssignmentFeedbackView::from).toList();
