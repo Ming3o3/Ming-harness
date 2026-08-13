@@ -1116,6 +1116,52 @@ const teacherCoursePendingCount = computed(() => {
     + Number(metrics.taskAwaitingEvidence || 0)
     + learningEvaluationQueue.value.length
 })
+// 待办总数用于概览，但教师的主按钮必须指向真实队列；否则“待重试”会被
+// 错误地带到“待确认”筛选，造成用户以为系统没有可处理的作业。
+const teacherPendingAction = computed(() => {
+  const metrics = educationMetrics.value || {}
+  if (Number(metrics.assignmentReviewPending || 0)) {
+    return {
+      label: '完成教师确认',
+      detail: `${metrics.assignmentReviewPending} 份作业等待依据提交物和测评证据确认。`,
+      kind: 'review',
+      issue: 'review',
+    }
+  }
+  if (Number(metrics.assignmentReviewRevisionRequired || 0)) {
+    return {
+      label: '跟进返工作业',
+      detail: `${metrics.assignmentReviewRevisionRequired} 份作业已退回，需要学习者重新提交。`,
+      kind: 'review',
+      issue: 'revision',
+    }
+  }
+  if (Number(metrics.assignmentRetryRequired || 0)) {
+    return {
+      label: '安排失败作业重试',
+      detail: `${metrics.assignmentRetryRequired} 份作业因失败、超时或取消等待重新执行。`,
+      kind: 'review',
+      issue: 'retry',
+    }
+  }
+  if (Number(metrics.taskAwaitingEvidence || 0)) {
+    return {
+      label: '补回形成性证据',
+      detail: `${metrics.taskAwaitingEvidence} 个学习任务已结束，但还缺少可验证测评证据。`,
+      kind: 'review',
+      issue: 'evidence',
+    }
+  }
+  if (learningEvaluationQueue.value.length) {
+    return {
+      label: '处理独立评价',
+      detail: `${learningEvaluationQueue.value.length} 份已完成作业等待第二评分者评价。`,
+      kind: 'evaluation',
+      issue: '',
+    }
+  }
+  return null
+})
 const teacherAgentReady = computed(() => manageableEducationSources.value.length > 0)
 const teacherNextAction = computed(() => {
   if (!manageableEducationDocuments.value.length) {
@@ -1133,8 +1179,8 @@ const teacherNextAction = computed(() => {
   if (!teacherAssignmentCount.value) {
     return { label: '布置第一份作业', detail: '把课程约束和目标知识点下发给学生。', kind: 'assignment' }
   }
-  if (teacherCoursePendingCount.value) {
-    return { label: '处理待办复核', detail: `当前有 ${teacherCoursePendingCount.value} 项证据、返工或复核待处理。`, kind: 'review' }
+  if (teacherPendingAction.value) {
+    return teacherPendingAction.value
   }
   return { label: '查看课程进度', detail: '课程状态正常，可继续跟进学生掌握度。', kind: 'progress' }
 })
@@ -1152,7 +1198,8 @@ function runTeacherNextAction() {
   void nextTick(() => {
     if (action.kind === 'roster') focusEducationCourseRoster()
     else if (action.kind === 'assignment') focusEducationCourseAssignment()
-    else if (action.kind === 'review') focusCourseBlocker('review')
+    else if (action.kind === 'review') focusCourseBlocker(action.issue)
+    else if (action.kind === 'evaluation') document.querySelector('[aria-label="独立评价队列"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     else if (action.kind === 'progress') document.querySelector('.education-course-progress')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     else document.querySelector('.education-course-workbench')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   })
