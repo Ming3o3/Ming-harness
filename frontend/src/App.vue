@@ -1560,6 +1560,9 @@ function learningAssignmentJourney(assignment) {
   } else if (verified) {
     current = 'done'
     currentDetail = '教师已确认结果，可以进入后续复习。'
+  } else if (assignment.status === 'COMPLETED' && assignment.reviewStatus === 'NOT_REQUIRED') {
+    current = 'done'
+    currentDetail = '作业已完成，无需额外教师确认；可以进入后续复习。'
   } else if (assignment.status === 'OVERDUE') {
     current = 'evidence'
     currentDetail = '作业已逾期；提交已有成果，或等待教师重新安排。'
@@ -1571,8 +1574,8 @@ function learningAssignmentJourney(assignment) {
     { id: 'accept', label: '接受作业', state: current === 'accept' ? 'current' : (accepted ? 'ready' : 'pending') },
     { id: 'learn', label: retry ? '返工 / 重试' : '课程学习', state: current === 'learn' ? 'current' : (learningDone || evidenceDone ? 'ready' : 'pending') },
     { id: 'evidence', label: '提交证据', state: current === 'evidence' ? 'current' : (evidenceDone ? 'ready' : 'pending') },
-    { id: 'review', label: verified ? '教师已确认' : '教师确认', state: current === 'review' ? 'current' : (verified ? 'ready' : 'pending') },
-    { id: 'done', label: '完成 / 复习', state: current === 'done' ? 'current' : (verified ? 'ready' : 'pending') },
+    { id: 'review', label: assignment.reviewStatus === 'NOT_REQUIRED' ? '无需确认' : (verified ? '教师已确认' : '教师确认'), state: current === 'review' ? 'current' : (verified || assignment.reviewStatus === 'NOT_REQUIRED' ? 'ready' : 'pending') },
+    { id: 'done', label: '完成 / 复习', state: current === 'done' ? 'current' : (verified || assignment.reviewStatus === 'NOT_REQUIRED' ? 'ready' : 'pending') },
     ],
   }
 }
