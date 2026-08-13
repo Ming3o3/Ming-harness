@@ -424,6 +424,10 @@ const roleQuickStartAction = computed(() => {
 
 async function runRoleQuickStartAction() {
   const action = roleQuickStartAction.value
+  if (currentPrimaryRole.value === 'TEACHER') {
+    runTeacherNextAction()
+    return
+  }
   if (currentPrimaryRole.value === 'STUDENT') {
     if (action.kind === 'assignment') {
       await takeLearnerCourseNextAction()
