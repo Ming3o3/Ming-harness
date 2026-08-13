@@ -22,6 +22,9 @@ public interface RunRepository extends JpaRepository<Run, String> {
     Optional<Run> findByIdForAuditUpdate(@Param("runId") String runId);
     List<Run> findTop50ByOrderByCreatedAtDesc();
     List<Run> findTop50ByTenantIdOrderByCreatedAtDesc(String tenantId);
+    List<Run> findByTenantIdAndEducationModeTrueOrderByCreatedAtAsc(String tenantId);
+    List<Run> findByTenantIdAndUserIdAndEducationModeTrueOrderByCreatedAtAsc(
+            String tenantId, String userId);
     Page<Run> findByTenantId(String tenantId, Pageable pageable);
     Page<Run> findByTenantIdAndStatus(String tenantId, RunStatus status, Pageable pageable);
     @Query("select run.status from Run run where run.id = :runId")

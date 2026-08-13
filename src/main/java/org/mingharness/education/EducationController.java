@@ -34,6 +34,7 @@ import org.mingharness.education.api.LearningAssignmentEvaluationConsensusView;
 import org.mingharness.education.api.LearningAssignmentSubmissionRequest;
 import org.mingharness.education.api.LearningAssignmentSubmissionView;
 import org.mingharness.education.api.EducationMetricsView;
+import org.mingharness.education.api.EducationExperimentView;
 import org.mingharness.education.api.EducationCourseRequest;
 import org.mingharness.education.api.EducationCourseCompletionRequest;
 import org.mingharness.education.api.EducationCourseView;
@@ -85,6 +86,7 @@ public class EducationController {
     private final LearningTaskNotificationService notificationService;
     private final LearningAssignmentService assignmentService;
     private final EducationMetricsService metricsService;
+    private final EducationExperimentService experimentService;
     private final LearningAssignmentProgressService assignmentProgressService;
     private final LearningAssignmentNotificationService assignmentNotificationService;
     private final LearningAssignmentEvidenceService assignmentEvidenceService;
@@ -111,6 +113,7 @@ public class EducationController {
                                LearningTaskNotificationService notificationService,
                                LearningAssignmentService assignmentService,
                                EducationMetricsService metricsService,
+                               EducationExperimentService experimentService,
                                LearningAssignmentProgressService assignmentProgressService,
                                LearningAssignmentNotificationService assignmentNotificationService,
                                LearningAssignmentEvidenceService assignmentEvidenceService,
@@ -136,6 +139,7 @@ public class EducationController {
         this.notificationService = notificationService;
         this.assignmentService = assignmentService;
         this.metricsService = metricsService;
+        this.experimentService = experimentService;
         this.assignmentProgressService = assignmentProgressService;
         this.assignmentNotificationService = assignmentNotificationService;
         this.assignmentEvidenceService = assignmentEvidenceService;
@@ -338,6 +342,17 @@ public class EducationController {
         return identity.hasPermission("ops.read")
                 ? metricsService.summarizeForGovernance(identity.tenantId())
                 : metricsService.summarize(identity.tenantId(), identity.userId());
+    }
+
+    /**
+     * 为论文基线和消融实验提供统一的、按 Run 冻结策略聚合的结果出口。
+     * 管理员使用租户范围；学习者只看到自己的教育 Run，避免跨用户泄露测评事实。
+     */
+    @GetMapping("/experiments")
+    public EducationExperimentView experiments() {
+        HarnessIdentity identity = identity();
+        boolean tenantScope = identity.hasPermission("ops.read");
+        return experimentService.summarize(identity.tenantId(), identity.userId(), tenantScope);
     }
 
     @PostMapping("/courses")

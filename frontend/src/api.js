@@ -397,6 +397,7 @@ export const api = {
     return request(`/education/tasks${query}`)
   },
   getEducationMetrics: () => request('/education/metrics'),
+  getEducationExperiments: () => request('/education/experiments'),
   listEducationCourses: () => request('/education/courses'),
   createEducationCourse: (payload) => request('/education/courses', {
     method: 'POST',

@@ -562,6 +562,18 @@ h3 { margin: 0; font-size: 13px; }
 .education-operations-metrics > summary::before { content: '▸'; color: var(--cyan); font-size: 12px; }
 .education-operations-metrics[open] > summary::before { content: '▾'; }
 .education-operations-metrics > summary small { margin-left: auto; color: var(--muted); font: 8px "DM Mono", monospace; }
+.education-experiment-panel { overflow: hidden; }
+.education-experiment-overview { display: flex; flex-wrap: wrap; gap: 7px; }
+.education-experiment-overview span { border: 1px solid rgba(76,226,213,.16); border-radius: 7px; background: rgba(76,226,213,.035); color: var(--muted); padding: 7px 9px; font-size: 9px; }
+.education-experiment-overview strong { margin-right: 4px; color: var(--soft); font: 14px "DM Mono", monospace; }
+.education-experiment-table-wrap { overflow-x: auto; border: 1px solid rgba(76,226,213,.12); border-radius: 8px; }
+.education-experiment-table { width: 100%; min-width: 760px; border-collapse: collapse; color: var(--muted); font-size: 9px; }
+.education-experiment-table th { color: var(--muted); background: rgba(76,226,213,.035); font: 8px "DM Mono", monospace; letter-spacing: .02em; text-align: left; }
+.education-experiment-table th, .education-experiment-table td { border-bottom: 1px solid rgba(76,226,213,.1); padding: 8px 9px; white-space: nowrap; }
+.education-experiment-table tr:last-child td { border-bottom: 0; }
+.education-experiment-table td strong { display: block; color: var(--soft); font-size: 9px; }
+.education-experiment-table td small { display: block; margin-top: 3px; color: var(--muted); font: 8px "DM Mono", monospace; }
+.education-experiment-table tr.is-best td { background: rgba(76,226,213,.07); }
 .education-course-workbench { display: grid; gap: 10px; border: 1px solid rgba(141,124,255,.28); border-radius: 8px; background: rgba(141,124,255,.045); padding: 11px; }
 .education-course-heading { align-items: center; }
 .education-course-heading > div, .education-course-detail-heading > div, .education-course-progress .subsection-title > div { display: flex; align-items: baseline; gap: 8px; }

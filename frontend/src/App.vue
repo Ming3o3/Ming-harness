@@ -94,6 +94,7 @@ const learningAssignmentCourseFilter = ref('')
 const learningAssignmentLearnerFilter = ref('')
 const learningAssignmentIssueFilter = ref('')
 const educationMetrics = ref(null)
+const educationExperiment = ref(null)
 const learningTaskLoading = ref(false)
 const learningTaskStartingId = ref('')
 const learningTaskDeferringId = ref('')
@@ -2428,6 +2429,17 @@ const adminOperationsTrace = computed(() => [
     state: 'ready',
   },
 ])
+const educationExperimentStrategies = computed(() => educationExperiment.value?.strategies || [])
+const educationExperimentStrategyLabel = (strategy) => ({
+  FULL: '完整方法',
+  VECTOR_ONLY: '仅向量',
+  KEYWORD_ONLY: '仅关键词',
+  NO_LEARNER_STATE: '去学习者状态',
+}[strategy] || strategy || '未知策略')
+const educationExperimentBest = computed(() => educationExperimentStrategies.value
+  .filter((item) => Number(item.runCount || 0) > 0)
+  .slice()
+  .sort((left, right) => Number(right.averageMasteryGain || 0) - Number(left.averageMasteryGain || 0))[0] || null)
 const matchingEducationSourceCount = computed(() => {
   const profile = activeLearnerProfile.value
   if (!profile) return 0
@@ -4870,7 +4882,7 @@ async function ensureVisibleLearningAssignmentDetails() {
 
 async function loadEducationData() {
   try {
-    const [sources, profiles, goals, tasks, assignments, metrics, courses] = await Promise.all([
+    const [sources, profiles, goals, tasks, assignments, metrics, courses, experiment] = await Promise.all([
       api.listEducationSources(),
       api.listLearnerProfiles(),
       api.listLearningGoals(),
@@ -4878,6 +4890,7 @@ async function loadEducationData() {
       api.listLearningAssignments(),
       api.getEducationMetrics(),
       api.listEducationCourses(),
+      api.getEducationExperiments().catch(() => null),
     ])
     educationSources.value = sources
     learnerProfiles.value = profiles
@@ -4892,6 +4905,7 @@ async function loadEducationData() {
       chatEducation.learningAssignmentId = ''
     }
     educationMetrics.value = metrics
+    educationExperiment.value = experiment
     educationCourses.value = courses || []
     learningEvaluationQueue.value = await api.listLearningEvaluationQueue().catch(() => [])
     const progressEntries = await Promise.all(assignments.slice(0, 20).map(async (assignment) => {
@@ -9468,6 +9482,32 @@ onBeforeUnmount(() => {
                 <div><span>教师确认率</span><strong>{{ formatRate(educationMetrics.assignmentReviewVerificationRate) }}</strong><small>{{ educationMetrics.assignmentReviewVerified }} 份已确认</small></div>
                 <div><span>测评证据</span><strong>{{ educationMetrics.assessmentTotal }}</strong><small>形成性 {{ educationMetrics.formativeAssessmentTotal }} · 复习 {{ educationMetrics.reviewAssessmentTotal }}</small></div>
                 <div><span>保持度正确率</span><strong>{{ formatRate(educationMetrics.reviewAssessmentAccuracyRate) }}</strong><small>平均掌握度提升 {{ formatRate(educationMetrics.averageMasteryGain) }}</small></div>
+              </div>
+            </details>
+            <details v-if="educationExperiment" class="education-operations-metrics education-experiment-panel" open>
+              <summary><span>EI 检索实验诊断</span><small>基线 · 消融 · 学习效果</small></summary>
+              <p class="learning-task-help">结果按 Run 创建时冻结的检索策略聚合；每条证据来自实际步骤快照，测评和掌握度变化按 runId 对齐。</p>
+              <div class="education-experiment-overview">
+                <span><strong>{{ educationExperiment.totalRunCount }}</strong>教育 Run</span>
+                <span><strong>{{ educationExperiment.totalAssessmentCount }}</strong>条测评</span>
+                <span><strong>{{ educationExperimentBest ? educationExperimentStrategyLabel(educationExperimentBest.retrievalStrategy) : '—' }}</strong>当前掌握度增益最高</span>
+              </div>
+              <div v-if="educationExperimentStrategies.length" class="education-experiment-table-wrap">
+                <table class="education-experiment-table">
+                  <thead><tr><th>策略</th><th>样本</th><th>证据</th><th>缺口覆盖</th><th>冗余</th><th>正确率</th><th>掌握度增益</th><th>达标率</th></tr></thead>
+                  <tbody>
+                    <tr v-for="item in educationExperimentStrategies" :key="item.retrievalStrategy" :class="{ 'is-best': item === educationExperimentBest }">
+                      <td><strong>{{ educationExperimentStrategyLabel(item.retrievalStrategy) }}</strong><small>{{ item.retrievalStrategy }}</small></td>
+                      <td>{{ item.runCount }} <small>{{ item.successfulRunCount }} 成功</small></td>
+                      <td>{{ formatRate(item.evidenceCoverageRate) }} <small>均 {{ Number(item.averageEvidenceCount || 0).toFixed(1) }}</small></td>
+                      <td>{{ formatRate(item.prerequisiteGapCoverageRate) }}</td>
+                      <td>{{ formatRate(item.evidenceRedundancyRate) }}</td>
+                      <td>{{ formatRate(item.assessmentAccuracyRate) }} <small>{{ item.assessmentCount }} 次</small></td>
+                      <td>{{ formatRate(item.averageMasteryGain) }}</td>
+                      <td>{{ formatRate(item.targetReachRate) }} <small>{{ item.targetGoalCount }} 目标</small></td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </details>
             <section v-if="isAdminWorkspace" class="education-source-overview" aria-label="组织课程知识源概览">
