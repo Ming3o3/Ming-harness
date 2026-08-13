@@ -417,4 +417,35 @@ class ContextBuilderTests {
 
         verifyNoInteractions(graphService);
     }
+
+    @Test
+    void shouldKeepLearnerStateButDisableAdaptiveWeightsForStaticWeightAblation() {
+        KnowledgeDocumentRepository documentRepository = mock(KnowledgeDocumentRepository.class);
+        MemoryEntryRepository memoryRepository = mock(MemoryEntryRepository.class);
+        VectorContextRetriever vectorRetriever = mock(VectorContextRetriever.class);
+        EducationKnowledgeSourceRepository sourceRepository = mock(EducationKnowledgeSourceRepository.class);
+        EducationKnowledgeGraphService graphService = mock(EducationKnowledgeGraphService.class);
+        ContextBuilder builder = new ContextBuilder(documentRepository, memoryRepository, vectorRetriever,
+                new HarnessMetrics(new SimpleMeterRegistry()),
+                new ContextRetrievalProperties(20, 5, 1, 0.2), sourceRepository, graphService);
+        EducationKnowledgeSource source = new EducationKnowledgeSource("tenant-a", "doc-1",
+                "数学", "高中一年级", "人教A版", "函数", "前置回顾",
+                "函数", "集合", 3, "TEXTBOOK");
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "数学", "高中一年级", "人教A版", "函数", null, null,
+                java.util.Map.of("函数", 0.1, "集合", 0.1));
+        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 2_000, filter))
+                .thenReturn(new ContextResult("vector", List.of(new ContextEvidence(
+                        "doc-1", "前置回顾", "document:doc-1", "集合"))));
+        when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", "doc-1"))
+                .thenReturn(Optional.of(source));
+        when(graphService.resolve("tenant-a", filter)).thenReturn(new EducationDependencyGraph(
+                "函数", List.of(new EducationDependencyPath("集合", 1, 0.1, 0.9)), false));
+
+        ContextResult result = builder.build("tenant-a", "student", "函数", 2_000, filter,
+                EducationRetrievalStrategy.STATIC_WEIGHT);
+
+        assertEquals("STATIC", result.evidences().get(0).rankingBreakdown().weights().conditioning());
+        verify(graphService).resolve("tenant-a", filter);
+    }
 }

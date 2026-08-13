@@ -82,7 +82,7 @@ class EducationExperimentServiceTests {
         EducationExperimentView view = new EducationExperimentService(runs, assessments)
                 .summarize("tenant-a", "operator", true);
 
-        assertEquals(List.of("FULL", "VECTOR_ONLY", "KEYWORD_ONLY", "NO_LEARNER_STATE"),
+        assertEquals(List.of("FULL", "VECTOR_ONLY", "KEYWORD_ONLY", "NO_LEARNER_STATE", "STATIC_WEIGHT"),
                 view.strategies().stream().map(item -> item.retrievalStrategy()).toList());
         assertEquals(0, view.totalRunCount());
     }
