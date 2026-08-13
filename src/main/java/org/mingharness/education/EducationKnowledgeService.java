@@ -82,6 +82,12 @@ public class EducationKnowledgeService {
                 .toList();
     }
 
+    /** 管理员治理页只读查看同租户课程元数据；正文仍不从此接口暴露。 */
+    @Transactional(readOnly = true)
+    public List<EducationKnowledgeSource> listSourcesForGovernance(String tenantId) {
+        return sourceRepository.findByTenantIdAndDeletedAtIsNullOrderByUpdatedAtDesc(tenantId);
+    }
+
     /**
      * 判断当前学习者是否真的能检索到满足本次课程约束的资料。
      *

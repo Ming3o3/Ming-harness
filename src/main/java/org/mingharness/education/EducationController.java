@@ -153,7 +153,10 @@ public class EducationController {
     @GetMapping("/sources")
     public List<EducationSourceView> listSources() {
         HarnessIdentity identity = identity();
-        return knowledgeService.listSources(identity.tenantId(), identity.userId()).stream()
+        List<EducationKnowledgeSource> sources = identity.hasPermission("ops.read")
+                ? knowledgeService.listSourcesForGovernance(identity.tenantId())
+                : knowledgeService.listSources(identity.tenantId(), identity.userId());
+        return sources.stream()
                 .map(EducationSourceView::from).toList();
     }
 
