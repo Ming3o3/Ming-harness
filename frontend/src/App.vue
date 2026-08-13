@@ -9123,6 +9123,20 @@ onBeforeUnmount(() => {
               <div><span>保持度正确率</span><strong>{{ formatRate(educationMetrics.reviewAssessmentAccuracyRate) }}</strong><small>平均掌握度提升 {{ formatRate(educationMetrics.averageMasteryGain) }}</small></div>
               </div>
             </details>
+            <details v-if="isAdminWorkspace && educationMetrics" class="education-operations-metrics" open>
+              <summary><span>组织教育指标</span><small>课程规模 · 作业闭环 · 证据质量</small></summary>
+              <p class="learning-task-help">管理员查看同租户聚合结果；课程资料、名单、布置和教师复核仍由课程负责人操作。</p>
+              <div class="education-metrics" aria-label="管理员组织教育指标">
+                <div><span>课程知识源</span><strong>{{ educationSources.length }}</strong><small>已接入课程元数据</small></div>
+                <div><span>课程实例</span><strong>{{ educationCourses.length }}</strong><small>组织内课程</small></div>
+                <div><span>课程作业</span><strong>{{ educationMetrics.assignmentTotal }}</strong><small>教师发布的作业</small></div>
+                <div><span>作业完成率</span><strong>{{ formatRate(educationMetrics.assignmentCompletionRate) }}</strong><small>{{ educationMetrics.assignmentCompleted }} / {{ educationMetrics.assignmentTotal }}</small></div>
+                <div><span>提交物覆盖</span><strong>{{ formatRate(educationMetrics.assignmentSubmissionCoverageRate) }}</strong><small>{{ educationMetrics.assignmentSubmissionCovered }} / {{ educationMetrics.assignmentTotal }}</small></div>
+                <div><span>教师确认率</span><strong>{{ formatRate(educationMetrics.assignmentReviewVerificationRate) }}</strong><small>{{ educationMetrics.assignmentReviewVerified }} 份已确认</small></div>
+                <div><span>测评证据</span><strong>{{ educationMetrics.assessmentTotal }}</strong><small>形成性 {{ educationMetrics.formativeAssessmentTotal }} · 复习 {{ educationMetrics.reviewAssessmentTotal }}</small></div>
+                <div><span>保持度正确率</span><strong>{{ formatRate(educationMetrics.reviewAssessmentAccuracyRate) }}</strong><small>平均掌握度提升 {{ formatRate(educationMetrics.averageMasteryGain) }}</small></div>
+              </div>
+            </details>
             <details v-if="isLearnerOnlyRole" class="education-profile-setup" :open="!activeLearnerProfile">
               <summary><span><strong>学习者画像与目标</strong><small>{{ activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel} · ${activeLearnerProfile.curriculumVersion}` : '建立 Agent 可持续读取的学习上下文' }}</small></span><em>{{ activeLearnerProfile ? '已绑定' : '待建立' }}</em></summary>
               <div class="education-profile-setup-content">
