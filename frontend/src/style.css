@@ -1072,6 +1072,28 @@ h3 { margin: 0; font-size: 13px; }
 .chat-source-card > code { overflow: hidden; color: var(--muted); font: 8px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .chat-source-card > p { display: -webkit-box; overflow: hidden; margin: 0; color: var(--muted); font-size: 9px; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .chat-source-card > small { color: var(--muted); font: 8px "DM Mono", monospace; }
+.chat-source-explanation,
+.run-evidence-explanation { display: grid; gap: 2px; border-left: 2px solid rgba(76,226,213,.48); background: rgba(76,226,213,.05); padding: 5px 7px; }
+.chat-source-explanation span { color: var(--accent-light); font: 8px "DM Mono", monospace; text-transform: uppercase; }
+.chat-source-explanation strong,
+.run-evidence-explanation strong { color: var(--soft); font-size: 9px; font-weight: 500; line-height: 1.45; }
+.chat-source-explanation small,
+.run-evidence-explanation small { color: var(--muted); font: 8px "DM Mono", monospace; }
+.learning-dependency-card { display: grid; gap: 8px; margin-top: 10px; border: 1px solid rgba(153,174,218,.16); border-radius: 8px; background: rgba(17,24,42,.38); padding: 10px; }
+.learning-dependency-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.learning-dependency-heading > div { display: grid; gap: 3px; }
+.learning-dependency-heading span { color: var(--muted); font: 8px "DM Mono", monospace; text-transform: uppercase; }
+.learning-dependency-heading strong { color: var(--soft); font-size: 11px; }
+.learning-dependency-heading > small { color: var(--muted); font: 8px "DM Mono", monospace; }
+.learning-dependency-card > p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.learning-dependency-list { display: grid; gap: 4px; }
+.learning-dependency-row { display: grid; grid-template-columns: 25px minmax(0, 1fr) auto auto; align-items: center; gap: 6px; border-top: 1px solid rgba(153,174,218,.09); padding-top: 5px; }
+.learning-dependency-depth { color: var(--accent-light); font: 8px "DM Mono", monospace; }
+.learning-dependency-row strong { overflow: hidden; color: var(--soft); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.learning-dependency-mastery,
+.learning-dependency-gap { color: var(--muted); font: 8px "DM Mono", monospace; }
+.learning-dependency-gap.is-gap { color: var(--orange); }
+.learning-dependency-note { color: var(--muted); font: 8px "DM Mono", monospace; line-height: 1.45; }
 .chat-assessment-evidence { display: grid; gap: 7px; margin-top: 9px; border: 1px solid rgba(76,226,213,.18); border-radius: 8px; background: rgba(76,226,213,.035); padding: 9px 10px; text-align: left; }
 .chat-assessment-evidence-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .chat-assessment-evidence-heading > span { color: var(--cyan); font: 8px "DM Mono", monospace; letter-spacing: .09em; }

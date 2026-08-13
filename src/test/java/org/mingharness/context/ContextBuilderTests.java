@@ -7,6 +7,9 @@ import org.mingharness.context.api.ContextEvidence;
 import org.mingharness.context.api.ContextResult;
 import org.mingharness.education.EducationKnowledgeSource;
 import org.mingharness.education.EducationKnowledgeSourceRepository;
+import org.mingharness.education.EducationDependencyGraph;
+import org.mingharness.education.EducationDependencyPath;
+import org.mingharness.education.EducationKnowledgeGraphService;
 import org.mingharness.education.EducationRetrievalFilter;
 import org.mingharness.observability.HarnessMetrics;
 
@@ -282,5 +285,53 @@ class ContextBuilderTests {
 
         assertEquals(broaderGap.getId(), result.evidences().get(0).documentId());
         assertEquals(narrowerGap.getId(), result.evidences().get(1).documentId());
+    }
+
+    @Test
+    void shouldExplainOnlyPrerequisiteGapsCoveredByEachSource() {
+        KnowledgeDocumentRepository documentRepository = mock(KnowledgeDocumentRepository.class);
+        MemoryEntryRepository memoryRepository = mock(MemoryEntryRepository.class);
+        VectorContextRetriever vectorRetriever = mock(VectorContextRetriever.class);
+        EducationKnowledgeSourceRepository sourceRepository = mock(EducationKnowledgeSourceRepository.class);
+        EducationKnowledgeGraphService graphService = mock(EducationKnowledgeGraphService.class);
+        HarnessMetrics metrics = new HarnessMetrics(new SimpleMeterRegistry());
+        ContextBuilder builder = new ContextBuilder(documentRepository, memoryRepository, vectorRetriever,
+                metrics, new ContextRetrievalProperties(20, 5, 1, 0.2), sourceRepository, graphService);
+
+        KnowledgeDocument targetOnly = new KnowledgeDocument("tenant-a", "teacher", "目标讲解",
+                "二次函数定义", "INTERNAL", "student");
+        KnowledgeDocument prerequisite = new KnowledgeDocument("tenant-a", "teacher", "定义域补强",
+                "定义域例题", "INTERNAL", "student");
+        EducationKnowledgeSource targetSource = new EducationKnowledgeSource("tenant-a", targetOnly.getId(),
+                "数学", "高中一年级", "人教A版", "函数", "目标讲解",
+                "二次函数", "函数", 3, "TEXTBOOK");
+        EducationKnowledgeSource prerequisiteSource = new EducationKnowledgeSource("tenant-a", prerequisite.getId(),
+                "数学", "高中一年级", "人教A版", "函数", "定义域补强",
+                "定义域", "集合", 3, "TEXTBOOK");
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "数学", "高中一年级", "人教A版", null, null, null,
+                Map.of("集合", 0.1, "定义域", 0.1));
+        EducationDependencyGraph graph = new EducationDependencyGraph("二次函数", List.of(
+                new EducationDependencyPath("集合", 2, 0.1, 0.9),
+                new EducationDependencyPath("定义域", 1, 0.1, 0.9)), false);
+        when(graphService.resolve("tenant-a", filter)).thenReturn(graph);
+        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 4_000, filter))
+                .thenReturn(new ContextResult("vector-context", List.of(
+                        new ContextEvidence(targetOnly.getId(), "目标讲解", "document:" + targetOnly.getId(), "目标"),
+                        new ContextEvidence(prerequisite.getId(), "定义域补强", "document:" + prerequisite.getId(), "前置"))));
+        when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", targetOnly.getId()))
+                .thenReturn(Optional.of(targetSource));
+        when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", prerequisite.getId()))
+                .thenReturn(Optional.of(prerequisiteSource));
+
+        ContextResult result = builder.build("tenant-a", "student", "函数", 4_000, filter);
+
+        ContextEvidence prerequisiteEvidence = result.evidences().stream()
+                .filter(item -> item.documentId().equals(prerequisite.getId())).findFirst().orElseThrow();
+        ContextEvidence targetEvidence = result.evidences().stream()
+                .filter(item -> item.documentId().equals(targetOnly.getId())).findFirst().orElseThrow();
+        assertEquals(List.of("定义域"), prerequisiteEvidence.prerequisiteGaps());
+        assertTrue(targetEvidence.prerequisiteGaps().isEmpty());
+        assertTrue(prerequisiteEvidence.rankingBreakdown().graphCoverage() > 0.0);
     }
 }

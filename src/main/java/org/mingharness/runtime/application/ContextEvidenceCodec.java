@@ -1,6 +1,7 @@
 package org.mingharness.runtime.application;
 
 import org.mingharness.context.api.ContextEvidence;
+import org.mingharness.context.api.EducationRankingBreakdown;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -25,7 +26,7 @@ final class ContextEvidenceCodec {
                             safe(evidence.documentId()), safe(evidence.title()),
                             safe(evidence.citation()), safe(evidence.excerpt()),
                             evidence.retrievalScore(), safe(evidence.rankingReason()),
-                            evidence.prerequisiteGaps()))
+                            evidence.prerequisiteGaps(), evidence.rankingBreakdown()))
                     .toList());
         } catch (JacksonException exception) {
             return "[]";
@@ -44,7 +45,7 @@ final class ContextEvidenceCodec {
                         text(item, "documentId"), text(item, "title"),
                         text(item, "citation"), text(item, "excerpt"),
                         number(item, "retrievalScore"), text(item, "rankingReason"),
-                        strings(item, "prerequisiteGaps")));
+                        strings(item, "prerequisiteGaps"), rankingBreakdown(item)));
             }
             return List.copyOf(result);
         } catch (JacksonException exception) {
@@ -72,6 +73,16 @@ final class ContextEvidenceCodec {
             }
         }
         return List.copyOf(result);
+    }
+
+    private static EducationRankingBreakdown rankingBreakdown(JsonNode node) {
+        JsonNode value = node.get("rankingBreakdown");
+        if (value == null || !value.isObject()) return EducationRankingBreakdown.empty();
+        return new EducationRankingBreakdown(
+                number(value, "retrievalRelevance"), number(value, "targetConceptMatch"),
+                number(value, "prerequisiteGap"), number(value, "graphCoverage"),
+                number(value, "difficultyFit"), number(value, "marginalCoverageScore"),
+                number(value, "redundancyPenalty"), number(value, "finalScore"));
     }
 
     private static String safe(String value) {

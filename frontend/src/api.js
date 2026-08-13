@@ -345,6 +345,16 @@ export const api = {
   createMemory: (payload) => request('/context/memories', { method: 'POST', body: JSON.stringify(payload) }),
   deleteMemory: (memoryId) => request(`/context/memories/${encodeURIComponent(memoryId)}`, { method: 'DELETE' }),
   listEducationSources: () => request('/education/sources'),
+  getEducationDependencyGraph: ({ subject, gradeLevel, curriculumVersion, conceptKey, profileId } = {}) => {
+    const params = new URLSearchParams({
+      subject: subject || '',
+      gradeLevel: gradeLevel || '',
+      curriculumVersion: curriculumVersion || '',
+      conceptKey: conceptKey || '',
+    })
+    if (profileId) params.set('profileId', profileId)
+    return request(`/education/dependency-graph?${params.toString()}`)
+  },
   saveEducationSource: (payload) => request('/education/sources', {
     method: 'POST',
     body: JSON.stringify(payload),

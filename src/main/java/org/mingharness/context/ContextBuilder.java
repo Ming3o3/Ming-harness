@@ -3,6 +3,7 @@ package org.mingharness.context;
 import org.mingharness.config.ContextRetrievalProperties;
 import org.mingharness.context.api.ContextEvidence;
 import org.mingharness.context.api.ContextResult;
+import org.mingharness.context.api.EducationRankingBreakdown;
 import org.mingharness.education.EducationKnowledgeSourceRepository;
 import org.mingharness.education.EducationKnowledgeSource;
 import org.mingharness.education.EducationDependencyGraph;
@@ -19,9 +20,11 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /** 统一构建可引用上下文，先做权限过滤，再做轻量关键词召回和预算裁剪。 */
@@ -110,8 +113,17 @@ public class ContextBuilder {
             EducationDependencyGraph dependencyGraph = knowledgeGraphService == null
                     ? EducationDependencyGraph.empty(educationFilter.conceptKeyOrNull())
                     : knowledgeGraphService.resolve(tenantId, educationFilter);
-            vectorResult = rerankEducation(vectorResult, tenantId, educationFilter, dependencyGraph, maxChars);
-            keywordResult = rerankEducation(keywordResult, tenantId, educationFilter, dependencyGraph, maxChars);
+            ContextResult merged = vectorResult.isEmpty()
+                    ? keywordResult
+                    : keywordResult.isEmpty() ? vectorResult : merge(vectorResult, keywordResult, maxChars);
+            ContextResult selected = selectEducationEvidence(merged, tenantId, educationFilter,
+                    dependencyGraph, maxChars);
+            if (vectorResult.isEmpty() && !keywordResult.isEmpty()) metrics.contextFallback();
+            if (!vectorResult.isEmpty() && !keywordResult.isEmpty()) {
+                metrics.contextKeywordSupplements(Math.max(0,
+                        selected.evidences().size() - vectorResult.evidences().size()));
+            }
+            return selected;
         }
         if (vectorResult.isEmpty()) {
             if (!keywordResult.isEmpty()) metrics.contextFallback();
@@ -175,7 +187,8 @@ public class ContextBuilder {
             }
             context.append(block);
             evidences.add(new ContextEvidence(candidate.id(), candidate.title(),
-                    candidate.citation(), excerpt));
+                    candidate.citation(), excerpt, keywordRelevance(candidate.score(), terms.length),
+                    "", List.of()));
         }
         return new ContextResult(context.toString(), List.copyOf(evidences));
     }
@@ -205,94 +218,150 @@ public class ContextBuilder {
     }
 
     /**
-     * 教育候选的二次排序：硬约束已经在召回阶段执行，这里把目标知识点、前置知识缺口
-     * 和学习者掌握度转成可解释的软分数，避免高相似度但难度不合适的材料占据上下文。
+     * 在统一的上下文预算中做教育证据集合选择。
+     *
+     * <p>候选证据不再只按静态分数排序：每次选择都计算其对尚未覆盖的前置缺口的
+     * 边际贡献，并对重复覆盖施加惩罚。这使“知识依赖图 + 掌握度”真正影响证据集合，
+     * 而不是只在单文档分数上追加一个规则项。</p>
      */
-    private ContextResult rerankEducation(ContextResult result, String tenantId,
-                                          EducationRetrievalFilter filter,
-                                          EducationDependencyGraph dependencyGraph,
-                                          int maxChars) {
+    private ContextResult selectEducationEvidence(ContextResult result, String tenantId,
+                                                  EducationRetrievalFilter filter,
+                                                  EducationDependencyGraph dependencyGraph,
+                                                  int maxChars) {
         if (result == null || result.isEmpty()) return result;
-        // 无法确认来源课程元数据时宁可不给上下文，也不能退回通用知识库结果。
         if (educationSourceRepository == null) return new ContextResult("", List.of());
-        List<RankedEducationEvidence> ranked = result.evidences().stream()
-                .map(evidence -> new RankedEducationEvidence(evidence,
-                        educationScore(tenantId, evidence, filter, dependencyGraph)))
-                .filter(item -> Double.isFinite(item.score()))
-                .sorted(Comparator.comparingDouble(RankedEducationEvidence::score).reversed())
+
+        List<RankedEducationEvidence> candidates = result.evidences().stream()
+                .map(evidence -> {
+                    EducationRankingBreakdown breakdown = educationRanking(tenantId, evidence,
+                            filter, dependencyGraph);
+                    return breakdown == null ? null : new RankedEducationEvidence(evidence, breakdown,
+                            coveredGapSet(tenantId, evidence, filter, dependencyGraph));
+                })
+                .filter(Objects::nonNull)
                 .toList();
-        List<ContextEvidence> evidences = new ArrayList<>();
+
+        Set<String> covered = new LinkedHashSet<>();
+        List<ContextEvidence> selected = new ArrayList<>();
         StringBuilder text = new StringBuilder();
-        for (RankedEducationEvidence rankedEvidence : ranked) {
-            ContextEvidence evidence = rankedEvidence.evidence();
-            ContextEvidence explained = explainEducationEvidence(evidence, rankedEvidence.score(),
-                    dependencyGraph);
+        Set<String> evidenceKeys = new HashSet<>();
+        while (!candidates.isEmpty()) {
+            RankedEducationEvidence best = candidates.stream()
+                    .map(candidate -> candidate.withSelection(covered))
+                    .max(Comparator.comparingDouble(RankedEducationEvidence::selectionScore)
+                            .thenComparingDouble(candidate -> candidate.breakdown().baseScore()))
+                    .orElse(null);
+            if (best == null || best.selectionScore() <= 0.0) break;
+            candidates = candidates.stream()
+                    .filter(candidate -> !candidate.evidence().citation().equals(best.evidence().citation()))
+                    .toList();
+            String sourceKey = evidenceKey(best.evidence().citation());
+            if (!evidenceKeys.add(sourceKey)) continue;
+            ContextEvidence explained = explainEducationEvidence(best.evidence(), best.selectedBreakdown(),
+                    best.gaps());
             String block = contextBlock(explained.title(), explained.excerpt());
             if (text.length() + block.length() > maxChars) continue;
             text.append(block);
-            evidences.add(explained);
+            selected.add(explained);
+            covered.addAll(best.gaps());
         }
-        return new ContextResult(text.toString(), List.copyOf(evidences));
+        return new ContextResult(text.toString(), List.copyOf(selected));
     }
 
-    private double educationScore(String tenantId, ContextEvidence evidence,
-                                  EducationRetrievalFilter filter,
-                                  EducationDependencyGraph dependencyGraph) {
+    private EducationRankingBreakdown educationRanking(String tenantId, ContextEvidence evidence,
+                                                        EducationRetrievalFilter filter,
+                                                        EducationDependencyGraph dependencyGraph) {
         if (evidence == null || evidence.citation() == null
-                || !evidence.citation().startsWith("document:")) return Double.NEGATIVE_INFINITY;
+                || !evidence.citation().startsWith("document:")) return null;
         String documentId = evidence.documentId();
-        if (documentId == null || documentId.isBlank()) return Double.NEGATIVE_INFINITY;
+        if (documentId == null || documentId.isBlank()) return null;
         EducationKnowledgeSource source = educationSourceRepository
                 .findByTenantIdAndDocumentIdAndDeletedAtIsNull(tenantId, documentId)
                 .orElse(null);
-        if (source == null || !filter.matches(source)) return Double.NEGATIVE_INFINITY;
+        if (source == null || !filter.matches(source)) return null;
 
-        double score = 0.0;
-        if (filter.conceptKeyOrNull() != null
-                && containsConcept(source.getConceptTags(), filter.conceptKeyOrNull())) {
-            score += 0.45;
-        }
+        double retrievalRelevance = evidence.retrievalScore() > 0.0
+                ? Math.min(1.0, evidence.retrievalScore()) : 0.5;
+        double targetConceptMatch = filter.conceptKeyOrNull() != null
+                && containsConcept(source.getConceptTags(), filter.conceptKeyOrNull()) ? 1.0 : 0.0;
         String[] prerequisites = splitConcepts(source.getPrerequisiteConcepts());
-        if (prerequisites.length > 0) {
-            double prerequisiteGap = 0.0;
-            for (String prerequisite : prerequisites) {
-                prerequisiteGap += 1.0 - filter.masteryFor(prerequisite);
-            }
-            prerequisiteGap /= prerequisites.length;
-            score += 0.25 * prerequisiteGap;
-        }
-        if (dependencyGraph != null && !dependencyGraph.prerequisites().isEmpty()) {
-            double graphGap = dependencyGraph.prerequisites().stream()
-                    .mapToDouble(EducationDependencyPath::deficit)
-                    .average().orElse(0.0);
-            double sourceCoverage = java.util.Arrays.stream(prerequisites)
-                    .map(this::normalizeConcept)
-                    .filter(dependencyGraph.byConcept()::containsKey)
-                    .count() / (double) Math.max(1, dependencyGraph.prerequisites().size());
-            score += 0.15 * graphGap * Math.min(1.0, sourceCoverage);
-        }
+        double prerequisiteGap = java.util.Arrays.stream(prerequisites)
+                .mapToDouble(prerequisite -> 1.0 - filter.masteryFor(prerequisite))
+                .average().orElse(0.0);
+        Set<String> graphGaps = graphGapSet(dependencyGraph);
+        Set<String> sourceConcepts = sourceConceptSet(source);
+        double graphCoverage = graphGaps.isEmpty() ? 0.0
+                : weightedCoverage(graphGaps, sourceConcepts, dependencyGraph);
         double targetMastery = filter.masteryFor(filter.conceptKeyOrNull());
         double preferredDifficulty = targetMastery < 0.35 ? 2.0
                 : targetMastery < 0.70 ? 3.0 : 4.0;
-        score += 0.30 * (1.0 - Math.min(1.0,
-                Math.abs(source.getDifficultyLevel() - preferredDifficulty) / 4.0));
-        return score;
+        double difficultyFit = 1.0 - Math.min(1.0,
+                Math.abs(source.getDifficultyLevel() - preferredDifficulty) / 4.0);
+        return new EducationRankingBreakdown(retrievalRelevance, targetConceptMatch,
+                prerequisiteGap, graphCoverage, difficultyFit, 0.0, 0.0, 0.0);
     }
 
-    private ContextEvidence explainEducationEvidence(ContextEvidence evidence, double score,
-                                                     EducationDependencyGraph graph) {
-        if (evidence == null) return null;
-        // 来源元数据已在评分阶段校验；这里不依赖跨租户查询，只从 evidence 的上下文和图快照
-        // 生成稳定解释，避免把内部数据库字段暴露给前端。
-        List<String> gaps = graph == null ? List.of() : graph.prerequisites().stream()
+    private Set<String> coveredGapSet(String tenantId, ContextEvidence evidence,
+                                      EducationRetrievalFilter filter,
+                                      EducationDependencyGraph dependencyGraph) {
+        if (educationSourceRepository == null || evidence == null) return Set.of();
+        EducationKnowledgeSource source = educationSourceRepository
+                .findByTenantIdAndDocumentIdAndDeletedAtIsNull(tenantId, evidence.documentId())
+                .orElse(null);
+        if (source == null || !filter.matches(source)) return Set.of();
+        Set<String> gaps = graphGapSet(dependencyGraph);
+        Set<String> concepts = sourceConceptSet(source);
+        Set<String> result = new LinkedHashSet<>(gaps);
+        result.retainAll(concepts);
+        return result;
+    }
+
+    private Set<String> graphGapSet(EducationDependencyGraph graph) {
+        if (graph == null) return Set.of();
+        return graph.prerequisites().stream()
                 .filter(path -> path.deficit() >= 0.5)
-                .map(EducationDependencyPath::conceptKey)
-                .toList();
-        String reason = gaps.isEmpty()
-                ? "匹配课程约束、目标知识点与当前掌握度"
-                : "匹配课程约束，并优先覆盖前置知识缺口：" + String.join("、", gaps);
+                .map(path -> normalizeConcept(path.conceptKey()))
+                .filter(value -> !value.isBlank())
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private Set<String> sourceConceptSet(EducationKnowledgeSource source) {
+        Set<String> result = new LinkedHashSet<>();
+        // conceptTags 表示该资料实际覆盖的知识点；prerequisiteConcepts 只表示学习该资料
+        // 前需要具备什么，不能把“依赖”误报为“已经覆盖”，否则解释会高估缺口覆盖率。
+        java.util.Arrays.stream(splitConcepts(source.getConceptTags()))
+                .map(this::normalizeConcept).filter(value -> !value.isBlank()).forEach(result::add);
+        return result;
+    }
+
+    private double weightedCoverage(Set<String> graphGaps, Set<String> sourceConcepts,
+                                    EducationDependencyGraph graph) {
+        if (graphGaps.isEmpty()) return 0.0;
+        double total = 0.0;
+        double covered = 0.0;
+        for (EducationDependencyPath path : graph.prerequisites()) {
+            String concept = normalizeConcept(path.conceptKey());
+            if (!graphGaps.contains(concept)) continue;
+            double weight = Math.max(0.0, path.deficit());
+            total += weight;
+            if (sourceConcepts.contains(concept)) covered += weight;
+        }
+        return total <= 0.0 ? 0.0 : Math.min(1.0, covered / total);
+    }
+
+    private ContextEvidence explainEducationEvidence(ContextEvidence evidence,
+                                                     EducationRankingBreakdown breakdown,
+                                                     Set<String> gaps) {
+        if (evidence == null) return null;
+        List<String> displayGaps = gaps == null ? List.of() : gaps.stream().toList();
+        List<String> reasons = new ArrayList<>();
+        reasons.add(String.format(Locale.ROOT, "相关性 %.2f", breakdown.retrievalRelevance()));
+        if (breakdown.targetConceptMatch() >= 0.5) reasons.add("匹配目标知识点");
+        if (breakdown.difficultyFit() >= 0.75) reasons.add("难度适配");
+        if (!displayGaps.isEmpty()) reasons.add("覆盖前置缺口：" + String.join("、", displayGaps));
+        String reason = "满足课程硬约束" + (reasons.isEmpty() ? "" : "；" + String.join("；", reasons));
         return new ContextEvidence(evidence.documentId(), evidence.title(), evidence.citation(),
-                evidence.excerpt(), score, reason, gaps);
+                evidence.excerpt(), breakdown.finalScore(), reason, displayGaps, breakdown);
     }
 
     private String normalizeConcept(String value) {
@@ -453,6 +522,11 @@ public class ContextBuilder {
         return score;
     }
 
+    private double keywordRelevance(int score, int termCount) {
+        if (score <= 0 || termCount <= 0) return 0.0;
+        return Math.min(1.0, score / (double) termCount);
+    }
+
     private String excerpt(String content, String query, String[] terms, int maxLength) {
         String normalized = content == null ? "" : content;
         String searchable = normalized.toLowerCase(Locale.ROOT);
@@ -498,6 +572,32 @@ public class ContextBuilder {
                                   int vectorRank, int sourceRank, int order) {
     }
 
-    private record RankedEducationEvidence(ContextEvidence evidence, double score) {
+    private record RankedEducationEvidence(ContextEvidence evidence,
+                                           EducationRankingBreakdown breakdown,
+                                           Set<String> gaps,
+                                           EducationRankingBreakdown selectedBreakdown,
+                                           double selectionScore) {
+
+        private RankedEducationEvidence(ContextEvidence evidence,
+                                        EducationRankingBreakdown breakdown,
+                                        Set<String> gaps) {
+            this(evidence, breakdown, Set.copyOf(gaps), breakdown, breakdown.baseScore());
+        }
+
+        private RankedEducationEvidence withSelection(Set<String> alreadyCovered) {
+            Set<String> marginalGaps = new LinkedHashSet<>(gaps);
+            marginalGaps.removeAll(alreadyCovered);
+            double marginalCoverage = marginalGaps.stream()
+                    .mapToDouble(ignored -> 1.0).sum() / Math.max(1, gaps.size());
+            double redundancy = gaps.isEmpty() ? 1.0
+                    : 1.0 - (marginalGaps.size() / (double) gaps.size());
+            // 基础相关性保留主体，缺口边际覆盖决定同分候选的优先级，冗余只做轻惩罚。
+            double score = 0.70 * breakdown.baseScore()
+                    + 0.25 * marginalCoverage
+                    - 0.05 * redundancy;
+            EducationRankingBreakdown selected = breakdown.withSelection(marginalCoverage,
+                    redundancy, score);
+            return new RankedEducationEvidence(evidence, breakdown, gaps, selected, score);
+        }
     }
 }

@@ -45,6 +45,7 @@ import org.mingharness.education.api.EducationCourseProgressView;
 import org.mingharness.education.api.EducationCourseResultView;
 import org.mingharness.education.api.ManualAssessmentSubmissionRequest;
 import org.mingharness.education.api.MasteryUpdateRequest;
+import org.mingharness.education.api.EducationDependencyGraphView;
 import org.mingharness.security.HarnessIdentity;
 import org.mingharness.security.HarnessIdentityContext;
 import org.mingharness.context.KnowledgeDocument;
@@ -98,6 +99,7 @@ public class EducationController {
     private final EducationCourseResultService courseResultService;
     private final LearningAssignmentIndependentEvaluationService independentEvaluationService;
     private final KnowledgeDocumentRepository documentRepository;
+    private final EducationKnowledgeGraphService knowledgeGraphService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
@@ -122,7 +124,8 @@ public class EducationController {
                                LearningAssignmentSubmissionService submissionService,
                                EducationCourseResultService courseResultService,
                                LearningAssignmentIndependentEvaluationService independentEvaluationService,
-                               KnowledgeDocumentRepository documentRepository) {
+                               KnowledgeDocumentRepository documentRepository,
+                               EducationKnowledgeGraphService knowledgeGraphService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
@@ -147,6 +150,7 @@ public class EducationController {
         this.courseResultService = courseResultService;
         this.independentEvaluationService = independentEvaluationService;
         this.documentRepository = documentRepository;
+        this.knowledgeGraphService = knowledgeGraphService;
     }
 
     @PostMapping("/sources")
@@ -172,6 +176,34 @@ public class EducationController {
         return sources.stream()
                 .map(source -> EducationSourceView.from(source, documentsById.get(source.getDocumentId())))
                 .toList();
+    }
+
+    /** 返回当前课程知识点的传递前置图与学习者掌握度缺口。 */
+    @GetMapping("/dependency-graph")
+    public EducationDependencyGraphView dependencyGraph(
+            @RequestParam String subject,
+            @RequestParam String gradeLevel,
+            @RequestParam String curriculumVersion,
+            @RequestParam String conceptKey,
+            @RequestParam(required = false) String profileId) {
+        HarnessIdentity identity = identity();
+        LearnerProfile profile = learnerService.profileFor(identity.tenantId(), identity.userId(), profileId)
+                .orElse(null);
+        if (profile != null && (!same(profile.getSubject(), subject)
+                || !same(profile.getGradeLevel(), gradeLevel)
+                || !same(profile.getCurriculumVersion(), curriculumVersion))) {
+            throw new org.mingharness.common.BusinessException(HttpStatus.BAD_REQUEST,
+                    "EDUCATION_CONTEXT_PROFILE_MISMATCH", "课程上下文必须与学习者画像一致");
+        }
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                subject, gradeLevel, curriculumVersion, conceptKey, null, null,
+                profile == null ? Map.of() : learnerService.masteryScores(identity.tenantId(), identity.userId(),
+                        profile.getId()));
+        return EducationDependencyGraphView.from(knowledgeGraphService.resolve(identity.tenantId(), filter));
+    }
+
+    private boolean same(String left, String right) {
+        return left != null && right != null && left.trim().equalsIgnoreCase(right.trim());
     }
 
     @DeleteMapping("/sources/{documentId}")

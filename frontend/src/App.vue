@@ -47,6 +47,9 @@ const auditEvents = ref([])
 const documents = ref([])
 const memories = ref([])
 const educationSources = ref([])
+const educationDependencyGraph = ref(null)
+const educationDependencyGraphLoading = ref(false)
+let educationDependencyGraphRequestId = 0
 const learnerProfiles = ref([])
 const activeLearnerProfile = ref(null)
 const learnerMastery = ref([])
@@ -3048,6 +3051,12 @@ watch(noticeMessage, (message) => {
 
 watch(chatEducation, persistChatEducation, { deep: true })
 
+watch(
+  [activeLearnerProfile, activeLearningGoal, () => chatEducation.conceptKey],
+  () => { void loadEducationDependencyGraph() },
+  { deep: true },
+)
+
 watch(() => selectedRun.value?.run?.id, () => {
   manualAssessmentForm.stepId = manualAssessmentSteps.value.at(-1)?.id || ''
   manualAssessmentForm.correct = ''
@@ -3434,6 +3443,38 @@ function cacheRunContextEvidence(detail) {
   }
 }
 
+async function loadEducationDependencyGraph() {
+  const requestId = ++educationDependencyGraphRequestId
+  const profile = activeLearnerProfile.value
+  const concept = activeLearningGoal.value?.conceptKey || chatEducation.conceptKey || ''
+  if (!profile || !concept) {
+    educationDependencyGraph.value = null
+    educationDependencyGraphLoading.value = false
+    return
+  }
+  educationDependencyGraphLoading.value = true
+  try {
+    const graph = await api.getEducationDependencyGraph({
+      subject: profile.subject,
+      gradeLevel: profile.gradeLevel,
+      curriculumVersion: profile.curriculumVersion,
+      conceptKey: concept,
+      profileId: profile.id,
+    })
+    if (requestId === educationDependencyGraphRequestId) {
+      educationDependencyGraph.value = graph
+    }
+  } catch {
+    if (requestId === educationDependencyGraphRequestId) {
+      educationDependencyGraph.value = null
+    }
+  } finally {
+    if (requestId === educationDependencyGraphRequestId) {
+      educationDependencyGraphLoading.value = false
+    }
+  }
+}
+
 function mergeChatSourceProvenance(source, provenance, evidence = null) {
   const current = source.provenance || ''
   source.provenance = !current || current === provenance || current === 'BOTH' ? (current || provenance) : 'BOTH'
@@ -3445,6 +3486,9 @@ function mergeChatSourceProvenance(source, provenance, evidence = null) {
     source.excerpt = evidence.excerpt || source.excerpt || ''
     source.citation = evidence.citation || source.citation || ''
     source.stepName = evidence.stepName || source.stepName || ''
+    source.retrievalScore = evidence.retrievalScore ?? source.retrievalScore ?? 0
+    source.rankingReason = evidence.rankingReason || source.rankingReason || ''
+    source.prerequisiteGaps = evidence.prerequisiteGaps || source.prerequisiteGaps || []
   }
   return source
 }
@@ -8272,6 +8316,10 @@ onBeforeUnmount(() => {
                           </div>
                           <code v-if="source.citation">{{ source.citation }}</code>
                           <p v-if="source.excerpt">{{ source.excerpt }}</p>
+                          <div v-if="source.runtimeEvidence && (source.rankingReason || source.prerequisiteGaps?.length)" class="chat-source-explanation">
+                            <span>选择理由</span><strong>{{ source.rankingReason || '已满足当前课程约束' }}</strong>
+                            <small v-if="source.prerequisiteGaps?.length">前置缺口：{{ source.prerequisiteGaps.join('、') }}</small>
+                          </div>
                           <small v-if="source.runtimeEvidence">Agent 已从该来源读取本轮摘录{{ source.stepName ? ` · ${source.stepName}` : '' }}</small>
                           <small v-else-if="source.updatedAt">更新于 {{ formatDate(source.updatedAt) }}</small>
                         </article>
@@ -9033,6 +9081,10 @@ onBeforeUnmount(() => {
                       <article v-for="evidence in step.contextEvidence" :key="`${step.id}-${evidence.citation}`" class="run-evidence-row">
                         <div><strong>{{ evidence.title || '未命名来源' }}</strong><code>{{ evidence.citation }}</code></div>
                         <p>{{ evidence.excerpt }}</p>
+                        <div v-if="evidence.rankingReason || evidence.prerequisiteGaps?.length" class="run-evidence-explanation">
+                          <strong>{{ evidence.rankingReason || '已满足当前课程约束' }}</strong>
+                          <small v-if="evidence.prerequisiteGaps?.length">前置缺口：{{ evidence.prerequisiteGaps.join('、') }}</small>
+                        </div>
                       </article>
                     </details>
                     <template v-if="decodeWorkspaceExec(step)">
@@ -9746,6 +9798,24 @@ onBeforeUnmount(() => {
                 <small>掌握度 {{ Math.round(learningRecommendation.currentMastery * 100) }}% / 目标 {{ Math.round(learningRecommendation.targetMastery * 100) }}% · 测评 {{ learningRecommendation.attemptCount }} 次 · 正确 {{ learningRecommendation.correctAttemptCount }} 次</small>
                 <small v-if="learningRecommendation.reviewPlanId">保持度复习 {{ learningRecommendation.reviewCount }} 次 · 成功 {{ learningRecommendation.successfulReviewCount }} 次 · 下次 {{ formatDate(learningRecommendation.nextReviewAt) }}</small>
                 <details v-if="learningGoalAssessments.length" class="learning-assessment-history"><summary>查看测评历史（{{ learningGoalAssessments.length }}）</summary><div v-for="attempt in learningGoalAssessments.slice().reverse().slice(0, 5)" :key="attempt.id"><span :class="attempt.correct ? 'assessment-correct' : 'assessment-wrong'">{{ attempt.correct ? '正确' : '错误' }}</span><span>{{ Math.round(attempt.masteryBefore * 100) }}% → {{ Math.round(attempt.masteryAfter * 100) }}%</span><small>{{ attempt.assessmentType === 'REVIEW' ? '保持度复习' : (attempt.evidenceSource === 'MANUAL_REVIEW' ? '人工复核' : 'Agent观察') }} · {{ formatDate(attempt.createdAt) }}</small></div></details>
+              </div>
+              <div v-if="activeLearningGoal" class="learning-dependency-card">
+                <div class="learning-dependency-heading">
+                  <div><span>知识依赖图</span><strong>{{ educationDependencyGraph?.targetConcept || activeLearningGoal.conceptKey }}</strong></div>
+                  <small v-if="educationDependencyGraphLoading">计算中…</small>
+                  <small v-else-if="educationDependencyGraph?.truncated">已按安全上限截断</small>
+                  <small v-else>{{ educationDependencyGraph?.prerequisites?.length || 0 }} 个前置节点</small>
+                </div>
+                <p v-if="!educationDependencyGraph?.prerequisites?.length">当前目标还没有维护可追踪的前置知识关系。</p>
+                <div v-else class="learning-dependency-list">
+                  <div v-for="path in educationDependencyGraph.prerequisites" :key="`${path.conceptKey}-${path.depth}`" class="learning-dependency-row">
+                    <span class="learning-dependency-depth">L{{ path.depth }}</span>
+                    <strong>{{ path.conceptKey }}</strong>
+                    <span class="learning-dependency-mastery">掌握度 {{ formatRate(path.masteryScore) }}</span>
+                    <span class="learning-dependency-gap" :class="{ 'is-gap': path.deficit >= 0.5 }">{{ path.deficit >= 0.5 ? '需补强' : '已覆盖' }}</span>
+                  </div>
+                </div>
+                <small class="learning-dependency-note">检索会优先覆盖掌握度不足的传递前置知识，并在每条课程证据中记录选择理由。</small>
               </div>
             </div>
             <details v-if="canManageEducationOperations" class="education-source-editor education-teacher-entry" :open="educationWorkspaceMode === 'teacher'">

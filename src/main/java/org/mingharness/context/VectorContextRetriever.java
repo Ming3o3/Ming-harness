@@ -267,7 +267,8 @@ public class VectorContextRetriever {
             String windowCitation = best.parentWindowId() == null || best.parentWindowIndex() == null
                     ? "" : "#window:" + best.parentWindowIndex();
             evidences.add(new ContextEvidence(best.parentId(), best.title(),
-                    citationPrefix + best.parentId() + windowCitation + "#chunk:" + best.chunkIndex(), excerpt));
+                    citationPrefix + best.parentId() + windowCitation + "#chunk:" + best.chunkIndex(), excerpt,
+                    best.similarity(), "", List.of()));
         }
         return new ContextResult(context.toString(), List.copyOf(evidences));
     }

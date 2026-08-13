@@ -9,6 +9,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.LinkedHashMap;
+import java.util.Optional;
 
 /** 学习者画像和知识点掌握度服务，所有查询都绑定租户和当前用户。 */
 @Service
@@ -164,6 +167,38 @@ public class EducationLearnerService {
                 .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
                         "LEARNER_PROFILE_NOT_FOUND", "学习者画像不存在"));
         return masteryRepository.findByTenantIdAndLearnerProfileIdOrderByConceptKeyAsc(tenantId, profileId);
+    }
+
+    /** 返回当前画像的掌握度快照，供依赖图预览和检索解释使用。 */
+    @Transactional(readOnly = true)
+    public Map<String, Double> masteryScores(String tenantId, String userId, String profileId) {
+        String effectiveProfileId = profileId;
+        if (effectiveProfileId == null || effectiveProfileId.isBlank()) {
+            effectiveProfileId = profileRepository
+                    .findTop1ByTenantIdAndUserIdAndActiveTrueOrderByUpdatedAtDesc(tenantId, userId)
+                    .map(LearnerProfile::getId)
+                    .orElse(null);
+        }
+        if (effectiveProfileId == null || effectiveProfileId.isBlank()) return Map.of();
+        profileRepository.findByIdAndTenantIdAndUserId(effectiveProfileId, tenantId, userId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
+                        "LEARNER_PROFILE_NOT_FOUND", "学习者画像不存在"));
+        Map<String, Double> scores = new LinkedHashMap<>();
+        masteryRepository.findByTenantIdAndLearnerProfileIdOrderByConceptKeyAsc(
+                        tenantId, effectiveProfileId)
+                .forEach(item -> scores.put(item.getConceptKey(), item.getMasteryScore()));
+        return Map.copyOf(scores);
+    }
+
+    /** 返回当前用户可见的画像；没有画像时返回空，供课程知识图预览使用。 */
+    @Transactional(readOnly = true)
+    public Optional<LearnerProfile> profileFor(String tenantId, String userId, String profileId) {
+        if (profileId == null || profileId.isBlank()) {
+            return profileRepository.findTop1ByTenantIdAndUserIdAndActiveTrueOrderByUpdatedAtDesc(tenantId, userId);
+        }
+        return Optional.of(profileRepository.findByIdAndTenantIdAndUserId(profileId, tenantId, userId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
+                        "LEARNER_PROFILE_NOT_FOUND", "学习者画像不存在")));
     }
 
     private String clean(String value) {
