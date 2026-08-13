@@ -5235,7 +5235,7 @@ function learningAssignmentHasExecutableFeedback(assignment) {
 }
 
 // 通知必须回到同一份作业证据链，而不是把用户丢回泛化目标页。
-async function focusLearningAssignmentNotificationAssignment(assignment, issue = '') {
+async function focusLearningAssignmentNotificationAssignment(assignment, issue = '', expandFeedback = false) {
   if (!assignment?.id) return
   learningAssignmentCourseFilter.value = assignment.courseId || ''
   learningAssignmentLearnerFilter.value = assignment.learnerUserId || form.userId
@@ -5244,7 +5244,13 @@ async function focusLearningAssignmentNotificationAssignment(assignment, issue =
   navigateConsoleSection('education')
   await ensureLearningAssignmentDetails(assignment.id)
   await nextTick()
-  document.getElementById(`learning-assignment-${assignment.id}`)?.scrollIntoView({
+  const assignmentElement = document.getElementById(`learning-assignment-${assignment.id}`)
+  if (expandFeedback) {
+    const feedbackDetails = [...(assignmentElement?.querySelectorAll('details.learning-assessment-history') || [])]
+      .find((details) => details.querySelector('summary')?.textContent?.includes('教师反馈'))
+    if (feedbackDetails) feedbackDetails.open = true
+  }
+  assignmentElement?.scrollIntoView({
     behavior: 'smooth', block: 'center',
   })
 }
@@ -5595,7 +5601,7 @@ async function openLearningAssignmentNotification(notification) {
     return
   }
   if (['FEEDBACK', 'FEEDBACK_ACKNOWLEDGED'].includes(type)) {
-    await focusLearningAssignmentNotificationAssignment(assignment)
+    await focusLearningAssignmentNotificationAssignment(assignment, '', true)
     noticeMessage.value = type === 'FEEDBACK_ACKNOWLEDGED'
       ? `已打开课程作业“${assignment.title}”的反馈确认回执。`
       : `已打开课程作业“${assignment.title}”的教师反馈。`
