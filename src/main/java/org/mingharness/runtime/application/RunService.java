@@ -646,7 +646,9 @@ public class RunService {
                     ? run.input() : started.get().input();
             ContextResult context = contextBuilder.build(run.tenantId(), run.userId(),
                     retrievalQuery, runtimeLimits.maxContextChars(),
-                    educationConfiguration == null ? null : educationConfiguration.retrievalFilter());
+                    educationConfiguration == null ? null : educationConfiguration.retrievalFilter(),
+                    educationConfiguration == null ? org.mingharness.education.EducationRetrievalStrategy.FULL
+                            : educationConfiguration.retrievalStrategyValue());
             if (!context.isEmpty()) {
                 executionStateService.recordContextRetrieved(run.id(), run.tenantId(), workerId,
                         step.id(), context.evidences().size(), ContextEvidenceCodec.encode(context.evidences()));
@@ -820,7 +822,9 @@ public class RunService {
                         ? run.getInput() : step.getInput();
                 ContextResult context = contextBuilder.build(run.getTenantId(), run.getUserId(),
                         retrievalQuery, runtimeLimits.maxContextChars(),
-                        educationConfiguration == null ? null : educationConfiguration.retrievalFilter());
+                        educationConfiguration == null ? null : educationConfiguration.retrievalFilter(),
+                        educationConfiguration == null ? org.mingharness.education.EducationRetrievalStrategy.FULL
+                                : educationConfiguration.retrievalStrategyValue());
                 if (!context.isEmpty()) {
                     step.setContextEvidenceJson(ContextEvidenceCodec.encode(context.evidences()));
                     record(run.getId(), step.getId(), "CONTEXT_RETRIEVED",
@@ -1672,7 +1676,7 @@ public class RunService {
                 run.getEducationLearningGoalTarget(), run.getEducationConceptKey(),
                 run.getEducationReviewPlanId(), run.getEducationLearningAssignmentId(),
                 run.getEducationCourseId(), run.getEducationCourseCode(),
-                run.getEducationCourseTitle()
+                run.getEducationCourseTitle(), run.getEducationRetrievalStrategy()
         );
     }
 

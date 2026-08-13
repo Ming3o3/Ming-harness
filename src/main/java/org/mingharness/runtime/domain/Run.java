@@ -87,6 +87,8 @@ public class Run {
     private String educationPedagogicalMode;
     @Column(name = "education_learner_state", columnDefinition = "text")
     private String educationLearnerState;
+    @Column(name = "education_retrieval_strategy", length = 32)
+    private String educationRetrievalStrategy;
     /** 创建 Run 时固化的用户模型供应商快照；为空表示沿用环境默认模型或旧数据兼容路径。 */
     @Column(name = "model_config_snapshot_id", length = 128)
     private String modelConfigSnapshotId;
@@ -228,6 +230,7 @@ public class Run {
         this.educationMaxDifficulty = value.maxDifficulty();
         this.educationPedagogicalMode = value.pedagogicalMode();
         this.educationLearnerState = value.learnerStateSummary();
+        this.educationRetrievalStrategy = value.retrievalStrategyValue().name();
     }
 
     public EducationRunConfiguration educationConfiguration() {
@@ -243,7 +246,8 @@ public class Run {
                 educationMinDifficulty, educationMaxDifficulty,
                 educationPedagogicalMode == null ? "AUTO" : educationPedagogicalMode,
                 educationLearnerState == null ? "" : educationLearnerState,
-                educationCourseId, educationCourseCode, educationCourseTitle);
+                educationCourseId, educationCourseCode, educationCourseTitle,
+                educationRetrievalStrategy == null ? "FULL" : educationRetrievalStrategy);
     }
 
     /** Worker 成功获取执行锁后建立租约。 */
@@ -398,6 +402,7 @@ public class Run {
     public Integer getEducationMaxDifficulty() { return educationMaxDifficulty; }
     public String getEducationPedagogicalMode() { return educationPedagogicalMode; }
     public String getEducationLearnerState() { return educationLearnerState; }
+    public String getEducationRetrievalStrategy() { return educationRetrievalStrategy == null ? "FULL" : educationRetrievalStrategy; }
     public String getModelConfigSnapshotId() { return modelConfigSnapshotId; }
     public String getIdempotencyKey() { return idempotencyKey; }
     public String getPermissionsSnapshot() { return permissionsSnapshot; }

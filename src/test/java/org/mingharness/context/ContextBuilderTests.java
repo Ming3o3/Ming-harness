@@ -11,6 +11,7 @@ import org.mingharness.education.EducationDependencyGraph;
 import org.mingharness.education.EducationDependencyPath;
 import org.mingharness.education.EducationKnowledgeGraphService;
 import org.mingharness.education.EducationRetrievalFilter;
+import org.mingharness.education.EducationRetrievalStrategy;
 import org.mingharness.observability.HarnessMetrics;
 
 import java.time.Instant;
@@ -23,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class ContextBuilderTests {
@@ -333,5 +335,84 @@ class ContextBuilderTests {
         assertEquals(List.of("定义域"), prerequisiteEvidence.prerequisiteGaps());
         assertTrue(targetEvidence.prerequisiteGaps().isEmpty());
         assertTrue(prerequisiteEvidence.rankingBreakdown().graphCoverage() > 0.0);
+    }
+
+    @Test
+    void shouldRunVectorOnlyBaselineWithoutKeywordRecallOrLearnerStateGraph() {
+        KnowledgeDocumentRepository documentRepository = mock(KnowledgeDocumentRepository.class);
+        MemoryEntryRepository memoryRepository = mock(MemoryEntryRepository.class);
+        VectorContextRetriever vectorRetriever = mock(VectorContextRetriever.class);
+        EducationKnowledgeSourceRepository sourceRepository = mock(EducationKnowledgeSourceRepository.class);
+        EducationKnowledgeGraphService graphService = mock(EducationKnowledgeGraphService.class);
+        ContextBuilder builder = new ContextBuilder(documentRepository, memoryRepository, vectorRetriever,
+                new HarnessMetrics(new SimpleMeterRegistry()),
+                new ContextRetrievalProperties(20, 5, 1, 0.2), sourceRepository, graphService);
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "数学", "高中一年级", "人教A版", "函数", null, null, Map.of("函数", 0.1));
+        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 2_000, filter))
+                .thenReturn(new ContextResult("vector", List.of(new ContextEvidence(
+                        "doc-1", "函数课件", "document:doc-1", "向量片段"))));
+
+        ContextResult result = builder.build("tenant-a", "student", "函数", 2_000, filter,
+                EducationRetrievalStrategy.VECTOR_ONLY);
+
+        assertEquals(1, result.evidences().size());
+        verify(vectorRetriever).retrieve("tenant-a", "student", "函数", 2_000, filter);
+        verifyNoInteractions(documentRepository, memoryRepository, sourceRepository, graphService);
+    }
+
+    @Test
+    void shouldRunKeywordOnlyBaselineWithoutVectorRecallOrLearnerStateGraph() {
+        KnowledgeDocumentRepository documentRepository = mock(KnowledgeDocumentRepository.class);
+        MemoryEntryRepository memoryRepository = mock(MemoryEntryRepository.class);
+        VectorContextRetriever vectorRetriever = mock(VectorContextRetriever.class);
+        EducationKnowledgeSourceRepository sourceRepository = mock(EducationKnowledgeSourceRepository.class);
+        EducationKnowledgeGraphService graphService = mock(EducationKnowledgeGraphService.class);
+        ContextBuilder builder = new ContextBuilder(documentRepository, memoryRepository, vectorRetriever,
+                new HarnessMetrics(new SimpleMeterRegistry()),
+                new ContextRetrievalProperties(20, 5, 1, 0.2), sourceRepository, graphService);
+        KnowledgeDocument document = new KnowledgeDocument("tenant-a", "teacher", "函数课件",
+                "函数定义域", "INTERNAL", "student");
+        EducationKnowledgeSource source = new EducationKnowledgeSource("tenant-a", document.getId(),
+                "数学", "高中一年级", "人教A版", "函数", "函数",
+                "函数", "集合", 3, "TEXTBOOK");
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "数学", "高中一年级", "人教A版", "函数", null, null, Map.of("函数", 0.1));
+        when(sourceRepository.findByTenantIdAndDeletedAtIsNullOrderByUpdatedAtDesc("tenant-a"))
+                .thenReturn(List.of(source));
+        when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", document.getId()))
+                .thenReturn(Optional.of(source));
+        when(documentRepository.findByTenantIdAndIdInAndDeletedAtIsNullOrderByCreatedAtDesc(
+                "tenant-a", List.of(document.getId()))).thenReturn(List.of(document));
+
+        ContextResult result = builder.build("tenant-a", "student", "函数", 2_000, filter,
+                EducationRetrievalStrategy.KEYWORD_ONLY);
+
+        assertEquals(1, result.evidences().size());
+        verify(vectorRetriever, never()).retrieve("tenant-a", "student", "函数", 2_000, filter);
+        verifyNoInteractions(memoryRepository, graphService);
+    }
+
+    @Test
+    void shouldSkipDependencyGraphForNoLearnerStateAblation() {
+        KnowledgeDocumentRepository documentRepository = mock(KnowledgeDocumentRepository.class);
+        MemoryEntryRepository memoryRepository = mock(MemoryEntryRepository.class);
+        VectorContextRetriever vectorRetriever = mock(VectorContextRetriever.class);
+        EducationKnowledgeSourceRepository sourceRepository = mock(EducationKnowledgeSourceRepository.class);
+        EducationKnowledgeGraphService graphService = mock(EducationKnowledgeGraphService.class);
+        ContextBuilder builder = new ContextBuilder(documentRepository, memoryRepository, vectorRetriever,
+                new HarnessMetrics(new SimpleMeterRegistry()),
+                new ContextRetrievalProperties(20, 5, 1, 0.2), sourceRepository, graphService);
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "数学", "高中一年级", "人教A版", "函数", null, null, Map.of());
+        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 2_000, filter))
+                .thenReturn(new ContextResult("", List.of()));
+        when(sourceRepository.findByTenantIdAndDeletedAtIsNullOrderByUpdatedAtDesc("tenant-a"))
+                .thenReturn(List.of());
+
+        builder.build("tenant-a", "student", "函数", 2_000, filter,
+                EducationRetrievalStrategy.NO_LEARNER_STATE);
+
+        verifyNoInteractions(graphService);
     }
 }

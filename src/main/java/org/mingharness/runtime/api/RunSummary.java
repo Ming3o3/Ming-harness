@@ -42,7 +42,8 @@ public record RunSummary(
         String educationLearningAssignmentId,
         String educationCourseId,
         String educationCourseCode,
-        String educationCourseTitle
+        String educationCourseTitle,
+        String educationRetrievalStrategy
 ) {
 
     /** 兼容早期只返回幂等键的调用方。 */
@@ -54,7 +55,7 @@ public record RunSummary(
                 error, status, budget, createdAt, updatedAt, stepCount, idempotencyKey,
                 null, 0, BigDecimal.ZERO, false, 1, null,
                 false, null, null, null, null, null, null, null, null, null, null, null,
-                null, null, null);
+                null, null, null, "FULL");
     }
 
     /** 兼容上一版已经携带追踪、耗时和成本字段的调用方。 */
@@ -67,6 +68,6 @@ public record RunSummary(
                 error, status, budget, createdAt, updatedAt, stepCount, idempotencyKey,
                 traceId, durationMs, totalCost, false, 1, null,
                 false, null, null, null, null, null, null, null, null, null, null, null,
-                null, null, null);
+                null, null, null, "FULL");
     }
 }

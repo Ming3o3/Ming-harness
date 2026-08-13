@@ -10,6 +10,7 @@ import org.mingharness.education.EducationDependencyGraph;
 import org.mingharness.education.EducationDependencyPath;
 import org.mingharness.education.EducationKnowledgeGraphService;
 import org.mingharness.education.EducationRetrievalFilter;
+import org.mingharness.education.EducationRetrievalStrategy;
 import org.mingharness.observability.HarnessMetrics;
 import org.springframework.dao.DataAccessException;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -91,28 +92,47 @@ public class ContextBuilder {
     /** 使用教育硬约束构建上下文；null 表示旧的通用检索路径。 */
     public ContextResult build(String tenantId, String userId, String query, int maxChars,
                                EducationRetrievalFilter educationFilter) {
+        return build(tenantId, userId, query, maxChars, educationFilter,
+                EducationRetrievalStrategy.FULL);
+    }
+
+    /** 使用冻结的教育检索策略构建上下文；普通检索保持 FULL 兼容行为。 */
+    public ContextResult build(String tenantId, String userId, String query, int maxChars,
+                               EducationRetrievalFilter educationFilter,
+                               EducationRetrievalStrategy strategy) {
         if (query == null || query.isBlank() || maxChars < 1) {
             return new ContextResult("", List.of());
         }
+        EducationRetrievalStrategy effectiveStrategy = strategy == null
+                ? EducationRetrievalStrategy.FULL : strategy;
         return metrics.recordContextRetrieval(() -> buildInternal(tenantId, userId, query, maxChars,
-                educationFilter));
+                educationFilter, effectiveStrategy));
     }
 
     private ContextResult buildInternal(String tenantId, String userId, String query, int maxChars,
-                                        EducationRetrievalFilter educationFilter) {
+                                        EducationRetrievalFilter educationFilter,
+                                        EducationRetrievalStrategy strategy) {
         ContextResult vectorResult = new ContextResult("", List.of());
-        try {
-            vectorResult = educationFilter == null
-                    ? vectorContextRetriever.retrieve(tenantId, userId, query, maxChars)
-                    : vectorContextRetriever.retrieve(tenantId, userId, query, maxChars, educationFilter);
-        } catch (EmbeddingGatewayException | DataAccessException exception) {
-            // embedding 服务或 pgvector 暂时不可用时保持旧的确定性关键词召回能力。
+        if (strategy.usesVector()) {
+            try {
+                vectorResult = educationFilter == null
+                        ? vectorContextRetriever.retrieve(tenantId, userId, query, maxChars)
+                        : vectorContextRetriever.retrieve(tenantId, userId, query, maxChars, educationFilter);
+            } catch (EmbeddingGatewayException | DataAccessException exception) {
+                // embedding 服务或 pgvector 暂时不可用时保持关键词路径；VECTOR_ONLY 会明确返回空。
+            }
         }
-        ContextResult keywordResult = buildKeyword(tenantId, userId, query, maxChars, educationFilter);
+        ContextResult keywordResult = strategy.usesKeyword()
+                ? buildKeyword(tenantId, userId, query, maxChars, educationFilter)
+                : new ContextResult("", List.of());
         if (educationFilter != null && educationFilter.active()) {
-            EducationDependencyGraph dependencyGraph = knowledgeGraphService == null
+            EducationDependencyGraph dependencyGraph = !strategy.usesLearnerState() || knowledgeGraphService == null
                     ? EducationDependencyGraph.empty(educationFilter.conceptKeyOrNull())
                     : knowledgeGraphService.resolve(tenantId, educationFilter);
+            // VECTOR_ONLY / KEYWORD_ONLY 是召回基线：只保留 SQL/元数据硬过滤，不叠加
+            // 教育软重排，避免基线被完整方法的目标匹配和难度策略污染。
+            if (strategy == EducationRetrievalStrategy.VECTOR_ONLY) return vectorResult;
+            if (strategy == EducationRetrievalStrategy.KEYWORD_ONLY) return keywordResult;
             ContextResult merged = vectorResult.isEmpty()
                     ? keywordResult
                     : keywordResult.isEmpty() ? vectorResult : merge(vectorResult, keywordResult, maxChars);

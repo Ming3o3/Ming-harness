@@ -248,9 +248,19 @@ public class EducationRunConfigurationService {
                 minDifficulty, maxDifficulty, pedagogicalMode, masterySummary(tenantId, profile.getId()),
                 course == null ? null : course.getId(),
                 course == null ? null : course.getCode(),
-                course == null ? null : course.getTitle());
+                course == null ? null : course.getTitle(),
+                normalizeRetrievalStrategy(options.effectiveRetrievalStrategy()));
         requireKnowledgeSource(tenantId, userId, configuration.retrievalFilter());
         return configuration;
+    }
+
+    private String normalizeRetrievalStrategy(String value) {
+        try {
+            return EducationRetrievalStrategy.valueOf(value).name();
+        } catch (IllegalArgumentException ignored) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "EDUCATION_RETRIEVAL_STRATEGY_INVALID",
+                    "不支持的教育检索策略: " + value);
+        }
     }
 
     /**
