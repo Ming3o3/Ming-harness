@@ -213,6 +213,23 @@ class EducationRoleWebFlowTests {
                 "/api/education/sources", null);
         assertEquals(200, adminSources.statusCode(), adminSources.body());
 
+        // 管理员治理页可以识别课程资料，但教育接口仍只返回资料元数据，不返回正文。
+        HttpResponse<String> sourceDocument = request("teacher-flow-key", "POST", "/api/context/documents",
+                "{\"title\":\"管理员可识别的课程资料\",\"content\":\"不得通过教育来源接口返回的正文\","
+                        + "\"sensitivity\":\"INTERNAL\"}");
+        assertEquals(201, sourceDocument.statusCode(), sourceDocument.body());
+        String sourceDocumentId = json(sourceDocument).path("id").asText();
+        HttpResponse<String> configuredSource = request("teacher-flow-key", "POST", "/api/education/sources",
+                sourceRequest(sourceDocumentId));
+        assertEquals(201, configuredSource.statusCode(), configuredSource.body());
+        HttpResponse<String> refreshedAdminSources = request("admin-flow-key", "GET",
+                "/api/education/sources", null);
+        assertEquals(200, refreshedAdminSources.statusCode(), refreshedAdminSources.body());
+        JsonNode sourceMetadata = json(refreshedAdminSources).findValue("documentTitle");
+        assertNotNull(sourceMetadata, refreshedAdminSources.body());
+        assertEquals("管理员可识别的课程资料", sourceMetadata.asText(), refreshedAdminSources.body());
+        assertFalse(refreshedAdminSources.body().contains("不得通过教育来源接口返回的正文"), refreshedAdminSources.body());
+
         HttpResponse<String> adminCreate = request("admin-flow-key", "POST", "/api/education/courses",
                 "{\"code\":\"admin-must-not-create\",\"title\":\"越权课程\",\"subject\":\"数学\","
                         + "\"gradeLevel\":\"高中一年级\",\"curriculumVersion\":\"人教A版\"}");

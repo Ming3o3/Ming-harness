@@ -1605,6 +1605,8 @@ function sourceMatchesEducationScope(source, scope) {
 }
 
 function educationSourceLabel(source) {
+  const documentTitle = String(source?.documentTitle || '').trim()
+  if (documentTitle) return documentTitle
   const chapter = String(source?.chapter || '').trim()
   if (chapter) return chapter
   const firstConcept = String(source?.conceptTags || '')
@@ -1613,6 +1615,11 @@ function educationSourceLabel(source) {
     .find(Boolean)
   if (firstConcept) return firstConcept
   return source?.documentId ? `课程资料 ${source.documentId}` : '课程资料'
+}
+
+function educationSourceOwnerLabel(source) {
+  const owner = String(source?.documentOwnerUserId || '').trim()
+  return owner ? `资料所有者：${owner}` : ''
 }
 
 /**
@@ -9461,8 +9468,8 @@ onBeforeUnmount(() => {
               </form>
               <div v-else class="context-preview-empty">当前没有可配置的知识文档；可以先上传课程资料，或请管理员授权课程资料。</div>
               <div v-if="educationSources.length" class="education-source-list">
-                <div v-for="source in educationSources" :key="source.id" class="education-source-row">
-                  <div><strong>{{ documents.find((document) => document.id === source.documentId)?.title || source.documentId }}</strong><small>{{ source.subject }} · {{ source.gradeLevel }} · {{ source.curriculumVersion }} · 难度 {{ source.difficultyLevel }}</small></div>
+                  <div v-for="source in educationSources" :key="source.id" class="education-source-row">
+                  <div><strong>{{ source.documentTitle || documents.find((document) => document.id === source.documentId)?.title || source.documentId }}</strong><small>{{ source.subject }} · {{ source.gradeLevel }} · {{ source.curriculumVersion }} · 难度 {{ source.difficultyLevel }}<template v-if="isAdminWorkspace && educationSourceOwnerLabel(source)"> · {{ educationSourceOwnerLabel(source) }}</template></small></div>
                   <button v-if="canEditEducationSource(source)" class="text-button" type="button" @click="educationSourceForm.documentId = source.documentId; educationSourceForm.subject = source.subject; educationSourceForm.gradeLevel = source.gradeLevel; educationSourceForm.curriculumVersion = source.curriculumVersion; educationSourceForm.chapter = source.chapter || ''; educationSourceForm.conceptTags = source.conceptTags || ''; educationSourceForm.prerequisiteConcepts = source.prerequisiteConcepts || ''; educationSourceForm.learningObjectives = source.learningObjectives || ''; educationSourceForm.difficultyLevel = source.difficultyLevel">编辑</button>
                   <small v-else class="document-owner-hint">仅资料所有者可删除正文</small>
                 </div>

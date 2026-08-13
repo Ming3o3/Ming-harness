@@ -47,6 +47,8 @@ import org.mingharness.education.api.ManualAssessmentSubmissionRequest;
 import org.mingharness.education.api.MasteryUpdateRequest;
 import org.mingharness.security.HarnessIdentity;
 import org.mingharness.security.HarnessIdentityContext;
+import org.mingharness.context.KnowledgeDocument;
+import org.mingharness.context.KnowledgeDocumentRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -62,7 +64,10 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.function.Function;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /** 教育知识源和学习者状态接口；正文仍由 /api/context 管理。 */
 @RestController
@@ -92,6 +97,7 @@ public class EducationController {
     private final LearningAssignmentSubmissionService submissionService;
     private final EducationCourseResultService courseResultService;
     private final LearningAssignmentIndependentEvaluationService independentEvaluationService;
+    private final KnowledgeDocumentRepository documentRepository;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
@@ -115,7 +121,8 @@ public class EducationController {
                                EducationCourseCompletionService courseCompletionService,
                                LearningAssignmentSubmissionService submissionService,
                                EducationCourseResultService courseResultService,
-                               LearningAssignmentIndependentEvaluationService independentEvaluationService) {
+                               LearningAssignmentIndependentEvaluationService independentEvaluationService,
+                               KnowledgeDocumentRepository documentRepository) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
@@ -139,6 +146,7 @@ public class EducationController {
         this.submissionService = submissionService;
         this.courseResultService = courseResultService;
         this.independentEvaluationService = independentEvaluationService;
+        this.documentRepository = documentRepository;
     }
 
     @PostMapping("/sources")
@@ -156,8 +164,14 @@ public class EducationController {
         List<EducationKnowledgeSource> sources = identity.hasPermission("ops.read")
                 ? knowledgeService.listSourcesForGovernance(identity.tenantId())
                 : knowledgeService.listSources(identity.tenantId(), identity.userId());
+        Map<String, KnowledgeDocument> documentsById = documentRepository
+                .findByTenantIdAndIdInAndDeletedAtIsNull(identity.tenantId(),
+                        sources.stream().map(EducationKnowledgeSource::getDocumentId).distinct().toList())
+                .stream()
+                .collect(Collectors.toMap(KnowledgeDocument::getId, Function.identity()));
         return sources.stream()
-                .map(EducationSourceView::from).toList();
+                .map(source -> EducationSourceView.from(source, documentsById.get(source.getDocumentId())))
+                .toList();
     }
 
     @DeleteMapping("/sources/{documentId}")
