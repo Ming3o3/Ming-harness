@@ -284,6 +284,36 @@ public class ContextBuilder {
         List<ContextEvidence> selected = new ArrayList<>();
         StringBuilder text = new StringBuilder();
         Set<String> evidenceKeys = new HashSet<>();
+
+        // 证据规划先保留一个目标锚点，再用剩余预算补充前置缺口。这样教育检索
+        // 不会为了提高缺口覆盖而丢失回答当前问题所需的目标 grounding；前置资料
+        // 仍由后续的状态条件化边际选择决定顺序和数量。
+        RankedEducationEvidence targetAnchor = candidates.stream()
+                .filter(candidate -> candidate.breakdown().targetConceptMatch() >= 0.5)
+                .max(Comparator.comparingDouble((RankedEducationEvidence candidate)
+                                -> candidate.breakdown().difficultyFit())
+                        .thenComparingDouble(candidate -> candidate.breakdown().baseScore()))
+                .orElse(null);
+        if (targetAnchor != null) {
+            String block = contextBlock(targetAnchor.evidence().title(), targetAnchor.evidence().excerpt());
+            if (text.length() + block.length() <= maxChars) {
+                candidates = candidates.stream()
+                        .filter(candidate -> !candidate.evidence().citation()
+                                .equals(targetAnchor.evidence().citation()))
+                        .toList();
+                String sourceKey = evidenceKey(targetAnchor.evidence().citation());
+                if (evidenceKeys.add(sourceKey)) {
+                    double anchorCoverage = targetAnchor.gaps().isEmpty() ? 0.0 : 1.0;
+                    EducationRankingBreakdown anchorBreakdown = targetAnchor.breakdown()
+                            .withSelection(anchorCoverage, 0.0, targetAnchor.breakdown().baseScore());
+                    ContextEvidence explained = explainEducationEvidence(targetAnchor.evidence(),
+                            anchorBreakdown, targetAnchor.gaps(), true);
+                    text.append(block);
+                    selected.add(explained);
+                    covered.addAll(targetAnchor.gaps());
+                }
+            }
+        }
         while (!candidates.isEmpty()) {
             RankedEducationEvidence best = candidates.stream()
                     .map(candidate -> candidate.withSelection(covered))
@@ -297,7 +327,7 @@ public class ContextBuilder {
             String sourceKey = evidenceKey(best.evidence().citation());
             if (!evidenceKeys.add(sourceKey)) continue;
             ContextEvidence explained = explainEducationEvidence(best.evidence(), best.selectedBreakdown(),
-                    best.gaps());
+                    best.gaps(), false);
             String block = contextBlock(explained.title(), explained.excerpt());
             if (text.length() + block.length() > maxChars) continue;
             text.append(block);
@@ -322,8 +352,11 @@ public class ContextBuilder {
 
         double retrievalRelevance = evidence.retrievalScore() > 0.0
                 ? Math.min(1.0, evidence.retrievalScore()) : 0.5;
-        double targetConceptMatch = filter.conceptKeyOrNull() != null
-                && containsConcept(source.getConceptTags(), filter.conceptKeyOrNull()) ? 1.0 : 0.0;
+        String targetConcept = filter.conceptKeyOrNull() != null
+                ? filter.conceptKeyOrNull()
+                : dependencyGraph == null ? null : dependencyGraph.targetConcept();
+        double targetConceptMatch = targetConcept != null
+                && containsConcept(source.getConceptTags(), targetConcept) ? 1.0 : 0.0;
         String[] prerequisites = splitConcepts(source.getPrerequisiteConcepts());
         double prerequisiteGap = java.util.Arrays.stream(prerequisites)
                 .mapToDouble(prerequisite -> 1.0 - filter.masteryFor(prerequisite))
@@ -398,10 +431,12 @@ public class ContextBuilder {
 
     private ContextEvidence explainEducationEvidence(ContextEvidence evidence,
                                                      EducationRankingBreakdown breakdown,
-                                                     Set<String> gaps) {
+                                                     Set<String> gaps,
+                                                     boolean targetAnchor) {
         if (evidence == null) return null;
         List<String> displayGaps = gaps == null ? List.of() : gaps.stream().toList();
         List<String> reasons = new ArrayList<>();
+        if (targetAnchor) reasons.add("目标证据锚点");
         reasons.add(String.format(Locale.ROOT, "相关性 %.2f", breakdown.retrievalRelevance()));
         if (breakdown.targetConceptMatch() >= 0.5) reasons.add("匹配目标知识点");
         if (breakdown.difficultyFit() >= 0.75) reasons.add("难度适配");

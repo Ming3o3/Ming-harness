@@ -290,6 +290,59 @@ class ContextBuilderTests {
     }
 
     @Test
+    void shouldKeepTargetAnchorBeforePrerequisiteSupplement() {
+        KnowledgeDocumentRepository documentRepository = mock(KnowledgeDocumentRepository.class);
+        MemoryEntryRepository memoryRepository = mock(MemoryEntryRepository.class);
+        VectorContextRetriever vectorRetriever = mock(VectorContextRetriever.class);
+        EducationKnowledgeSourceRepository sourceRepository = mock(EducationKnowledgeSourceRepository.class);
+        EducationKnowledgeGraphService graphService = mock(EducationKnowledgeGraphService.class);
+        ContextBuilder builder = new ContextBuilder(documentRepository, memoryRepository, vectorRetriever,
+                new HarnessMetrics(new SimpleMeterRegistry()),
+                new ContextRetrievalProperties(20, 5, 1, 0.2), sourceRepository, graphService);
+
+        KnowledgeDocument target = new KnowledgeDocument("tenant-a", "teacher", "函数目标讲解",
+                "函数目标定义", "INTERNAL", "student");
+        KnowledgeDocument supplement = new KnowledgeDocument("tenant-a", "teacher", "集合前置补强",
+                "集合基础知识", "INTERNAL", "student");
+        EducationKnowledgeSource targetSource = new EducationKnowledgeSource("tenant-a", target.getId(),
+                "数学", "高中一年级", "人教A版", "函数", "函数目标",
+                "函数", "", 3, "TEXTBOOK");
+        EducationKnowledgeSource supplementSource = new EducationKnowledgeSource("tenant-a", supplement.getId(),
+                "数学", "高中一年级", "人教A版", "函数", "集合前置",
+                "集合", "", 2, "TEXTBOOK");
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "数学", "高中一年级", "人教A版", "函数", null, null,
+                Map.of("函数", 0.10, "集合", 0.0));
+        EducationDependencyGraph graph = new EducationDependencyGraph("函数", List.of(
+                new EducationDependencyPath("集合", 1, 0.0, 1.0)), false);
+
+        when(graphService.resolve("tenant-a", filter)).thenReturn(graph);
+        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 4_000, filter))
+                .thenReturn(new ContextResult("vector-context", List.of(
+                        new ContextEvidence(supplement.getId(), "集合前置补强",
+                                "document:" + supplement.getId(), "集合", 1.0, "", List.of()),
+                        new ContextEvidence(target.getId(), "函数目标讲解",
+                                "document:" + target.getId(), "函数", 0.1, "", List.of()))));
+        when(sourceRepository.findByTenantIdAndDeletedAtIsNullOrderByUpdatedAtDesc("tenant-a"))
+                .thenReturn(List.of(targetSource, supplementSource));
+        when(documentRepository.findByTenantIdAndIdInAndDeletedAtIsNullOrderByCreatedAtDesc(
+                "tenant-a", List.of(target.getId(), supplement.getId())))
+                .thenReturn(List.of(target, supplement));
+        when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", target.getId()))
+                .thenReturn(Optional.of(targetSource));
+        when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", supplement.getId()))
+                .thenReturn(Optional.of(supplementSource));
+
+        ContextResult result = builder.build("tenant-a", "student", "函数", 4_000, filter);
+
+        assertEquals(2, result.evidences().size());
+        assertEquals(target.getId(), result.evidences().get(0).documentId());
+        assertTrue(result.evidences().get(0).rankingReason().contains("目标证据锚点"));
+        assertEquals(supplement.getId(), result.evidences().get(1).documentId());
+        assertEquals(List.of("集合"), result.evidences().get(1).prerequisiteGaps());
+    }
+
+    @Test
     void shouldExplainOnlyPrerequisiteGapsCoveredByEachSource() {
         KnowledgeDocumentRepository documentRepository = mock(KnowledgeDocumentRepository.class);
         MemoryEntryRepository memoryRepository = mock(MemoryEntryRepository.class);
