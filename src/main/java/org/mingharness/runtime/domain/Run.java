@@ -91,7 +91,7 @@ public class Run {
     private String educationRetrievalStrategy;
     @Column(name = "education_dependency_graph", columnDefinition = "text")
     private String educationDependencyGraph;
-    /** CALIBRATED 策略在创建 Run 时冻结的教师权重聚合快照。 */
+    /** CALIBRATED 或 ADAPTIVE 策略在创建 Run 时冻结的检索策略快照。 */
     @Column(name = "education_retrieval_weights", columnDefinition = "text")
     private String educationRetrievalWeights;
     /** 创建 Run 时固化的用户模型供应商快照；为空表示沿用环境默认模型或旧数据兼容路径。 */
@@ -241,6 +241,11 @@ public class Run {
 
     public void attachEducationRetrievalWeights(String snapshot) {
         this.educationRetrievalWeights = snapshot == null || snapshot.isBlank() ? null : snapshot;
+    }
+
+    /** ADAPTIVE 策略复用同一持久化列，但通过独立方法名保留业务语义。 */
+    public void attachEducationRetrievalPolicy(String snapshot) {
+        attachEducationRetrievalWeights(snapshot);
     }
 
     public EducationRunConfiguration educationConfiguration() {

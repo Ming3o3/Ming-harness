@@ -406,6 +406,7 @@ export const api = {
   getEducationMetrics: () => request('/education/metrics'),
   getEducationExperiments: () => request('/education/experiments'),
   getEducationRetrievalCalibration: () => request('/education/retrieval-calibration'),
+  getEducationRetrievalPolicy: () => request('/education/retrieval-policy'),
   getEducationEvidenceImpact: () => request('/education/evidence-impact'),
   downloadEducationExperiments: async () => {
     const response = await fetch(`${apiBaseUrl}/education/experiments.csv`, {

@@ -50,6 +50,7 @@ import org.mingharness.education.api.EducationDependencyGraphView;
 import org.mingharness.education.api.EducationRetrievalJudgmentRequest;
 import org.mingharness.education.api.EducationRetrievalJudgmentView;
 import org.mingharness.education.api.EducationRetrievalCalibrationView;
+import org.mingharness.education.api.EducationRetrievalPolicyView;
 import org.mingharness.education.api.EducationEvidenceImpactSummaryView;
 import org.mingharness.security.HarnessIdentity;
 import org.mingharness.security.HarnessIdentityContext;
@@ -108,6 +109,7 @@ public class EducationController {
     private final EducationKnowledgeGraphService knowledgeGraphService;
     private final EducationRetrievalJudgmentService retrievalJudgmentService;
     private final EducationRetrievalCalibrationService retrievalCalibrationService;
+    private final EducationRetrievalPolicyService retrievalPolicyService;
     private final EducationEvidenceImpactService evidenceImpactService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
@@ -138,6 +140,7 @@ public class EducationController {
                                 EducationKnowledgeGraphService knowledgeGraphService,
                                 EducationRetrievalJudgmentService retrievalJudgmentService,
                                 EducationRetrievalCalibrationService retrievalCalibrationService,
+                                EducationRetrievalPolicyService retrievalPolicyService,
                                 EducationEvidenceImpactService evidenceImpactService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
@@ -167,6 +170,7 @@ public class EducationController {
         this.knowledgeGraphService = knowledgeGraphService;
         this.retrievalJudgmentService = retrievalJudgmentService;
         this.retrievalCalibrationService = retrievalCalibrationService;
+        this.retrievalPolicyService = retrievalPolicyService;
         this.evidenceImpactService = evidenceImpactService;
     }
 
@@ -374,6 +378,14 @@ public class EducationController {
         HarnessIdentity identity = identity();
         return EducationRetrievalCalibrationView.from(
                 retrievalCalibrationService.snapshotForTenant(identity.tenantId()));
+    }
+
+    /** 返回当前学习者最近一次教育状态下的策略推荐及候选结果，供实验面板和审计回放使用。 */
+    @GetMapping("/retrieval-policy")
+    public EducationRetrievalPolicyView retrievalPolicy() {
+        HarnessIdentity identity = identity();
+        return EducationRetrievalPolicyView.from(
+                retrievalPolicyService.snapshotForLatestRun(identity.tenantId(), identity.userId()));
     }
 
     @GetMapping(value = "/experiments.csv", produces = "text/csv")

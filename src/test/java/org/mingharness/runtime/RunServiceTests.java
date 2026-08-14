@@ -10,6 +10,10 @@ import org.mingharness.education.EducationRunConfiguration;
 import org.mingharness.education.EducationKnowledgeSource;
 import org.mingharness.education.EducationKnowledgeSourceRepository;
 import org.mingharness.education.EducationRetrievalEvidence;
+import org.mingharness.education.EducationRetrievalPolicySnapshot;
+import org.mingharness.education.EducationRetrievalPolicySnapshotCodec;
+import org.mingharness.education.AssessmentAttempt;
+import org.mingharness.education.AssessmentAttemptRepository;
 import org.mingharness.education.LearnerProfile;
 import org.mingharness.education.LearnerProfileRepository;
 import org.mingharness.education.LearningGoal;
@@ -78,6 +82,8 @@ class RunServiceTests {
     @Autowired
     private LearningGoalRepository learningGoalRepository;
     @Autowired
+    private AssessmentAttemptRepository assessmentAttemptRepository;
+    @Autowired
     private AuditEventRepository auditEventRepository;
     @Autowired
     private AgentModelToolsState agentModelToolsState;
@@ -91,6 +97,7 @@ class RunServiceTests {
     @BeforeEach
     void cleanDatabase() {
         auditEventRepository.deleteAll();
+        assessmentAttemptRepository.deleteAll();
         runRepository.deleteAll();
         learningGoalRepository.deleteAll();
         learnerProfileRepository.deleteAll();
@@ -164,6 +171,72 @@ class RunServiceTests {
         assertEquals("https://first.example/v1", resolved.baseUrl());
         assertEquals("first-model", resolved.modelName());
         assertEquals("first-secret", resolved.apiKey());
+    }
+
+    @Test
+    void shouldFreezeAdaptiveRetrievalPolicyAtRunCreation() {
+        String tenantId = "tenant-adaptive";
+        String userId = "learner-adaptive";
+        LearnerProfile profile = learnerProfileRepository.save(new LearnerProfile(
+                tenantId, userId, "数学", "高中一年级", "人教A版", "掌握函数", "zh-CN"));
+        LearningGoal goal = learningGoalRepository.save(new LearningGoal(
+                tenantId, userId, profile.getId(), "掌握函数", "函数", 0.10, 0.80));
+        KnowledgeDocument document = knowledgeDocumentRepository.save(new KnowledgeDocument(
+                tenantId, "teacher-adaptive", "函数课程资料",
+                "函数定义域由课程规则约束：分母不能为零。", "INTERNAL", userId));
+        educationKnowledgeSourceRepository.save(new EducationKnowledgeSource(
+                tenantId, document.getId(), "数学", "高中一年级", "人教A版",
+                "函数", "掌握函数", "函数", "", 3, "TEXTBOOK"));
+
+        for (int index = 0; index < 5; index++) {
+            persistAdaptiveHistory(tenantId, userId, profile.getId(), goal.getId(), "FULL", false);
+            persistAdaptiveHistory(tenantId, userId, profile.getId(), goal.getId(), "CALIBRATED", true);
+        }
+
+        CreateRunRequest request = new CreateRunRequest(
+                tenantId, userId, "自适应策略冻结", "请讲解函数定义域", null, null,
+                "prompt-agent", "policy-v1", BigDecimal.TEN, null, null, true, 2)
+                .withEducation(new EducationRunOptions(
+                        true, profile.getId(), goal.getId(), null, null,
+                        "数学", "高中一年级", "人教A版", "函数", null, null,
+                        "PRACTICE", null, "ADAPTIVE"));
+
+        RunSummary created = runService.create(request);
+        Run saved = runRepository.findById(created.id()).orElseThrow();
+        EducationRetrievalPolicySnapshot frozen = EducationRetrievalPolicySnapshotCodec.decode(
+                saved.getEducationRetrievalWeights());
+        assertEquals("ADAPTIVE", saved.getEducationRetrievalStrategy());
+        assertEquals("CALIBRATED", frozen.selectedStrategy());
+        assertTrue(saved.getEducationRetrievalWeights().contains("CALIBRATED"));
+        Object effectiveStrategy = ReflectionTestUtils.invokeMethod(runService,
+                "effectiveEducationStrategy", saved.educationConfiguration(),
+                saved.getEducationRetrievalWeights());
+        assertEquals("CALIBRATED", effectiveStrategy.toString());
+
+        // 新增历史结果不会改写已经创建的 Run 快照；后续执行仍读取创建时选择的策略。
+        persistAdaptiveHistory(tenantId, userId, profile.getId(), goal.getId(), "FULL", true);
+        Run unchanged = runRepository.findById(created.id()).orElseThrow();
+        EducationRetrievalPolicySnapshot replayed = EducationRetrievalPolicySnapshotCodec.decode(
+                unchanged.getEducationRetrievalWeights());
+        assertEquals("CALIBRATED", replayed.selectedStrategy());
+    }
+
+    private void persistAdaptiveHistory(String tenantId, String userId, String profileId,
+                                       String goalId, String strategy, boolean correct) {
+        EducationRunConfiguration configuration = new EducationRunConfiguration(
+                true, profileId, goalId, null, null, null, null, null, "掌握函数",
+                0.10, 0.80, "数学", "高中一年级", "人教A版", "函数", null, null,
+                "PRACTICE", "函数=0.10", null, null, null, strategy);
+        Run run = new Run(tenantId, userId, "历史策略", "历史测评", BigDecimal.ONE,
+                "model", "prompt-v1", "policy-v1");
+        run.attachEducationConfiguration(configuration);
+        run.start();
+        run.succeed("完成");
+        Run saved = runRepository.saveAndFlush(run);
+        assessmentAttemptRepository.saveAndFlush(new AssessmentAttempt(
+                tenantId, userId, saved.getId(), "step-1", goalId, profileId, "函数",
+                correct, correct ? 0.85 : 0.20, 0.10, correct ? 0.85 : 0.20,
+                "MODEL_TOOL", "学生作答", "反馈"));
     }
 
     @Test

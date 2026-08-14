@@ -86,7 +86,7 @@ class EducationExperimentServiceTests {
                 .summarize("tenant-a", "operator", true);
 
         assertEquals(List.of("FULL", "VECTOR_ONLY", "KEYWORD_ONLY", "NO_LEARNER_STATE",
-                        "NO_DEPENDENCY_GRAPH", "STATIC_WEIGHT", "CALIBRATED"),
+                        "NO_DEPENDENCY_GRAPH", "STATIC_WEIGHT", "CALIBRATED", "ADAPTIVE"),
                 view.strategies().stream().map(item -> item.retrievalStrategy()).toList());
         assertEquals(0, view.totalRunCount());
         assertEquals("NO_DATA", view.strategies().get(0).sampleStatus());

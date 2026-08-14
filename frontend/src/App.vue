@@ -108,6 +108,7 @@ const learningAssignmentIssueFilter = ref('')
 const educationMetrics = ref(null)
 const educationExperiment = ref(null)
 const educationRetrievalCalibration = ref(null)
+const educationRetrievalPolicy = ref(null)
 const educationEvidenceImpact = ref(null)
 const learningTaskLoading = ref(false)
 const learningTaskStartingId = ref('')
@@ -2470,6 +2471,7 @@ const adminOperationsTrace = computed(() => [
 ])
 const educationExperimentStrategies = computed(() => educationExperiment.value?.strategies || [])
 const educationExperimentPairs = computed(() => educationExperiment.value?.pairedComparisons || [])
+const educationRetrievalPolicyCandidates = computed(() => educationRetrievalPolicy.value?.candidates || [])
 const educationEvidenceImpacts = computed(() => educationEvidenceImpact.value?.impacts || [])
 const educationExperimentStrategyLabel = (strategy) => ({
   FULL: '完整方法',
@@ -2479,6 +2481,7 @@ const educationExperimentStrategyLabel = (strategy) => ({
   NO_DEPENDENCY_GRAPH: '去知识依赖图',
   STATIC_WEIGHT: '固定权重消融',
   CALIBRATED: '教师校准',
+  ADAPTIVE: '状态自适应',
 }[strategy] || strategy || '未知策略')
 const educationExperimentSampleLabel = (status) => ({
   NO_DATA: '无数据',
@@ -4991,7 +4994,7 @@ async function ensureVisibleLearningAssignmentDetails() {
 
 async function loadEducationData() {
   try {
-    const [sources, profiles, goals, tasks, assignments, metrics, courses, experiment, calibration, evidenceImpact] = await Promise.all([
+    const [sources, profiles, goals, tasks, assignments, metrics, courses, experiment, calibration, policy, evidenceImpact] = await Promise.all([
       api.listEducationSources(),
       api.listLearnerProfiles(),
       api.listLearningGoals(),
@@ -5001,6 +5004,7 @@ async function loadEducationData() {
       api.listEducationCourses(),
       api.getEducationExperiments().catch(() => null),
       api.getEducationRetrievalCalibration().catch(() => null),
+      api.getEducationRetrievalPolicy().catch(() => null),
       api.getEducationEvidenceImpact().catch(() => null),
     ])
     educationSources.value = sources
@@ -5018,6 +5022,7 @@ async function loadEducationData() {
     educationMetrics.value = metrics
     educationExperiment.value = experiment
     educationRetrievalCalibration.value = calibration
+    educationRetrievalPolicy.value = policy
     educationEvidenceImpact.value = evidenceImpact
     educationCourses.value = courses || []
     learningEvaluationQueue.value = await api.listLearningEvaluationQueue().catch(() => [])
@@ -8631,7 +8636,7 @@ onBeforeUnmount(() => {
                   <label><span>当前课程</span><select v-model="chatEducation.courseId" :disabled="chatSending || chatUploading || !chatEducation.learnerProfileId" @change="selectChatCourse"><option value="">仅使用画像课程约束</option><option v-for="course in availableChatCourses" :key="course.id" :value="course.id">{{ course.code }} · {{ course.title }}</option></select></label>
                   <label><span>学习目标</span><select v-model="chatEducation.learningGoalId" :disabled="chatSending || chatUploading" @change="selectLearningGoal(learningGoals.find((goal) => goal.id === chatEducation.learningGoalId), false)"><option value="">不绑定目标</option><option v-for="goal in learningGoals.filter((item) => item.status === 'ACTIVE')" :key="goal.id" :value="goal.id">{{ goal.title }} · {{ goal.conceptKey }}</option></select></label>
                   <label><span>教学策略</span><select v-model="chatEducation.pedagogicalMode" :disabled="chatSending || chatUploading"><option value="AUTO">自动选择</option><option value="EXPLAIN">概念讲解</option><option value="SOCRATIC">启发式引导</option><option value="PRACTICE">练习优先</option><option value="DIAGNOSE">错误诊断</option></select></label>
-                  <label><span>检索策略</span><select v-model="chatEducation.retrievalStrategy" :disabled="chatSending || chatUploading"><option value="FULL">完整方法</option><option value="VECTOR_ONLY">向量基线</option><option value="KEYWORD_ONLY">关键词基线</option><option value="NO_LEARNER_STATE">去学习状态消融</option><option value="NO_DEPENDENCY_GRAPH">去知识依赖图消融</option><option value="STATIC_WEIGHT">固定权重消融</option></select></label>
+                  <label><span>检索策略</span><select v-model="chatEducation.retrievalStrategy" :disabled="chatSending || chatUploading"><option value="FULL">完整方法</option><option value="ADAPTIVE">状态自适应（历史学习结果）</option><option value="VECTOR_ONLY">向量基线</option><option value="KEYWORD_ONLY">关键词基线</option><option value="NO_LEARNER_STATE">去学习状态消融</option><option value="NO_DEPENDENCY_GRAPH">去知识依赖图消融</option><option value="STATIC_WEIGHT">固定权重消融</option><option value="CALIBRATED">教师校准</option></select></label>
                   <label><span>目标知识点</span><input v-model="chatEducation.conceptKey" maxlength="255" placeholder="例如：函数定义域" :disabled="chatSending || chatUploading" /></label>
                   <label><span>难度范围</span><div class="chat-education-difficulty"><input v-model.number="chatEducation.minDifficulty" type="number" min="1" max="5" placeholder="1" :disabled="chatSending || chatUploading" /><span>—</span><input v-model.number="chatEducation.maxDifficulty" type="number" min="1" max="5" placeholder="5" :disabled="chatSending || chatUploading" /></div></label>
                   <small class="chat-education-context">{{ activeChatCourse ? `已锁定 ${activeChatCourse.code} · ${activeChatCourse.title}` : '课程实例未绑定；将按画像与知识源范围运行' }} · {{ currentEducationRetrievalScope.subject || '未选择学科' }} · {{ currentEducationRetrievalScope.gradeLevel || '未选择年级' }} · {{ currentEducationRetrievalScope.curriculumVersion || '未选择课程版本' }}</small>
@@ -9182,11 +9187,13 @@ onBeforeUnmount(() => {
                 <span>检索策略</span>
                 <select v-model="form.education.retrievalStrategy">
                   <option value="FULL">完整方法</option>
+                  <option value="ADAPTIVE">状态自适应（历史学习结果）</option>
                   <option value="VECTOR_ONLY">向量基线</option>
                   <option value="KEYWORD_ONLY">关键词基线</option>
                   <option value="NO_LEARNER_STATE">去学习状态消融</option>
                   <option value="NO_DEPENDENCY_GRAPH">去知识依赖图消融</option>
                   <option value="STATIC_WEIGHT">固定权重消融</option>
+                  <option value="CALIBRATED">教师校准</option>
                 </select>
               </label>
             </div>
@@ -9770,6 +9777,34 @@ onBeforeUnmount(() => {
                     <span>效用 {{ Number(slice.overallUtilityMean || 0).toFixed(2) }}</span>
                     <span v-if="Number(slice.outcomeAssessmentCount || 0)">学习结果 {{ formatRate(slice.outcomeScore) }} · {{ slice.outcomeAssessmentCount }} 次测评</span>
                   </div>
+                </div>
+              </div>
+              <div v-if="educationRetrievalPolicy" class="education-calibration-card education-policy-card" aria-label="学习状态自适应检索策略">
+                <div class="education-calibration-heading"><span>状态自适应策略</span><em>{{ educationRetrievalPolicy.conditioning }} · {{ educationRetrievalPolicy.eligibleRunCount || 0 }} 个可用 Run</em></div>
+                <p class="learning-task-help">ADAPTIVE 会在 Run 创建时根据冻结的学习状态选择候选策略，并把选择结果保存到 Run；后续历史数据变化不会改写已经执行的实验样本。</p>
+                <div class="education-calibration-grid">
+                  <span><small>当前推荐</small><strong>{{ educationExperimentStrategyLabel(educationRetrievalPolicy.selectedStrategy) }}</strong></span>
+                  <span><small>策略版本</small><strong>{{ educationRetrievalPolicy.version }}</strong></span>
+                  <span><small>候选数量</small><strong>{{ educationRetrievalPolicy.candidates?.length || 0 }}</strong></span>
+                  <span><small>状态条件</small><strong>{{ educationRetrievalPolicy.conditioning }}</strong></span>
+                  <span><small>选择状态</small><strong>{{ educationRetrievalPolicy.selectedStrategy === 'FULL' && !(educationRetrievalPolicy.eligibleRunCount || 0) ? '回退基线' : '已选择' }}</strong></span>
+                </div>
+                <p v-if="educationRetrievalPolicy.selectionReason" class="learning-task-help"><strong>选择理由：</strong>{{ educationRetrievalPolicy.selectionReason }}</p>
+                <div v-if="educationRetrievalPolicyCandidates.length" class="education-experiment-table-wrap">
+                  <table class="education-experiment-table education-policy-table">
+                    <thead><tr><th>候选策略</th><th>Run</th><th>测评</th><th>掌握度增益</th><th>达标率</th><th>收缩分数</th><th>样本状态</th></tr></thead>
+                    <tbody>
+                      <tr v-for="candidate in educationRetrievalPolicyCandidates" :key="candidate.strategy" :class="{ 'is-best': candidate.strategy === educationRetrievalPolicy.selectedStrategy }">
+                        <td><strong>{{ educationExperimentStrategyLabel(candidate.strategy) }}</strong><small>{{ candidate.strategy }}</small></td>
+                        <td>{{ candidate.runCount }}</td>
+                        <td>{{ candidate.assessmentCount }}</td>
+                        <td :class="{ 'is-positive': Number(candidate.masteryGainMean || 0) > 0, 'is-negative': Number(candidate.masteryGainMean || 0) < 0 }">{{ formatSignedRate(candidate.masteryGainMean) }}</td>
+                        <td>{{ formatRate(candidate.targetReachRate) }}</td>
+                        <td>{{ formatRate(candidate.adjustedScore) }}</td>
+                        <td>{{ educationExperimentSampleLabel(candidate.sampleStatus) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
               <div v-if="educationEvidenceImpact" class="education-evidence-impact-card" aria-label="教育检索证据学习收益归因">

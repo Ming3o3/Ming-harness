@@ -202,7 +202,8 @@ public class EducationRetrievalCalibrationService {
                 graph != null && !graph.prerequisites().isEmpty()).conditioning();
     }
 
-    private String conditioningFor(Run run) {
+    /** 从 Run 创建时冻结的学习状态恢复同一状态分桶，供策略推荐复用。 */
+    public String conditioningFor(Run run) {
         return run == null ? "UNKNOWN" : conditioningFor(run.educationConfiguration());
     }
 
