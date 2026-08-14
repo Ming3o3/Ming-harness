@@ -19,8 +19,9 @@ import java.util.Map;
 /**
  * 根据冻结学习状态和历史形成性结果选择下一轮教育检索策略。
  *
- * <p>该服务只读取已经完成的 Run，并把候选统计、收缩分数和选择理由冻结到新 Run；
- * 小样本不会直接把一次偶然高分当成策略结论，推荐结果也不替代随机对照实验。</p>
+ * <p>结果统计只把成功且带形成性测评的 Run 纳入学习结果；均衡分配则额外记录所有
+ * 已分配的匹配 Run，避免“没有测评的失败样本”被反复重新分配。候选统计、收缩分数
+ * 和选择理由会冻结到新 Run；推荐结果也不替代随机对照实验。</p>
  */
 @Service
 public class EducationRetrievalPolicyService {
@@ -57,9 +58,10 @@ public class EducationRetrievalPolicyService {
         }
         List<Run> runs = runRepository.findByTenantIdAndEducationModeTrueOrderByCreatedAtAsc(tenantId);
         List<AssessmentAttempt> attempts = assessmentRepository.findByTenantIdOrderByCreatedAtAsc(tenantId);
-        if (runs == null || attempts == null || runs.isEmpty() || attempts.isEmpty()) {
+        if (runs == null || runs.isEmpty()) {
             return EducationRetrievalPolicySnapshot.prior(conditioning);
         }
+        if (attempts == null) attempts = List.of();
         Map<String, List<AssessmentAttempt>> attemptsByRun = new LinkedHashMap<>();
         for (AssessmentAttempt attempt : attempts) {
             if (attempt == null || attempt.getAssessmentType() != AssessmentAttemptType.FORMATIVE) continue;
@@ -71,42 +73,64 @@ public class EducationRetrievalPolicyService {
             accumulators.put(candidate.name(), new OutcomeAccumulator());
         }
         for (Run run : runs) {
-            if (!eligible(run, configuration, conditioning)) continue;
-            EducationRetrievalStrategy strategy = EducationRetrievalStrategy.parse(
-                    run.getEducationRetrievalStrategy());
+            if (!matchesConditioning(run, configuration, conditioning)) continue;
+            EducationRetrievalStrategy strategy = effectiveHistoricalStrategy(run);
             OutcomeAccumulator accumulator = accumulators.get(strategy.name());
             if (accumulator == null) continue;
+            accumulator.recordAllocation();
+            if (run.getStatus() != RunStatus.SUCCEEDED) continue;
             List<AssessmentAttempt> runAttempts = attemptsByRun.getOrDefault(run.getId(), List.of());
             if (runAttempts.isEmpty()) continue;
             double target = run.getEducationLearningGoalTarget() == null
                     ? 1.0 : run.getEducationLearningGoalTarget();
             boolean reached = runAttempts.stream().anyMatch(item -> item.getMasteryAfter() >= target);
-            accumulator.add(runAttempts, reached);
+            accumulator.recordOutcome(runAttempts, reached);
         }
 
-        List<EducationRetrievalPolicyCandidate> candidates = accumulators.entrySet().stream()
-                .map(entry -> entry.getValue().candidate(entry.getKey()))
-                .sorted(Comparator.comparingDouble(EducationRetrievalPolicyCandidate::adjustedScore).reversed()
-                        .thenComparing(EducationRetrievalPolicyCandidate::strategy))
-                .toList();
-        EducationRetrievalPolicyCandidate best = candidates.stream().findFirst().orElse(null);
-        if (best == null || best.runCount() == 0) {
-            return new EducationRetrievalPolicySnapshot(EducationRetrievalPolicySnapshot.VERSION,
-                    conditioning, EducationRetrievalStrategy.FULL.name(), 0,
-                    "当前状态没有可用历史测评，回退 FULL", candidates);
+        List<EducationRetrievalPolicyCandidate> candidates = candidateViews(accumulators,
+                configuration.retrievalStrategyValue() == EducationRetrievalStrategy.BALANCED_EXPERIMENT);
+        long outcomeRuns = candidates.stream().mapToLong(EducationRetrievalPolicyCandidate::runCount).sum();
+        long allocationRuns = candidates.stream().mapToLong(EducationRetrievalPolicyCandidate::allocationCount).sum();
+        EducationRetrievalPolicyCandidate best;
+        String reason;
+        if (configuration.retrievalStrategyValue() == EducationRetrievalStrategy.BALANCED_EXPERIMENT) {
+            best = candidates.stream()
+                    .min(Comparator.comparingLong(EducationRetrievalPolicyCandidate::allocationCount)
+                            .thenComparingInt(item -> candidateOrder(item.strategy())))
+                    .orElse(null);
+            if (best == null) best = candidateFor(EducationRetrievalStrategy.FULL, new OutcomeAccumulator());
+            reason = "按状态条件下历史 Run 分配次数均衡选择 " + best.strategy()
+                    + "（当前已分配 " + best.allocationCount() + " 次）";
+        } else {
+            best = candidates.stream()
+                    .filter(item -> item.runCount() > 0)
+                    .findFirst().orElse(null);
+            if (best == null) {
+                return new EducationRetrievalPolicySnapshot(EducationRetrievalPolicySnapshot.VERSION,
+                        conditioning, EducationRetrievalStrategy.FULL.name(), 0,
+                        "当前状态没有可用历史测评，回退 FULL", candidates, allocationRuns, null);
+            }
+            reason = best.runCount() < MIN_RUNS_FOR_ANALYSIS
+                    ? "样本量不足，使用收缩后的候选分数选择 " + best.strategy()
+                    : "按状态条件化学习结果选择收缩分数最高的 " + best.strategy();
         }
-        String reason = best.runCount() < MIN_RUNS_FOR_ANALYSIS
-                ? "样本量不足，使用收缩后的候选分数选择 " + best.strategy()
-                : "按状态条件化学习结果选择收缩分数最高的 " + best.strategy();
-        long eligibleRuns = candidates.stream().mapToLong(EducationRetrievalPolicyCandidate::runCount).sum();
         return new EducationRetrievalPolicySnapshot(EducationRetrievalPolicySnapshot.VERSION,
-                conditioning, best.strategy(), eligibleRuns, reason, candidates);
+                conditioning, best.strategy(), outcomeRuns, reason, candidates, allocationRuns, null);
     }
 
     @Transactional(readOnly = true)
     public String encodedSnapshotFor(String tenantId, String userId,
                                      EducationRunConfiguration configuration) {
         return EducationRetrievalPolicySnapshotCodec.encode(snapshotFor(tenantId, userId, configuration));
+    }
+
+    /** 将教师校准快照和策略选择快照绑定在同一个 Run 审计对象中，保证实际策略回放完整。 */
+    @Transactional(readOnly = true)
+    public String encodedSnapshotFor(String tenantId, String userId,
+                                     EducationRunConfiguration configuration,
+                                     String calibrationSnapshot) {
+        return EducationRetrievalPolicySnapshotCodec.encode(
+                snapshotFor(tenantId, userId, configuration).withCalibrationSnapshot(calibrationSnapshot));
     }
 
     /** 给学生/教师面板展示当前用户最近一次教育状态下的推荐，不创建新 Run。 */
@@ -147,7 +171,8 @@ public class EducationRetrievalPolicyService {
         EducationRetrievalStrategy requested = EducationRetrievalStrategy.parse(
                 run.getEducationRetrievalStrategy());
         String conditioning = calibrationService.conditioningFor(run);
-        if (requested != EducationRetrievalStrategy.ADAPTIVE) {
+        if (requested != EducationRetrievalStrategy.ADAPTIVE
+                && requested != EducationRetrievalStrategy.BALANCED_EXPERIMENT) {
             String snapshotType = requested == EducationRetrievalStrategy.CALIBRATED
                     ? "CALIBRATED_WEIGHTS" : "NONE";
             String snapshotVersion = requested == EducationRetrievalStrategy.CALIBRATED
@@ -167,19 +192,22 @@ public class EducationRetrievalPolicyService {
                 .map(EducationRetrievalPolicyCandidateView::from).toList();
         return new EducationRetrievalRunPolicyView(run.getId(), requested.name(), snapshot.selectedStrategy(),
                 run.getEducationRetrievalWeights() != null && !run.getEducationRetrievalWeights().isBlank(),
-                "ADAPTIVE_POLICY", snapshot.version(), snapshot.conditioning(), snapshot.eligibleRunCount(),
+                requested == EducationRetrievalStrategy.BALANCED_EXPERIMENT
+                        ? "BALANCED_POLICY" : "ADAPTIVE_POLICY",
+                snapshot.version(), snapshot.conditioning(), snapshot.eligibleRunCount(),
                 snapshot.selectionReason(), candidates);
     }
 
     public EducationRetrievalStrategy effectiveStrategy(String requestedStrategy, String encodedSnapshot) {
         EducationRetrievalStrategy requested = EducationRetrievalStrategy.parse(requestedStrategy);
-        if (requested != EducationRetrievalStrategy.ADAPTIVE) return requested;
+        if (requested != EducationRetrievalStrategy.ADAPTIVE
+                && requested != EducationRetrievalStrategy.BALANCED_EXPERIMENT) return requested;
         return EducationRetrievalStrategy.parse(
                 EducationRetrievalPolicySnapshotCodec.decode(encodedSnapshot).selectedStrategy());
     }
 
-    private boolean eligible(Run run, EducationRunConfiguration configuration, String conditioning) {
-        if (run == null || run.getStatus() != RunStatus.SUCCEEDED || !run.isEducationMode()
+    private boolean matchesConditioning(Run run, EducationRunConfiguration configuration, String conditioning) {
+        if (run == null || !run.isEducationMode()
                 || !same(run.getEducationSubject(), configuration.subject())
                 || !same(run.getEducationGradeLevel(), configuration.gradeLevel())
                 || !same(run.getEducationCurriculumVersion(), configuration.curriculumVersion())
@@ -189,19 +217,58 @@ public class EducationRetrievalPolicyService {
         return conditioning.equals(calibrationService.conditioningFor(run));
     }
 
+    private EducationRetrievalStrategy effectiveHistoricalStrategy(Run run) {
+        EducationRetrievalStrategy requested = EducationRetrievalStrategy.parse(
+                run.getEducationRetrievalStrategy());
+        if (requested != EducationRetrievalStrategy.ADAPTIVE
+                && requested != EducationRetrievalStrategy.BALANCED_EXPERIMENT) {
+            return requested;
+        }
+        EducationRetrievalStrategy selected = EducationRetrievalStrategy.parse(
+                EducationRetrievalPolicySnapshotCodec.decode(run.getEducationRetrievalWeights())
+                        .selectedStrategy());
+        return CANDIDATES.contains(selected) ? selected : EducationRetrievalStrategy.FULL;
+    }
+
+    private List<EducationRetrievalPolicyCandidate> candidateViews(
+            Map<String, OutcomeAccumulator> accumulators, boolean allocationOrder) {
+        java.util.stream.Stream<EducationRetrievalPolicyCandidate> stream = accumulators.entrySet().stream()
+                .map(entry -> entry.getValue().candidate(entry.getKey()));
+        if (!allocationOrder) {
+            stream = stream.sorted(Comparator.comparingDouble(EducationRetrievalPolicyCandidate::adjustedScore)
+                    .reversed().thenComparingInt(item -> candidateOrder(item.strategy())));
+        }
+        return stream.toList();
+    }
+
+    private EducationRetrievalPolicyCandidate candidateFor(EducationRetrievalStrategy strategy,
+                                                            OutcomeAccumulator accumulator) {
+        return accumulator.candidate(strategy.name());
+    }
+
+    private int candidateOrder(String strategy) {
+        int index = CANDIDATES.indexOf(EducationRetrievalStrategy.parse(strategy));
+        return index < 0 ? Integer.MAX_VALUE : index;
+    }
+
     private boolean same(String left, String right) {
         if (left == null || right == null) return left == null && right == null;
         return left.trim().equalsIgnoreCase(right.trim());
     }
 
     private static final class OutcomeAccumulator {
+        private long allocationCount;
         private long runCount;
         private long assessmentCount;
         private long correctCount;
         private long reachedRunCount;
         private double gainSum;
 
-        private void add(List<AssessmentAttempt> attempts, boolean reached) {
+        private void recordAllocation() {
+            allocationCount++;
+        }
+
+        private void recordOutcome(List<AssessmentAttempt> attempts, boolean reached) {
             runCount++;
             if (reached) reachedRunCount++;
             for (AssessmentAttempt attempt : attempts) {
@@ -221,7 +288,7 @@ public class EducationRetrievalPolicyService {
             String status = runCount == 0 ? "NO_DATA"
                     : runCount < MIN_RUNS_FOR_ANALYSIS ? "INSUFFICIENT_SAMPLE" : "ANALYSIS_READY";
             return new EducationRetrievalPolicyCandidate(strategy, runCount, assessmentCount,
-                    gain, accuracy, reach, score, confidence, adjusted, status);
+                    gain, accuracy, reach, score, confidence, adjusted, status, allocationCount);
         }
 
         private double clamp(double value) {

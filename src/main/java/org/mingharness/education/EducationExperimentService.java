@@ -37,6 +37,16 @@ public class EducationExperimentService {
     /** 仅表示是否达到进入基础统计分析的样本门槛，不等价于显著性检验。 */
     private static final int MIN_RUNS_FOR_ANALYSIS = 30;
     private static final int MIN_ASSESSMENTS_FOR_ANALYSIS = 30;
+    /** 实验表按实际执行方法聚合；ADAPTIVE/BALANCED_EXPERIMENT 是分配器而非方法。 */
+    private static final List<EducationRetrievalStrategy> EXPERIMENT_STRATEGIES = List.of(
+            EducationRetrievalStrategy.FULL,
+            EducationRetrievalStrategy.VECTOR_ONLY,
+            EducationRetrievalStrategy.KEYWORD_ONLY,
+            EducationRetrievalStrategy.NO_LEARNER_STATE,
+            EducationRetrievalStrategy.NO_DEPENDENCY_GRAPH,
+            EducationRetrievalStrategy.STATIC_WEIGHT,
+            EducationRetrievalStrategy.CALIBRATED,
+            EducationRetrievalStrategy.ADAPTIVE);
 
     private final RunRepository runRepository;
     private final AssessmentAttemptRepository assessmentRepository;
@@ -76,11 +86,11 @@ public class EducationExperimentService {
                 .toList();
 
         Map<String, List<Run>> byStrategy = new LinkedHashMap<>();
-        for (EducationRetrievalStrategy strategy : EducationRetrievalStrategy.values()) {
+        for (EducationRetrievalStrategy strategy : EXPERIMENT_STRATEGIES) {
             byStrategy.put(strategy.name(), new ArrayList<>());
         }
         for (Run run : runs) {
-            byStrategy.computeIfAbsent(run.getEducationRetrievalStrategy(), ignored -> new ArrayList<>())
+            byStrategy.computeIfAbsent(effectiveExperimentStrategy(run), ignored -> new ArrayList<>())
                     .add(run);
         }
 
@@ -94,11 +104,11 @@ public class EducationExperimentService {
             if (run.getEducationLearningGoalId() == null || run.getEducationLearningGoalId().isBlank()) continue;
             String key = run.getUserId() + "\u0000" + run.getEducationLearningGoalId();
             strategiesByLearnerGoal.computeIfAbsent(key, ignored -> new LinkedHashSet<>())
-                    .add(run.getEducationRetrievalStrategy());
+                    .add(effectiveExperimentStrategy(run));
         }
         long paired = strategiesByLearnerGoal.values().stream().filter(value -> value.size() > 1).count();
         long fullyPaired = strategiesByLearnerGoal.values().stream()
-                .filter(value -> value.size() == EducationRetrievalStrategy.values().length).count();
+                .filter(value -> value.size() == EXPERIMENT_STRATEGIES.size()).count();
         return new EducationExperimentView(Instant.now(), runs.size(), successfulRuns,
                 scopedAttempts.size(), tenantScope, paired, fullyPaired, summaries, pairedComparisons);
     }
@@ -276,7 +286,7 @@ public class EducationExperimentService {
             }
             String goalKey = run.getUserId() + "\u0000" + run.getEducationLearningGoalId();
             grouped.computeIfAbsent(goalKey, ignored -> new LinkedHashMap<>())
-                    .computeIfAbsent(run.getEducationRetrievalStrategy(), ignored -> new ArrayList<>())
+                    .computeIfAbsent(effectiveExperimentStrategy(run), ignored -> new ArrayList<>())
                     .add(run);
         }
 
@@ -285,7 +295,7 @@ public class EducationExperimentService {
             GoalStrategyOutcome reference = goalStrategyOutcome(
                     byStrategy.get(EducationRetrievalStrategy.FULL.name()), attemptsByRun);
             if (reference == null) continue;
-            for (EducationRetrievalStrategy strategy : EducationRetrievalStrategy.values()) {
+            for (EducationRetrievalStrategy strategy : EXPERIMENT_STRATEGIES) {
                 if (strategy == EducationRetrievalStrategy.FULL) continue;
                 GoalStrategyOutcome compared = goalStrategyOutcome(
                         byStrategy.get(strategy.name()), attemptsByRun);
@@ -299,6 +309,21 @@ public class EducationExperimentService {
                 .map(entry -> entry.getValue().view(EducationRetrievalStrategy.FULL.name(),
                         entry.getKey(), sampleStatusForPairs(entry.getValue().count)))
                 .toList();
+    }
+
+    /** 将分配器 Run 解码为实际执行方法，避免把 BALANCED_EXPERIMENT 当成一种检索算法。 */
+    private String effectiveExperimentStrategy(Run run) {
+        EducationRetrievalStrategy requested = EducationRetrievalStrategy.parse(
+                run == null ? null : run.getEducationRetrievalStrategy());
+        if (requested != EducationRetrievalStrategy.ADAPTIVE
+                && requested != EducationRetrievalStrategy.BALANCED_EXPERIMENT) {
+            return requested.name();
+        }
+        EducationRetrievalStrategy effective = EducationRetrievalStrategy.parse(
+                EducationRetrievalPolicySnapshotCodec.decode(
+                        run == null ? null : run.getEducationRetrievalWeights()).selectedStrategy());
+        return EXPERIMENT_STRATEGIES.contains(effective)
+                ? effective.name() : EducationRetrievalStrategy.FULL.name();
     }
 
     private GoalStrategyOutcome goalStrategyOutcome(List<Run> strategyRuns,

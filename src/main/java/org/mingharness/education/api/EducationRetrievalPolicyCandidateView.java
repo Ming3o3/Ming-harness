@@ -11,7 +11,8 @@ public record EducationRetrievalPolicyCandidateView(
         double outcomeScore,
         double confidence,
         double adjustedScore,
-        String sampleStatus
+        String sampleStatus,
+        long allocationCount
 ) {
 
     public static EducationRetrievalPolicyCandidateView from(
@@ -19,6 +20,6 @@ public record EducationRetrievalPolicyCandidateView(
         return new EducationRetrievalPolicyCandidateView(candidate.strategy(), candidate.runCount(),
                 candidate.assessmentCount(), candidate.masteryGainMean(), candidate.accuracyRate(),
                 candidate.targetReachRate(), candidate.outcomeScore(), candidate.confidence(),
-                candidate.adjustedScore(), candidate.sampleStatus());
+                candidate.adjustedScore(), candidate.sampleStatus(), candidate.allocationCount());
     }
 }

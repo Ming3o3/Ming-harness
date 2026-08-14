@@ -2487,6 +2487,7 @@ const educationExperimentStrategyLabel = (strategy) => ({
   STATIC_WEIGHT: '固定权重消融',
   CALIBRATED: '教师校准',
   ADAPTIVE: '状态自适应',
+  BALANCED_EXPERIMENT: '均衡实验分配',
 }[strategy] || strategy || '未知策略')
 const educationExperimentSampleLabel = (status) => ({
   NO_DATA: '无数据',
@@ -8656,7 +8657,7 @@ onBeforeUnmount(() => {
                   <label><span>当前课程</span><select v-model="chatEducation.courseId" :disabled="chatSending || chatUploading || !chatEducation.learnerProfileId" @change="selectChatCourse"><option value="">仅使用画像课程约束</option><option v-for="course in availableChatCourses" :key="course.id" :value="course.id">{{ course.code }} · {{ course.title }}</option></select></label>
                   <label><span>学习目标</span><select v-model="chatEducation.learningGoalId" :disabled="chatSending || chatUploading" @change="selectLearningGoal(learningGoals.find((goal) => goal.id === chatEducation.learningGoalId), false)"><option value="">不绑定目标</option><option v-for="goal in learningGoals.filter((item) => item.status === 'ACTIVE')" :key="goal.id" :value="goal.id">{{ goal.title }} · {{ goal.conceptKey }}</option></select></label>
                   <label><span>教学策略</span><select v-model="chatEducation.pedagogicalMode" :disabled="chatSending || chatUploading"><option value="AUTO">自动选择</option><option value="EXPLAIN">概念讲解</option><option value="SOCRATIC">启发式引导</option><option value="PRACTICE">练习优先</option><option value="DIAGNOSE">错误诊断</option></select></label>
-                  <label><span>检索策略</span><select v-model="chatEducation.retrievalStrategy" :disabled="chatSending || chatUploading"><option value="FULL">完整方法</option><option value="ADAPTIVE">状态自适应（历史学习结果）</option><option value="VECTOR_ONLY">向量基线</option><option value="KEYWORD_ONLY">关键词基线</option><option value="NO_LEARNER_STATE">去学习状态消融</option><option value="NO_DEPENDENCY_GRAPH">去知识依赖图消融</option><option value="STATIC_WEIGHT">固定权重消融</option><option value="CALIBRATED">教师校准</option></select></label>
+                  <label><span>检索策略</span><select v-model="chatEducation.retrievalStrategy" :disabled="chatSending || chatUploading"><option value="FULL">完整方法</option><option value="ADAPTIVE">状态自适应（历史学习结果）</option><option value="BALANCED_EXPERIMENT">均衡实验分配（按状态）</option><option value="VECTOR_ONLY">向量基线</option><option value="KEYWORD_ONLY">关键词基线</option><option value="NO_LEARNER_STATE">去学习状态消融</option><option value="NO_DEPENDENCY_GRAPH">去知识依赖图消融</option><option value="STATIC_WEIGHT">固定权重消融</option><option value="CALIBRATED">教师校准</option></select></label>
                   <label><span>目标知识点</span><input v-model="chatEducation.conceptKey" maxlength="255" placeholder="例如：函数定义域" :disabled="chatSending || chatUploading" /></label>
                   <label><span>难度范围</span><div class="chat-education-difficulty"><input v-model.number="chatEducation.minDifficulty" type="number" min="1" max="5" placeholder="1" :disabled="chatSending || chatUploading" /><span>—</span><input v-model.number="chatEducation.maxDifficulty" type="number" min="1" max="5" placeholder="5" :disabled="chatSending || chatUploading" /></div></label>
                   <small class="chat-education-context">{{ activeChatCourse ? `已锁定 ${activeChatCourse.code} · ${activeChatCourse.title}` : '课程实例未绑定；将按画像与知识源范围运行' }} · {{ currentEducationRetrievalScope.subject || '未选择学科' }} · {{ currentEducationRetrievalScope.gradeLevel || '未选择年级' }} · {{ currentEducationRetrievalScope.curriculumVersion || '未选择课程版本' }}</small>
@@ -9208,6 +9209,7 @@ onBeforeUnmount(() => {
                 <select v-model="form.education.retrievalStrategy">
                   <option value="FULL">完整方法</option>
                   <option value="ADAPTIVE">状态自适应（历史学习结果）</option>
+                  <option value="BALANCED_EXPERIMENT">均衡实验分配（按状态）</option>
                   <option value="VECTOR_ONLY">向量基线</option>
                   <option value="KEYWORD_ONLY">关键词基线</option>
                   <option value="NO_LEARNER_STATE">去学习状态消融</option>
@@ -9332,12 +9334,13 @@ onBeforeUnmount(() => {
               </div>
               <p v-if="selectedRunRetrievalPolicy.selectionReason" class="learning-task-help"><strong>决策理由：</strong>{{ selectedRunRetrievalPolicy.selectionReason }}</p>
               <div v-if="selectedRunRetrievalPolicy.candidates?.length" class="education-experiment-table-wrap">
-                <table class="education-experiment-table education-policy-table">
-                  <thead><tr><th>候选策略</th><th>Run</th><th>测评</th><th>掌握度增益</th><th>达标率</th><th>收缩分数</th><th>样本状态</th></tr></thead>
+                  <table class="education-experiment-table education-policy-table">
+                  <thead><tr><th>候选策略</th><th>结果 Run</th><th>已分配</th><th>测评</th><th>掌握度增益</th><th>达标率</th><th>收缩分数</th><th>样本状态</th></tr></thead>
                   <tbody>
                     <tr v-for="candidate in selectedRunRetrievalPolicy.candidates" :key="candidate.strategy" :class="{ 'is-best': candidate.strategy === selectedRunRetrievalPolicy.effectiveStrategy }">
                       <td><strong>{{ educationExperimentStrategyLabel(candidate.strategy) }}</strong><small>{{ candidate.strategy }}</small></td>
                       <td>{{ candidate.runCount }}</td>
+                      <td>{{ candidate.allocationCount ?? candidate.runCount }}</td>
                       <td>{{ candidate.assessmentCount }}</td>
                       <td :class="{ 'is-positive': Number(candidate.masteryGainMean || 0) > 0, 'is-negative': Number(candidate.masteryGainMean || 0) < 0 }">{{ formatSignedRate(candidate.masteryGainMean) }}</td>
                       <td>{{ formatRate(candidate.targetReachRate) }}</td>
@@ -9829,8 +9832,8 @@ onBeforeUnmount(() => {
                 </div>
               </div>
               <div v-if="educationRetrievalPolicy" class="education-calibration-card education-policy-card" aria-label="学习状态自适应检索策略">
-                <div class="education-calibration-heading"><span>状态自适应策略</span><em>{{ educationRetrievalPolicy.conditioning }} · {{ educationRetrievalPolicy.eligibleRunCount || 0 }} 个可用 Run</em></div>
-                <p class="learning-task-help">ADAPTIVE 会在 Run 创建时根据冻结的学习状态选择候选策略，并把选择结果保存到 Run；后续历史数据变化不会改写已经执行的实验样本。</p>
+                <div class="education-calibration-heading"><span>状态条件化策略推荐</span><em>{{ educationRetrievalPolicy.conditioning }} · {{ educationRetrievalPolicy.eligibleRunCount || 0 }} 个结果 Run</em></div>
+                <p class="learning-task-help">ADAPTIVE 会根据历史学习结果选择候选方法；BALANCED_EXPERIMENT 会按同一学习状态下的历史分配次数选择最少者。两种结果都会在 Run 创建时冻结，后续历史数据变化不会改写已执行样本。</p>
                 <div class="education-calibration-grid">
                   <span><small>当前推荐</small><strong>{{ educationExperimentStrategyLabel(educationRetrievalPolicy.selectedStrategy) }}</strong></span>
                   <span><small>策略版本</small><strong>{{ educationRetrievalPolicy.version }}</strong></span>
@@ -9841,11 +9844,12 @@ onBeforeUnmount(() => {
                 <p v-if="educationRetrievalPolicy.selectionReason" class="learning-task-help"><strong>选择理由：</strong>{{ educationRetrievalPolicy.selectionReason }}</p>
                 <div v-if="educationRetrievalPolicyCandidates.length" class="education-experiment-table-wrap">
                   <table class="education-experiment-table education-policy-table">
-                    <thead><tr><th>候选策略</th><th>Run</th><th>测评</th><th>掌握度增益</th><th>达标率</th><th>收缩分数</th><th>样本状态</th></tr></thead>
+                    <thead><tr><th>候选策略</th><th>结果 Run</th><th>已分配</th><th>测评</th><th>掌握度增益</th><th>达标率</th><th>收缩分数</th><th>样本状态</th></tr></thead>
                     <tbody>
                       <tr v-for="candidate in educationRetrievalPolicyCandidates" :key="candidate.strategy" :class="{ 'is-best': candidate.strategy === educationRetrievalPolicy.selectedStrategy }">
                         <td><strong>{{ educationExperimentStrategyLabel(candidate.strategy) }}</strong><small>{{ candidate.strategy }}</small></td>
                         <td>{{ candidate.runCount }}</td>
+                        <td>{{ candidate.allocationCount ?? candidate.runCount }}</td>
                         <td>{{ candidate.assessmentCount }}</td>
                         <td :class="{ 'is-positive': Number(candidate.masteryGainMean || 0) > 0, 'is-negative': Number(candidate.masteryGainMean || 0) < 0 }">{{ formatSignedRate(candidate.masteryGainMean) }}</td>
                         <td>{{ formatRate(candidate.targetReachRate) }}</td>

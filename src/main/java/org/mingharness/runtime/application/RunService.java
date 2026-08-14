@@ -41,6 +41,7 @@ import org.mingharness.education.EducationRunConfiguration;
 import org.mingharness.education.EducationRunConfigurationService;
 import org.mingharness.education.EducationRetrievalCalibrationService;
 import org.mingharness.education.EducationRetrievalPolicyService;
+import org.mingharness.education.EducationRetrievalPolicySnapshotCodec;
 import org.mingharness.education.EducationRetrievalStrategy;
 import org.mingharness.education.EducationDependencyGraph;
 import org.mingharness.education.EducationDependencyGraphSnapshotCodec;
@@ -289,10 +290,13 @@ public class RunService {
                     workspaceId
             );
             run.attachEducationConfiguration(educationConfiguration);
-            if (educationConfiguration.retrievalStrategyValue() == EducationRetrievalStrategy.ADAPTIVE) {
+            if (educationConfiguration.retrievalStrategyValue() == EducationRetrievalStrategy.ADAPTIVE
+                    || educationConfiguration.retrievalStrategyValue()
+                    == EducationRetrievalStrategy.BALANCED_EXPERIMENT) {
                 run.attachEducationRetrievalPolicy(
                         educationRetrievalPolicyService.encodedSnapshotFor(
-                                request.tenantId(), request.userId(), educationConfiguration));
+                                request.tenantId(), request.userId(), educationConfiguration,
+                                educationRetrievalCalibrationService.encodedSnapshotForTenant(request.tenantId())));
             } else if (educationConfiguration.retrievalStrategyValue() == EducationRetrievalStrategy.CALIBRATED) {
                 run.attachEducationRetrievalWeights(
                         educationRetrievalCalibrationService.encodedSnapshotForTenant(request.tenantId()));
@@ -1854,11 +1858,19 @@ public class RunService {
 
     private EducationRankingWeights calibratedWeights(EducationRunConfiguration configuration,
                                                        String snapshot) {
-        if (configuration == null
-                || configuration.retrievalStrategyValue() != EducationRetrievalStrategy.CALIBRATED) {
+        if (configuration == null) {
             return null;
         }
-        return educationRetrievalCalibrationService.weightsFromSnapshot(snapshot, configuration);
+        EducationRetrievalStrategy effective = effectiveEducationStrategy(configuration, snapshot);
+        if (effective != EducationRetrievalStrategy.CALIBRATED) return null;
+        String calibrationSnapshot = snapshot;
+        if (configuration.retrievalStrategyValue() == EducationRetrievalStrategy.ADAPTIVE
+                || configuration.retrievalStrategyValue()
+                == EducationRetrievalStrategy.BALANCED_EXPERIMENT) {
+            calibrationSnapshot = EducationRetrievalPolicySnapshotCodec.decode(snapshot)
+                    .calibrationSnapshot();
+        }
+        return educationRetrievalCalibrationService.weightsFromSnapshot(calibrationSnapshot, configuration);
     }
 
     private EducationRetrievalStrategy effectiveEducationStrategy(

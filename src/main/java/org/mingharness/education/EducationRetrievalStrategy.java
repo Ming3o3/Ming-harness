@@ -24,7 +24,9 @@ public enum EducationRetrievalStrategy {
     /** 混合召回、学习者状态和依赖图，并使用教师标注校准的版本化权重。 */
     CALIBRATED,
     /** 根据当前学习状态和历史形成性结果选择并冻结一个候选策略。 */
-    ADAPTIVE;
+    ADAPTIVE,
+    /** 按当前状态条件下各候选方法的历史分配次数进行均衡分配。 */
+    BALANCED_EXPERIMENT;
 
     public static EducationRetrievalStrategy parse(String value) {
         if (value == null || value.isBlank()) return FULL;
@@ -46,14 +48,16 @@ public enum EducationRetrievalStrategy {
 
     public boolean usesLearnerState() {
         return this == FULL || this == NO_DEPENDENCY_GRAPH || this == STATIC_WEIGHT
-                || this == CALIBRATED || this == ADAPTIVE;
+                || this == CALIBRATED || this == ADAPTIVE || this == BALANCED_EXPERIMENT;
     }
 
     public boolean usesAdaptiveWeights() {
-        return this == FULL || this == NO_DEPENDENCY_GRAPH || this == CALIBRATED || this == ADAPTIVE;
+        return this == FULL || this == NO_DEPENDENCY_GRAPH || this == CALIBRATED
+                || this == ADAPTIVE || this == BALANCED_EXPERIMENT;
     }
 
     public boolean usesDependencyGraph() {
-        return this == FULL || this == STATIC_WEIGHT || this == CALIBRATED || this == ADAPTIVE;
+        return this == FULL || this == STATIC_WEIGHT || this == CALIBRATED
+                || this == ADAPTIVE || this == BALANCED_EXPERIMENT;
     }
 }

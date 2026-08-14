@@ -95,6 +95,53 @@ class EducationRetrievalPolicyServiceTests {
     }
 
     @Test
+    void shouldBalanceByAllocationCountEvenWhenSomeRunsHaveNoAssessmentOutcome() {
+        RunRepository runs = mock(RunRepository.class);
+        AssessmentAttemptRepository assessments = mock(AssessmentAttemptRepository.class);
+        EducationRetrievalCalibrationService calibration = mock(EducationRetrievalCalibrationService.class);
+        when(calibration.conditioningFor(any(EducationRunConfiguration.class)))
+                .thenReturn("LOW_MASTERY_GAP_FIRST");
+        when(calibration.conditioningFor(any(Run.class))).thenReturn("LOW_MASTERY_GAP_FIRST");
+
+        List<Run> historicalRuns = new ArrayList<>();
+        historicalRuns.add(completedRun("FULL", "函数=0.10"));
+        historicalRuns.add(completedRun("CALIBRATED", "函数=0.10"));
+        historicalRuns.add(completedRun("CALIBRATED", "函数=0.10"));
+        historicalRuns.add(completedRun("NO_DEPENDENCY_GRAPH", "函数=0.10"));
+        historicalRuns.add(completedRun("NO_DEPENDENCY_GRAPH", "函数=0.10"));
+        historicalRuns.add(completedRun("STATIC_WEIGHT", "函数=0.10"));
+        historicalRuns.add(completedRun("STATIC_WEIGHT", "函数=0.10"));
+        when(runs.findByTenantIdAndEducationModeTrueOrderByCreatedAtAsc("tenant-a"))
+                .thenReturn(historicalRuns);
+        when(assessments.findByTenantIdOrderByCreatedAtAsc("tenant-a"))
+                .thenReturn(List.of());
+
+        EducationRetrievalPolicySnapshot snapshot = new EducationRetrievalPolicyService(
+                runs, assessments, calibration).snapshotFor("tenant-a", "student-1",
+                configuration("BALANCED_EXPERIMENT", "函数=0.10"));
+
+        assertEquals("FULL", snapshot.selectedStrategy());
+        assertEquals(7, snapshot.allocationRunCount());
+        var full = snapshot.candidates().stream().filter(item -> item.strategy().equals("FULL"))
+                .findFirst().orElseThrow();
+        assertEquals(1, full.allocationCount());
+        assertEquals(0, full.runCount());
+        assertTrue(snapshot.selectionReason().contains("均衡"));
+    }
+
+    @Test
+    void shouldReplayCalibrationSnapshotForAdaptiveSelectionOfCalibratedMethod() {
+        EducationRetrievalPolicySnapshot policy = new EducationRetrievalPolicySnapshot(
+                EducationRetrievalPolicySnapshot.VERSION, "LOW_MASTERY_GAP_FIRST", "CALIBRATED", 3,
+                "均衡", List.of(), 3, "{\"version\":\"retrieval-calibration-v2\"}");
+        EducationRetrievalPolicySnapshot decoded = EducationRetrievalPolicySnapshotCodec.decode(
+                EducationRetrievalPolicySnapshotCodec.encode(policy));
+
+        assertEquals("CALIBRATED", decoded.selectedStrategy());
+        assertEquals("{\"version\":\"retrieval-calibration-v2\"}", decoded.calibrationSnapshot());
+    }
+
+    @Test
     void shouldExposeFrozenRunPolicyOnlyToOwnerOrEvaluator() {
         RunRepository runs = mock(RunRepository.class);
         AssessmentAttemptRepository assessments = mock(AssessmentAttemptRepository.class);

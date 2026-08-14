@@ -38,12 +38,15 @@ public final class EducationRetrievalPolicySnapshotCodec {
                             text(item, "strategy"), integer(item, "runCount"), integer(item, "assessmentCount"),
                             number(item, "masteryGainMean"), number(item, "accuracyRate"),
                             number(item, "targetReachRate"), number(item, "outcomeScore"),
-                            number(item, "confidence"), number(item, "adjustedScore"), text(item, "sampleStatus")));
+                            number(item, "confidence"), number(item, "adjustedScore"), text(item, "sampleStatus"),
+                            integer(item, "allocationCount", integer(item, "runCount"))));
                 }
             }
             return new EducationRetrievalPolicySnapshot(
                     text(root, "version"), text(root, "conditioning"), text(root, "selectedStrategy"),
-                    integer(root, "eligibleRunCount"), text(root, "selectionReason"), candidates);
+                    integer(root, "eligibleRunCount"), text(root, "selectionReason"), candidates,
+                    integer(root, "allocationRunCount", integer(root, "eligibleRunCount")),
+                    text(root, "calibrationSnapshot"));
         } catch (JacksonException exception) {
             return EducationRetrievalPolicySnapshot.prior("UNKNOWN");
         }
@@ -55,8 +58,12 @@ public final class EducationRetrievalPolicySnapshotCodec {
     }
 
     private static long integer(JsonNode node, String field) {
+        return integer(node, field, 0L);
+    }
+
+    private static long integer(JsonNode node, String field, long fallback) {
         JsonNode value = node.get(field);
-        return value != null && value.isNumber() ? value.asLong(0L) : 0L;
+        return value != null && value.isNumber() ? value.asLong(fallback) : fallback;
     }
 
     private static double number(JsonNode node, String field) {

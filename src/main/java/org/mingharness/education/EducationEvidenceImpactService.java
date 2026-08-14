@@ -84,7 +84,7 @@ public class EducationEvidenceImpactService {
             double attributionWeight = 1.0 / references.size();
             SnapshotIndex snapshotIndex = snapshotIndexes.get(run.getId());
             boolean matchedForAssessment = false;
-            String strategy = run.getEducationRetrievalStrategy();
+            String strategy = effectiveExperimentStrategy(run);
             double gain = attempt.getMasteryAfter() - attempt.getMasteryBefore();
             for (AssessmentEvidenceReference reference : references) {
                 ContextEvidence snapshot = snapshotIndex == null ? null
@@ -201,6 +201,24 @@ public class EducationEvidenceImpactService {
     private String sampleStatus(long count) {
         if (count == 0) return "NO_DATA";
         return count < MIN_SAMPLES_FOR_ANALYSIS ? "INSUFFICIENT_SAMPLE" : "ANALYSIS_READY";
+    }
+
+    /** 分配器 Run 的证据指标归入真实执行方法，避免 BALANCED_EXPERIMENT 污染方法比较。 */
+    private String effectiveExperimentStrategy(Run run) {
+        EducationRetrievalStrategy requested = EducationRetrievalStrategy.parse(
+                run == null ? null : run.getEducationRetrievalStrategy());
+        if (requested != EducationRetrievalStrategy.ADAPTIVE
+                && requested != EducationRetrievalStrategy.BALANCED_EXPERIMENT) {
+            return requested.name();
+        }
+        EducationRetrievalStrategy effective = EducationRetrievalStrategy.parse(
+                EducationRetrievalPolicySnapshotCodec.decode(
+                        run == null ? null : run.getEducationRetrievalWeights()).selectedStrategy());
+        return switch (effective) {
+            case FULL, VECTOR_ONLY, KEYWORD_ONLY, NO_LEARNER_STATE,
+                    NO_DEPENDENCY_GRAPH, STATIC_WEIGHT, CALIBRATED -> effective.name();
+            default -> EducationRetrievalStrategy.FULL.name();
+        };
     }
 
     private double ratio(long numerator, long denominator) {

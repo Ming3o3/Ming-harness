@@ -9,10 +9,21 @@ public record EducationRetrievalPolicySnapshot(
         String selectedStrategy,
         long eligibleRunCount,
         String selectionReason,
-        List<EducationRetrievalPolicyCandidate> candidates
+        List<EducationRetrievalPolicyCandidate> candidates,
+        long allocationRunCount,
+        String calibrationSnapshot
 ) {
 
-    public static final String VERSION = "retrieval-policy-v1";
+    public static final String VERSION = "retrieval-policy-v2";
+
+    /** 兼容没有分配计数和校准快照的旧版策略快照。 */
+    public EducationRetrievalPolicySnapshot(String version, String conditioning,
+                                            String selectedStrategy, long eligibleRunCount,
+                                            String selectionReason,
+                                            List<EducationRetrievalPolicyCandidate> candidates) {
+        this(version, conditioning, selectedStrategy, eligibleRunCount, selectionReason,
+                candidates, eligibleRunCount, null);
+    }
 
     public EducationRetrievalPolicySnapshot {
         version = version == null || version.isBlank() ? VERSION : version.trim();
@@ -21,11 +32,18 @@ public record EducationRetrievalPolicySnapshot(
         eligibleRunCount = Math.max(0, eligibleRunCount);
         selectionReason = selectionReason == null ? "" : selectionReason.trim();
         candidates = candidates == null ? List.of() : List.copyOf(candidates);
+        allocationRunCount = Math.max(0, allocationRunCount);
+        calibrationSnapshot = calibrationSnapshot == null ? "" : calibrationSnapshot.trim();
     }
 
     public static EducationRetrievalPolicySnapshot prior(String conditioning) {
         return new EducationRetrievalPolicySnapshot(VERSION, conditioning, EducationRetrievalStrategy.FULL.name(),
-                0, "历史样本不足，回退 FULL", List.of());
+                0, "历史样本不足，回退 FULL", List.of(), 0, null);
+    }
+
+    public EducationRetrievalPolicySnapshot withCalibrationSnapshot(String snapshot) {
+        return new EducationRetrievalPolicySnapshot(version, conditioning, selectedStrategy,
+                eligibleRunCount, selectionReason, candidates, allocationRunCount, snapshot);
     }
 
     private static String normalizeStrategy(String value) {
