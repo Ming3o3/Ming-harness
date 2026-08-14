@@ -2476,6 +2476,7 @@ const adminOperationsTrace = computed(() => [
 ])
 const educationExperimentStrategies = computed(() => educationExperiment.value?.strategies || [])
 const educationExperimentPairs = computed(() => educationExperiment.value?.pairedComparisons || [])
+const educationExperimentAllocations = computed(() => educationExperiment.value?.allocations || [])
 const educationRetrievalPolicyCandidates = computed(() => educationRetrievalPolicy.value?.candidates || [])
 const educationEvidenceImpacts = computed(() => educationEvidenceImpact.value?.impacts || [])
 const educationExperimentStrategyLabel = (strategy) => ({
@@ -2500,6 +2501,7 @@ const educationExperimentBest = computed(() => educationExperimentStrategies.val
   .sort((left, right) => Number(right.averageMasteryGain || 0) - Number(left.averageMasteryGain || 0))[0] || null)
 const educationExperimentDownloading = ref(false)
 const educationExperimentPairedDownloading = ref(false)
+const educationExperimentAllocationDownloading = ref(false)
 const educationEvidenceImpactDownloading = ref(false)
 async function downloadEducationExperimentCsv() {
   if (educationExperimentDownloading.value) return
@@ -2533,6 +2535,23 @@ async function downloadPairedEducationExperimentCsv() {
     educationError.value = errorText(error)
   } finally {
     educationExperimentPairedDownloading.value = false
+  }
+}
+async function downloadEducationExperimentAllocationCsv() {
+  if (educationExperimentAllocationDownloading.value) return
+  educationExperimentAllocationDownloading.value = true
+  try {
+    const result = await api.downloadEducationExperimentAllocations()
+    const url = URL.createObjectURL(result.blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = result.filename
+    anchor.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    educationError.value = errorText(error)
+  } finally {
+    educationExperimentAllocationDownloading.value = false
   }
 }
 async function downloadEducationEvidenceImpactCsv() {
@@ -9765,7 +9784,7 @@ onBeforeUnmount(() => {
               </div>
             </details>
             <details v-if="educationExperiment" class="education-operations-metrics education-experiment-panel" open>
-              <summary><span>EI 检索实验诊断</span><small>基线 · 消融 · 学习效果</small><button class="inline-summary-action" type="button" :disabled="educationExperimentDownloading" @click.prevent="downloadEducationExperimentCsv">{{ educationExperimentDownloading ? '导出中…' : '导出策略 CSV' }}</button><button class="inline-summary-action" type="button" :disabled="educationExperimentPairedDownloading" @click.prevent="downloadPairedEducationExperimentCsv">{{ educationExperimentPairedDownloading ? '导出中…' : '导出配对 CSV' }}</button></summary>
+              <summary><span>EI 检索实验诊断</span><small>基线 · 消融 · 学习效果</small><button class="inline-summary-action" type="button" :disabled="educationExperimentDownloading" @click.prevent="downloadEducationExperimentCsv">{{ educationExperimentDownloading ? '导出中…' : '导出策略 CSV' }}</button><button class="inline-summary-action" type="button" :disabled="educationExperimentPairedDownloading" @click.prevent="downloadPairedEducationExperimentCsv">{{ educationExperimentPairedDownloading ? '导出中…' : '导出配对 CSV' }}</button><button class="inline-summary-action" type="button" :disabled="educationExperimentAllocationDownloading" @click.prevent="downloadEducationExperimentAllocationCsv">{{ educationExperimentAllocationDownloading ? '导出中…' : '导出分配 CSV' }}</button></summary>
               <p class="learning-task-help">结果按 Run 创建时冻结的检索策略聚合；每条证据来自实际步骤快照，测评和掌握度变化按 runId 对齐。效率指标用证据摘录字符数作为跨模型 token 成本的稳定代理。</p>
               <div class="education-experiment-overview">
                 <span><strong>{{ educationExperiment.totalRunCount }}</strong>教育 Run</span>
@@ -9805,6 +9824,26 @@ onBeforeUnmount(() => {
                         <td :class="{ 'is-positive': Number(item.targetReachRateDelta || 0) > 0, 'is-negative': Number(item.targetReachRateDelta || 0) < 0 }">{{ formatSignedRate(item.targetReachRateDelta) }}</td>
                         <td>{{ Number(item.averageRoundsToTargetDelta || 0) > 0 ? '+' : '' }}{{ Number(item.averageRoundsToTargetDelta || 0).toFixed(2) }}</td>
                         <td :class="{ 'is-positive': Number(item.prerequisiteGapCoverageDelta || 0) > 0, 'is-negative': Number(item.prerequisiteGapCoverageDelta || 0) < 0 }">{{ formatSignedRate(item.prerequisiteGapCoverageDelta) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div v-if="educationExperimentAllocations.length" class="education-experiment-paired education-experiment-allocation-audit">
+                <div class="education-calibration-heading"><span>策略分配审计</span><em>请求策略 → 实际策略 · 按状态条件聚合</em></div>
+                <p class="learning-task-help">这里把 ADAPTIVE / BALANCED_EXPERIMENT 与实际检索方法分开统计；分配次数包含没有形成性测评的 Run，避免实验样本被结果缺失掩盖。</p>
+                <div class="education-experiment-table-wrap">
+                  <table class="education-experiment-table education-experiment-paired-table">
+                    <thead><tr><th>请求策略</th><th>实际策略</th><th>状态条件</th><th>已分配</th><th>成功 Run</th><th>有结果 Run</th><th>测评</th></tr></thead>
+                    <tbody>
+                      <tr v-for="item in educationExperimentAllocations" :key="`${item.requestedStrategy}-${item.effectiveStrategy}-${item.conditioning}`">
+                        <td><strong>{{ educationExperimentStrategyLabel(item.requestedStrategy) }}</strong><small>{{ item.requestedStrategy }}</small></td>
+                        <td><strong>{{ educationExperimentStrategyLabel(item.effectiveStrategy) }}</strong><small>{{ item.effectiveStrategy }}</small></td>
+                        <td>{{ item.conditioning }}</td>
+                        <td>{{ item.allocationCount }}</td>
+                        <td>{{ item.successfulRunCount }}</td>
+                        <td>{{ item.outcomeRunCount }}</td>
+                        <td>{{ item.assessmentCount }}</td>
                       </tr>
                     </tbody>
                   </table>

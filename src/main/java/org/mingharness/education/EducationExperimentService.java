@@ -3,6 +3,7 @@ package org.mingharness.education;
 import org.mingharness.context.ContextEvidenceSnapshotCodec;
 import org.mingharness.context.api.ContextEvidence;
 import org.mingharness.context.api.EducationRankingBreakdown;
+import org.mingharness.education.api.EducationExperimentAllocationView;
 import org.mingharness.education.api.EducationExperimentStrategyView;
 import org.mingharness.education.api.EducationExperimentView;
 import org.mingharness.education.api.EducationExperimentPairView;
@@ -10,6 +11,7 @@ import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.runtime.domain.Step;
 import org.mingharness.runtime.repository.RunRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,9 +29,10 @@ import java.util.function.ToDoubleFunction;
 /**
  * 聚合可复现教育检索实验事实。
  *
- * <p>策略在 Run 创建时已经冻结，因此这里不重新推断方法类型；证据直接从步骤快照
- * 解码，测评直接按 runId 关联。这样导出的比较结果可以和任意一轮回答回放对应，且
- * 不会因当前服务配置变化而污染历史样本。</p>
+ * <p>策略在 Run 创建时已经冻结；对于 ADAPTIVE/BALANCED_EXPERIMENT，这里只解码已冻结
+ * 的实际策略，不根据当前历史重新选择。证据直接从步骤快照解码，测评直接按 runId
+ * 关联。这样导出的比较结果可以和任意一轮回答回放对应，且不会因当前服务配置变化
+ * 而污染历史样本。</p>
  */
 @Service
 public class EducationExperimentService {
@@ -50,11 +53,21 @@ public class EducationExperimentService {
 
     private final RunRepository runRepository;
     private final AssessmentAttemptRepository assessmentRepository;
+    private final EducationRetrievalCalibrationService calibrationService;
 
+    /** 兼容不需要状态条件解析的轻量组件测试和扩展调用方。 */
     public EducationExperimentService(RunRepository runRepository,
                                       AssessmentAttemptRepository assessmentRepository) {
+        this(runRepository, assessmentRepository, null);
+    }
+
+    @Autowired
+    public EducationExperimentService(RunRepository runRepository,
+                                      AssessmentAttemptRepository assessmentRepository,
+                                      EducationRetrievalCalibrationService calibrationService) {
         this.runRepository = runRepository;
         this.assessmentRepository = assessmentRepository;
+        this.calibrationService = calibrationService;
     }
 
     @Transactional(readOnly = true)
@@ -76,13 +89,16 @@ public class EducationExperimentService {
             runsById.put(run.getId(), run);
         }
         for (AssessmentAttempt attempt : attempts) {
-            if (attempt == null || !runsById.containsKey(attempt.getRunId())) continue;
+            if (attempt == null || attempt.getAssessmentType() != AssessmentAttemptType.FORMATIVE
+                    || !runsById.containsKey(attempt.getRunId())) continue;
             attemptsByRun.computeIfAbsent(attempt.getRunId(), ignored -> new ArrayList<>()).add(attempt);
         }
         // 教育实验的分母必须与教育 Run 对齐；同一租户下可能还存在旧版手工测评或
         // 普通业务记录，不能把它们混入策略比较的总测评数。
         List<AssessmentAttempt> scopedAttempts = attempts.stream()
-                .filter(attempt -> attempt != null && runsById.containsKey(attempt.getRunId()))
+                .filter(attempt -> attempt != null
+                        && attempt.getAssessmentType() == AssessmentAttemptType.FORMATIVE
+                        && runsById.containsKey(attempt.getRunId()))
                 .toList();
 
         Map<String, List<Run>> byStrategy = new LinkedHashMap<>();
@@ -97,6 +113,7 @@ public class EducationExperimentService {
         List<EducationExperimentStrategyView> summaries = byStrategy.entrySet().stream()
                 .map(entry -> summarizeStrategy(entry.getKey(), entry.getValue(), attemptsByRun))
                 .toList();
+        List<EducationExperimentAllocationView> allocations = allocationSummary(runs, attemptsByRun);
         List<EducationExperimentPairView> pairedComparisons = pairedComparisons(runs, attemptsByRun);
         long successfulRuns = runs.stream().filter(run -> run.getStatus() == RunStatus.SUCCEEDED).count();
         Map<String, Set<String>> strategiesByLearnerGoal = new HashMap<>();
@@ -110,7 +127,8 @@ public class EducationExperimentService {
         long fullyPaired = strategiesByLearnerGoal.values().stream()
                 .filter(value -> value.size() == EXPERIMENT_STRATEGIES.size()).count();
         return new EducationExperimentView(Instant.now(), runs.size(), successfulRuns,
-                scopedAttempts.size(), tenantScope, paired, fullyPaired, summaries, pairedComparisons);
+                scopedAttempts.size(), tenantScope, paired, fullyPaired, summaries, pairedComparisons,
+                allocations);
     }
 
     @Transactional(readOnly = true)
@@ -175,6 +193,66 @@ public class EducationExperimentService {
                     .append(csv(item.sampleStatus())).append('\n');
         }
         return csv.toString();
+    }
+
+    /** 导出请求策略与实际方法的分配审计，不和结果指标 CSV 混用。 */
+    @Transactional(readOnly = true)
+    public String exportAllocationCsv(String tenantId, String userId, boolean tenantScope) {
+        EducationExperimentView view = summarize(tenantId, userId, tenantScope);
+        StringBuilder csv = new StringBuilder();
+        csv.append("requested_strategy,effective_strategy,conditioning,allocation_count,"
+                + "successful_run_count,outcome_run_count,assessment_count\n");
+        for (EducationExperimentAllocationView item : view.allocations()) {
+            csv.append(csv(item.requestedStrategy())).append(',')
+                    .append(csv(item.effectiveStrategy())).append(',')
+                    .append(csv(item.conditioning())).append(',')
+                    .append(item.allocationCount()).append(',')
+                    .append(item.successfulRunCount()).append(',')
+                    .append(item.outcomeRunCount()).append(',')
+                    .append(item.assessmentCount()).append('\n');
+        }
+        return csv.toString();
+    }
+
+    private List<EducationExperimentAllocationView> allocationSummary(
+            List<Run> runs, Map<String, List<AssessmentAttempt>> attemptsByRun) {
+        Map<String, AllocationAccumulator> grouped = new LinkedHashMap<>();
+        for (Run run : runs) {
+            if (run == null) continue;
+            EducationRetrievalStrategy requested = EducationRetrievalStrategy.parse(
+                    run.getEducationRetrievalStrategy());
+            String effective = effectiveExperimentStrategy(run);
+            String conditioning = conditioningFor(run);
+            String key = requested.name() + "\u0000" + effective + "\u0000" + conditioning;
+            grouped.computeIfAbsent(key, ignored -> new AllocationAccumulator(
+                    requested.name(), effective, conditioning))
+                    .add(run, attemptsByRun.getOrDefault(run.getId(), List.of()));
+        }
+        return grouped.values().stream()
+                .sorted(Comparator.comparingInt((AllocationAccumulator item) -> strategyOrder(item.requestedStrategy))
+                        .thenComparingInt(item -> strategyOrder(item.effectiveStrategy))
+                        .thenComparing(item -> item.conditioning))
+                .map(AllocationAccumulator::view)
+                .toList();
+    }
+
+    private String conditioningFor(Run run) {
+        EducationRetrievalStrategy requested = EducationRetrievalStrategy.parse(
+                run == null ? null : run.getEducationRetrievalStrategy());
+        if (requested == EducationRetrievalStrategy.ADAPTIVE
+                || requested == EducationRetrievalStrategy.BALANCED_EXPERIMENT) {
+            String frozen = EducationRetrievalPolicySnapshotCodec.decode(
+                    run == null ? null : run.getEducationRetrievalWeights()).conditioning();
+            if (!"UNKNOWN".equals(frozen)) return frozen;
+        }
+        if (calibrationService == null) return "UNKNOWN";
+        return calibrationService.conditioningFor(run);
+    }
+
+    private int strategyOrder(String strategy) {
+        EducationRetrievalStrategy parsed = EducationRetrievalStrategy.parse(strategy);
+        int index = EXPERIMENT_STRATEGIES.indexOf(parsed);
+        return index < 0 ? EXPERIMENT_STRATEGIES.size() + parsed.ordinal() : index;
     }
 
     private String csv(String value) {
@@ -454,6 +532,37 @@ public class EducationExperimentService {
 
     private record GoalStrategyOutcome(double masteryGain, int reachedRound,
                                        double prerequisiteGapCoverage) {
+    }
+
+    private static final class AllocationAccumulator {
+        private final String requestedStrategy;
+        private final String effectiveStrategy;
+        private final String conditioning;
+        private long allocationCount;
+        private long successfulRunCount;
+        private long outcomeRunCount;
+        private long assessmentCount;
+
+        private AllocationAccumulator(String requestedStrategy, String effectiveStrategy,
+                                      String conditioning) {
+            this.requestedStrategy = requestedStrategy;
+            this.effectiveStrategy = effectiveStrategy;
+            this.conditioning = conditioning;
+        }
+
+        private void add(Run run, List<AssessmentAttempt> attempts) {
+            allocationCount++;
+            if (run.getStatus() == RunStatus.SUCCEEDED) successfulRunCount++;
+            if (attempts != null && !attempts.isEmpty()) {
+                outcomeRunCount++;
+                assessmentCount += attempts.size();
+            }
+        }
+
+        private EducationExperimentAllocationView view() {
+            return new EducationExperimentAllocationView(requestedStrategy, effectiveStrategy,
+                    conditioning, allocationCount, successfulRunCount, outcomeRunCount, assessmentCount);
+        }
     }
 
     private static final class PairAccumulator {

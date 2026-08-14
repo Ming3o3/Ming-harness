@@ -13,11 +13,23 @@ public record EducationExperimentView(
         long pairedLearnerGoalCount,
         long fullyPairedLearnerGoalCount,
         List<EducationExperimentStrategyView> strategies,
-        List<EducationExperimentPairView> pairedComparisons
+        List<EducationExperimentPairView> pairedComparisons,
+        List<EducationExperimentAllocationView> allocations
 ) {
+
+    /** 兼容旧版调用方；没有分配审计时返回空列表。 */
+    public EducationExperimentView(Instant generatedAt, long totalRunCount, long successfulRunCount,
+                                   long totalAssessmentCount, boolean tenantScope,
+                                   long pairedLearnerGoalCount, long fullyPairedLearnerGoalCount,
+                                   List<EducationExperimentStrategyView> strategies,
+                                   List<EducationExperimentPairView> pairedComparisons) {
+        this(generatedAt, totalRunCount, successfulRunCount, totalAssessmentCount, tenantScope,
+                pairedLearnerGoalCount, fullyPairedLearnerGoalCount, strategies, pairedComparisons, List.of());
+    }
 
     public EducationExperimentView {
         strategies = strategies == null ? List.of() : List.copyOf(strategies);
         pairedComparisons = pairedComparisons == null ? List.of() : List.copyOf(pairedComparisons);
+        allocations = allocations == null ? List.of() : List.copyOf(allocations);
     }
 }

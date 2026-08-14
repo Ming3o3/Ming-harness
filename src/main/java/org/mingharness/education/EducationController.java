@@ -421,6 +421,20 @@ public class EducationController {
                 .body(csv.getBytes(StandardCharsets.UTF_8));
     }
 
+    /** 导出请求策略到实际执行策略的分配审计，供均衡实验分配质量检查。 */
+    @GetMapping(value = "/experiments/allocations.csv", produces = "text/csv")
+    public ResponseEntity<byte[]> exportExperimentAllocations() {
+        HarnessIdentity identity = identity();
+        boolean tenantScope = identity.hasPermission("ops.read");
+        String csv = experimentService.exportAllocationCsv(
+                identity.tenantId(), identity.userId(), tenantScope);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"education-experiment-allocations.csv\"")
+                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .body(csv.getBytes(StandardCharsets.UTF_8));
+    }
+
     /** 将冻结 citation 与形成性掌握度变化做证据级描述性归因。 */
     @GetMapping("/evidence-impact")
     public EducationEvidenceImpactSummaryView evidenceImpact() {

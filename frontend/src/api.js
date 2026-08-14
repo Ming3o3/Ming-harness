@@ -442,6 +442,22 @@ export const api = {
       || 'education-experiments-paired.csv',
     }
   },
+  downloadEducationExperimentAllocations: async () => {
+    const response = await fetch(`${apiBaseUrl}/education/experiments/allocations.csv`, {
+      headers: identityHeaders({ Accept: 'text/csv' }),
+    })
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}))
+      const error = new Error(payload.message || `请求失败（${response.status}）`)
+      error.code = payload.code
+      throw error
+    }
+    return {
+      blob: await response.blob(),
+      filename: response.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1]
+      || 'education-experiment-allocations.csv',
+    }
+  },
   downloadEducationEvidenceImpact: async () => {
     const response = await fetch(`${apiBaseUrl}/education/evidence-impact.csv`, {
       headers: identityHeaders({ Accept: 'text/csv' }),

@@ -94,6 +94,37 @@ class EducationExperimentServiceTests {
     }
 
     @Test
+    void shouldExposeRequestedAndEffectiveStrategyAllocationSeparately() {
+        RunRepository runs = mock(RunRepository.class);
+        AssessmentAttemptRepository assessments = mock(AssessmentAttemptRepository.class);
+        Run balanced = educationalRun("BALANCED_EXPERIMENT", 0.8);
+        balanced.attachEducationRetrievalPolicy(EducationRetrievalPolicySnapshotCodec.encode(
+                new EducationRetrievalPolicySnapshot(
+                        EducationRetrievalPolicySnapshot.VERSION, "LOW_MASTERY_GAP_FIRST", "CALIBRATED", 0,
+                        "按分配次数选择 CALIBRATED", List.of())));
+        when(runs.findByTenantIdAndUserIdAndEducationModeTrueOrderByCreatedAtAsc(
+                "tenant-a", "student-1")).thenReturn(List.of(balanced));
+        when(assessments.findByTenantIdAndUserIdOrderByCreatedAtAsc("tenant-a", "student-1"))
+                .thenReturn(List.of());
+
+        EducationExperimentView view = new EducationExperimentService(runs, assessments)
+                .summarize("tenant-a", "student-1", false);
+
+        var allocation = view.allocations().stream()
+                .filter(item -> item.requestedStrategy().equals("BALANCED_EXPERIMENT"))
+                .findFirst().orElseThrow();
+        assertEquals("CALIBRATED", allocation.effectiveStrategy());
+        assertEquals("LOW_MASTERY_GAP_FIRST", allocation.conditioning());
+        assertEquals(1, allocation.allocationCount());
+        assertEquals(1, allocation.successfulRunCount());
+        assertEquals(0, allocation.outcomeRunCount());
+        String csv = new EducationExperimentService(runs, assessments)
+                .exportAllocationCsv("tenant-a", "student-1", false);
+        assertTrue(csv.startsWith("requested_strategy,effective_strategy,conditioning,"));
+        assertTrue(csv.contains("\"BALANCED_EXPERIMENT\",\"CALIBRATED\""));
+    }
+
+    @Test
     void shouldCompareLearningOutcomeOnlyForSameLearnerGoalAcrossStrategies() {
         RunRepository runs = mock(RunRepository.class);
         AssessmentAttemptRepository assessments = mock(AssessmentAttemptRepository.class);
