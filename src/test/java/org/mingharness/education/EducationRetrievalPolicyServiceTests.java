@@ -3,12 +3,14 @@ package org.mingharness.education;
 import org.junit.jupiter.api.Test;
 import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.repository.RunRepository;
+import org.mingharness.common.BusinessException;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -90,6 +92,35 @@ class EducationRetrievalPolicyServiceTests {
         assertEquals("FULL", snapshot.selectedStrategy());
         assertEquals(0, snapshot.eligibleRunCount());
         assertTrue(snapshot.selectionReason().contains("回退 FULL"));
+    }
+
+    @Test
+    void shouldExposeFrozenRunPolicyOnlyToOwnerOrEvaluator() {
+        RunRepository runs = mock(RunRepository.class);
+        AssessmentAttemptRepository assessments = mock(AssessmentAttemptRepository.class);
+        EducationRetrievalCalibrationService calibration = mock(EducationRetrievalCalibrationService.class);
+        Run run = completedRun("ADAPTIVE", "函数=0.10");
+        String encoded = EducationRetrievalPolicySnapshotCodec.encode(new EducationRetrievalPolicySnapshot(
+                EducationRetrievalPolicySnapshot.VERSION, "LOW_MASTERY_GAP_FIRST", "CALIBRATED", 10,
+                "按状态条件化学习结果选择收缩分数最高的 CALIBRATED",
+                List.of(new EducationRetrievalPolicyCandidate("CALIBRATED", 5, 5, 0.6,
+                        0.8, 0.8, 0.75, 0.5, 0.625, "ANALYSIS_READY"))));
+        run.attachEducationRetrievalPolicy(encoded);
+        when(runs.findById(run.getId())).thenReturn(java.util.Optional.of(run));
+        when(calibration.conditioningFor(run)).thenReturn("LOW_MASTERY_GAP_FIRST");
+
+        EducationRetrievalPolicyService service = new EducationRetrievalPolicyService(
+                runs, assessments, calibration);
+        var view = service.viewForRun("tenant-a", "student-1", run.getId(), false);
+
+        assertEquals(run.getId(), view.runId());
+        assertEquals("ADAPTIVE", view.requestedStrategy());
+        assertEquals("CALIBRATED", view.effectiveStrategy());
+        assertTrue(view.snapshotFrozen());
+        assertEquals("ADAPTIVE_POLICY", view.snapshotType());
+        assertEquals(1, view.candidates().size());
+        assertThrows(BusinessException.class,
+                () -> service.viewForRun("tenant-a", "another-student", run.getId(), false));
     }
 
     private Run completedRun(String strategy, String masterySummary) {

@@ -407,6 +407,8 @@ export const api = {
   getEducationExperiments: () => request('/education/experiments'),
   getEducationRetrievalCalibration: () => request('/education/retrieval-calibration'),
   getEducationRetrievalPolicy: () => request('/education/retrieval-policy'),
+  getEducationRunRetrievalPolicy: (runId) => request(
+    `/education/runs/${encodeURIComponent(runId)}/retrieval-policy`),
   getEducationEvidenceImpact: () => request('/education/evidence-impact'),
   downloadEducationExperiments: async () => {
     const response = await fetch(`${apiBaseUrl}/education/experiments.csv`, {

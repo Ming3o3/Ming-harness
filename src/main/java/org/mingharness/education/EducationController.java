@@ -51,6 +51,7 @@ import org.mingharness.education.api.EducationRetrievalJudgmentRequest;
 import org.mingharness.education.api.EducationRetrievalJudgmentView;
 import org.mingharness.education.api.EducationRetrievalCalibrationView;
 import org.mingharness.education.api.EducationRetrievalPolicyView;
+import org.mingharness.education.api.EducationRetrievalRunPolicyView;
 import org.mingharness.education.api.EducationEvidenceImpactSummaryView;
 import org.mingharness.security.HarnessIdentity;
 import org.mingharness.security.HarnessIdentityContext;
@@ -386,6 +387,14 @@ public class EducationController {
         HarnessIdentity identity = identity();
         return EducationRetrievalPolicyView.from(
                 retrievalPolicyService.snapshotForLatestRun(identity.tenantId(), identity.userId()));
+    }
+
+    /** 返回某次教育 Run 创建时冻结的策略选择，供单样本审计和实验回放使用。 */
+    @GetMapping("/runs/{runId}/retrieval-policy")
+    public EducationRetrievalRunPolicyView retrievalPolicyForRun(@PathVariable String runId) {
+        HarnessIdentity identity = identity();
+        return retrievalPolicyService.viewForRun(identity.tenantId(), identity.userId(), runId,
+                identity.hasPermission("education.evaluate") || identity.hasPermission("ops.read"));
     }
 
     @GetMapping(value = "/experiments.csv", produces = "text/csv")

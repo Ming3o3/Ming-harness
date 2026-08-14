@@ -43,6 +43,7 @@ const runs = ref([])
 const tools = ref([])
 const summary = ref(null)
 const selectedRun = ref(null)
+const retrievalPolicyByRun = ref({})
 const retrievalJudgmentsByRun = ref({})
 const retrievalJudgmentSaving = ref(false)
 const retrievalJudgmentError = ref('')
@@ -1780,6 +1781,10 @@ const selectedRunRetrievalEvidence = computed(() => {
 const selectedRunRetrievalJudgments = computed(() => {
   const runId = selectedRun.value?.run?.id
   return runId ? retrievalJudgmentsByRun.value[runId] || [] : []
+})
+const selectedRunRetrievalPolicy = computed(() => {
+  const runId = selectedRun.value?.run?.id
+  return runId ? retrievalPolicyByRun.value[runId] || null : null
 })
 const retrievalJudgmentAvailable = computed(() => Boolean(
   isTeacherOnlyRole.value
@@ -7396,6 +7401,7 @@ async function selectRun(runId, announce = true, showLoading = true) {
     selectedRun.value = detail
     cacheRunContextEvidence(detail)
     resetRetrievalJudgmentForm(detail)
+    void loadEducationRunRetrievalPolicy(detail.run)
     void loadRetrievalJudgments(detail.run)
     syncActiveConversationEducationContext(detail.run)
     auditEvents.value = events
@@ -7405,6 +7411,20 @@ async function selectRun(runId, announce = true, showLoading = true) {
     if (requestToken === runDetailRequestToken) errorMessage.value = errorText(error)
   } finally {
     if (showLoading && requestToken === runDetailRequestToken) detailLoading.value = false
+  }
+}
+
+async function loadEducationRunRetrievalPolicy(run) {
+  if (!run?.id || !run.educationMode) return
+  try {
+    const policy = await api.getEducationRunRetrievalPolicy(run.id)
+    if (selectedRun.value?.run?.id !== run.id) return
+    retrievalPolicyByRun.value = {
+      ...retrievalPolicyByRun.value,
+      [run.id]: policy,
+    }
+  } catch {
+    // 旧 Runtime 或无权查看教师 Run 时不阻塞执行详情；实际证据仍可照常回放。
   }
 }
 
@@ -9290,7 +9310,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-                    <div class="run-meta-grid">
+            <div class="run-meta-grid">
               <div><span>组织 / 用户</span><strong>{{ selectedRun.run.tenantId }} / {{ selectedRun.run.userId }}</strong></div>
               <div><span>模型</span><strong>{{ selectedRun.run.modelName }}</strong></div>
               <div><span>Prompt / 策略</span><strong>{{ selectedRun.run.promptVersion }} · {{ selectedRun.run.policyVersion }}</strong></div>
@@ -9299,6 +9319,35 @@ onBeforeUnmount(() => {
                       <div v-if="selectedRun.run.educationMode"><span>依赖图快照</span><strong>{{ selectedRun.run.educationDependencyGraphNodeCount ? `${selectedRun.run.educationDependencyGraphNodeCount} 个前置节点${selectedRun.run.educationDependencyGraphTruncated ? ' · 已截断' : ''}` : '空图 / 旧 Run' }}</strong></div>
               <div><span>Trace / 耗时</span><strong>{{ selectedRun.run.traceId?.slice(0, 12) || '—' }} · {{ selectedRun.run.durationMs || 0 }} ms</strong></div>
             </div>
+
+            <section v-if="selectedRunRetrievalPolicy" class="education-calibration-card retrieval-policy-audit-card" aria-label="本次 Run 的检索策略快照">
+              <div class="education-calibration-heading"><span>RETRIEVAL POLICY SNAPSHOT</span><em>{{ selectedRunRetrievalPolicy.snapshotType }} · {{ selectedRunRetrievalPolicy.snapshotFrozen ? '已冻结' : '无独立快照' }}</em></div>
+              <p class="learning-task-help">这里展示本次 Run 创建时真正冻结的策略决策，不会随着后续学习结果或教师标注变化而重新计算。</p>
+              <div class="education-calibration-grid">
+                <span><small>请求策略</small><strong>{{ educationExperimentStrategyLabel(selectedRunRetrievalPolicy.requestedStrategy) }}</strong></span>
+                <span><small>实际策略</small><strong>{{ educationExperimentStrategyLabel(selectedRunRetrievalPolicy.effectiveStrategy) }}</strong></span>
+                <span><small>状态条件</small><strong>{{ selectedRunRetrievalPolicy.conditioning }}</strong></span>
+                <span><small>快照版本</small><strong>{{ selectedRunRetrievalPolicy.snapshotVersion || '—' }}</strong></span>
+                <span><small>可用历史 Run</small><strong>{{ selectedRunRetrievalPolicy.eligibleRunCount || 0 }}</strong></span>
+              </div>
+              <p v-if="selectedRunRetrievalPolicy.selectionReason" class="learning-task-help"><strong>决策理由：</strong>{{ selectedRunRetrievalPolicy.selectionReason }}</p>
+              <div v-if="selectedRunRetrievalPolicy.candidates?.length" class="education-experiment-table-wrap">
+                <table class="education-experiment-table education-policy-table">
+                  <thead><tr><th>候选策略</th><th>Run</th><th>测评</th><th>掌握度增益</th><th>达标率</th><th>收缩分数</th><th>样本状态</th></tr></thead>
+                  <tbody>
+                    <tr v-for="candidate in selectedRunRetrievalPolicy.candidates" :key="candidate.strategy" :class="{ 'is-best': candidate.strategy === selectedRunRetrievalPolicy.effectiveStrategy }">
+                      <td><strong>{{ educationExperimentStrategyLabel(candidate.strategy) }}</strong><small>{{ candidate.strategy }}</small></td>
+                      <td>{{ candidate.runCount }}</td>
+                      <td>{{ candidate.assessmentCount }}</td>
+                      <td :class="{ 'is-positive': Number(candidate.masteryGainMean || 0) > 0, 'is-negative': Number(candidate.masteryGainMean || 0) < 0 }">{{ formatSignedRate(candidate.masteryGainMean) }}</td>
+                      <td>{{ formatRate(candidate.targetReachRate) }}</td>
+                      <td>{{ formatRate(candidate.adjustedScore) }}</td>
+                      <td>{{ educationExperimentSampleLabel(candidate.sampleStatus) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
 
             <div class="input-preview"><span>任务输入</span><p>{{ selectedRun.run.input }}</p></div>
 

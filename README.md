@@ -506,6 +506,7 @@ curl -X POST http://localhost:8080/api/runs \
 - `GET /api/education/evidence-impact.csv`：导出证据级学习收益归因，适合与教师证据标注或策略消融结果联表分析
 - `GET /api/education/retrieval-calibration`：查看当前租户教师检索证据标注聚合出的版本化校准快照及学习状态分层；只有新建并选择 `CALIBRATED` 策略的 Run 使用该快照，历史 Run 继续使用创建时冻结的权重
 - `GET /api/education/retrieval-policy`：查看当前用户最近一次教育 Run 状态下的自适应策略推荐、选择理由、候选样本量和收缩分数；该接口用于面板诊断，不会改写任何历史 Run 快照
+- `GET /api/education/runs/{runId}/retrieval-policy`：回放指定教育 Run 创建时冻结的 requested/effective strategy、状态条件、候选统计和选择理由；学生只能查看自己的 Run，教师评价者和管理员可查看组织内 Run
 - `POST/GET /api/education/courses`：教师创建或查询课程实例；课程固定学科、年级和课程版本，课程状态为 `ACTIVE`、`COMPLETED` 或 `ARCHIVED`
 - `POST/GET /api/education/courses/{courseId}/enrollments`：课程负责人加入或查询学习者名单；`POST /api/education/courses/{courseId}/enrollments/{learnerUserId}/remove` 可移除成员，已结课或已归档课程不能再变更名单
 - `POST /api/education/courses/{courseId}/assignments`：向课程活跃名单批量布置统一目标，必须携带 `Idempotency-Key`；同一课程和幂等键会复用原批次，同一键提交不同内容会返回 `409 ASSIGNMENT_BATCH_KEY_REUSED_WITH_DIFFERENT_REQUEST`

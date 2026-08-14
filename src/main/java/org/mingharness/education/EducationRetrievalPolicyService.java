@@ -1,8 +1,12 @@
 package org.mingharness.education;
 
+import org.mingharness.common.BusinessException;
+import org.mingharness.education.api.EducationRetrievalPolicyCandidateView;
+import org.mingharness.education.api.EducationRetrievalRunPolicyView;
 import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.runtime.repository.RunRepository;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -117,6 +121,54 @@ public class EducationRetrievalPolicyService {
         if (runs == null || runs.isEmpty()) return EducationRetrievalPolicySnapshot.prior("UNKNOWN");
         Run latest = runs.get(runs.size() - 1);
         return snapshotFor(tenantId, userId, latest.educationConfiguration());
+    }
+
+    /**
+     * 返回单次 Run 创建时冻结的策略选择，而不是重新根据当前历史数据计算推荐。
+     * 这样教师复核或论文实验回放时，可以区分“当时实际执行的策略”和“现在重新计算出的推荐”。
+     */
+    @Transactional(readOnly = true)
+    public EducationRetrievalRunPolicyView viewForRun(String tenantId, String userId,
+                                                       String runId, boolean elevated) {
+        Run run = runRepository.findById(runId)
+                .filter(item -> tenantId != null && tenantId.equals(item.getTenantId()))
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
+                        "RUN_NOT_FOUND", "Run 不存在"));
+        if (!elevated && (userId == null || !userId.equals(run.getUserId()))) {
+            throw new BusinessException(HttpStatus.FORBIDDEN,
+                    "EDUCATION_RETRIEVAL_POLICY_ACCESS_DENIED", "无权查看该 Run 的检索策略快照");
+        }
+        if (!run.isEducationMode()) {
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "EDUCATION_RETRIEVAL_POLICY_REQUIRES_EDUCATION_RUN",
+                    "只有教育 Run 才有检索策略快照");
+        }
+
+        EducationRetrievalStrategy requested = EducationRetrievalStrategy.parse(
+                run.getEducationRetrievalStrategy());
+        String conditioning = calibrationService.conditioningFor(run);
+        if (requested != EducationRetrievalStrategy.ADAPTIVE) {
+            String snapshotType = requested == EducationRetrievalStrategy.CALIBRATED
+                    ? "CALIBRATED_WEIGHTS" : "NONE";
+            String snapshotVersion = requested == EducationRetrievalStrategy.CALIBRATED
+                    ? EducationRetrievalCalibrationSnapshot.VERSION : "";
+            boolean frozen = run.getEducationRetrievalWeights() != null
+                    && !run.getEducationRetrievalWeights().isBlank();
+            return new EducationRetrievalRunPolicyView(run.getId(), requested.name(), requested.name(),
+                    frozen, snapshotType, snapshotVersion, conditioning, 0,
+                    requested == EducationRetrievalStrategy.CALIBRATED
+                            ? "Run 创建时冻结了教师校准权重" : "Run 使用固定检索策略，无自适应候选选择",
+                    List.of());
+        }
+
+        EducationRetrievalPolicySnapshot snapshot = EducationRetrievalPolicySnapshotCodec.decode(
+                run.getEducationRetrievalWeights());
+        List<EducationRetrievalPolicyCandidateView> candidates = snapshot.candidates().stream()
+                .map(EducationRetrievalPolicyCandidateView::from).toList();
+        return new EducationRetrievalRunPolicyView(run.getId(), requested.name(), snapshot.selectedStrategy(),
+                run.getEducationRetrievalWeights() != null && !run.getEducationRetrievalWeights().isBlank(),
+                "ADAPTIVE_POLICY", snapshot.version(), snapshot.conditioning(), snapshot.eligibleRunCount(),
+                snapshot.selectionReason(), candidates);
     }
 
     public EducationRetrievalStrategy effectiveStrategy(String requestedStrategy, String encodedSnapshot) {
