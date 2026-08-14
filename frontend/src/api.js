@@ -282,6 +282,13 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(payload),
   }),
+  listEducationRetrievalJudgments: (runId) => request(
+    `/education/runs/${encodeURIComponent(runId)}/retrieval-judgments`),
+  submitEducationRetrievalJudgment: (runId, payload) => request(
+    `/education/runs/${encodeURIComponent(runId)}/retrieval-judgments`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   listConversations: () => request('/conversations'),
   createConversation: (payload = {}) => request('/conversations', {
     method: 'POST',

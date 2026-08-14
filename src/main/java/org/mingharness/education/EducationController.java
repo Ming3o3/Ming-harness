@@ -47,6 +47,8 @@ import org.mingharness.education.api.EducationCourseResultView;
 import org.mingharness.education.api.ManualAssessmentSubmissionRequest;
 import org.mingharness.education.api.MasteryUpdateRequest;
 import org.mingharness.education.api.EducationDependencyGraphView;
+import org.mingharness.education.api.EducationRetrievalJudgmentRequest;
+import org.mingharness.education.api.EducationRetrievalJudgmentView;
 import org.mingharness.security.HarnessIdentity;
 import org.mingharness.security.HarnessIdentityContext;
 import org.mingharness.context.KnowledgeDocument;
@@ -102,6 +104,7 @@ public class EducationController {
     private final LearningAssignmentIndependentEvaluationService independentEvaluationService;
     private final KnowledgeDocumentRepository documentRepository;
     private final EducationKnowledgeGraphService knowledgeGraphService;
+    private final EducationRetrievalJudgmentService retrievalJudgmentService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
@@ -128,7 +131,8 @@ public class EducationController {
                                EducationCourseResultService courseResultService,
                                LearningAssignmentIndependentEvaluationService independentEvaluationService,
                                KnowledgeDocumentRepository documentRepository,
-                               EducationKnowledgeGraphService knowledgeGraphService) {
+                               EducationKnowledgeGraphService knowledgeGraphService,
+                               EducationRetrievalJudgmentService retrievalJudgmentService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
@@ -155,6 +159,7 @@ public class EducationController {
         this.independentEvaluationService = independentEvaluationService;
         this.documentRepository = documentRepository;
         this.knowledgeGraphService = knowledgeGraphService;
+        this.retrievalJudgmentService = retrievalJudgmentService;
     }
 
     @PostMapping("/sources")
@@ -365,6 +370,28 @@ public class EducationController {
                         "attachment; filename=\"education-experiments.csv\"")
                 .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
                 .body(csv.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** 返回某次教育 Run 的证据级教师标注，供实验校准和审计回放使用。 */
+    @GetMapping("/runs/{runId}/retrieval-judgments")
+    public List<EducationRetrievalJudgmentView> retrievalJudgments(@PathVariable String runId) {
+        HarnessIdentity identity = identity();
+        return retrievalJudgmentService.listForRun(identity.tenantId(), identity.userId(), runId,
+                identity.hasPermission("education.evaluate"), identity.hasPermission("ops.read"));
+    }
+
+    /** 只接受 Run 证据快照中已存在的引用，避免标注样本脱离真实检索上下文。 */
+    @PostMapping("/runs/{runId}/retrieval-judgments")
+    @ResponseStatus(HttpStatus.CREATED)
+    public EducationRetrievalJudgmentView submitRetrievalJudgment(
+            @PathVariable String runId,
+            @Valid @RequestBody EducationRetrievalJudgmentRequest request) {
+        HarnessIdentity identity = identity();
+        if (!identity.hasPermission("education.evaluate")) {
+            throw new org.mingharness.common.BusinessException(HttpStatus.FORBIDDEN,
+                    "EDUCATION_RETRIEVAL_JUDGMENT_EVALUATOR_REQUIRED", "证据标注需要 education.evaluate 权限");
+        }
+        return retrievalJudgmentService.submit(identity.tenantId(), identity.userId(), runId, request);
     }
 
     @PostMapping("/courses")

@@ -43,6 +43,18 @@ const runs = ref([])
 const tools = ref([])
 const summary = ref(null)
 const selectedRun = ref(null)
+const retrievalJudgmentsByRun = ref({})
+const retrievalJudgmentSaving = ref(false)
+const retrievalJudgmentError = ref('')
+const retrievalJudgmentForm = reactive({
+  stepId: '',
+  evidenceCitation: '',
+  targetGroundingScore: 5,
+  prerequisiteUtilityScore: 3,
+  difficultyFitScore: 3,
+  overallUtilityScore: 3,
+  note: '',
+})
 const auditEvents = ref([])
 const documents = ref([])
 const memories = ref([])
@@ -1747,6 +1759,31 @@ const stats = computed(() => ({
 }))
 
 const selectedStatus = computed(() => selectedRun.value?.run?.status || 'NONE')
+const selectedRunRetrievalEvidence = computed(() => {
+  const steps = selectedRun.value?.steps || []
+  const seen = new Set()
+  return steps.flatMap((step) => (step.contextEvidence || []).map((evidence) => ({
+    ...evidence,
+    stepId: step.id,
+    stepName: step.name,
+    stepSequence: step.sequence,
+  }))).filter((evidence) => {
+    const key = `${evidence.stepId}:${evidence.citation || evidence.documentId || evidence.title}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return Boolean(evidence.citation)
+  })
+})
+const selectedRunRetrievalJudgments = computed(() => {
+  const runId = selectedRun.value?.run?.id
+  return runId ? retrievalJudgmentsByRun.value[runId] || [] : []
+})
+const retrievalJudgmentAvailable = computed(() => Boolean(
+  isTeacherOnlyRole.value
+  && selectedRun.value?.run?.educationMode
+  && selectedRun.value?.run?.status === 'SUCCEEDED'
+  && selectedRunRetrievalEvidence.value.length,
+))
 const activeLearningRecommendation = computed(() => {
   const goalId = activeLearningGoal.value?.id
   if (!goalId) return null
@@ -7302,6 +7339,8 @@ async function selectRun(runId, announce = true, showLoading = true) {
     if (requestToken !== runDetailRequestToken) return
     selectedRun.value = detail
     cacheRunContextEvidence(detail)
+    resetRetrievalJudgmentForm(detail)
+    void loadRetrievalJudgments(detail.run)
     syncActiveConversationEducationContext(detail.run)
     auditEvents.value = events
     startRunEventStream(runId)
@@ -7311,6 +7350,72 @@ async function selectRun(runId, announce = true, showLoading = true) {
   } finally {
     if (showLoading && requestToken === runDetailRequestToken) detailLoading.value = false
   }
+}
+
+function resetRetrievalJudgmentForm(detail = selectedRun.value) {
+  const first = (detail?.steps || []).flatMap((step) => (step.contextEvidence || []).map((evidence) => ({
+    ...evidence, stepId: step.id,
+  }))).find((evidence) => evidence.citation)
+  retrievalJudgmentForm.stepId = first?.stepId || ''
+  retrievalJudgmentForm.evidenceCitation = first?.citation || ''
+  retrievalJudgmentForm.targetGroundingScore = 5
+  retrievalJudgmentForm.prerequisiteUtilityScore = first?.prerequisiteGaps?.length ? 4 : 3
+  retrievalJudgmentForm.difficultyFitScore = 3
+  retrievalJudgmentForm.overallUtilityScore = 3
+  retrievalJudgmentForm.note = ''
+  retrievalJudgmentError.value = ''
+}
+
+async function loadRetrievalJudgments(run) {
+  if (!run?.id) return
+  try {
+    const judgments = await api.listEducationRetrievalJudgments(run.id)
+    if (selectedRun.value?.run?.id !== run.id) return
+    retrievalJudgmentsByRun.value = {
+      ...retrievalJudgmentsByRun.value,
+      [run.id]: judgments || [],
+    }
+  } catch (error) {
+    // 旧 Runtime 或无教育读取权限时不阻塞 Run 详情；提交面板仍由当前权限控制。
+    if (selectedRun.value?.run?.id === run.id && isTeacherOnlyRole.value) {
+      retrievalJudgmentError.value = errorText(error)
+    }
+  }
+}
+
+async function submitRetrievalJudgment() {
+  const runId = selectedRun.value?.run?.id
+  if (!runId || !retrievalJudgmentForm.evidenceCitation || retrievalJudgmentSaving.value) return
+  retrievalJudgmentSaving.value = true
+  retrievalJudgmentError.value = ''
+  try {
+    const judgment = await api.submitEducationRetrievalJudgment(runId, {
+      stepId: retrievalJudgmentForm.stepId || null,
+      evidenceCitation: retrievalJudgmentForm.evidenceCitation,
+      targetGroundingScore: Number(retrievalJudgmentForm.targetGroundingScore),
+      prerequisiteUtilityScore: Number(retrievalJudgmentForm.prerequisiteUtilityScore),
+      difficultyFitScore: Number(retrievalJudgmentForm.difficultyFitScore),
+      overallUtilityScore: Number(retrievalJudgmentForm.overallUtilityScore),
+      note: retrievalJudgmentForm.note.trim() || null,
+    })
+    retrievalJudgmentsByRun.value = {
+      ...retrievalJudgmentsByRun.value,
+      [runId]: [...(retrievalJudgmentsByRun.value[runId] || []), judgment],
+    }
+    noticeMessage.value = '证据标注已保存；后续可用于校准教育检索策略。'
+    retrievalJudgmentForm.note = ''
+  } catch (error) {
+    retrievalJudgmentError.value = errorText(error)
+  } finally {
+    retrievalJudgmentSaving.value = false
+  }
+}
+
+function selectRetrievalJudgmentEvidence(evidence) {
+  if (!evidence) return
+  retrievalJudgmentForm.stepId = evidence.stepId || ''
+  retrievalJudgmentForm.evidenceCitation = evidence.citation || ''
+  retrievalJudgmentForm.prerequisiteUtilityScore = evidence.prerequisiteGaps?.length ? 4 : 3
 }
 
 /** 打开历史教育会话时恢复它冻结的上下文，避免浏览器残留设置触发跨课程请求。 */
@@ -8670,6 +8775,24 @@ onBeforeUnmount(() => {
                 <button class="secondary-button" type="submit" :disabled="manualAssessmentSaving">{{ manualAssessmentSaving ? '记录中…' : '记录复核结果' }}</button>
               </form>
             </section>
+            <section v-if="retrievalJudgmentAvailable" class="retrieval-judgment-panel" aria-label="教育检索证据标注">
+              <div class="chat-change-review-heading"><div><span>RETRIEVAL JUDGMENT</span><strong>标注本轮检索证据</strong></div><em>教师量规</em></div>
+              <p class="retrieval-judgment-help">请选择 Run 实际使用的授权来源，评价它对目标 grounding、前置补强和难度适配的教学价值。标注会保留量规版本，后续可用于校准检索策略。</p>
+              <form class="retrieval-judgment-form" @submit.prevent="submitRetrievalJudgment">
+                <label class="retrieval-judgment-wide"><span>授权证据</span><select v-model="retrievalJudgmentForm.evidenceCitation" required @change="selectRetrievalJudgmentEvidence(selectedRunRetrievalEvidence.find((item) => item.citation === retrievalJudgmentForm.evidenceCitation))"><option v-for="evidence in selectedRunRetrievalEvidence" :key="`${evidence.stepId}-${evidence.citation}`" :value="evidence.citation">#{{ evidence.stepSequence }} · {{ evidence.title || '未命名来源' }} · {{ evidence.prerequisiteGaps?.length ? '含前置缺口' : '目标/课程证据' }}</option></select></label>
+                <label><span>目标 grounding</span><select v-model.number="retrievalJudgmentForm.targetGroundingScore"><option v-for="score in [1, 2, 3, 4, 5]" :key="score" :value="score">{{ score }} / 5</option></select></label>
+                <label><span>前置补强</span><select v-model.number="retrievalJudgmentForm.prerequisiteUtilityScore"><option v-for="score in [1, 2, 3, 4, 5]" :key="score" :value="score">{{ score }} / 5</option></select></label>
+                <label><span>难度适配</span><select v-model.number="retrievalJudgmentForm.difficultyFitScore"><option v-for="score in [1, 2, 3, 4, 5]" :key="score" :value="score">{{ score }} / 5</option></select></label>
+                <label><span>总体效用</span><select v-model.number="retrievalJudgmentForm.overallUtilityScore"><option v-for="score in [1, 2, 3, 4, 5]" :key="score" :value="score">{{ score }} / 5</option></select></label>
+                <label class="retrieval-judgment-wide"><span>标注说明（可选）</span><textarea v-model="retrievalJudgmentForm.note" rows="2" maxlength="4000" placeholder="例如：目标解释完整，但没有覆盖学生缺失的定义域前置知识"></textarea></label>
+                <p v-if="retrievalJudgmentError" class="policy-error retrieval-judgment-error">{{ retrievalJudgmentError }}</p>
+                <button class="secondary-button" type="submit" :disabled="retrievalJudgmentSaving">{{ retrievalJudgmentSaving ? '保存中…' : '保存证据标注' }}</button>
+              </form>
+              <div v-if="selectedRunRetrievalJudgments.length" class="retrieval-judgment-history">
+                <small>已保存 {{ selectedRunRetrievalJudgments.length }} 条标注</small>
+                <span v-for="judgment in selectedRunRetrievalJudgments.slice(-3).reverse()" :key="judgment.id">{{ judgment.overallUtilityScore }}/5 · {{ judgment.evidenceCitation }}</span>
+              </div>
+            </section>
             <section v-if="workspaceChangePreviews.length" class="chat-change-review" aria-label="代码变更预览">
               <div class="chat-change-review-heading">
                 <div><span>CHANGE REVIEW</span><strong>{{ pendingWorkspaceChangePreviews.length ? '请先检查待审批变更' : '本轮代码变更' }}</strong></div>
@@ -9120,6 +9243,25 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="input-preview"><span>任务输入</span><p>{{ selectedRun.run.input }}</p></div>
+
+            <section v-if="retrievalJudgmentAvailable" class="retrieval-judgment-panel" aria-label="教育检索证据标注">
+              <div class="chat-change-review-heading"><div><span>RETRIEVAL JUDGMENT</span><strong>标注本轮检索证据</strong></div><em>教师量规</em></div>
+              <p class="retrieval-judgment-help">标注只允许引用当前 Run 的授权证据，用于记录目标 grounding、前置补强、难度适配和总体教学效用。</p>
+              <form class="retrieval-judgment-form" @submit.prevent="submitRetrievalJudgment">
+                <label class="retrieval-judgment-wide"><span>授权证据</span><select v-model="retrievalJudgmentForm.evidenceCitation" required @change="selectRetrievalJudgmentEvidence(selectedRunRetrievalEvidence.find((item) => item.citation === retrievalJudgmentForm.evidenceCitation))"><option v-for="evidence in selectedRunRetrievalEvidence" :key="`${evidence.stepId}-${evidence.citation}`" :value="evidence.citation">#{{ evidence.stepSequence }} · {{ evidence.title || '未命名来源' }} · {{ evidence.prerequisiteGaps?.length ? '含前置缺口' : '目标/课程证据' }}</option></select></label>
+                <label><span>目标 grounding</span><select v-model.number="retrievalJudgmentForm.targetGroundingScore"><option v-for="score in [1, 2, 3, 4, 5]" :key="score" :value="score">{{ score }} / 5</option></select></label>
+                <label><span>前置补强</span><select v-model.number="retrievalJudgmentForm.prerequisiteUtilityScore"><option v-for="score in [1, 2, 3, 4, 5]" :key="score" :value="score">{{ score }} / 5</option></select></label>
+                <label><span>难度适配</span><select v-model.number="retrievalJudgmentForm.difficultyFitScore"><option v-for="score in [1, 2, 3, 4, 5]" :key="score" :value="score">{{ score }} / 5</option></select></label>
+                <label><span>总体效用</span><select v-model.number="retrievalJudgmentForm.overallUtilityScore"><option v-for="score in [1, 2, 3, 4, 5]" :key="score" :value="score">{{ score }} / 5</option></select></label>
+                <label class="retrieval-judgment-wide"><span>标注说明（可选）</span><textarea v-model="retrievalJudgmentForm.note" rows="2" maxlength="4000" placeholder="例如：目标解释完整，但没有覆盖学生缺失的定义域前置知识"></textarea></label>
+                <p v-if="retrievalJudgmentError" class="policy-error retrieval-judgment-error">{{ retrievalJudgmentError }}</p>
+                <button class="secondary-button" type="submit" :disabled="retrievalJudgmentSaving">{{ retrievalJudgmentSaving ? '保存中…' : '保存证据标注' }}</button>
+              </form>
+              <div v-if="selectedRunRetrievalJudgments.length" class="retrieval-judgment-history">
+                <small>已保存 {{ selectedRunRetrievalJudgments.length }} 条标注</small>
+                <span v-for="judgment in selectedRunRetrievalJudgments.slice(-3).reverse()" :key="judgment.id">{{ judgment.overallUtilityScore }}/5 · {{ judgment.evidenceCitation }}</span>
+              </div>
+            </section>
 
             <div class="subsection">
               <div class="subsection-title"><h3>执行步骤</h3><span>{{ selectedRun.steps.length }} steps</span></div>
