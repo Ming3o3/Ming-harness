@@ -61,11 +61,15 @@ public record EducationRetrievalFilter(
     }
 
     public boolean matches(EducationKnowledgeSource source) {
+        if (!matchesCourseAndDifficulty(source)) return false;
+        return conceptKey == null || containsConcept(conceptKey, source.getConceptTags());
+    }
+
+    private boolean matchesCourseAndDifficulty(EducationKnowledgeSource source) {
         if (source == null || !source.isActive()) return false;
         return equalsOrUnconstrained(subject, source.getSubject())
                 && equalsOrUnconstrained(gradeLevel, source.getGradeLevel())
                 && equalsOrUnconstrained(curriculumVersion, source.getCurriculumVersion())
-                && containsConcept(conceptKey, source.getConceptTags())
                 && (minDifficulty == null || source.getDifficultyLevel() >= minDifficulty)
                 && (maxDifficulty == null || source.getDifficultyLevel() <= maxDifficulty);
     }
@@ -87,6 +91,32 @@ public record EducationRetrievalFilter(
     /** Run 创建时冻结的图快照；旧请求为 null，允许服务回退到实时图查询。 */
     public EducationDependencyGraph dependencyGraphOrNull() { return dependencyGraph; }
 
+    public EducationRetrievalFilter withDependencyGraph(EducationDependencyGraph graph) {
+        return new EducationRetrievalFilter(subject, gradeLevel, curriculumVersion, conceptKey,
+                minDifficulty, maxDifficulty, masteryScores, graph);
+    }
+
+    /** 返回目标知识点及其传递前置知识点，供图驱动召回使用。 */
+    public Set<String> retrievalConceptKeys() {
+        Set<String> concepts = new java.util.LinkedHashSet<>();
+        if (conceptKey != null) concepts.add(normalizeConcept(conceptKey));
+        if (dependencyGraph != null) {
+            dependencyGraph.prerequisites().stream()
+                    .map(EducationDependencyPath::conceptKey)
+                    .map(EducationRetrievalFilter::normalizeConcept)
+                    .filter(java.util.Objects::nonNull)
+                    .forEach(concepts::add);
+        }
+        return Collections.unmodifiableSet(concepts);
+    }
+
+    /** 图只扩展知识点候选，课程、可见性和难度仍然是硬约束。 */
+    public boolean matchesForRetrieval(EducationKnowledgeSource source) {
+        if (!matchesCourseAndDifficulty(source)) return false;
+        if (conceptKey == null) return true;
+        return containsAnyConcept(retrievalConceptKeys(), source == null ? null : source.getConceptTags());
+    }
+
     /** 供教育重排使用：没有观测过的知识点按中性掌握度处理。 */
     public double masteryFor(String concept) {
         if (concept == null || concept.isBlank()) return 0.5;
@@ -105,6 +135,16 @@ public record EducationRetrievalFilter(
                 .filter(value -> value != null)
                 .collect(Collectors.toSet());
         return normalized.contains(normalizeConcept(expected));
+    }
+
+    private static boolean containsAnyConcept(Set<String> expected, String values) {
+        if (expected == null || expected.isEmpty()) return true;
+        if (values == null || values.isBlank()) return false;
+        Set<String> normalized = Arrays.stream(values.split("[,，;；\\n]+"))
+                .map(EducationRetrievalFilter::normalizeConcept)
+                .filter(value -> value != null)
+                .collect(Collectors.toSet());
+        return expected.stream().anyMatch(normalized::contains);
     }
 
     private static String normalize(String value) {

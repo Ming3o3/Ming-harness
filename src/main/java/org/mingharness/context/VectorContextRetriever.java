@@ -67,7 +67,12 @@ public class VectorContextRetriever {
                                     OR es.curriculum_version = :educationCurriculumVersion)
                                AND (:educationConceptKey IS NULL
                                     OR LOWER(:educationConceptKey) = ANY(
-                                        string_to_array(LOWER(es.concept_tags), ',')))
+                                        string_to_array(LOWER(es.concept_tags), ','))
+                                    OR (:educationConceptKeys IS NOT NULL AND EXISTS (
+                                        SELECT 1
+                                          FROM unnest(string_to_array(LOWER(:educationConceptKeys), ',')) requested_key
+                                         WHERE requested_key = ANY(
+                                            string_to_array(LOWER(es.concept_tags), ',')))))
                                AND (:educationMinDifficulty IS NULL
                                     OR es.difficulty_level >= :educationMinDifficulty)
                                AND (:educationMaxDifficulty IS NULL
@@ -216,6 +221,9 @@ public class VectorContextRetriever {
                 .addValue("educationCurriculumVersion", educationFilter == null
                         ? null : educationFilter.curriculumVersionOrNull())
                 .addValue("educationConceptKey", educationFilter == null ? null : educationFilter.conceptKeyOrNull())
+                .addValue("educationConceptKeys", educationFilter == null
+                        || educationFilter.retrievalConceptKeys().size() <= 1
+                        ? null : String.join(",", educationFilter.retrievalConceptKeys()))
                 .addValue("educationMinDifficulty", educationFilter == null
                         ? null : educationFilter.minDifficultyOrNull())
                 .addValue("educationMaxDifficulty", educationFilter == null

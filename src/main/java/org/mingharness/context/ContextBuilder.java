@@ -113,27 +113,40 @@ public class ContextBuilder {
     private ContextResult buildInternal(String tenantId, String userId, String query, int maxChars,
                                         EducationRetrievalFilter educationFilter,
                                         EducationRetrievalStrategy strategy) {
+        EducationRetrievalFilter effectiveEducationFilter = educationFilter;
+        EducationDependencyGraph dependencyGraph = EducationDependencyGraph.empty(
+                educationFilter == null ? null : educationFilter.conceptKeyOrNull());
+        if (educationFilter != null && educationFilter.active()) {
+            if (strategy.usesDependencyGraph()) {
+                dependencyGraph = educationFilter.dependencyGraphOrNull() != null
+                        ? educationFilter.dependencyGraphOrNull()
+                        : knowledgeGraphService == null
+                        ? dependencyGraph
+                        : knowledgeGraphService.resolve(tenantId, educationFilter);
+            }
+            if (strategy.usesDependencyGraph() && dependencyGraph != null
+                    && !dependencyGraph.prerequisites().isEmpty()) {
+                effectiveEducationFilter = educationFilter.withDependencyGraph(dependencyGraph);
+            }
+        }
         ContextResult vectorResult = new ContextResult("", List.of());
+        // 保持向量召回 API 的旧过滤器契约；图扩展首先作用于关键词候选和统一选择阶段。
+        // 生产向量实现可通过冻结快照自行扩展候选，旧的检索适配器仍能无感兼容。
+        EducationRetrievalFilter vectorFilter = educationFilter;
         if (strategy.usesVector()) {
             try {
-                vectorResult = educationFilter == null
+                vectorResult = vectorFilter == null
                         ? vectorContextRetriever.retrieve(tenantId, userId, query, maxChars)
-                        : vectorContextRetriever.retrieve(tenantId, userId, query, maxChars, educationFilter);
+                        : vectorContextRetriever.retrieve(tenantId, userId, query, maxChars, vectorFilter);
+                if (vectorResult == null) vectorResult = new ContextResult("", List.of());
             } catch (EmbeddingGatewayException | DataAccessException exception) {
                 // embedding 服务或 pgvector 暂时不可用时保持关键词路径；VECTOR_ONLY 会明确返回空。
             }
         }
         ContextResult keywordResult = strategy.usesKeyword()
-                ? buildKeyword(tenantId, userId, query, maxChars, educationFilter)
+                ? buildKeyword(tenantId, userId, query, maxChars, effectiveEducationFilter)
                 : new ContextResult("", List.of());
-        if (educationFilter != null && educationFilter.active()) {
-            EducationDependencyGraph dependencyGraph = !strategy.usesLearnerState()
-                    ? EducationDependencyGraph.empty(educationFilter.conceptKeyOrNull())
-                    : educationFilter.dependencyGraphOrNull() != null
-                    ? educationFilter.dependencyGraphOrNull()
-                    : knowledgeGraphService == null
-                    ? EducationDependencyGraph.empty(educationFilter.conceptKeyOrNull())
-                    : knowledgeGraphService.resolve(tenantId, educationFilter);
+        if (effectiveEducationFilter != null && effectiveEducationFilter.active()) {
             // VECTOR_ONLY / KEYWORD_ONLY 是召回基线：只保留 SQL/元数据硬过滤，不叠加
             // 教育软重排，避免基线被完整方法的目标匹配和难度策略污染。
             if (strategy == EducationRetrievalStrategy.VECTOR_ONLY) return vectorResult;
@@ -141,7 +154,7 @@ public class ContextBuilder {
             ContextResult merged = vectorResult.isEmpty()
                     ? keywordResult
                     : keywordResult.isEmpty() ? vectorResult : merge(vectorResult, keywordResult, maxChars);
-            ContextResult selected = selectEducationEvidence(merged, tenantId, educationFilter,
+            ContextResult selected = selectEducationEvidence(merged, tenantId, effectiveEducationFilter,
                     dependencyGraph, maxChars, strategy);
             if (vectorResult.isEmpty() && !keywordResult.isEmpty()) metrics.contextFallback();
             if (!vectorResult.isEmpty() && !keywordResult.isEmpty()) {
@@ -232,7 +245,7 @@ public class ContextBuilder {
         if (educationSourceRepository == null) return List.of();
         List<String> sourceDocumentIds = educationSourceRepository
                 .findByTenantIdAndDeletedAtIsNullOrderByUpdatedAtDesc(tenantId).stream()
-                .filter(educationFilter::matches)
+                .filter(educationFilter::matchesForRetrieval)
                 .map(EducationKnowledgeSource::getDocumentId)
                 .filter(documentId -> documentId != null && !documentId.isBlank())
                 .distinct()
@@ -305,7 +318,7 @@ public class ContextBuilder {
         EducationKnowledgeSource source = educationSourceRepository
                 .findByTenantIdAndDocumentIdAndDeletedAtIsNull(tenantId, documentId)
                 .orElse(null);
-        if (source == null || !filter.matches(source)) return null;
+        if (source == null || !filter.matchesForRetrieval(source)) return null;
 
         double retrievalRelevance = evidence.retrievalScore() > 0.0
                 ? Math.min(1.0, evidence.retrievalScore()) : 0.5;
@@ -342,7 +355,7 @@ public class ContextBuilder {
         EducationKnowledgeSource source = educationSourceRepository
                 .findByTenantIdAndDocumentIdAndDeletedAtIsNull(tenantId, evidence.documentId())
                 .orElse(null);
-        if (source == null || !filter.matches(source)) return Set.of();
+        if (source == null || !filter.matchesForRetrieval(source)) return Set.of();
         Set<String> gaps = graphGapSet(dependencyGraph);
         Set<String> concepts = sourceConceptSet(source);
         Set<String> result = new LinkedHashSet<>(gaps);
@@ -427,7 +440,7 @@ public class ContextBuilder {
         if (educationSourceRepository == null) return false;
         return educationSourceRepository
                 .findByTenantIdAndDocumentIdAndDeletedAtIsNull(tenantId, document.getId())
-                .map(educationFilter::matches)
+                .map(educationFilter::matchesForRetrieval)
                 .orElse(false);
     }
 

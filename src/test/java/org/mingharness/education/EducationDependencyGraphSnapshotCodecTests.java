@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class EducationDependencyGraphSnapshotCodecTests {
@@ -35,5 +36,20 @@ class EducationDependencyGraphSnapshotCodecTests {
 
         assertEquals(graph, configuration.dependencyGraph());
         assertEquals(graph, configuration.retrievalFilter().dependencyGraphOrNull());
+    }
+
+    @Test
+    void shouldHideFrozenGraphFromTheDependencyGraphAblationWhileKeepingMastery() {
+        EducationDependencyGraph graph = new EducationDependencyGraph("函数", List.of(
+                new EducationDependencyPath("集合", 1, 0.1, 0.9)), false);
+        EducationRunConfiguration configuration = new EducationRunConfiguration(
+                true, "profile", "goal", null, null, null, null, null,
+                "函数目标", 0.1, 0.8, "数学", "高中一年级", "人教A版", "函数",
+                null, null, "PRACTICE", "函数=0.10", null, null, null,
+                "NO_DEPENDENCY_GRAPH")
+                .withDependencyGraphSnapshot(EducationDependencyGraphSnapshotCodec.encode(graph));
+
+        assertNull(configuration.retrievalFilter().dependencyGraphOrNull());
+        assertEquals(0.1, configuration.retrievalFilter().masteryFor("函数"));
     }
 }

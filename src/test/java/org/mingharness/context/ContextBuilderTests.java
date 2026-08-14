@@ -448,4 +448,38 @@ class ContextBuilderTests {
         assertEquals("STATIC", result.evidences().get(0).rankingBreakdown().weights().conditioning());
         verify(graphService).resolve("tenant-a", filter);
     }
+
+    @Test
+    void shouldKeepAdaptiveLearnerWeightsButDisableDependencyGraphForGraphAblation() {
+        KnowledgeDocument document = new KnowledgeDocument("tenant-a", "teacher", "函数讲解",
+                "函数基础", "INTERNAL", "student");
+        EducationKnowledgeSource source = new EducationKnowledgeSource("tenant-a", document.getId(),
+                "数学", "高中一年级", "人教A版", "函数", "函数基础",
+                "函数", "集合", 2, "TEXTBOOK");
+        KnowledgeDocumentRepository documentRepository = mock(KnowledgeDocumentRepository.class);
+        MemoryEntryRepository memoryRepository = mock(MemoryEntryRepository.class);
+        VectorContextRetriever vectorRetriever = mock(VectorContextRetriever.class);
+        EducationKnowledgeSourceRepository sourceRepository = mock(EducationKnowledgeSourceRepository.class);
+        EducationKnowledgeGraphService graphService = mock(EducationKnowledgeGraphService.class);
+        ContextBuilder builder = new ContextBuilder(documentRepository, memoryRepository, vectorRetriever,
+                new HarnessMetrics(new SimpleMeterRegistry()),
+                new ContextRetrievalProperties(20, 5, 1, 0.2), sourceRepository, graphService);
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "数学", "高中一年级", "人教A版", "函数", null, null,
+                Map.of("函数", 0.2, "集合", 0.1));
+        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 2_000, filter))
+                .thenReturn(new ContextResult("vector", List.of(new ContextEvidence(
+                        document.getId(), "函数讲解", "document:" + document.getId(), "基础"))));
+        when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", document.getId()))
+                .thenReturn(Optional.of(source));
+
+        ContextResult result = builder.build("tenant-a", "student", "函数", 2_000, filter,
+                EducationRetrievalStrategy.NO_DEPENDENCY_GRAPH);
+
+        assertEquals(1, result.evidences().size());
+        assertEquals("LOW_MASTERY_GAP_FIRST",
+                result.evidences().get(0).rankingBreakdown().weights().conditioning());
+        assertEquals(0.0, result.evidences().get(0).rankingBreakdown().graphCoverage());
+        verifyNoInteractions(graphService);
+    }
 }

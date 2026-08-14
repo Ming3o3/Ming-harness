@@ -2435,6 +2435,7 @@ const educationExperimentStrategyLabel = (strategy) => ({
   VECTOR_ONLY: '仅向量',
   KEYWORD_ONLY: '仅关键词',
   NO_LEARNER_STATE: '去学习者状态',
+  NO_DEPENDENCY_GRAPH: '去知识依赖图',
   STATIC_WEIGHT: '固定权重消融',
 }[strategy] || strategy || '未知策略')
 const educationExperimentSampleLabel = (status) => ({
@@ -8474,7 +8475,7 @@ onBeforeUnmount(() => {
                   <label><span>当前课程</span><select v-model="chatEducation.courseId" :disabled="chatSending || chatUploading || !chatEducation.learnerProfileId" @change="selectChatCourse"><option value="">仅使用画像课程约束</option><option v-for="course in availableChatCourses" :key="course.id" :value="course.id">{{ course.code }} · {{ course.title }}</option></select></label>
                   <label><span>学习目标</span><select v-model="chatEducation.learningGoalId" :disabled="chatSending || chatUploading" @change="selectLearningGoal(learningGoals.find((goal) => goal.id === chatEducation.learningGoalId), false)"><option value="">不绑定目标</option><option v-for="goal in learningGoals.filter((item) => item.status === 'ACTIVE')" :key="goal.id" :value="goal.id">{{ goal.title }} · {{ goal.conceptKey }}</option></select></label>
                   <label><span>教学策略</span><select v-model="chatEducation.pedagogicalMode" :disabled="chatSending || chatUploading"><option value="AUTO">自动选择</option><option value="EXPLAIN">概念讲解</option><option value="SOCRATIC">启发式引导</option><option value="PRACTICE">练习优先</option><option value="DIAGNOSE">错误诊断</option></select></label>
-                  <label><span>检索策略</span><select v-model="chatEducation.retrievalStrategy" :disabled="chatSending || chatUploading"><option value="FULL">完整方法</option><option value="VECTOR_ONLY">向量基线</option><option value="KEYWORD_ONLY">关键词基线</option><option value="NO_LEARNER_STATE">去学习状态消融</option><option value="STATIC_WEIGHT">固定权重消融</option></select></label>
+                  <label><span>检索策略</span><select v-model="chatEducation.retrievalStrategy" :disabled="chatSending || chatUploading"><option value="FULL">完整方法</option><option value="VECTOR_ONLY">向量基线</option><option value="KEYWORD_ONLY">关键词基线</option><option value="NO_LEARNER_STATE">去学习状态消融</option><option value="NO_DEPENDENCY_GRAPH">去知识依赖图消融</option><option value="STATIC_WEIGHT">固定权重消融</option></select></label>
                   <label><span>目标知识点</span><input v-model="chatEducation.conceptKey" maxlength="255" placeholder="例如：函数定义域" :disabled="chatSending || chatUploading" /></label>
                   <label><span>难度范围</span><div class="chat-education-difficulty"><input v-model.number="chatEducation.minDifficulty" type="number" min="1" max="5" placeholder="1" :disabled="chatSending || chatUploading" /><span>—</span><input v-model.number="chatEducation.maxDifficulty" type="number" min="1" max="5" placeholder="5" :disabled="chatSending || chatUploading" /></div></label>
                   <small class="chat-education-context">{{ activeChatCourse ? `已锁定 ${activeChatCourse.code} · ${activeChatCourse.title}` : '课程实例未绑定；将按画像与知识源范围运行' }} · {{ currentEducationRetrievalScope.subject || '未选择学科' }} · {{ currentEducationRetrievalScope.gradeLevel || '未选择年级' }} · {{ currentEducationRetrievalScope.curriculumVersion || '未选择课程版本' }}</small>
@@ -9010,6 +9011,7 @@ onBeforeUnmount(() => {
                   <option value="VECTOR_ONLY">向量基线</option>
                   <option value="KEYWORD_ONLY">关键词基线</option>
                   <option value="NO_LEARNER_STATE">去学习状态消融</option>
+                  <option value="NO_DEPENDENCY_GRAPH">去知识依赖图消融</option>
                   <option value="STATIC_WEIGHT">固定权重消融</option>
                 </select>
               </label>

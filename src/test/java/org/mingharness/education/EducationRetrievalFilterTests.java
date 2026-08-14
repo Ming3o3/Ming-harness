@@ -3,6 +3,7 @@ package org.mingharness.education;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -35,5 +36,24 @@ class EducationRetrievalFilterTests {
         assertTrue(filter.matches(new EducationKnowledgeSource(
                 "tenant-a", "doc-1", "数学", "高中一年级", "人教A版", "第一章",
                 "理解定义域", "函数，定义域；值域", "集合\n不等式", 3, "TEXTBOOK")));
+    }
+
+    @Test
+    void shouldExpandRetrievalConceptsToFrozenPrerequisiteGraphWithoutWeakeningCourseGate() {
+        EducationDependencyGraph graph = new EducationDependencyGraph("函数", List.of(
+                new EducationDependencyPath("集合", 1, 0.1, 0.9)), false);
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "数学", "高中一年级", "人教A版", "函数", null, null,
+                Map.of("函数", 0.2, "集合", 0.1), graph);
+        EducationKnowledgeSource prerequisite = new EducationKnowledgeSource(
+                "tenant-a", "doc-1", "数学", "高中一年级", "人教A版", "第一章",
+                "集合基础", "集合", "", 2, "TEXTBOOK");
+        EducationKnowledgeSource wrongCourse = new EducationKnowledgeSource(
+                "tenant-a", "doc-2", "数学", "高中二年级", "北师大版", "第一章",
+                "集合基础", "集合", "", 2, "TEXTBOOK");
+
+        assertTrue(filter.matchesForRetrieval(prerequisite));
+        assertTrue(!filter.matchesForRetrieval(wrongCourse));
+        assertTrue(filter.matches(prerequisite) == false);
     }
 }

@@ -17,6 +17,8 @@ public enum EducationRetrievalStrategy {
     KEYWORD_ONLY,
     /** 混合召回，但去掉掌握度和依赖图状态项，用于状态消融实验。 */
     NO_LEARNER_STATE,
+    /** 混合召回并使用学习者状态，但不读取知识依赖图，用于图结构消融实验。 */
+    NO_DEPENDENCY_GRAPH,
     /** 混合召回并使用学习者状态，但固定排序权重，用于自适应权重消融。 */
     STATIC_WEIGHT;
 
@@ -39,10 +41,14 @@ public enum EducationRetrievalStrategy {
     }
 
     public boolean usesLearnerState() {
-        return this == FULL || this == STATIC_WEIGHT;
+        return this == FULL || this == NO_DEPENDENCY_GRAPH || this == STATIC_WEIGHT;
     }
 
     public boolean usesAdaptiveWeights() {
-        return this == FULL;
+        return this == FULL || this == NO_DEPENDENCY_GRAPH;
+    }
+
+    public boolean usesDependencyGraph() {
+        return this == FULL || this == STATIC_WEIGHT;
     }
 }

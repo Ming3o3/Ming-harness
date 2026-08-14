@@ -140,10 +140,11 @@ public record EducationRunConfiguration(
     }
 
     public EducationRetrievalFilter retrievalFilter() {
+        EducationRetrievalStrategy strategy = EducationRetrievalStrategy.parse(retrievalStrategy);
         return enabled ? new EducationRetrievalFilter(subject, gradeLevel, curriculumVersion,
                 conceptKey, minDifficulty, maxDifficulty,
-                EducationRetrievalStrategy.parse(retrievalStrategy).usesLearnerState()
-                        ? masteryScores() : Map.of(), dependencyGraph()) : null;
+                strategy.usesLearnerState() ? masteryScores() : Map.of(),
+                strategy.usesDependencyGraph() ? dependencyGraph() : null) : null;
     }
 
     public EducationRetrievalStrategy retrievalStrategyValue() {
