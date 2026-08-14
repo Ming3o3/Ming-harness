@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -284,8 +285,9 @@ public class ContextBuilder {
                 .map(evidence -> {
                     EducationRankingBreakdown breakdown = educationRanking(tenantId, evidence,
                             filter, dependencyGraph, strategy, calibratedWeights);
+                    Set<String> gaps = coveredGapSet(tenantId, evidence, filter, dependencyGraph);
                     return breakdown == null ? null : new RankedEducationEvidence(evidence, breakdown,
-                            coveredGapSet(tenantId, evidence, filter, dependencyGraph));
+                            gaps, gapWeights(dependencyGraph, gaps));
                 })
                 .filter(Objects::nonNull)
                 .toList();
@@ -409,6 +411,31 @@ public class ContextBuilder {
         return result;
     }
 
+    /**
+     * 将知识依赖图的缺口转换为证据集合选择的边际收益。
+     *
+     * <p>同样的掌握度缺口下，距离目标更近的前置节点优先级更高；缺口严重度仍
+     * 作为主权重。这样贪心规划会先补齐依赖前沿，再把预算留给更深层节点，且
+     * 该优先级可以从路径深度和 deficit 直接回放。</p>
+     */
+    private Map<String, Double> gapWeights(EducationDependencyGraph graph, Set<String> gaps) {
+        if (gaps == null || gaps.isEmpty()) return Map.of();
+        Map<String, Double> result = new LinkedHashMap<>();
+        if (graph != null) {
+            for (EducationDependencyPath path : graph.prerequisites()) {
+                String concept = normalizeConcept(path.conceptKey());
+                if (!gaps.contains(concept)) continue;
+                double deficit = Math.max(0.001, path.deficit());
+                double depthPriority = 1.0 / Math.max(1, path.depth());
+                result.put(concept, deficit * depthPriority);
+            }
+        }
+        for (String gap : gaps) {
+            result.putIfAbsent(gap, 1.0);
+        }
+        return Map.copyOf(result);
+    }
+
     private Set<String> graphGapSet(EducationDependencyGraph graph) {
         if (graph == null) return Set.of();
         return graph.prerequisites().stream()
@@ -435,7 +462,8 @@ public class ContextBuilder {
         for (EducationDependencyPath path : graph.prerequisites()) {
             String concept = normalizeConcept(path.conceptKey());
             if (!graphGaps.contains(concept)) continue;
-            double weight = Math.max(0.0, path.deficit());
+            // 立即前置节点优先于更深层节点，避免在上下文预算紧张时跳过依赖前沿。
+            double weight = Math.max(0.0, path.deficit()) / Math.max(1, path.depth());
             total += weight;
             if (sourceConcepts.contains(concept)) covered += weight;
         }
@@ -671,29 +699,34 @@ public class ContextBuilder {
     private record RankedEducationEvidence(ContextEvidence evidence,
                                            EducationRankingBreakdown breakdown,
                                            Set<String> gaps,
+                                           Map<String, Double> gapWeights,
                                            EducationRankingBreakdown selectedBreakdown,
                                            double selectionScore) {
 
         private RankedEducationEvidence(ContextEvidence evidence,
                                         EducationRankingBreakdown breakdown,
-                                        Set<String> gaps) {
-            this(evidence, breakdown, Set.copyOf(gaps), breakdown, breakdown.baseScore());
+                                        Set<String> gaps,
+                                        Map<String, Double> gapWeights) {
+            this(evidence, breakdown, Set.copyOf(gaps), Map.copyOf(gapWeights), breakdown,
+                    breakdown.baseScore());
         }
 
         private RankedEducationEvidence withSelection(Set<String> alreadyCovered) {
             Set<String> marginalGaps = new LinkedHashSet<>(gaps);
             marginalGaps.removeAll(alreadyCovered);
-            double marginalCoverage = marginalGaps.stream()
-                    .mapToDouble(ignored -> 1.0).sum() / Math.max(1, gaps.size());
+            double totalWeight = gapWeights.values().stream().mapToDouble(Double::doubleValue).sum();
+            double marginalWeight = marginalGaps.stream()
+                    .mapToDouble(gap -> gapWeights.getOrDefault(gap, 1.0)).sum();
+            double marginalCoverage = totalWeight <= 0.0 ? 0.0 : marginalWeight / totalWeight;
             double redundancy = gaps.isEmpty() ? 1.0
-                    : 1.0 - (marginalGaps.size() / (double) gaps.size());
+                    : 1.0 - marginalCoverage;
             // 基础相关性保留主体，缺口边际覆盖决定同分候选的优先级，冗余只做轻惩罚。
             double score = 0.70 * breakdown.baseScore()
                     + 0.25 * marginalCoverage
                     - 0.05 * redundancy;
             EducationRankingBreakdown selected = breakdown.withSelection(marginalCoverage,
                     redundancy, score);
-            return new RankedEducationEvidence(evidence, breakdown, gaps, selected, score);
+            return new RankedEducationEvidence(evidence, breakdown, gaps, gapWeights, selected, score);
         }
     }
 }

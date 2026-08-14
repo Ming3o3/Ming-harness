@@ -344,6 +344,63 @@ class ContextBuilderTests {
     }
 
     @Test
+    void shouldPreferShallowerPrerequisiteWhenContextBudgetAllowsOnlyOneSupplement() {
+        KnowledgeDocumentRepository documentRepository = mock(KnowledgeDocumentRepository.class);
+        MemoryEntryRepository memoryRepository = mock(MemoryEntryRepository.class);
+        VectorContextRetriever vectorRetriever = mock(VectorContextRetriever.class);
+        EducationKnowledgeSourceRepository sourceRepository = mock(EducationKnowledgeSourceRepository.class);
+        EducationKnowledgeGraphService graphService = mock(EducationKnowledgeGraphService.class);
+        ContextBuilder builder = new ContextBuilder(documentRepository, memoryRepository, vectorRetriever,
+                new HarnessMetrics(new SimpleMeterRegistry()),
+                new ContextRetrievalProperties(20, 5, 1, 0.2), sourceRepository, graphService);
+
+        KnowledgeDocument target = new KnowledgeDocument("tenant-a", "teacher", "目标", "目标内容",
+                "INTERNAL", "student");
+        KnowledgeDocument deep = new KnowledgeDocument("tenant-a", "teacher", "深层前置", "高阶",
+                "INTERNAL", "student");
+        KnowledgeDocument shallow = new KnowledgeDocument("tenant-a", "teacher", "浅层前置", "集合",
+                "INTERNAL", "student");
+        EducationKnowledgeSource targetSource = new EducationKnowledgeSource("tenant-a", target.getId(),
+                "数学", "高中一年级", "人教A版", "函数", "目标", "函数", "", 2, "TEXTBOOK");
+        EducationKnowledgeSource deepSource = new EducationKnowledgeSource("tenant-a", deep.getId(),
+                "数学", "高中一年级", "人教A版", "函数", "深层前置", "高阶", "", 2, "TEXTBOOK");
+        EducationKnowledgeSource shallowSource = new EducationKnowledgeSource("tenant-a", shallow.getId(),
+                "数学", "高中一年级", "人教A版", "函数", "浅层前置", "集合", "", 2, "TEXTBOOK");
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "数学", "高中一年级", "人教A版", "函数", null, null,
+                Map.of("函数", 0.10, "集合", 0.0, "高阶", 0.0));
+        EducationDependencyGraph graph = new EducationDependencyGraph("函数", List.of(
+                new EducationDependencyPath("集合", 1, 0.0, 0.9),
+                new EducationDependencyPath("高阶", 2, 0.0, 0.9)), false);
+
+        when(graphService.resolve("tenant-a", filter)).thenReturn(graph);
+        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 26, filter))
+                .thenReturn(new ContextResult("vector-context", List.of(
+                        new ContextEvidence(target.getId(), "目标", "document:" + target.getId(), "目标内容", 1.0, "", List.of()),
+                        new ContextEvidence(deep.getId(), "深层前置", "document:" + deep.getId(), "高阶", 1.0, "", List.of()),
+                        new ContextEvidence(shallow.getId(), "浅层前置", "document:" + shallow.getId(), "集合", 1.0, "", List.of()))));
+        when(sourceRepository.findByTenantIdAndDeletedAtIsNullOrderByUpdatedAtDesc("tenant-a"))
+                .thenReturn(List.of(targetSource, deepSource, shallowSource));
+        when(documentRepository.findByTenantIdAndIdInAndDeletedAtIsNullOrderByCreatedAtDesc(
+                "tenant-a", List.of(target.getId(), deep.getId(), shallow.getId())))
+                .thenReturn(List.of(target, deep, shallow));
+        when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", target.getId()))
+                .thenReturn(Optional.of(targetSource));
+        when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", deep.getId()))
+                .thenReturn(Optional.of(deepSource));
+        when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", shallow.getId()))
+                .thenReturn(Optional.of(shallowSource));
+
+        ContextResult result = builder.build("tenant-a", "student", "函数", 26, filter);
+
+        assertEquals(2, result.evidences().size());
+        assertEquals(target.getId(), result.evidences().get(0).documentId());
+        assertEquals(shallow.getId(), result.evidences().get(1).documentId());
+        assertTrue(result.evidences().get(1).rankingBreakdown().graphCoverage()
+                > result.evidences().get(0).rankingBreakdown().graphCoverage());
+    }
+
+    @Test
     void shouldExplainOnlyPrerequisiteGapsCoveredByEachSource() {
         KnowledgeDocumentRepository documentRepository = mock(KnowledgeDocumentRepository.class);
         MemoryEntryRepository memoryRepository = mock(MemoryEntryRepository.class);
