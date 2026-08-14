@@ -9707,7 +9707,7 @@ onBeforeUnmount(() => {
             </details>
             <details v-if="educationExperiment" class="education-operations-metrics education-experiment-panel" open>
               <summary><span>EI 检索实验诊断</span><small>基线 · 消融 · 学习效果</small><button class="inline-summary-action" type="button" :disabled="educationExperimentDownloading" @click.prevent="downloadEducationExperimentCsv">{{ educationExperimentDownloading ? '导出中…' : '导出策略 CSV' }}</button><button class="inline-summary-action" type="button" :disabled="educationExperimentPairedDownloading" @click.prevent="downloadPairedEducationExperimentCsv">{{ educationExperimentPairedDownloading ? '导出中…' : '导出配对 CSV' }}</button></summary>
-              <p class="learning-task-help">结果按 Run 创建时冻结的检索策略聚合；每条证据来自实际步骤快照，测评和掌握度变化按 runId 对齐。</p>
+              <p class="learning-task-help">结果按 Run 创建时冻结的检索策略聚合；每条证据来自实际步骤快照，测评和掌握度变化按 runId 对齐。效率指标用证据摘录字符数作为跨模型 token 成本的稳定代理。</p>
               <div class="education-experiment-overview">
                 <span><strong>{{ educationExperiment.totalRunCount }}</strong>教育 Run</span>
                 <span><strong>{{ educationExperiment.totalAssessmentCount }}</strong>条测评</span>
@@ -9716,12 +9716,13 @@ onBeforeUnmount(() => {
               </div>
               <div v-if="educationExperimentStrategies.length" class="education-experiment-table-wrap">
                 <table class="education-experiment-table">
-                  <thead><tr><th>策略</th><th>样本</th><th>证据</th><th>缺口覆盖</th><th>冗余</th><th>正确率</th><th>掌握度增益</th><th>达标率</th></tr></thead>
+                    <thead><tr><th>策略</th><th>样本</th><th>证据</th><th>效率</th><th>缺口覆盖</th><th>冗余</th><th>正确率</th><th>掌握度增益</th><th>达标率</th></tr></thead>
                   <tbody>
                     <tr v-for="item in educationExperimentStrategies" :key="item.retrievalStrategy" :class="{ 'is-best': item === educationExperimentBest }">
                       <td><strong>{{ educationExperimentStrategyLabel(item.retrievalStrategy) }}</strong><small>{{ item.retrievalStrategy }} · {{ educationExperimentSampleLabel(item.sampleStatus) }}</small></td>
                       <td>{{ item.runCount }} <small>{{ item.successfulRunCount }} 成功</small></td>
                       <td>{{ formatRate(item.evidenceCoverageRate) }} <small>均 {{ Number(item.averageEvidenceCount || 0).toFixed(1) }}</small></td>
+                      <td>{{ Number(item.averageUtilityPerThousandChars || 0).toFixed(2) }} <small>/ 1k 字符</small></td>
                       <td>{{ formatRate(item.prerequisiteGapCoverageRate) }}</td>
                       <td>{{ formatRate(item.evidenceRedundancyRate) }}</td>
                       <td>{{ formatRate(item.assessmentAccuracyRate) }} <small>{{ item.assessmentCount }} 次</small></td>

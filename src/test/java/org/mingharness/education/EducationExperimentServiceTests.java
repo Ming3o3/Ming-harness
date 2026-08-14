@@ -63,6 +63,9 @@ class EducationExperimentServiceTests {
         assertEquals(1, full.runCount());
         assertEquals(2.0, full.averageEvidenceCount());
         assertEquals(1.0, full.averageUniqueEvidenceCount());
+        assertEquals(35.0, full.averageEvidenceChars(), 0.0001);
+        assertTrue(full.averageUtilityPerThousandChars() > 0.0);
+        assertTrue(full.averageMarginalCoveragePerThousandChars() > 0.0);
         assertEquals(0.5, full.evidenceRedundancyRate());
         assertEquals(1, full.assessmentCount());
         assertEquals(1.0, full.assessmentAccuracyRate());

@@ -109,6 +109,8 @@ public class EducationExperimentService {
         StringBuilder csv = new StringBuilder();
         csv.append("retrieval_strategy,run_count,successful_run_count,runs_with_evidence,"
                 + "evidence_coverage_rate,average_evidence_count,average_unique_evidence_count,"
+                + "average_evidence_chars,average_utility_per_thousand_chars,"
+                + "average_marginal_coverage_per_thousand_chars,"
                 + "prerequisite_gap_coverage_rate,evidence_redundancy_rate,average_ranking_score,"
                 + "average_marginal_coverage,average_target_concept_match,average_graph_coverage,"
                 + "average_difficulty_fit,assessment_count,correct_assessment_count,"
@@ -119,6 +121,9 @@ public class EducationExperimentService {
                     .append(item.runCount()).append(',').append(item.successfulRunCount()).append(',')
                     .append(item.runsWithEvidence()).append(',').append(item.evidenceCoverageRate()).append(',')
                     .append(item.averageEvidenceCount()).append(',').append(item.averageUniqueEvidenceCount()).append(',')
+                    .append(item.averageEvidenceChars()).append(',')
+                    .append(item.averageUtilityPerThousandChars()).append(',')
+                    .append(item.averageMarginalCoveragePerThousandChars()).append(',')
                     .append(item.prerequisiteGapCoverageRate()).append(',').append(item.evidenceRedundancyRate()).append(',')
                     .append(item.averageRankingScore()).append(',').append(item.averageMarginalCoverage()).append(',')
                     .append(item.averageTargetConceptMatch()).append(',').append(item.averageGraphCoverage()).append(',')
@@ -197,6 +202,9 @@ public class EducationExperimentService {
                 ratio(runsWithEvidence, runs.size()),
                 average(evidenceStats, EvidenceStats::totalCount),
                 average(evidenceStats, EvidenceStats::uniqueCount),
+                average(nonEmptyEvidence, EvidenceStats::evidenceChars),
+                average(nonEmptyEvidence, EvidenceStats::utilityPerThousandChars),
+                average(nonEmptyEvidence, EvidenceStats::marginalCoveragePerThousandChars),
                 average(nonEmptyEvidence, EvidenceStats::prerequisiteGapCoverage),
                 average(nonEmptyEvidence, EvidenceStats::redundancyRate),
                 average(nonEmptyEvidence, EvidenceStats::rankingScore),
@@ -348,13 +356,34 @@ public class EducationExperimentService {
                 .filter(evidence -> !evidence.prerequisiteGaps().isEmpty())
                 .mapToDouble(evidence -> evidence.rankingBreakdown().graphCoverage())
                 .average().orElse(graphCoverage);
+        int evidenceChars = evidences.stream().mapToInt(this::evidenceChars).sum();
+        double utility = breakdowns.stream()
+                .mapToDouble(EducationRankingBreakdown::finalScore).sum();
+        double marginalCoverage = breakdowns.stream()
+                .mapToDouble(EducationRankingBreakdown::marginalCoverageScore).sum();
         return new EvidenceStats(evidences.size(), unique.size(), prerequisiteCoverage,
                 ratio(evidences.size() - unique.size(), evidences.size()),
                 averageBreakdown(breakdowns, EducationRankingBreakdown::finalScore),
                 averageBreakdown(breakdowns, EducationRankingBreakdown::marginalCoverageScore),
                 averageBreakdown(breakdowns, EducationRankingBreakdown::targetConceptMatch),
                 graphCoverage,
-                averageBreakdown(breakdowns, EducationRankingBreakdown::difficultyFit));
+                averageBreakdown(breakdowns, EducationRankingBreakdown::difficultyFit),
+                evidenceChars, perThousandChars(utility, evidenceChars),
+                perThousandChars(marginalCoverage, evidenceChars));
+    }
+
+    /** 证据摘录字符数是跨供应商 token 计数不可得时的稳定、可回放效率代理。 */
+    private int evidenceChars(ContextEvidence evidence) {
+        if (evidence == null) return 0;
+        return safeLength(evidence.title()) + safeLength(evidence.excerpt()) + 10;
+    }
+
+    private int safeLength(String value) {
+        return value == null ? 0 : value.length();
+    }
+
+    private double perThousandChars(double value, int chars) {
+        return chars <= 0 ? 0.0 : value * 1000.0 / chars;
     }
 
     private String evidenceKey(ContextEvidence evidence) {
@@ -383,10 +412,14 @@ public class EducationExperimentService {
                                  double prerequisiteGapCoverage,
                                  double redundancyRate, double rankingScore,
                                  double marginalCoverage, double targetConceptMatch,
-                                 double graphCoverage, double difficultyFit) {
+                                 double graphCoverage, double difficultyFit,
+                                 double evidenceChars,
+                                 double utilityPerThousandChars,
+                                 double marginalCoveragePerThousandChars) {
 
         private static EvidenceStats empty() {
-            return new EvidenceStats(0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
+            return new EvidenceStats(0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                    0.0, 0.0, 0.0);
         }
 
         private boolean hasEvidence() {
