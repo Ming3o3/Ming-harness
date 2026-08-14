@@ -38,7 +38,7 @@ Ming Harness 是一个面向课程约束与学习者状态的教育知识库 Age
 4. Agent 根据前置知识缺口、目标掌握度和资料难度选择讲解、苏格拉底追问、练习或诊断。学习对话不会退回为通用问答；缺少资料或画像时会明确阻断并引导配置。
 5. 只有附带学生作答或推理依据的形成性测评才能更新掌握度。达标后自动进入保持度复习，到期生成学习任务；作业、提交物、教师量规、返工和干预形成可追踪的教学闭环。
 
-教育检索默认以向量与关键词融合召回候选证据，再在课程硬约束内结合目标知识点、前置知识缺口、知识依赖图覆盖、学习者掌握度和难度适配进行证据集合选择。`FULL`、`VECTOR_ONLY`、`KEYWORD_ONLY`、`NO_LEARNER_STATE`、`NO_DEPENDENCY_GRAPH` 和 `STATIC_WEIGHT` 用于可复现基线与消融；`CALIBRATED` 会读取当前租户已有的教师证据标注，将目标 grounding、前置补强、难度适配和总体效用收缩校准为下一轮排序权重。校准权重在 Run 创建时冻结，历史 Run 不会因后续标注变化而漂移。实验聚合器还会在同一学习者-学习目标内将各策略与 `FULL` 配对，计算掌握度增益、目标达成率、达标轮次和前置缺口覆盖的差值，避免把学习者个体差异误当成检索收益。
+教育检索默认以向量与关键词融合召回候选证据，再在课程硬约束内结合目标知识点、前置知识缺口、知识依赖图覆盖、学习者掌握度和难度适配进行证据集合选择。`FULL`、`VECTOR_ONLY`、`KEYWORD_ONLY`、`NO_LEARNER_STATE`、`NO_DEPENDENCY_GRAPH` 和 `STATIC_WEIGHT` 用于可复现基线与消融；`CALIBRATED` 会读取当前租户已有的教师证据标注，并按 Run 创建时冻结的低掌握度、平衡掌握度或高掌握度状态分层收缩校准目标 grounding、前置补强、难度适配和总体效用权重。状态分层样本不足时回退租户级权重，校准权重在 Run 创建时冻结，历史 Run 不会因后续标注变化而漂移。实验聚合器还会在同一学习者-学习目标内将各策略与 `FULL` 配对，计算掌握度增益、目标达成率、达标轮次和前置缺口覆盖的差值，避免把学习者个体差异误当成检索收益。
 
 教师可以在成功教育 Run 的真实检索证据上提交 1--5 分量规评价，系统只接受该 Run 的证据快照引用，并通过 `GET /api/education/retrieval-calibration` 查看当前租户的校准版本、样本量、四项均值和生效权重。该闭环用于实验校准与审计回放，不把主观评价伪装成学习者掌握度事实。
 
@@ -504,7 +504,7 @@ curl -X POST http://localhost:8080/api/runs \
 - `GET /api/education/experiments/paired.csv`：导出同一学习者-目标内以 `FULL` 为参考的配对策略结果；差值定义为“对比策略 − FULL”，达到目标轮次为负表示对比策略更快
 - `GET /api/education/evidence-impact`：按“检索策略 + citation”聚合形成性测评的证据级学习收益，返回引用权重、掌握度增益、正确率、排序拆解和快照匹配率；只统计成功教育 Run
 - `GET /api/education/evidence-impact.csv`：导出证据级学习收益归因，适合与教师证据标注或策略消融结果联表分析
-- `GET /api/education/retrieval-calibration`：查看当前租户教师检索证据标注聚合出的版本化校准快照；只有新建并选择 `CALIBRATED` 策略的 Run 使用该快照
+- `GET /api/education/retrieval-calibration`：查看当前租户教师检索证据标注聚合出的版本化校准快照及学习状态分层；只有新建并选择 `CALIBRATED` 策略的 Run 使用该快照，历史 Run 继续使用创建时冻结的权重
 - `POST/GET /api/education/courses`：教师创建或查询课程实例；课程固定学科、年级和课程版本，课程状态为 `ACTIVE`、`COMPLETED` 或 `ARCHIVED`
 - `POST/GET /api/education/courses/{courseId}/enrollments`：课程负责人加入或查询学习者名单；`POST /api/education/courses/{courseId}/enrollments/{learnerUserId}/remove` 可移除成员，已结课或已归档课程不能再变更名单
 - `POST /api/education/courses/{courseId}/assignments`：向课程活跃名单批量布置统一目标，必须携带 `Idempotency-Key`；同一课程和幂等键会复用原批次，同一键提交不同内容会返回 `409 ASSIGNMENT_BATCH_KEY_REUSED_WITH_DIFFERENT_REQUEST`

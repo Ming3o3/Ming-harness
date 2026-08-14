@@ -104,6 +104,12 @@ public record EducationRankingWeights(
                 + difficultyFit * bounded(difficulty);
     }
 
+    /** 保留数值权重，仅替换审计解释标签。 */
+    public EducationRankingWeights withConditioning(String value) {
+        return new EducationRankingWeights(retrievalRelevance, targetConceptMatch,
+                prerequisiteGap, graphCoverage, difficultyFit, value);
+    }
+
     private static double bounded(double value) {
         return Double.isFinite(value) ? Math.max(0.0, Math.min(1.0, value)) : 0.0;
     }

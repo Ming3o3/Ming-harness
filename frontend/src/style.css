@@ -593,6 +593,11 @@ h3 { margin: 0; font-size: 13px; }
 .education-calibration-grid span { display: grid; gap: 3px; min-width: 0; border: 1px solid rgba(153,174,218,.12); border-radius: 6px; padding: 6px 7px; }
 .education-calibration-grid small { overflow: hidden; color: var(--muted); font: 8px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .education-calibration-grid strong { overflow: hidden; color: var(--soft); font: 10px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.education-calibration-slices { display: grid; gap: 6px; margin-top: 2px; }
+.education-calibration-slice { display: grid; grid-template-columns: minmax(180px, 1.6fr) repeat(4, minmax(60px, 1fr)); gap: 7px; align-items: center; border: 1px solid rgba(153,174,218,.12); border-radius: 6px; padding: 7px; color: var(--muted); font: 8px "DM Mono", monospace; }
+.education-calibration-slice > div { display: grid; gap: 3px; min-width: 0; }
+.education-calibration-slice strong { overflow: hidden; color: var(--soft); text-overflow: ellipsis; white-space: nowrap; }
+.education-calibration-slice small { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
 .education-course-workbench { display: grid; gap: 10px; border: 1px solid rgba(141,124,255,.28); border-radius: 8px; background: rgba(141,124,255,.045); padding: 11px; }
 .education-course-heading { align-items: center; }
 .education-course-heading > div, .education-course-detail-heading > div, .education-course-progress .subsection-title > div { display: flex; align-items: baseline; gap: 8px; }

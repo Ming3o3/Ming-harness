@@ -2,13 +2,18 @@ package org.mingharness.education;
 
 import org.junit.jupiter.api.Test;
 import org.mingharness.context.api.EducationRankingWeights;
+import org.mingharness.runtime.domain.Run;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 class EducationRetrievalCalibrationServiceTests {
@@ -40,9 +45,14 @@ class EducationRetrievalCalibrationServiceTests {
 
     @Test
     void shouldRoundTripVersionedSnapshot() {
+        EducationRetrievalCalibrationSlice slice = new EducationRetrievalCalibrationSlice(
+                "LOW_MASTERY_GAP_FIRST", 8, 4.5, 3.5, 4.0, 4.25,
+                EducationRankingWeights.calibrated(4.5, 3.5, 4.0, 4.25, 8)
+                        .withConditioning("CALIBRATED_V2:LOW_MASTERY_GAP_FIRST:n=8"));
         EducationRetrievalCalibrationSnapshot source = new EducationRetrievalCalibrationSnapshot(
                 EducationRetrievalCalibrationSnapshot.VERSION, 8, 4.5, 3.5, 4.0, 4.25,
-                EducationRankingWeights.calibrated(4.5, 3.5, 4.0, 4.25, 8));
+                EducationRankingWeights.calibrated(4.5, 3.5, 4.0, 4.25, 8),
+                Map.of("LOW_MASTERY_GAP_FIRST", slice));
 
         EducationRetrievalCalibrationSnapshot decoded = EducationRetrievalCalibrationSnapshotCodec.decode(
                 EducationRetrievalCalibrationSnapshotCodec.encode(source));
@@ -51,6 +61,9 @@ class EducationRetrievalCalibrationServiceTests {
         assertEquals(source.sampleCount(), decoded.sampleCount());
         assertEquals(source.weights().conditioning(), decoded.weights().conditioning());
         assertEquals(source.weights().targetConceptMatch(), decoded.weights().targetConceptMatch(), 0.000001);
+        assertEquals(1, decoded.stateSlices().size());
+        assertEquals("CALIBRATED_V2:LOW_MASTERY_GAP_FIRST:n=8",
+                decoded.stateSlices().get("LOW_MASTERY_GAP_FIRST").weights().conditioning());
     }
 
     @Test
@@ -65,6 +78,56 @@ class EducationRetrievalCalibrationServiceTests {
         assertEquals("CALIBRATED_PRIOR", snapshot.weights().conditioning());
     }
 
+    @Test
+    void shouldBuildStateConditionedSlicesFromFrozenRunMastery() {
+        EducationRetrievalJudgmentRepository repository = mock(EducationRetrievalJudgmentRepository.class);
+        org.mingharness.runtime.repository.RunRepository runs = mock(
+                org.mingharness.runtime.repository.RunRepository.class);
+        Run lowMastery = runWithMastery("函数=0.10");
+        Run highMastery = runWithMastery("函数=0.90");
+        List<EducationRetrievalJudgment> judgments = new java.util.ArrayList<>();
+        for (int index = 0; index < 5; index++) {
+            judgments.add(judgment(lowMastery.getId(), "step-1", "teacher-low-" + index,
+                    5, 5, 2, 5, Instant.parse("2026-02-01T00:00:0" + index + "Z")));
+            judgments.add(judgment(highMastery.getId(), "step-1", "teacher-high-" + index,
+                    2, 2, 5, 2, Instant.parse("2026-02-01T00:01:0" + index + "Z")));
+        }
+        when(repository.findByTenantIdOrderByCreatedAtAsc("tenant-a"))
+                .thenReturn(judgments);
+        when(runs.findByTenantIdAndIdIn(eq("tenant-a"), anyList()))
+                .thenReturn(List.of(lowMastery, highMastery));
+
+        EducationRetrievalCalibrationSnapshot snapshot = new EducationRetrievalCalibrationService(
+                repository, runs).snapshotForTenant("tenant-a");
+
+        assertEquals(2, snapshot.stateSlices().size());
+        EducationRetrievalCalibrationSlice lowSlice = snapshot.stateSlices()
+                .get("LOW_MASTERY_GAP_FIRST");
+        EducationRetrievalCalibrationSlice highSlice = snapshot.stateSlices()
+                .get("HIGH_MASTERY_TARGET_FIRST");
+        assertEquals(5, lowSlice.sampleCount());
+        assertEquals(5, highSlice.sampleCount());
+        assertTrue(lowSlice.weights().conditioning().startsWith("CALIBRATED_V2:LOW_MASTERY_GAP_FIRST"));
+        assertTrue(highSlice.weights().conditioning().startsWith("CALIBRATED_V2:HIGH_MASTERY_TARGET_FIRST"));
+        EducationRankingWeights snapshotLowWeights = snapshot.weightsFor("LOW_MASTERY_GAP_FIRST");
+        assertEquals(lowSlice.weights().conditioning(), snapshotLowWeights.conditioning());
+        assertWeightsClose(lowSlice.weights(), snapshotLowWeights);
+        String encoded = EducationRetrievalCalibrationSnapshotCodec.encode(snapshot);
+        EducationRankingWeights selected = new EducationRetrievalCalibrationService(repository, runs)
+                .weightsFromSnapshot(encoded, lowMastery.educationConfiguration());
+        assertEquals(lowSlice.weights().conditioning(), selected.conditioning());
+        assertWeightsClose(lowSlice.weights(), selected);
+    }
+
+    private void assertWeightsClose(EducationRankingWeights expected,
+                                    EducationRankingWeights actual) {
+        assertEquals(expected.retrievalRelevance(), actual.retrievalRelevance(), 0.000001);
+        assertEquals(expected.targetConceptMatch(), actual.targetConceptMatch(), 0.000001);
+        assertEquals(expected.prerequisiteGap(), actual.prerequisiteGap(), 0.000001);
+        assertEquals(expected.graphCoverage(), actual.graphCoverage(), 0.000001);
+        assertEquals(expected.difficultyFit(), actual.difficultyFit(), 0.000001);
+    }
+
     private EducationRetrievalJudgment judgment(String runId, String stepId, String evaluator,
                                                  int target, int prerequisite, int difficulty,
                                                  int overall, Instant createdAt) {
@@ -75,5 +138,15 @@ class EducationRetrievalCalibrationServiceTests {
     private double total(EducationRankingWeights weights) {
         return weights.retrievalRelevance() + weights.targetConceptMatch()
                 + weights.prerequisiteGap() + weights.graphCoverage() + weights.difficultyFit();
+    }
+
+    private Run runWithMastery(String masterySummary) {
+        Run run = new Run("tenant-a", "student-1", "函数学习", "求定义域", BigDecimal.ONE,
+                "model", "prompt", "policy");
+        run.attachEducationConfiguration(new EducationRunConfiguration(
+                true, "profile-1", "goal-1", null, null, null, null, null,
+                "掌握函数", 0.2, 0.8, "数学", "高中一年级", "人教A版", "函数",
+                null, null, "PRACTICE", masterySummary, null, null, "", "FULL"));
+        return run;
     }
 }

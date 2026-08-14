@@ -1853,7 +1853,7 @@ public class RunService {
                 != org.mingharness.education.EducationRetrievalStrategy.CALIBRATED) {
             return null;
         }
-        return educationRetrievalCalibrationService.weightsFromSnapshot(snapshot);
+        return educationRetrievalCalibrationService.weightsFromSnapshot(snapshot, configuration);
     }
 
     /** 外部模型、工具和网络库的异常可能携带请求头或连接串，持久化前必须脱敏。 */

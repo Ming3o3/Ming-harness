@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Collection;
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import org.springframework.data.domain.Page;
@@ -25,6 +26,7 @@ public interface RunRepository extends JpaRepository<Run, String> {
     List<Run> findByTenantIdAndEducationModeTrueOrderByCreatedAtAsc(String tenantId);
     List<Run> findByTenantIdAndUserIdAndEducationModeTrueOrderByCreatedAtAsc(
             String tenantId, String userId);
+    List<Run> findByTenantIdAndIdIn(String tenantId, Collection<String> ids);
     Page<Run> findByTenantId(String tenantId, Pageable pageable);
     Page<Run> findByTenantIdAndStatus(String tenantId, RunStatus status, Pageable pageable);
     @Query("select run.status from Run run where run.id = :runId")

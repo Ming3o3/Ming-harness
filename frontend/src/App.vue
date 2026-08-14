@@ -9751,14 +9751,23 @@ onBeforeUnmount(() => {
                 </div>
               </div>
               <div v-if="educationRetrievalCalibration" class="education-calibration-card" aria-label="教育检索校准状态">
-                <div class="education-calibration-heading"><span>检索权重校准</span><em>{{ educationRetrievalCalibration.sampleStatus }} · {{ educationRetrievalCalibration.sampleCount }} 条证据标注</em></div>
-                <p class="learning-task-help">CALIBRATED Run 在创建时冻结此快照；新标注只影响后续 Run，不会改变历史实验样本。</p>
+                <div class="education-calibration-heading"><span>检索权重校准</span><em>{{ educationRetrievalCalibration.sampleStatus }} · {{ educationRetrievalCalibration.sampleCount }} 条证据标注 · {{ educationRetrievalCalibration.stateSlices?.length || 0 }} 个状态分层</em></div>
+                <p class="learning-task-help">CALIBRATED Run 会按创建时的掌握度状态选择分层权重并冻结快照；状态样本不足时回退租户级权重，新标注只影响后续 Run。</p>
                 <div class="education-calibration-grid">
                   <span><small>目标 grounding</small><strong>{{ Number(educationRetrievalCalibration.targetGroundingMean || 0).toFixed(2) }}</strong></span>
                   <span><small>前置补强</small><strong>{{ Number(educationRetrievalCalibration.prerequisiteUtilityMean || 0).toFixed(2) }}</strong></span>
                   <span><small>难度适配</small><strong>{{ Number(educationRetrievalCalibration.difficultyFitMean || 0).toFixed(2) }}</strong></span>
                   <span><small>总体效用</small><strong>{{ Number(educationRetrievalCalibration.overallUtilityMean || 0).toFixed(2) }}</strong></span>
                   <span><small>当前条件</small><strong>{{ educationRetrievalCalibration.conditioning }}</strong></span>
+                </div>
+                <div v-if="educationRetrievalCalibration.stateSlices?.length" class="education-calibration-slices">
+                  <div v-for="slice in educationRetrievalCalibration.stateSlices" :key="slice.conditioning" class="education-calibration-slice">
+                    <div><strong>{{ slice.conditioning }}</strong><small>{{ slice.sampleCount }} 条标注 · {{ slice.weightConditioning }}</small></div>
+                    <span>目标 {{ Number(slice.targetGroundingMean || 0).toFixed(2) }}</span>
+                    <span>前置 {{ Number(slice.prerequisiteUtilityMean || 0).toFixed(2) }}</span>
+                    <span>难度 {{ Number(slice.difficultyFitMean || 0).toFixed(2) }}</span>
+                    <span>效用 {{ Number(slice.overallUtilityMean || 0).toFixed(2) }}</span>
+                  </div>
                 </div>
               </div>
               <div v-if="educationEvidenceImpact" class="education-evidence-impact-card" aria-label="教育检索证据学习收益归因">
