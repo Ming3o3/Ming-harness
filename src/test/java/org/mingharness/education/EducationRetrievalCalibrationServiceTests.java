@@ -48,7 +48,8 @@ class EducationRetrievalCalibrationServiceTests {
         EducationRetrievalCalibrationSlice slice = new EducationRetrievalCalibrationSlice(
                 "LOW_MASTERY_GAP_FIRST", 8, 4.5, 3.5, 4.0, 4.25,
                 EducationRankingWeights.calibrated(4.5, 3.5, 4.0, 4.25, 8)
-                        .withConditioning("CALIBRATED_V2:LOW_MASTERY_GAP_FIRST:n=8"));
+                        .withConditioning("CALIBRATED_V2:LOW_MASTERY_GAP_FIRST:n=8"),
+                12, 0.25, 0.75, 0.50, 0.75);
         EducationRetrievalCalibrationSnapshot source = new EducationRetrievalCalibrationSnapshot(
                 EducationRetrievalCalibrationSnapshot.VERSION, 8, 4.5, 3.5, 4.0, 4.25,
                 EducationRankingWeights.calibrated(4.5, 3.5, 4.0, 4.25, 8),
@@ -64,6 +65,8 @@ class EducationRetrievalCalibrationServiceTests {
         assertEquals(1, decoded.stateSlices().size());
         assertEquals("CALIBRATED_V2:LOW_MASTERY_GAP_FIRST:n=8",
                 decoded.stateSlices().get("LOW_MASTERY_GAP_FIRST").weights().conditioning());
+        assertEquals(12, decoded.stateSlices().get("LOW_MASTERY_GAP_FIRST").outcomeAssessmentCount());
+        assertEquals(0.75, decoded.stateSlices().get("LOW_MASTERY_GAP_FIRST").outcomeScore(), 0.000001);
     }
 
     @Test
@@ -117,6 +120,43 @@ class EducationRetrievalCalibrationServiceTests {
                 .weightsFromSnapshot(encoded, lowMastery.educationConfiguration());
         assertEquals(lowSlice.weights().conditioning(), selected.conditioning());
         assertWeightsClose(lowSlice.weights(), selected);
+    }
+
+    @Test
+    void shouldBlendFormativeOutcomeIntoStateConditionedCalibration() {
+        EducationRetrievalJudgmentRepository repository = mock(EducationRetrievalJudgmentRepository.class);
+        org.mingharness.runtime.repository.RunRepository runs = mock(
+                org.mingharness.runtime.repository.RunRepository.class);
+        AssessmentAttemptRepository assessments = mock(AssessmentAttemptRepository.class);
+        Run lowMastery = runWithMastery("函数=0.10");
+        lowMastery.start();
+        lowMastery.succeed("完成");
+        List<EducationRetrievalJudgment> judgments = new java.util.ArrayList<>();
+        for (int index = 0; index < 5; index++) {
+            judgments.add(judgment(lowMastery.getId(), "step-1", "teacher-low-" + index,
+                    4, 4, 3, 4, Instant.parse("2026-03-01T00:00:0" + index + "Z")));
+        }
+        when(repository.findByTenantIdOrderByCreatedAtAsc("tenant-a")).thenReturn(judgments);
+        when(runs.findByTenantIdAndIdIn(eq("tenant-a"), anyList())).thenReturn(List.of(lowMastery));
+        when(runs.findByTenantIdAndEducationModeTrueOrderByCreatedAtAsc("tenant-a"))
+                .thenReturn(List.of(lowMastery));
+        when(assessments.findByTenantIdOrderByCreatedAtAsc("tenant-a")).thenReturn(List.of(
+                new AssessmentAttempt("tenant-a", "student-1", lowMastery.getId(), "step-1",
+                        "goal-1", "profile-1", "函数", true, 0.85, 0.10, 0.80, "证据", "作答正确", "通过"),
+                new AssessmentAttempt("tenant-a", "student-1", lowMastery.getId(), "step-1",
+                        "goal-1", "profile-1", "函数", true, 0.90, 0.80, 0.90, "证据", "迁移正确", "保持")));
+
+        EducationRetrievalCalibrationSlice slice = new EducationRetrievalCalibrationService(
+                repository, runs, assessments).snapshotForTenant("tenant-a")
+                .stateSlices().get("LOW_MASTERY_GAP_FIRST");
+
+        assertEquals(2, slice.outcomeAssessmentCount());
+        assertEquals(0.40, slice.outcomeMasteryGainMean(), 0.000001);
+        assertEquals(1.0, slice.outcomeCorrectRate(), 0.000001);
+        assertEquals(1.0, slice.outcomeTargetReachRate(), 0.000001);
+        assertTrue(slice.outcomeScore() > 0.75);
+        assertTrue(slice.weights().retrievalRelevance() > EducationRankingWeights
+                .calibrated(4.0, 4.0, 3.0, 4.0, 5).retrievalRelevance());
     }
 
     private void assertWeightsClose(EducationRankingWeights expected,

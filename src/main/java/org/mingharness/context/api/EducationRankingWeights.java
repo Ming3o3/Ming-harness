@@ -80,12 +80,36 @@ public record EducationRankingWeights(
                                                       double difficultyFitMean,
                                                       double overallUtilityMean,
                                                       long sampleCount) {
+        return calibrated(targetGroundingMean, prerequisiteUtilityMean, difficultyFitMean,
+                overallUtilityMean, sampleCount, Double.NaN, 0L);
+    }
+
+    /**
+     * 将形成性学习结果作为低强度的总体效用信号并入教师量规校准。
+     *
+     * <p>学习结果只影响语义相关性这一项，并且和教师量规一样向固定先验收缩；
+     * 它不是单来源因果估计，而是下一轮 Run 的状态条件化描述性校准信号。</p>
+     */
+    public static EducationRankingWeights calibrated(double targetGroundingMean,
+                                                      double prerequisiteUtilityMean,
+                                                      double difficultyFitMean,
+                                                      double overallUtilityMean,
+                                                      long sampleCount,
+                                                      double outcomeScore,
+                                                      long outcomeSampleCount) {
         EducationRankingWeights prior = fixed();
         double confidence = sampleCount <= 0 ? 0.0 : sampleCount / (sampleCount + 20.0);
         double retrievalMultiplier = shrinkMultiplier(overallUtilityMean, confidence);
         double targetMultiplier = shrinkMultiplier(targetGroundingMean, confidence);
         double prerequisiteMultiplier = shrinkMultiplier(prerequisiteUtilityMean, confidence);
         double difficultyMultiplier = shrinkMultiplier(difficultyFitMean, confidence);
+        if (Double.isFinite(outcomeScore) && outcomeSampleCount > 0) {
+            double outcomeConfidence = outcomeSampleCount / (outcomeSampleCount + 20.0);
+            // outcomeScore 已归一化到 0..1，0.5 代表中性结果。
+            double outcomeMultiplier = shrinkMultiplier(1.0 + 4.0 * bounded(outcomeScore),
+                    outcomeConfidence);
+            retrievalMultiplier *= outcomeMultiplier;
+        }
         return new EducationRankingWeights(
                 prior.retrievalRelevance() * retrievalMultiplier,
                 prior.targetConceptMatch() * targetMultiplier,

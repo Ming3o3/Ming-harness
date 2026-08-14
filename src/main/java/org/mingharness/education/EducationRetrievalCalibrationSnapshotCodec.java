@@ -84,7 +84,12 @@ public final class EducationRetrievalCalibrationSnapshotCodec {
                     number(item, "targetGroundingMean"),
                     number(item, "prerequisiteUtilityMean"),
                     number(item, "difficultyFitMean"),
-                    number(item, "overallUtilityMean"), weights));
+                    number(item, "overallUtilityMean"), weights,
+                    integer(item, "outcomeAssessmentCount"),
+                    number(item, "outcomeMasteryGainMean"),
+                    number(item, "outcomeCorrectRate"),
+                    number(item, "outcomeTargetReachRate"),
+                    number(item, "outcomeScore")));
         }
         return result;
     }

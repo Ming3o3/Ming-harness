@@ -13,7 +13,12 @@ public record EducationRetrievalCalibrationSliceView(
         double prerequisiteGapWeight,
         double graphCoverageWeight,
         double difficultyFitWeight,
-        String weightConditioning
+        String weightConditioning,
+        long outcomeAssessmentCount,
+        double outcomeMasteryGainMean,
+        double outcomeCorrectRate,
+        double outcomeTargetReachRate,
+        double outcomeScore
 ) {
 
     public static EducationRetrievalCalibrationSliceView from(
@@ -24,6 +29,8 @@ public record EducationRetrievalCalibrationSliceView(
                 slice.difficultyFitMean(), slice.overallUtilityMean(),
                 weights.retrievalRelevance(), weights.targetConceptMatch(),
                 weights.prerequisiteGap(), weights.graphCoverage(), weights.difficultyFit(),
-                weights.conditioning());
+                weights.conditioning(), slice.outcomeAssessmentCount(),
+                slice.outcomeMasteryGainMean(), slice.outcomeCorrectRate(),
+                slice.outcomeTargetReachRate(), slice.outcomeScore());
     }
 }

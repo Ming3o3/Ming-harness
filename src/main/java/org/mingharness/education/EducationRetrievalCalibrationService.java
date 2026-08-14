@@ -2,6 +2,7 @@ package org.mingharness.education;
 
 import org.mingharness.context.api.EducationRankingWeights;
 import org.mingharness.runtime.domain.Run;
+import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.runtime.repository.RunRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -26,16 +27,24 @@ public class EducationRetrievalCalibrationService {
 
     private final EducationRetrievalJudgmentRepository judgmentRepository;
     private final RunRepository runRepository;
+    private final AssessmentAttemptRepository assessmentRepository;
 
     public EducationRetrievalCalibrationService(EducationRetrievalJudgmentRepository judgmentRepository) {
-        this(judgmentRepository, null);
+        this(judgmentRepository, null, null);
+    }
+
+    public EducationRetrievalCalibrationService(EducationRetrievalJudgmentRepository judgmentRepository,
+                                                RunRepository runRepository) {
+        this(judgmentRepository, runRepository, null);
     }
 
     @Autowired
     public EducationRetrievalCalibrationService(EducationRetrievalJudgmentRepository judgmentRepository,
-                                                RunRepository runRepository) {
+                                                RunRepository runRepository,
+                                                AssessmentAttemptRepository assessmentRepository) {
         this.judgmentRepository = judgmentRepository;
         this.runRepository = runRepository;
+        this.assessmentRepository = assessmentRepository;
     }
 
     @Transactional(readOnly = true)
@@ -62,7 +71,8 @@ public class EducationRetrievalCalibrationService {
         if (latest.isEmpty()) return EducationRetrievalCalibrationSnapshot.prior();
 
         RubricAggregate overall = aggregate(latest.values());
-        Map<String, EducationRetrievalCalibrationSlice> slices = stateSlices(latest.values());
+        Map<String, OutcomeAggregate> outcomes = outcomeSlices(tenantId);
+        Map<String, EducationRetrievalCalibrationSlice> slices = stateSlices(latest.values(), outcomes);
         return new EducationRetrievalCalibrationSnapshot(
                 EducationRetrievalCalibrationSnapshot.VERSION, overall.sampleCount(),
                 overall.targetGroundingMean(), overall.prerequisiteUtilityMean(),
@@ -87,7 +97,8 @@ public class EducationRetrievalCalibrationService {
     }
 
     private Map<String, EducationRetrievalCalibrationSlice> stateSlices(
-            java.util.Collection<EducationRetrievalJudgment> judgments) {
+            java.util.Collection<EducationRetrievalJudgment> judgments,
+            Map<String, OutcomeAggregate> outcomes) {
         if (runRepository == null || judgments == null || judgments.isEmpty()) return Map.of();
         Set<String> runIds = judgments.stream().map(EducationRetrievalJudgment::getRunId)
                 .filter(value -> value != null && !value.isBlank()).collect(Collectors.toSet());
@@ -104,16 +115,54 @@ public class EducationRetrievalCalibrationService {
         Map<String, EducationRetrievalCalibrationSlice> result = new LinkedHashMap<>();
         grouped.forEach((conditioning, values) -> {
             RubricAggregate aggregate = aggregate(values);
+            OutcomeAggregate outcome = outcomes == null ? null : outcomes.get(conditioning);
             EducationRankingWeights weights = EducationRankingWeights.calibrated(
                     aggregate.targetGroundingMean(), aggregate.prerequisiteUtilityMean(),
                     aggregate.difficultyFitMean(), aggregate.overallUtilityMean(),
-                    aggregate.sampleCount()).withConditioning(
+                    aggregate.sampleCount(), outcome == null ? Double.NaN : outcome.score(),
+                    outcome == null ? 0L : outcome.assessmentCount()).withConditioning(
                     "CALIBRATED_V2:" + conditioning + ":n=" + aggregate.sampleCount());
             result.put(conditioning, new EducationRetrievalCalibrationSlice(
                     conditioning, aggregate.sampleCount(), aggregate.targetGroundingMean(),
                     aggregate.prerequisiteUtilityMean(), aggregate.difficultyFitMean(),
-                    aggregate.overallUtilityMean(), weights));
+                    aggregate.overallUtilityMean(), weights,
+                    outcome == null ? 0L : outcome.assessmentCount(),
+                    outcome == null ? 0.0 : outcome.masteryGainMean(),
+                    outcome == null ? 0.0 : outcome.correctRate(),
+                    outcome == null ? 0.0 : outcome.targetReachRate(),
+                    outcome == null ? 0.0 : outcome.score()));
         });
+        return result;
+    }
+
+    /** 从成功教育 Run 的形成性测评提取状态分层学习结果信号。 */
+    private Map<String, OutcomeAggregate> outcomeSlices(String tenantId) {
+        if (runRepository == null || assessmentRepository == null
+                || tenantId == null || tenantId.isBlank()) return Map.of();
+        List<Run> runs = runRepository.findByTenantIdAndEducationModeTrueOrderByCreatedAtAsc(tenantId);
+        List<AssessmentAttempt> attempts = assessmentRepository.findByTenantIdOrderByCreatedAtAsc(tenantId);
+        if (runs == null || attempts == null || runs.isEmpty() || attempts.isEmpty()) return Map.of();
+        Map<String, List<AssessmentAttempt>> byRun = new LinkedHashMap<>();
+        for (AssessmentAttempt attempt : attempts) {
+            if (attempt == null || attempt.getAssessmentType() != AssessmentAttemptType.FORMATIVE) continue;
+            byRun.computeIfAbsent(attempt.getRunId(), ignored -> new ArrayList<>()).add(attempt);
+        }
+        Map<String, OutcomeAccumulator> grouped = new LinkedHashMap<>();
+        for (Run run : runs) {
+            if (run == null || run.getStatus() != RunStatus.SUCCEEDED) continue;
+            List<AssessmentAttempt> runAttempts = byRun.getOrDefault(run.getId(), List.of());
+            if (runAttempts.isEmpty()) continue;
+            String conditioning = conditioningFor(run);
+            if ("UNKNOWN".equals(conditioning)) continue;
+            double target = run.getEducationLearningGoalTarget() == null
+                    ? 1.0 : run.getEducationLearningGoalTarget();
+            boolean reached = runAttempts.stream().anyMatch(item -> item.getMasteryAfter() >= target);
+            OutcomeAccumulator accumulator = grouped.computeIfAbsent(conditioning,
+                    ignored -> new OutcomeAccumulator());
+            accumulator.addRun(runAttempts, reached);
+        }
+        Map<String, OutcomeAggregate> result = new LinkedHashMap<>();
+        grouped.forEach((conditioning, accumulator) -> result.put(conditioning, accumulator.aggregate()));
         return result;
     }
 
@@ -169,5 +218,40 @@ public class EducationRetrievalCalibrationService {
     private record RubricAggregate(long sampleCount, double targetGroundingMean,
                                    double prerequisiteUtilityMean, double difficultyFitMean,
                                    double overallUtilityMean, EducationRankingWeights weights) {
+    }
+
+    private record OutcomeAggregate(long runCount, long assessmentCount,
+                                    double masteryGainMean, double correctRate,
+                                    double targetReachRate, double score) {
+    }
+
+    private static final class OutcomeAccumulator {
+        private long runCount;
+        private long assessmentCount;
+        private long correctCount;
+        private long reachedRunCount;
+        private double masteryGainSum;
+
+        private void addRun(List<AssessmentAttempt> attempts, boolean reached) {
+            runCount++;
+            if (reached) reachedRunCount++;
+            for (AssessmentAttempt attempt : attempts) {
+                assessmentCount++;
+                masteryGainSum += attempt.getMasteryAfter() - attempt.getMasteryBefore();
+                if (attempt.isCorrect()) correctCount++;
+            }
+        }
+
+        private OutcomeAggregate aggregate() {
+            double gain = assessmentCount <= 0 ? 0.0 : masteryGainSum / assessmentCount;
+            double correct = assessmentCount <= 0 ? 0.0 : correctCount / (double) assessmentCount;
+            double reach = runCount <= 0 ? 0.0 : reachedRunCount / (double) runCount;
+            double score = 0.5 * clamp(0.5 + gain) + 0.3 * correct + 0.2 * reach;
+            return new OutcomeAggregate(runCount, assessmentCount, gain, correct, reach, score);
+        }
+
+        private double clamp(double value) {
+            return Math.max(0.0, Math.min(1.0, value));
+        }
     }
 }
