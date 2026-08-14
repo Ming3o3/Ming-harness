@@ -38,6 +38,10 @@ Ming Harness 是一个面向课程约束与学习者状态的教育知识库 Age
 4. Agent 根据前置知识缺口、目标掌握度和资料难度选择讲解、苏格拉底追问、练习或诊断。学习对话不会退回为通用问答；缺少资料或画像时会明确阻断并引导配置。
 5. 只有附带学生作答或推理依据的形成性测评才能更新掌握度。达标后自动进入保持度复习，到期生成学习任务；作业、提交物、教师量规、返工和干预形成可追踪的教学闭环。
 
+教育检索默认以向量与关键词融合召回候选证据，再在课程硬约束内结合目标知识点、前置知识缺口、知识依赖图覆盖、学习者掌握度和难度适配进行证据集合选择。`FULL`、`VECTOR_ONLY`、`KEYWORD_ONLY`、`NO_LEARNER_STATE`、`NO_DEPENDENCY_GRAPH` 和 `STATIC_WEIGHT` 用于可复现基线与消融；`CALIBRATED` 会读取当前租户已有的教师证据标注，将目标 grounding、前置补强、难度适配和总体效用收缩校准为下一轮排序权重。校准权重在 Run 创建时冻结，历史 Run 不会因后续标注变化而漂移。
+
+教师可以在成功教育 Run 的真实检索证据上提交 1--5 分量规评价，系统只接受该 Run 的证据快照引用，并通过 `GET /api/education/retrieval-calibration` 查看当前租户的校准版本、样本量、四项均值和生效权重。该闭环用于实验校准与审计回放，不把主观评价伪装成学习者掌握度事实。
+
 ## 已实现模块
 
 - Run / Step 持久化状态机：`QUEUED -> RUNNING -> WAITING_APPROVAL -> SUCCEEDED / REJECTED / FAILED / TIMED_OUT / CANCELLED`；Agent 的 `REJECTED` 工具步骤会携带人工意见进入下一轮模型
@@ -57,6 +61,7 @@ Ming Harness 是一个面向课程约束与学习者状态的教育知识库 Age
 - 敏感数据治理：Run、Step、审计、模型、工具和上下文边界统一凭证脱敏，长期记忆拒绝写入疑似凭证
 - 数据保留策略：终态 Run 与审计链原子清理，过期记忆/文档和已完成 Outbox 定时删除，待投递消息不自动删除
 - 业务闭环沉淀：每次 Run 持久化实际上下文证据，助手消息支持有用/需改进反馈
+- 教育检索实验闭环：每个教育 Run 冻结检索策略、知识依赖图和（如使用 `CALIBRATED`）教师权重快照；实验摘要支持按策略比较证据覆盖、前置缺口覆盖、冗余、目标达成和掌握度变化，教师评价可追溯到真实 citation
 - 教育业务闭环：教师/组织可把课程约束和知识目标布置给指定学习者，学习者接受后自动生成画像与结构化学习目标；作业截止时间由调度器收敛为逾期状态，逾期作业不能再接受但仍可在已有学习目标达标后完成；目标达标后自动建立保持度计划，到期计划由调度器幂等物化为学习任务，任务可开始、延期并在复习测评后回写完成结果；初始作业 Run 成功但缺少形成性测评证据时，作业会进入待补证据并可继续启动，证据写入后恢复执行；作业 Run 失败、超时或取消时会回流为 `RETRY_REQUIRED`，保留原作业上下文并从作业入口重新执行；成功但缺少测评证据的复习任务会进入待补证据；到期、待补证据和失败重试状态会生成可幂等追踪的站内通知，支持未读、已读和触达时间记录
 - 本地基础设施 Profile：PostgreSQL + Flyway、Redis 共享治理、RabbitMQ Outbox Worker
 - 健康检查与运行指标：公开存活探针、受 `ops.read` 保护的 `/api/health` 和 Actuator 指标
@@ -493,6 +498,9 @@ curl -X POST http://localhost:8080/api/runs \
 - `POST /api/education/notifications/{notificationId}/read`：将一条学习任务通知标记为已读
 - `POST /api/education/notifications/read-all`：将当前用户的学习任务通知全部标记为已读
 - `GET /api/education/metrics`：读取当前租户和用户可见的作业、提交物覆盖、待重试/待返工作业、任务、测评证据、教师确认、教师量规评价覆盖与三维平均分、反馈确认与执行、反馈确认时延、重试成功率、保持度正确率和平均掌握度提升；无事实时各比率返回 `0`
+- `GET /api/education/experiments`：按 Run 创建时冻结的教育检索策略聚合实验指标，包括证据覆盖、前置缺口覆盖、证据冗余、目标知识点匹配、知识图覆盖、难度适配、测评准确率、平均掌握度变化和目标达成轮次
+- `GET /api/education/experiments.csv`：导出上述策略级实验指标；样本状态会区分无数据、样本不足和达到基础分析门槛，不能把小样本结果误读为显著性结论
+- `GET /api/education/retrieval-calibration`：查看当前租户教师检索证据标注聚合出的版本化校准快照；只有新建并选择 `CALIBRATED` 策略的 Run 使用该快照
 - `POST/GET /api/education/courses`：教师创建或查询课程实例；课程固定学科、年级和课程版本，课程状态为 `ACTIVE`、`COMPLETED` 或 `ARCHIVED`
 - `POST/GET /api/education/courses/{courseId}/enrollments`：课程负责人加入或查询学习者名单；`POST /api/education/courses/{courseId}/enrollments/{learnerUserId}/remove` 可移除成员，已结课或已归档课程不能再变更名单
 - `POST /api/education/courses/{courseId}/assignments`：向课程活跃名单批量布置统一目标，必须携带 `Idempotency-Key`；同一课程和幂等键会复用原批次，同一键提交不同内容会返回 `409 ASSIGNMENT_BATCH_KEY_REUSED_WITH_DIFFERENT_REQUEST`
@@ -519,6 +527,7 @@ curl -X POST http://localhost:8080/api/runs \
 - `POST /api/context/reindex`：按租户有界重建上下文 chunk 和 embedding，需要 `context.reindex` 权限；`rechunk=true` 时按当前语义分块配置重新切块
 - `POST/GET /api/runs/{runId}/feedback`：对自己的 Run 记录 `POSITIVE`/`NEGATIVE` 反馈、原因和备注；重复提交会覆盖同一用户对该 Run 的反馈，并写入审计事件
 - `GET /api/runs/{runId}` 的 Step 详情包含 `contextEvidence`：模型步骤实际注入的授权来源、标题、citation 和摘要，可从聊天消息追溯到 Run 详情
+- `GET /api/education/runs/{runId}/retrieval-judgments`：查看该教育 Run 的证据级教师评价；教师可用 `POST` 到同一路径提交目标 grounding、前置补强、难度适配和总体效用四项 1--5 分评价。提交只允许引用该 Run 已实际检索到的证据，历史评价不可变，重复评价按同一评价者/Run/证据保留最新版本参与校准
 
 ## 设计约束
 

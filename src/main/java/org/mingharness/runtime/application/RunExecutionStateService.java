@@ -744,7 +744,7 @@ public class RunExecutionStateService {
         return new RunExecutionSnapshot(run.getId(), run.getTenantId(), run.getUserId(),
                 run.getModelName(), run.getModelConfigSnapshotId(), run.getPromptVersion(), run.getInput(), run.getBudget(),
                 run.getPermissionsSnapshot(), run.isAgentMode(), run.getMaxTurns(),
-                run.getWorkspaceId(), run.educationConfiguration(),
+                run.getWorkspaceId(), run.educationConfiguration(), run.getEducationRetrievalWeights(),
                 run.getSteps().stream()
                         .sorted(Comparator.comparingInt(Step::getSequence))
                         .map(this::stepSnapshot).toList());
@@ -776,6 +776,7 @@ public class RunExecutionStateService {
             int maxTurns,
             String workspaceId,
             EducationRunConfiguration educationConfiguration,
+            String educationRetrievalWeights,
             List<StepExecutionSnapshot> steps
     ) {
 
@@ -785,7 +786,7 @@ public class RunExecutionStateService {
                                     int maxTurns, String workspaceId, List<StepExecutionSnapshot> steps) {
             this(id, tenantId, userId, modelName, modelConfigSnapshotId, promptVersion, input, budget,
                     permissionsSnapshot, agentMode, maxTurns, workspaceId,
-                    EducationRunConfiguration.disabled(), steps);
+                    EducationRunConfiguration.disabled(), null, steps);
         }
     }
 

@@ -405,6 +405,7 @@ export const api = {
   },
   getEducationMetrics: () => request('/education/metrics'),
   getEducationExperiments: () => request('/education/experiments'),
+  getEducationRetrievalCalibration: () => request('/education/retrieval-calibration'),
   downloadEducationExperiments: async () => {
     const response = await fetch(`${apiBaseUrl}/education/experiments.csv`, {
       headers: identityHeaders({ Accept: 'text/csv' }),

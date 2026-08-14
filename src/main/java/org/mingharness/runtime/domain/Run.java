@@ -91,6 +91,9 @@ public class Run {
     private String educationRetrievalStrategy;
     @Column(name = "education_dependency_graph", columnDefinition = "text")
     private String educationDependencyGraph;
+    /** CALIBRATED 策略在创建 Run 时冻结的教师权重聚合快照。 */
+    @Column(name = "education_retrieval_weights", columnDefinition = "text")
+    private String educationRetrievalWeights;
     /** 创建 Run 时固化的用户模型供应商快照；为空表示沿用环境默认模型或旧数据兼容路径。 */
     @Column(name = "model_config_snapshot_id", length = 128)
     private String modelConfigSnapshotId;
@@ -234,6 +237,10 @@ public class Run {
         this.educationLearnerState = value.learnerStateSummary();
         this.educationRetrievalStrategy = value.retrievalStrategyValue().name();
         this.educationDependencyGraph = value.dependencyGraphSnapshot();
+    }
+
+    public void attachEducationRetrievalWeights(String snapshot) {
+        this.educationRetrievalWeights = snapshot == null || snapshot.isBlank() ? null : snapshot;
     }
 
     public EducationRunConfiguration educationConfiguration() {
@@ -408,6 +415,7 @@ public class Run {
     public String getEducationLearnerState() { return educationLearnerState; }
     public String getEducationRetrievalStrategy() { return educationRetrievalStrategy == null ? "FULL" : educationRetrievalStrategy; }
     public String getEducationDependencyGraph() { return educationDependencyGraph; }
+    public String getEducationRetrievalWeights() { return educationRetrievalWeights; }
     public String getModelConfigSnapshotId() { return modelConfigSnapshotId; }
     public String getIdempotencyKey() { return idempotencyKey; }
     public String getPermissionsSnapshot() { return permissionsSnapshot; }

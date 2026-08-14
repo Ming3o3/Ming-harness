@@ -101,18 +101,27 @@ public class ContextBuilder {
     public ContextResult build(String tenantId, String userId, String query, int maxChars,
                                EducationRetrievalFilter educationFilter,
                                EducationRetrievalStrategy strategy) {
+        return build(tenantId, userId, query, maxChars, educationFilter, strategy, null);
+    }
+
+    /** 使用冻结的校准权重构建上下文；null 表示按策略使用默认状态权重。 */
+    public ContextResult build(String tenantId, String userId, String query, int maxChars,
+                               EducationRetrievalFilter educationFilter,
+                               EducationRetrievalStrategy strategy,
+                               EducationRankingWeights calibratedWeights) {
         if (query == null || query.isBlank() || maxChars < 1) {
             return new ContextResult("", List.of());
         }
         EducationRetrievalStrategy effectiveStrategy = strategy == null
                 ? EducationRetrievalStrategy.FULL : strategy;
         return metrics.recordContextRetrieval(() -> buildInternal(tenantId, userId, query, maxChars,
-                educationFilter, effectiveStrategy));
+                educationFilter, effectiveStrategy, calibratedWeights));
     }
 
     private ContextResult buildInternal(String tenantId, String userId, String query, int maxChars,
                                         EducationRetrievalFilter educationFilter,
-                                        EducationRetrievalStrategy strategy) {
+                                        EducationRetrievalStrategy strategy,
+                                        EducationRankingWeights calibratedWeights) {
         EducationRetrievalFilter effectiveEducationFilter = educationFilter;
         EducationDependencyGraph dependencyGraph = EducationDependencyGraph.empty(
                 educationFilter == null ? null : educationFilter.conceptKeyOrNull());
@@ -155,7 +164,7 @@ public class ContextBuilder {
                     ? keywordResult
                     : keywordResult.isEmpty() ? vectorResult : merge(vectorResult, keywordResult, maxChars);
             ContextResult selected = selectEducationEvidence(merged, tenantId, effectiveEducationFilter,
-                    dependencyGraph, maxChars, strategy);
+                    dependencyGraph, maxChars, strategy, calibratedWeights);
             if (vectorResult.isEmpty() && !keywordResult.isEmpty()) metrics.contextFallback();
             if (!vectorResult.isEmpty() && !keywordResult.isEmpty()) {
                 metrics.contextKeywordSupplements(Math.max(0,
@@ -266,14 +275,15 @@ public class ContextBuilder {
                                                   EducationRetrievalFilter filter,
                                                   EducationDependencyGraph dependencyGraph,
                                                   int maxChars,
-                                                  EducationRetrievalStrategy strategy) {
+                                                  EducationRetrievalStrategy strategy,
+                                                  EducationRankingWeights calibratedWeights) {
         if (result == null || result.isEmpty()) return result;
         if (educationSourceRepository == null) return new ContextResult("", List.of());
 
         List<RankedEducationEvidence> candidates = result.evidences().stream()
                 .map(evidence -> {
                     EducationRankingBreakdown breakdown = educationRanking(tenantId, evidence,
-                            filter, dependencyGraph, strategy);
+                            filter, dependencyGraph, strategy, calibratedWeights);
                     return breakdown == null ? null : new RankedEducationEvidence(evidence, breakdown,
                             coveredGapSet(tenantId, evidence, filter, dependencyGraph));
                 })
@@ -340,7 +350,8 @@ public class ContextBuilder {
     private EducationRankingBreakdown educationRanking(String tenantId, ContextEvidence evidence,
                                                         EducationRetrievalFilter filter,
                                                         EducationDependencyGraph dependencyGraph,
-                                                        EducationRetrievalStrategy strategy) {
+                                                        EducationRetrievalStrategy strategy,
+                                                        EducationRankingWeights calibratedWeights) {
         if (evidence == null || evidence.citation() == null
                 || !evidence.citation().startsWith("document:")) return null;
         String documentId = evidence.documentId();
@@ -374,7 +385,9 @@ public class ContextBuilder {
                 : dependencyGraph.prerequisites().stream()
                 .filter(path -> graphGaps.contains(normalizeConcept(path.conceptKey())))
                 .mapToDouble(EducationDependencyPath::deficit).average().orElse(prerequisiteGap);
-        EducationRankingWeights weights = strategy != null && strategy.usesAdaptiveWeights()
+        EducationRankingWeights weights = strategy == EducationRetrievalStrategy.CALIBRATED
+                && calibratedWeights != null ? calibratedWeights
+                : strategy != null && strategy.usesAdaptiveWeights()
                 ? EducationRankingWeights.conditioned(targetMastery, deficit, !graphGaps.isEmpty())
                 : EducationRankingWeights.fixed();
         return new EducationRankingBreakdown(retrievalRelevance, targetConceptMatch,

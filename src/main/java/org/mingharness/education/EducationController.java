@@ -49,6 +49,7 @@ import org.mingharness.education.api.MasteryUpdateRequest;
 import org.mingharness.education.api.EducationDependencyGraphView;
 import org.mingharness.education.api.EducationRetrievalJudgmentRequest;
 import org.mingharness.education.api.EducationRetrievalJudgmentView;
+import org.mingharness.education.api.EducationRetrievalCalibrationView;
 import org.mingharness.security.HarnessIdentity;
 import org.mingharness.security.HarnessIdentityContext;
 import org.mingharness.context.KnowledgeDocument;
@@ -105,6 +106,7 @@ public class EducationController {
     private final KnowledgeDocumentRepository documentRepository;
     private final EducationKnowledgeGraphService knowledgeGraphService;
     private final EducationRetrievalJudgmentService retrievalJudgmentService;
+    private final EducationRetrievalCalibrationService retrievalCalibrationService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
@@ -126,13 +128,14 @@ public class EducationController {
                                EducationCourseService courseService,
                                LearningAssignmentBatchService assignmentBatchService,
                                EducationCourseProgressService courseProgressService,
-                               EducationCourseCompletionService courseCompletionService,
+                                EducationCourseCompletionService courseCompletionService,
                                LearningAssignmentSubmissionService submissionService,
                                EducationCourseResultService courseResultService,
                                LearningAssignmentIndependentEvaluationService independentEvaluationService,
                                KnowledgeDocumentRepository documentRepository,
-                               EducationKnowledgeGraphService knowledgeGraphService,
-                               EducationRetrievalJudgmentService retrievalJudgmentService) {
+                                EducationKnowledgeGraphService knowledgeGraphService,
+                                EducationRetrievalJudgmentService retrievalJudgmentService,
+                                EducationRetrievalCalibrationService retrievalCalibrationService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
@@ -160,6 +163,7 @@ public class EducationController {
         this.documentRepository = documentRepository;
         this.knowledgeGraphService = knowledgeGraphService;
         this.retrievalJudgmentService = retrievalJudgmentService;
+        this.retrievalCalibrationService = retrievalCalibrationService;
     }
 
     @PostMapping("/sources")
@@ -358,6 +362,14 @@ public class EducationController {
         HarnessIdentity identity = identity();
         boolean tenantScope = identity.hasPermission("ops.read");
         return experimentService.summarize(identity.tenantId(), identity.userId(), tenantScope);
+    }
+
+    /** 返回当前租户教师标注校准快照；Run 创建时使用的快照仍以 Run 为准。 */
+    @GetMapping("/retrieval-calibration")
+    public EducationRetrievalCalibrationView retrievalCalibration() {
+        HarnessIdentity identity = identity();
+        return EducationRetrievalCalibrationView.from(
+                retrievalCalibrationService.snapshotForTenant(identity.tenantId()));
     }
 
     @GetMapping(value = "/experiments.csv", produces = "text/csv")

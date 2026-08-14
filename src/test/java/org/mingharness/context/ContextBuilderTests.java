@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.mingharness.config.ContextRetrievalProperties;
 import org.mingharness.context.api.ContextEvidence;
 import org.mingharness.context.api.ContextResult;
+import org.mingharness.context.api.EducationRankingWeights;
 import org.mingharness.education.EducationKnowledgeSource;
 import org.mingharness.education.EducationKnowledgeSourceRepository;
 import org.mingharness.education.EducationDependencyGraph;
@@ -534,5 +535,38 @@ class ContextBuilderTests {
                 result.evidences().get(0).rankingBreakdown().weights().conditioning());
         assertEquals(0.0, result.evidences().get(0).rankingBreakdown().graphCoverage());
         verifyNoInteractions(graphService);
+    }
+
+    @Test
+    void shouldUseRunFrozenCalibratedWeightsForCalibratedStrategy() {
+        KnowledgeDocumentRepository documentRepository = mock(KnowledgeDocumentRepository.class);
+        MemoryEntryRepository memoryRepository = mock(MemoryEntryRepository.class);
+        VectorContextRetriever vectorRetriever = mock(VectorContextRetriever.class);
+        EducationKnowledgeSourceRepository sourceRepository = mock(EducationKnowledgeSourceRepository.class);
+        ContextBuilder builder = new ContextBuilder(documentRepository, memoryRepository, vectorRetriever,
+                new HarnessMetrics(new SimpleMeterRegistry()),
+                new ContextRetrievalProperties(20, 5, 1, 0.2), sourceRepository);
+        KnowledgeDocument document = new KnowledgeDocument("tenant-a", "teacher", "函数讲解",
+                "函数定义域", "INTERNAL", "student");
+        EducationKnowledgeSource source = new EducationKnowledgeSource("tenant-a", document.getId(),
+                "数学", "高中一年级", "人教A版", "函数", "函数目标",
+                "函数", "集合", 3, "TEXTBOOK");
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "数学", "高中一年级", "人教A版", "函数", null, null, Map.of("函数", 0.2));
+        EducationRankingWeights calibrated = new EducationRankingWeights(
+                0.05, 0.65, 0.10, 0.10, 0.10, "CALIBRATED_V1:n=12");
+        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 2_000, filter))
+                .thenReturn(new ContextResult("vector", List.of(new ContextEvidence(
+                        document.getId(), "函数讲解", "document:" + document.getId(), "函数定义域"))));
+        when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", document.getId()))
+                .thenReturn(Optional.of(source));
+
+        ContextResult result = builder.build("tenant-a", "student", "函数", 2_000, filter,
+                EducationRetrievalStrategy.CALIBRATED, calibrated);
+
+        assertEquals("CALIBRATED_V1:n=12",
+                result.evidences().get(0).rankingBreakdown().weights().conditioning());
+        assertEquals(calibrated.targetConceptMatch(),
+                result.evidences().get(0).rankingBreakdown().weights().targetConceptMatch(), 0.000001);
     }
 }

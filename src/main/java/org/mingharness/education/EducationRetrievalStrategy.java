@@ -20,7 +20,9 @@ public enum EducationRetrievalStrategy {
     /** 混合召回并使用学习者状态，但不读取知识依赖图，用于图结构消融实验。 */
     NO_DEPENDENCY_GRAPH,
     /** 混合召回并使用学习者状态，但固定排序权重，用于自适应权重消融。 */
-    STATIC_WEIGHT;
+    STATIC_WEIGHT,
+    /** 混合召回、学习者状态和依赖图，并使用教师标注校准的版本化权重。 */
+    CALIBRATED;
 
     public static EducationRetrievalStrategy parse(String value) {
         if (value == null || value.isBlank()) return FULL;
@@ -41,14 +43,15 @@ public enum EducationRetrievalStrategy {
     }
 
     public boolean usesLearnerState() {
-        return this == FULL || this == NO_DEPENDENCY_GRAPH || this == STATIC_WEIGHT;
+        return this == FULL || this == NO_DEPENDENCY_GRAPH || this == STATIC_WEIGHT
+                || this == CALIBRATED;
     }
 
     public boolean usesAdaptiveWeights() {
-        return this == FULL || this == NO_DEPENDENCY_GRAPH;
+        return this == FULL || this == NO_DEPENDENCY_GRAPH || this == CALIBRATED;
     }
 
     public boolean usesDependencyGraph() {
-        return this == FULL || this == STATIC_WEIGHT;
+        return this == FULL || this == STATIC_WEIGHT || this == CALIBRATED;
     }
 }

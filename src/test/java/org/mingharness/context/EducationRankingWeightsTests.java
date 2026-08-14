@@ -29,4 +29,18 @@ class EducationRankingWeightsTests {
         assertTrue(weights.difficultyFit() > EducationRankingWeights.conditioned(0.10, 0.90, true)
                 .difficultyFit());
     }
+
+    @Test
+    void shouldShrinkCalibratedWeightsTowardTheFixedPriorForSmallSamples() {
+        EducationRankingWeights noFacts = EducationRankingWeights.calibrated(1, 1, 1, 1, 0);
+        EducationRankingWeights manyFacts = EducationRankingWeights.calibrated(5, 1, 1, 5, 100);
+
+        assertEquals("CALIBRATED_V1:n=0", noFacts.conditioning());
+        assertEquals(EducationRankingWeights.fixed().targetConceptMatch(),
+                noFacts.targetConceptMatch(), 0.000001);
+        assertTrue(manyFacts.targetConceptMatch() > noFacts.targetConceptMatch());
+        assertEquals(1.0, manyFacts.retrievalRelevance() + manyFacts.targetConceptMatch()
+                + manyFacts.prerequisiteGap() + manyFacts.graphCoverage() + manyFacts.difficultyFit(),
+                0.000001);
+    }
 }

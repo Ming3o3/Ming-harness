@@ -576,6 +576,14 @@ h3 { margin: 0; font-size: 13px; }
 .education-experiment-table td strong { display: block; color: var(--soft); font-size: 9px; }
 .education-experiment-table td small { display: block; margin-top: 3px; color: var(--muted); font: 8px "DM Mono", monospace; }
 .education-experiment-table tr.is-best td { background: rgba(76,226,213,.07); }
+.education-calibration-card { display: grid; gap: 8px; margin-top: 12px; border: 1px solid rgba(141,124,255,.22); border-radius: 8px; background: rgba(141,124,255,.045); padding: 10px; }
+.education-calibration-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--soft); font-size: 10px; }
+.education-calibration-heading span { color: var(--accent-light); font: 8px "DM Mono", monospace; letter-spacing: .08em; }
+.education-calibration-heading em { color: var(--muted); font: 8px "DM Mono", monospace; font-style: normal; }
+.education-calibration-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.education-calibration-grid span { display: grid; gap: 3px; min-width: 0; border: 1px solid rgba(153,174,218,.12); border-radius: 6px; padding: 6px 7px; }
+.education-calibration-grid small { overflow: hidden; color: var(--muted); font: 8px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.education-calibration-grid strong { overflow: hidden; color: var(--soft); font: 10px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .education-course-workbench { display: grid; gap: 10px; border: 1px solid rgba(141,124,255,.28); border-radius: 8px; background: rgba(141,124,255,.045); padding: 11px; }
 .education-course-heading { align-items: center; }
 .education-course-heading > div, .education-course-detail-heading > div, .education-course-progress .subsection-title > div { display: flex; align-items: baseline; gap: 8px; }

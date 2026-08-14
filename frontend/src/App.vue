@@ -107,6 +107,7 @@ const learningAssignmentLearnerFilter = ref('')
 const learningAssignmentIssueFilter = ref('')
 const educationMetrics = ref(null)
 const educationExperiment = ref(null)
+const educationRetrievalCalibration = ref(null)
 const learningTaskLoading = ref(false)
 const learningTaskStartingId = ref('')
 const learningTaskDeferringId = ref('')
@@ -2474,6 +2475,7 @@ const educationExperimentStrategyLabel = (strategy) => ({
   NO_LEARNER_STATE: '去学习者状态',
   NO_DEPENDENCY_GRAPH: '去知识依赖图',
   STATIC_WEIGHT: '固定权重消融',
+  CALIBRATED: '教师校准',
 }[strategy] || strategy || '未知策略')
 const educationExperimentSampleLabel = (status) => ({
   NO_DATA: '无数据',
@@ -4944,7 +4946,7 @@ async function ensureVisibleLearningAssignmentDetails() {
 
 async function loadEducationData() {
   try {
-    const [sources, profiles, goals, tasks, assignments, metrics, courses, experiment] = await Promise.all([
+    const [sources, profiles, goals, tasks, assignments, metrics, courses, experiment, calibration] = await Promise.all([
       api.listEducationSources(),
       api.listLearnerProfiles(),
       api.listLearningGoals(),
@@ -4953,6 +4955,7 @@ async function loadEducationData() {
       api.getEducationMetrics(),
       api.listEducationCourses(),
       api.getEducationExperiments().catch(() => null),
+      api.getEducationRetrievalCalibration().catch(() => null),
     ])
     educationSources.value = sources
     learnerProfiles.value = profiles
@@ -4968,6 +4971,7 @@ async function loadEducationData() {
     }
     educationMetrics.value = metrics
     educationExperiment.value = experiment
+    educationRetrievalCalibration.value = calibration
     educationCourses.value = courses || []
     learningEvaluationQueue.value = await api.listLearningEvaluationQueue().catch(() => [])
     const progressEntries = await Promise.all(assignments.slice(0, 20).map(async (assignment) => {
@@ -9679,6 +9683,17 @@ onBeforeUnmount(() => {
                     </tr>
                   </tbody>
                 </table>
+              </div>
+              <div v-if="educationRetrievalCalibration" class="education-calibration-card" aria-label="教育检索校准状态">
+                <div class="education-calibration-heading"><span>检索权重校准</span><em>{{ educationRetrievalCalibration.sampleStatus }} · {{ educationRetrievalCalibration.sampleCount }} 条证据标注</em></div>
+                <p class="learning-task-help">CALIBRATED Run 在创建时冻结此快照；新标注只影响后续 Run，不会改变历史实验样本。</p>
+                <div class="education-calibration-grid">
+                  <span><small>目标 grounding</small><strong>{{ Number(educationRetrievalCalibration.targetGroundingMean || 0).toFixed(2) }}</strong></span>
+                  <span><small>前置补强</small><strong>{{ Number(educationRetrievalCalibration.prerequisiteUtilityMean || 0).toFixed(2) }}</strong></span>
+                  <span><small>难度适配</small><strong>{{ Number(educationRetrievalCalibration.difficultyFitMean || 0).toFixed(2) }}</strong></span>
+                  <span><small>总体效用</small><strong>{{ Number(educationRetrievalCalibration.overallUtilityMean || 0).toFixed(2) }}</strong></span>
+                  <span><small>当前条件</small><strong>{{ educationRetrievalCalibration.conditioning }}</strong></span>
+                </div>
               </div>
             </details>
             <section v-if="isAdminWorkspace" class="education-source-overview" aria-label="组织课程知识源概览">

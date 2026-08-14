@@ -39,8 +39,10 @@ import org.mingharness.context.ContextBuilder;
 import org.mingharness.context.api.ContextResult;
 import org.mingharness.education.EducationRunConfiguration;
 import org.mingharness.education.EducationRunConfigurationService;
+import org.mingharness.education.EducationRetrievalCalibrationService;
 import org.mingharness.education.EducationDependencyGraph;
 import org.mingharness.education.EducationDependencyGraphSnapshotCodec;
+import org.mingharness.context.api.EducationRankingWeights;
 import org.mingharness.config.RedisProperties;
 import org.mingharness.messaging.OutboxService;
 import org.mingharness.messaging.RunExecutionMessage;
@@ -134,6 +136,7 @@ public class RunService {
     private final ConversationMessageWriter conversationMessageWriter;
     private final WorkspaceDirectoryService workspaceDirectoryService;
     private final EducationRunConfigurationService educationRunConfigurationService;
+    private final EducationRetrievalCalibrationService educationRetrievalCalibrationService;
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -168,7 +171,8 @@ public class RunService {
                       AgentTurnCodec agentTurnCodec,
                       ConversationMessageWriter conversationMessageWriter,
                       WorkspaceDirectoryService workspaceDirectoryService,
-                      EducationRunConfigurationService educationRunConfigurationService) {
+                      EducationRunConfigurationService educationRunConfigurationService,
+                      EducationRetrievalCalibrationService educationRetrievalCalibrationService) {
         this.runRepository = runRepository;
         this.auditTrailService = auditTrailService;
         this.toolRegistry = toolRegistry;
@@ -201,6 +205,7 @@ public class RunService {
         this.conversationMessageWriter = conversationMessageWriter;
         this.workspaceDirectoryService = workspaceDirectoryService;
         this.educationRunConfigurationService = educationRunConfigurationService;
+        this.educationRetrievalCalibrationService = educationRetrievalCalibrationService;
     }
 
     @Transactional
@@ -279,6 +284,11 @@ public class RunService {
                     workspaceId
             );
             run.attachEducationConfiguration(educationConfiguration);
+            if (educationConfiguration.retrievalStrategyValue()
+                    == org.mingharness.education.EducationRetrievalStrategy.CALIBRATED) {
+                run.attachEducationRetrievalWeights(
+                        educationRetrievalCalibrationService.encodedSnapshotForTenant(request.tenantId()));
+            }
             run.attachModelConfigSnapshot(capturedModel.snapshotId());
             run.addStep(new Step(1, StepType.MODEL, "model.complete", sanitizedInput));
             if (!effectiveAgentMode) {
@@ -650,7 +660,8 @@ public class RunService {
                     retrievalQuery, runtimeLimits.maxContextChars(),
                     educationConfiguration == null ? null : educationConfiguration.retrievalFilter(),
                     educationConfiguration == null ? org.mingharness.education.EducationRetrievalStrategy.FULL
-                            : educationConfiguration.retrievalStrategyValue());
+                            : educationConfiguration.retrievalStrategyValue(),
+                    calibratedWeights(educationConfiguration, run.educationRetrievalWeights()));
             if (!context.isEmpty()) {
                 executionStateService.recordContextRetrieved(run.id(), run.tenantId(), workerId,
                         step.id(), context.evidences().size(), ContextEvidenceCodec.encode(context.evidences()));
@@ -826,7 +837,8 @@ public class RunService {
                         retrievalQuery, runtimeLimits.maxContextChars(),
                         educationConfiguration == null ? null : educationConfiguration.retrievalFilter(),
                         educationConfiguration == null ? org.mingharness.education.EducationRetrievalStrategy.FULL
-                                : educationConfiguration.retrievalStrategyValue());
+                                : educationConfiguration.retrievalStrategyValue(),
+                        calibratedWeights(educationConfiguration, run.getEducationRetrievalWeights()));
                 if (!context.isEmpty()) {
                     step.setContextEvidenceJson(ContextEvidenceCodec.encode(context.evidences()));
                     record(run.getId(), step.getId(), "CONTEXT_RETRIEVED",
@@ -1832,6 +1844,16 @@ public class RunService {
 
     private String normalizeWorkspaceId(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private EducationRankingWeights calibratedWeights(EducationRunConfiguration configuration,
+                                                       String snapshot) {
+        if (configuration == null
+                || configuration.retrievalStrategyValue()
+                != org.mingharness.education.EducationRetrievalStrategy.CALIBRATED) {
+            return null;
+        }
+        return educationRetrievalCalibrationService.weightsFromSnapshot(snapshot);
     }
 
     /** 外部模型、工具和网络库的异常可能携带请求头或连接串，持久化前必须脱敏。 */

@@ -67,6 +67,34 @@ public record EducationRankingWeights(
                 difficulty, conditioning);
     }
 
+    /**
+     * 从教师证据量规的租户级均值生成校准权重。
+     *
+     * <p>教师量规并不直接给出“检索相关性权重”，因此总体效用用于语义相关性，
+     * 目标 grounding 用于目标匹配，前置补强同时影响前置缺口和图覆盖，难度适配
+     * 用于难度项。以固定权重为先验，并按样本量做收缩，避免少量标注让新 Run 发生
+     * 剧烈漂移。</p>
+     */
+    public static EducationRankingWeights calibrated(double targetGroundingMean,
+                                                      double prerequisiteUtilityMean,
+                                                      double difficultyFitMean,
+                                                      double overallUtilityMean,
+                                                      long sampleCount) {
+        EducationRankingWeights prior = fixed();
+        double confidence = sampleCount <= 0 ? 0.0 : sampleCount / (sampleCount + 20.0);
+        double retrievalMultiplier = shrinkMultiplier(overallUtilityMean, confidence);
+        double targetMultiplier = shrinkMultiplier(targetGroundingMean, confidence);
+        double prerequisiteMultiplier = shrinkMultiplier(prerequisiteUtilityMean, confidence);
+        double difficultyMultiplier = shrinkMultiplier(difficultyFitMean, confidence);
+        return new EducationRankingWeights(
+                prior.retrievalRelevance() * retrievalMultiplier,
+                prior.targetConceptMatch() * targetMultiplier,
+                prior.prerequisiteGap() * prerequisiteMultiplier,
+                prior.graphCoverage() * prerequisiteMultiplier,
+                prior.difficultyFit() * difficultyMultiplier,
+                "CALIBRATED_V1:n=" + Math.max(0, sampleCount));
+    }
+
     public double score(double retrieval, double target, double prerequisite,
                         double graph, double difficulty) {
         return retrievalRelevance * bounded(retrieval)
@@ -78,5 +106,12 @@ public record EducationRankingWeights(
 
     private static double bounded(double value) {
         return Double.isFinite(value) ? Math.max(0.0, Math.min(1.0, value)) : 0.0;
+    }
+
+    private static double shrinkMultiplier(double score, double confidence) {
+        double quality = bounded((score - 1.0) / 4.0);
+        // 教师评分 3 视为中性；5 最多把先验项放大 25%，1 最多缩小 25%。
+        double observedMultiplier = 0.75 + quality * 0.50;
+        return 1.0 + confidence * (observedMultiplier - 1.0);
     }
 }
