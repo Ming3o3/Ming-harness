@@ -50,6 +50,7 @@ import org.mingharness.education.api.EducationDependencyGraphView;
 import org.mingharness.education.api.EducationRetrievalJudgmentRequest;
 import org.mingharness.education.api.EducationRetrievalJudgmentView;
 import org.mingharness.education.api.EducationRetrievalCalibrationView;
+import org.mingharness.education.api.EducationEvidenceImpactSummaryView;
 import org.mingharness.security.HarnessIdentity;
 import org.mingharness.security.HarnessIdentityContext;
 import org.mingharness.context.KnowledgeDocument;
@@ -107,6 +108,7 @@ public class EducationController {
     private final EducationKnowledgeGraphService knowledgeGraphService;
     private final EducationRetrievalJudgmentService retrievalJudgmentService;
     private final EducationRetrievalCalibrationService retrievalCalibrationService;
+    private final EducationEvidenceImpactService evidenceImpactService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
@@ -135,7 +137,8 @@ public class EducationController {
                                KnowledgeDocumentRepository documentRepository,
                                 EducationKnowledgeGraphService knowledgeGraphService,
                                 EducationRetrievalJudgmentService retrievalJudgmentService,
-                                EducationRetrievalCalibrationService retrievalCalibrationService) {
+                                EducationRetrievalCalibrationService retrievalCalibrationService,
+                                EducationEvidenceImpactService evidenceImpactService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
@@ -164,6 +167,7 @@ public class EducationController {
         this.knowledgeGraphService = knowledgeGraphService;
         this.retrievalJudgmentService = retrievalJudgmentService;
         this.retrievalCalibrationService = retrievalCalibrationService;
+        this.evidenceImpactService = evidenceImpactService;
     }
 
     @PostMapping("/sources")
@@ -392,6 +396,26 @@ public class EducationController {
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\"education-experiments-paired.csv\"")
+                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .body(csv.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** 将冻结 citation 与形成性掌握度变化做证据级描述性归因。 */
+    @GetMapping("/evidence-impact")
+    public EducationEvidenceImpactSummaryView evidenceImpact() {
+        HarnessIdentity identity = identity();
+        boolean tenantScope = identity.hasPermission("ops.read");
+        return evidenceImpactService.summarize(identity.tenantId(), identity.userId(), tenantScope);
+    }
+
+    @GetMapping(value = "/evidence-impact.csv", produces = "text/csv")
+    public ResponseEntity<byte[]> exportEvidenceImpact() {
+        HarnessIdentity identity = identity();
+        boolean tenantScope = identity.hasPermission("ops.read");
+        String csv = evidenceImpactService.exportCsv(identity.tenantId(), identity.userId(), tenantScope);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"education-evidence-impact.csv\"")
                 .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
                 .body(csv.getBytes(StandardCharsets.UTF_8));
     }

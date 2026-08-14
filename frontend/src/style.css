@@ -580,6 +580,11 @@ h3 { margin: 0; font-size: 13px; }
 .education-experiment-paired-table { min-width: 620px; }
 .education-experiment-paired-table td.is-positive { color: var(--green); }
 .education-experiment-paired-table td.is-negative { color: var(--red); }
+.education-evidence-impact-card { display: grid; gap: 8px; margin-top: 12px; border: 1px solid rgba(241,184,91,.2); border-radius: 8px; background: rgba(241,184,91,.03); padding: 10px; }
+.education-evidence-impact-overview { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.education-evidence-impact-table { min-width: 840px; }
+.education-evidence-impact-table td.is-positive { color: var(--green); }
+.education-evidence-impact-table td.is-negative { color: var(--red); }
 .education-calibration-card { display: grid; gap: 8px; margin-top: 12px; border: 1px solid rgba(141,124,255,.22); border-radius: 8px; background: rgba(141,124,255,.045); padding: 10px; }
 .education-calibration-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--soft); font-size: 10px; }
 .education-calibration-heading span { color: var(--accent-light); font: 8px "DM Mono", monospace; letter-spacing: .08em; }

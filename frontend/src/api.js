@@ -406,6 +406,7 @@ export const api = {
   getEducationMetrics: () => request('/education/metrics'),
   getEducationExperiments: () => request('/education/experiments'),
   getEducationRetrievalCalibration: () => request('/education/retrieval-calibration'),
+  getEducationEvidenceImpact: () => request('/education/evidence-impact'),
   downloadEducationExperiments: async () => {
     const response = await fetch(`${apiBaseUrl}/education/experiments.csv`, {
       headers: identityHeaders({ Accept: 'text/csv' }),
@@ -435,7 +436,23 @@ export const api = {
     return {
       blob: await response.blob(),
       filename: response.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1]
-        || 'education-experiments-paired.csv',
+      || 'education-experiments-paired.csv',
+    }
+  },
+  downloadEducationEvidenceImpact: async () => {
+    const response = await fetch(`${apiBaseUrl}/education/evidence-impact.csv`, {
+      headers: identityHeaders({ Accept: 'text/csv' }),
+    })
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}))
+      const error = new Error(payload.message || `请求失败（${response.status}）`)
+      error.code = payload.code
+      throw error
+    }
+    return {
+      blob: await response.blob(),
+      filename: response.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1]
+        || 'education-evidence-impact.csv',
     }
   },
   listEducationCourses: () => request('/education/courses'),

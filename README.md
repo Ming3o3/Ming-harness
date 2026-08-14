@@ -62,6 +62,7 @@ Ming Harness 是一个面向课程约束与学习者状态的教育知识库 Age
 - 数据保留策略：终态 Run 与审计链原子清理，过期记忆/文档和已完成 Outbox 定时删除，待投递消息不自动删除
 - 业务闭环沉淀：每次 Run 持久化实际上下文证据，助手消息支持有用/需改进反馈
 - 教育检索实验闭环：每个教育 Run 冻结检索策略、知识依赖图和（如使用 `CALIBRATED`）教师权重快照；实验摘要支持按策略比较证据覆盖、前置缺口覆盖、冗余、目标达成和掌握度变化，教师评价可追溯到真实 citation
+- 证据学习收益归因：形成性测评冻结本轮 citation，实验服务按引用数量分摊掌握度变化与正确性，并回放排序拆解和快照匹配率；归因明确标记为描述性统计，不伪装成单文档因果结论
 - 教育业务闭环：教师/组织可把课程约束和知识目标布置给指定学习者，学习者接受后自动生成画像与结构化学习目标；作业截止时间由调度器收敛为逾期状态，逾期作业不能再接受但仍可在已有学习目标达标后完成；目标达标后自动建立保持度计划，到期计划由调度器幂等物化为学习任务，任务可开始、延期并在复习测评后回写完成结果；初始作业 Run 成功但缺少形成性测评证据时，作业会进入待补证据并可继续启动，证据写入后恢复执行；作业 Run 失败、超时或取消时会回流为 `RETRY_REQUIRED`，保留原作业上下文并从作业入口重新执行；成功但缺少测评证据的复习任务会进入待补证据；到期、待补证据和失败重试状态会生成可幂等追踪的站内通知，支持未读、已读和触达时间记录
 - 本地基础设施 Profile：PostgreSQL + Flyway、Redis 共享治理、RabbitMQ Outbox Worker
 - 健康检查与运行指标：公开存活探针、受 `ops.read` 保护的 `/api/health` 和 Actuator 指标
@@ -501,6 +502,8 @@ curl -X POST http://localhost:8080/api/runs \
 - `GET /api/education/experiments`：按 Run 创建时冻结的教育检索策略聚合实验指标，包括证据覆盖、前置缺口覆盖、证据冗余、目标知识点匹配、知识图覆盖、难度适配、测评准确率、平均掌握度变化和目标达成轮次
 - `GET /api/education/experiments.csv`：导出上述策略级实验指标；样本状态会区分无数据、样本不足和达到基础分析门槛，不能把小样本结果误读为显著性结论
 - `GET /api/education/experiments/paired.csv`：导出同一学习者-目标内以 `FULL` 为参考的配对策略结果；差值定义为“对比策略 − FULL”，达到目标轮次为负表示对比策略更快
+- `GET /api/education/evidence-impact`：按“检索策略 + citation”聚合形成性测评的证据级学习收益，返回引用权重、掌握度增益、正确率、排序拆解和快照匹配率；只统计成功教育 Run
+- `GET /api/education/evidence-impact.csv`：导出证据级学习收益归因，适合与教师证据标注或策略消融结果联表分析
 - `GET /api/education/retrieval-calibration`：查看当前租户教师检索证据标注聚合出的版本化校准快照；只有新建并选择 `CALIBRATED` 策略的 Run 使用该快照
 - `POST/GET /api/education/courses`：教师创建或查询课程实例；课程固定学科、年级和课程版本，课程状态为 `ACTIVE`、`COMPLETED` 或 `ARCHIVED`
 - `POST/GET /api/education/courses/{courseId}/enrollments`：课程负责人加入或查询学习者名单；`POST /api/education/courses/{courseId}/enrollments/{learnerUserId}/remove` 可移除成员，已结课或已归档课程不能再变更名单

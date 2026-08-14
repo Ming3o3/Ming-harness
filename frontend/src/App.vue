@@ -108,6 +108,7 @@ const learningAssignmentIssueFilter = ref('')
 const educationMetrics = ref(null)
 const educationExperiment = ref(null)
 const educationRetrievalCalibration = ref(null)
+const educationEvidenceImpact = ref(null)
 const learningTaskLoading = ref(false)
 const learningTaskStartingId = ref('')
 const learningTaskDeferringId = ref('')
@@ -2469,6 +2470,7 @@ const adminOperationsTrace = computed(() => [
 ])
 const educationExperimentStrategies = computed(() => educationExperiment.value?.strategies || [])
 const educationExperimentPairs = computed(() => educationExperiment.value?.pairedComparisons || [])
+const educationEvidenceImpacts = computed(() => educationEvidenceImpact.value?.impacts || [])
 const educationExperimentStrategyLabel = (strategy) => ({
   FULL: '完整方法',
   VECTOR_ONLY: '仅向量',
@@ -2489,6 +2491,7 @@ const educationExperimentBest = computed(() => educationExperimentStrategies.val
   .sort((left, right) => Number(right.averageMasteryGain || 0) - Number(left.averageMasteryGain || 0))[0] || null)
 const educationExperimentDownloading = ref(false)
 const educationExperimentPairedDownloading = ref(false)
+const educationEvidenceImpactDownloading = ref(false)
 async function downloadEducationExperimentCsv() {
   if (educationExperimentDownloading.value) return
   educationExperimentDownloading.value = true
@@ -2521,6 +2524,23 @@ async function downloadPairedEducationExperimentCsv() {
     educationError.value = errorText(error)
   } finally {
     educationExperimentPairedDownloading.value = false
+  }
+}
+async function downloadEducationEvidenceImpactCsv() {
+  if (educationEvidenceImpactDownloading.value) return
+  educationEvidenceImpactDownloading.value = true
+  try {
+    const result = await api.downloadEducationEvidenceImpact()
+    const url = URL.createObjectURL(result.blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = result.filename
+    anchor.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    educationError.value = errorText(error)
+  } finally {
+    educationEvidenceImpactDownloading.value = false
   }
 }
 const matchingEducationSourceCount = computed(() => {
@@ -4971,7 +4991,7 @@ async function ensureVisibleLearningAssignmentDetails() {
 
 async function loadEducationData() {
   try {
-    const [sources, profiles, goals, tasks, assignments, metrics, courses, experiment, calibration] = await Promise.all([
+    const [sources, profiles, goals, tasks, assignments, metrics, courses, experiment, calibration, evidenceImpact] = await Promise.all([
       api.listEducationSources(),
       api.listLearnerProfiles(),
       api.listLearningGoals(),
@@ -4981,6 +5001,7 @@ async function loadEducationData() {
       api.listEducationCourses(),
       api.getEducationExperiments().catch(() => null),
       api.getEducationRetrievalCalibration().catch(() => null),
+      api.getEducationEvidenceImpact().catch(() => null),
     ])
     educationSources.value = sources
     learnerProfiles.value = profiles
@@ -4997,6 +5018,7 @@ async function loadEducationData() {
     educationMetrics.value = metrics
     educationExperiment.value = experiment
     educationRetrievalCalibration.value = calibration
+    educationEvidenceImpact.value = evidenceImpact
     educationCourses.value = courses || []
     learningEvaluationQueue.value = await api.listLearningEvaluationQueue().catch(() => [])
     const progressEntries = await Promise.all(assignments.slice(0, 20).map(async (assignment) => {
@@ -9737,6 +9759,34 @@ onBeforeUnmount(() => {
                   <span><small>难度适配</small><strong>{{ Number(educationRetrievalCalibration.difficultyFitMean || 0).toFixed(2) }}</strong></span>
                   <span><small>总体效用</small><strong>{{ Number(educationRetrievalCalibration.overallUtilityMean || 0).toFixed(2) }}</strong></span>
                   <span><small>当前条件</small><strong>{{ educationRetrievalCalibration.conditioning }}</strong></span>
+                </div>
+              </div>
+              <div v-if="educationEvidenceImpact" class="education-evidence-impact-card" aria-label="教育检索证据学习收益归因">
+                <div class="education-calibration-heading"><span>证据级学习收益归因</span><button class="inline-summary-action" type="button" :disabled="educationEvidenceImpactDownloading" @click="downloadEducationEvidenceImpactCsv">{{ educationEvidenceImpactDownloading ? '导出中…' : '导出归因 CSV' }}</button></div>
+                <p class="learning-task-help">每次形成性测评的掌握度变化按本轮引用数量分摊到 citation；这是可解释的描述性归因，不代表单个来源的因果贡献。</p>
+                <div class="education-calibration-grid education-evidence-impact-overview">
+                  <span><small>形成性测评</small><strong>{{ educationEvidenceImpact.totalFormativeAssessmentCount }}</strong></span>
+                  <span><small>有检索引用</small><strong>{{ educationEvidenceImpact.assessmentsWithEvidence }}</strong></span>
+                  <span><small>引用快照匹配率</small><strong>{{ formatRate(educationEvidenceImpact.snapshotMatchRate) }}</strong></span>
+                  <span><small>引用条数</small><strong>{{ educationEvidenceImpact.evidenceReferenceCount }}</strong></span>
+                  <span><small>样本状态</small><strong>{{ educationExperimentSampleLabel(educationEvidenceImpact.sampleStatus) }}</strong></span>
+                </div>
+                <div v-if="educationEvidenceImpacts.length" class="education-experiment-table-wrap">
+                  <table class="education-experiment-table education-evidence-impact-table">
+                    <thead><tr><th>证据</th><th>策略</th><th>使用权重</th><th>平均增益</th><th>正确率</th><th>排序分</th><th>图覆盖</th><th>快照匹配</th></tr></thead>
+                    <tbody>
+                      <tr v-for="item in educationEvidenceImpacts.slice(0, 12)" :key="`${item.retrievalStrategy}-${item.citation || item.documentId}`">
+                        <td><strong>{{ item.title || item.documentId || '未命名来源' }}</strong><small>{{ item.citation || item.documentId }}</small></td>
+                        <td>{{ educationExperimentStrategyLabel(item.retrievalStrategy) }}</td>
+                        <td>{{ Number(item.attributedAssessmentWeight || 0).toFixed(2) }} <small>{{ item.evidenceReferenceCount }} 次引用</small></td>
+                        <td :class="{ 'is-positive': Number(item.averageMasteryGain || 0) > 0, 'is-negative': Number(item.averageMasteryGain || 0) < 0 }">{{ formatSignedRate(item.averageMasteryGain) }}</td>
+                        <td>{{ formatRate(item.attributedCorrectRate) }}</td>
+                        <td>{{ formatScore(item.averageRankingScore) }}</td>
+                        <td>{{ formatRate(item.averageGraphCoverage) }}</td>
+                        <td>{{ formatRate(item.snapshotMatchRate) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </details>

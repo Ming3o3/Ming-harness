@@ -282,6 +282,11 @@ class EducationRoleWebFlowTests {
         assertEquals(200, calibration.statusCode(), calibration.body());
         assertEquals(1, json(calibration).path("sampleCount").asInt(), calibration.body());
         assertEquals("CALIBRATED", json(calibration).path("sampleStatus").asText(), calibration.body());
+
+        HttpResponse<String> evidenceImpact = request("teacher-flow-key", "GET",
+                "/api/education/evidence-impact", null);
+        assertEquals(200, evidenceImpact.statusCode(), evidenceImpact.body());
+        assertEquals("NO_DATA", json(evidenceImpact).path("sampleStatus").asText(), evidenceImpact.body());
     }
 
     private Run seededSucceededEducationRun() {
