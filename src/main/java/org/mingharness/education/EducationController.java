@@ -384,6 +384,18 @@ public class EducationController {
                 .body(csv.getBytes(StandardCharsets.UTF_8));
     }
 
+    @GetMapping(value = "/experiments/paired.csv", produces = "text/csv")
+    public ResponseEntity<byte[]> exportPairedExperiments() {
+        HarnessIdentity identity = identity();
+        boolean tenantScope = identity.hasPermission("ops.read");
+        String csv = experimentService.exportPairedCsv(identity.tenantId(), identity.userId(), tenantScope);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"education-experiments-paired.csv\"")
+                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .body(csv.getBytes(StandardCharsets.UTF_8));
+    }
+
     /** 返回某次教育 Run 的证据级教师标注，供实验校准和审计回放使用。 */
     @GetMapping("/runs/{runId}/retrieval-judgments")
     public List<EducationRetrievalJudgmentView> retrievalJudgments(@PathVariable String runId) {

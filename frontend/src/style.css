@@ -576,6 +576,10 @@ h3 { margin: 0; font-size: 13px; }
 .education-experiment-table td strong { display: block; color: var(--soft); font-size: 9px; }
 .education-experiment-table td small { display: block; margin-top: 3px; color: var(--muted); font: 8px "DM Mono", monospace; }
 .education-experiment-table tr.is-best td { background: rgba(76,226,213,.07); }
+.education-experiment-paired { display: grid; gap: 6px; margin-top: 12px; border: 1px solid rgba(76,226,213,.12); border-radius: 8px; background: rgba(76,226,213,.025); padding: 10px; }
+.education-experiment-paired-table { min-width: 620px; }
+.education-experiment-paired-table td.is-positive { color: var(--green); }
+.education-experiment-paired-table td.is-negative { color: var(--red); }
 .education-calibration-card { display: grid; gap: 8px; margin-top: 12px; border: 1px solid rgba(141,124,255,.22); border-radius: 8px; background: rgba(141,124,255,.045); padding: 10px; }
 .education-calibration-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--soft); font-size: 10px; }
 .education-calibration-heading span { color: var(--accent-light); font: 8px "DM Mono", monospace; letter-spacing: .08em; }

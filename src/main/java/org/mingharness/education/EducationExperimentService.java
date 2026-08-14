@@ -5,6 +5,7 @@ import org.mingharness.context.api.ContextEvidence;
 import org.mingharness.context.api.EducationRankingBreakdown;
 import org.mingharness.education.api.EducationExperimentStrategyView;
 import org.mingharness.education.api.EducationExperimentView;
+import org.mingharness.education.api.EducationExperimentPairView;
 import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.runtime.domain.Step;
@@ -86,6 +87,7 @@ public class EducationExperimentService {
         List<EducationExperimentStrategyView> summaries = byStrategy.entrySet().stream()
                 .map(entry -> summarizeStrategy(entry.getKey(), entry.getValue(), attemptsByRun))
                 .toList();
+        List<EducationExperimentPairView> pairedComparisons = pairedComparisons(runs, attemptsByRun);
         long successfulRuns = runs.stream().filter(run -> run.getStatus() == RunStatus.SUCCEEDED).count();
         Map<String, Set<String>> strategiesByLearnerGoal = new HashMap<>();
         for (Run run : runs) {
@@ -98,7 +100,7 @@ public class EducationExperimentService {
         long fullyPaired = strategiesByLearnerGoal.values().stream()
                 .filter(value -> value.size() == EducationRetrievalStrategy.values().length).count();
         return new EducationExperimentView(Instant.now(), runs.size(), successfulRuns,
-                scopedAttempts.size(), tenantScope, paired, fullyPaired, summaries);
+                scopedAttempts.size(), tenantScope, paired, fullyPaired, summaries, pairedComparisons);
     }
 
     @Transactional(readOnly = true)
@@ -125,6 +127,37 @@ public class EducationExperimentService {
                     .append(item.averageMasteryGain()).append(',').append(item.targetGoalCount()).append(',')
                     .append(item.targetReachedGoalCount()).append(',').append(item.targetReachRate()).append(',')
                     .append(item.averageRoundsToTarget()).append(',').append(csv(item.sampleStatus())).append('\n');
+        }
+        return csv.toString();
+    }
+
+    @Transactional(readOnly = true)
+    public String exportPairedCsv(String tenantId, String userId, boolean tenantScope) {
+        EducationExperimentView view = summarize(tenantId, userId, tenantScope);
+        StringBuilder csv = new StringBuilder();
+        csv.append("reference_strategy,compared_strategy,paired_learner_goal_count,"
+                + "reference_average_mastery_gain,compared_average_mastery_gain,mastery_gain_delta,"
+                + "reference_target_reach_rate,compared_target_reach_rate,target_reach_rate_delta,"
+                + "reference_average_rounds_to_target,compared_average_rounds_to_target,"
+                + "average_rounds_to_target_delta,reference_prerequisite_gap_coverage,"
+                + "compared_prerequisite_gap_coverage,prerequisite_gap_coverage_delta,sample_status\n");
+        for (EducationExperimentPairView item : view.pairedComparisons()) {
+            csv.append(csv(item.referenceStrategy())).append(',')
+                    .append(csv(item.comparedStrategy())).append(',')
+                    .append(item.pairedLearnerGoalCount()).append(',')
+                    .append(item.referenceAverageMasteryGain()).append(',')
+                    .append(item.comparedAverageMasteryGain()).append(',')
+                    .append(item.masteryGainDelta()).append(',')
+                    .append(item.referenceTargetReachRate()).append(',')
+                    .append(item.comparedTargetReachRate()).append(',')
+                    .append(item.targetReachRateDelta()).append(',')
+                    .append(item.referenceAverageRoundsToTarget()).append(',')
+                    .append(item.comparedAverageRoundsToTarget()).append(',')
+                    .append(item.averageRoundsToTargetDelta()).append(',')
+                    .append(item.referencePrerequisiteGapCoverage()).append(',')
+                    .append(item.comparedPrerequisiteGapCoverage()).append(',')
+                    .append(item.prerequisiteGapCoverageDelta()).append(',')
+                    .append(csv(item.sampleStatus())).append('\n');
         }
         return csv.toString();
     }
@@ -218,6 +251,84 @@ public class EducationExperimentService {
         return 0;
     }
 
+    /**
+     * 在同一学习者-目标内做策略配对，避免把不同学习者的掌握度差异误当成检索收益。
+     * FULL 作为参考策略，其他策略分别与它比较；只有两边都有成功 Run 和测评事实时
+     * 才计入样本。该结果用于描述性配对分析，不替代随机实验或显著性检验。
+     */
+    private List<EducationExperimentPairView> pairedComparisons(
+            List<Run> runs, Map<String, List<AssessmentAttempt>> attemptsByRun) {
+        Map<String, Map<String, List<Run>>> grouped = new LinkedHashMap<>();
+        for (Run run : runs) {
+            if (run == null || run.getStatus() != RunStatus.SUCCEEDED
+                    || run.getUserId() == null || run.getUserId().isBlank()
+                    || run.getEducationLearningGoalId() == null
+                    || run.getEducationLearningGoalId().isBlank()) {
+                continue;
+            }
+            String goalKey = run.getUserId() + "\u0000" + run.getEducationLearningGoalId();
+            grouped.computeIfAbsent(goalKey, ignored -> new LinkedHashMap<>())
+                    .computeIfAbsent(run.getEducationRetrievalStrategy(), ignored -> new ArrayList<>())
+                    .add(run);
+        }
+
+        Map<String, PairAccumulator> accumulators = new LinkedHashMap<>();
+        for (Map<String, List<Run>> byStrategy : grouped.values()) {
+            GoalStrategyOutcome reference = goalStrategyOutcome(
+                    byStrategy.get(EducationRetrievalStrategy.FULL.name()), attemptsByRun);
+            if (reference == null) continue;
+            for (EducationRetrievalStrategy strategy : EducationRetrievalStrategy.values()) {
+                if (strategy == EducationRetrievalStrategy.FULL) continue;
+                GoalStrategyOutcome compared = goalStrategyOutcome(
+                        byStrategy.get(strategy.name()), attemptsByRun);
+                if (compared == null) continue;
+                accumulators.computeIfAbsent(strategy.name(), ignored -> new PairAccumulator())
+                        .add(reference, compared);
+            }
+        }
+
+        return accumulators.entrySet().stream()
+                .map(entry -> entry.getValue().view(EducationRetrievalStrategy.FULL.name(),
+                        entry.getKey(), sampleStatusForPairs(entry.getValue().count)))
+                .toList();
+    }
+
+    private GoalStrategyOutcome goalStrategyOutcome(List<Run> strategyRuns,
+                                                    Map<String, List<AssessmentAttempt>> attemptsByRun) {
+        if (strategyRuns == null || strategyRuns.isEmpty()) return null;
+        List<Run> ordered = strategyRuns.stream()
+                .sorted(Comparator.comparing(Run::getCreatedAt,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
+        List<AssessmentAttempt> attempts = ordered.stream()
+                .flatMap(run -> attemptsByRun.getOrDefault(run.getId(), List.of()).stream())
+                .toList();
+        if (attempts.isEmpty()) return null;
+
+        double masteryGain = attempts.stream()
+                .mapToDouble(attempt -> attempt.getMasteryAfter() - attempt.getMasteryBefore())
+                .average().orElse(0.0);
+        int reachedRound = 0;
+        for (int index = 0; index < ordered.size(); index++) {
+            Run run = ordered.get(index);
+            double target = run.getEducationLearningGoalTarget() == null
+                    ? 1.0 : run.getEducationLearningGoalTarget();
+            if (attemptsByRun.getOrDefault(run.getId(), List.of()).stream()
+                    .anyMatch(attempt -> attempt.getMasteryAfter() >= target)) {
+                reachedRound = index + 1;
+                break;
+            }
+        }
+        List<EvidenceStats> evidence = ordered.stream().map(this::evidenceStats).toList();
+        return new GoalStrategyOutcome(masteryGain, reachedRound,
+                average(evidence, EvidenceStats::prerequisiteGapCoverage));
+    }
+
+    private String sampleStatusForPairs(long pairCount) {
+        if (pairCount == 0) return "NO_DATA";
+        return pairCount < MIN_RUNS_FOR_ANALYSIS ? "INSUFFICIENT_SAMPLE" : "ANALYSIS_READY";
+    }
+
     private EvidenceStats evidenceStats(Run run) {
         List<ContextEvidence> evidences = run.getSteps() == null ? List.of()
                 : run.getSteps().stream()
@@ -280,6 +391,64 @@ public class EducationExperimentService {
 
         private boolean hasEvidence() {
             return totalCount > 0;
+        }
+    }
+
+    private record GoalStrategyOutcome(double masteryGain, int reachedRound,
+                                       double prerequisiteGapCoverage) {
+    }
+
+    private static final class PairAccumulator {
+        private long count;
+        private double referenceMasteryGain;
+        private double comparedMasteryGain;
+        private long referenceReached;
+        private long comparedReached;
+        private double referenceRounds;
+        private double comparedRounds;
+        private long referenceRoundCount;
+        private long comparedRoundCount;
+        private double referencePrerequisiteGapCoverage;
+        private double comparedPrerequisiteGapCoverage;
+
+        private void add(GoalStrategyOutcome reference, GoalStrategyOutcome compared) {
+            count++;
+            referenceMasteryGain += reference.masteryGain();
+            comparedMasteryGain += compared.masteryGain();
+            referencePrerequisiteGapCoverage += reference.prerequisiteGapCoverage();
+            comparedPrerequisiteGapCoverage += compared.prerequisiteGapCoverage();
+            if (reference.reachedRound() > 0) {
+                referenceReached++;
+                referenceRounds += reference.reachedRound();
+                referenceRoundCount++;
+            }
+            if (compared.reachedRound() > 0) {
+                comparedReached++;
+                comparedRounds += compared.reachedRound();
+                comparedRoundCount++;
+            }
+        }
+
+        private EducationExperimentPairView view(String referenceStrategy,
+                                                 String comparedStrategy,
+                                                 String sampleStatus) {
+            double refGain = average(referenceMasteryGain, count);
+            double cmpGain = average(comparedMasteryGain, count);
+            double refReach = average(referenceReached, count);
+            double cmpReach = average(comparedReached, count);
+            double refRounds = average(referenceRounds, referenceRoundCount);
+            double cmpRounds = average(comparedRounds, comparedRoundCount);
+            double refGap = average(referencePrerequisiteGapCoverage, count);
+            double cmpGap = average(comparedPrerequisiteGapCoverage, count);
+            return new EducationExperimentPairView(referenceStrategy, comparedStrategy, count,
+                    refGain, cmpGain, cmpGain - refGain,
+                    refReach, cmpReach, cmpReach - refReach,
+                    refRounds, cmpRounds, cmpRounds - refRounds,
+                    refGap, cmpGap, cmpGap - refGap, sampleStatus);
+        }
+
+        private static double average(double total, long count) {
+            return count <= 0 ? 0.0 : total / count;
         }
     }
 }

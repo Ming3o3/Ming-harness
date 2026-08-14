@@ -89,4 +89,63 @@ class EducationExperimentServiceTests {
         assertEquals("NO_DATA", view.strategies().get(0).sampleStatus());
         assertEquals(0, view.pairedLearnerGoalCount());
     }
+
+    @Test
+    void shouldCompareLearningOutcomeOnlyForSameLearnerGoalAcrossStrategies() {
+        RunRepository runs = mock(RunRepository.class);
+        AssessmentAttemptRepository assessments = mock(AssessmentAttemptRepository.class);
+        Run full = educationalRun("FULL", 0.8);
+        Run vector = educationalRun("VECTOR_ONLY", 0.8);
+        Step fullStep = full.getSteps().get(0);
+        Step vectorStep = vector.getSteps().get(0);
+        AssessmentAttempt fullAttempt = new AssessmentAttempt("tenant-a", "student-1", full.getId(),
+                fullStep.getId(), "goal-1", "profile-1", "函数", false,
+                0.50, 0.20, 0.50, AssessmentAttemptType.FORMATIVE,
+                null, "MODEL_TOOL", "仍然混淆定义域", "需要补强");
+        AssessmentAttempt vectorAttempt = new AssessmentAttempt("tenant-a", "student-1", vector.getId(),
+                vectorStep.getId(), "goal-1", "profile-1", "函数", true,
+                0.90, 0.20, 0.90, AssessmentAttemptType.FORMATIVE,
+                null, "MODEL_TOOL", "能说明定义域限制", "达到目标");
+        when(runs.findByTenantIdAndUserIdAndEducationModeTrueOrderByCreatedAtAsc(
+                "tenant-a", "student-1")).thenReturn(List.of(full, vector));
+        when(assessments.findByTenantIdAndUserIdOrderByCreatedAtAsc("tenant-a", "student-1"))
+                .thenReturn(List.of(fullAttempt, vectorAttempt));
+
+        EducationExperimentView view = new EducationExperimentService(runs, assessments)
+                .summarize("tenant-a", "student-1", false);
+
+        var pair = view.pairedComparisons().stream()
+                .filter(item -> item.comparedStrategy().equals("VECTOR_ONLY"))
+                .findFirst().orElseThrow();
+        assertEquals("FULL", pair.referenceStrategy());
+        assertEquals(1, pair.pairedLearnerGoalCount());
+        assertEquals(0.30, pair.referenceAverageMasteryGain(), 0.0001);
+        assertEquals(0.70, pair.comparedAverageMasteryGain(), 0.0001);
+        assertEquals(0.40, pair.masteryGainDelta(), 0.0001);
+        assertEquals(0.0, pair.referenceTargetReachRate(), 0.0001);
+        assertEquals(1.0, pair.comparedTargetReachRate(), 0.0001);
+        assertEquals(1.0, pair.targetReachRateDelta(), 0.0001);
+        assertEquals("INSUFFICIENT_SAMPLE", pair.sampleStatus());
+
+        String csv = new EducationExperimentService(runs, assessments)
+                .exportPairedCsv("tenant-a", "student-1", false);
+        assertTrue(csv.startsWith("reference_strategy,compared_strategy,"));
+        assertTrue(csv.contains("\"VECTOR_ONLY\""));
+    }
+
+    private Run educationalRun(String strategy, double target) {
+        Run run = new Run("tenant-a", "student-1", "函数学习", "求定义域", BigDecimal.ONE,
+                "model", "prompt", "policy");
+        run.attachEducationConfiguration(new EducationRunConfiguration(
+                true, "profile-1", "goal-1", null, null, null, null, null,
+                "掌握函数", 0.2, target, "数学", "高中一年级", "人教A版", "函数",
+                null, null, "PRACTICE", "函数=0.20", null, null, "", strategy));
+        run.start();
+        Step step = new Step(1, StepType.MODEL, "model.complete", "求定义域");
+        step.start();
+        step.succeed("回答");
+        run.addStep(step);
+        run.succeed("回答");
+        return run;
+    }
 }

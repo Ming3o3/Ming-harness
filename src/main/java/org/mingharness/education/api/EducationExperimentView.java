@@ -12,10 +12,12 @@ public record EducationExperimentView(
         boolean tenantScope,
         long pairedLearnerGoalCount,
         long fullyPairedLearnerGoalCount,
-        List<EducationExperimentStrategyView> strategies
+        List<EducationExperimentStrategyView> strategies,
+        List<EducationExperimentPairView> pairedComparisons
 ) {
 
     public EducationExperimentView {
         strategies = strategies == null ? List.of() : List.copyOf(strategies);
+        pairedComparisons = pairedComparisons == null ? List.of() : List.copyOf(pairedComparisons);
     }
 }

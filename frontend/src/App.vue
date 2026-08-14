@@ -2468,6 +2468,7 @@ const adminOperationsTrace = computed(() => [
   },
 ])
 const educationExperimentStrategies = computed(() => educationExperiment.value?.strategies || [])
+const educationExperimentPairs = computed(() => educationExperiment.value?.pairedComparisons || [])
 const educationExperimentStrategyLabel = (strategy) => ({
   FULL: '完整方法',
   VECTOR_ONLY: '仅向量',
@@ -2487,6 +2488,7 @@ const educationExperimentBest = computed(() => educationExperimentStrategies.val
   .slice()
   .sort((left, right) => Number(right.averageMasteryGain || 0) - Number(left.averageMasteryGain || 0))[0] || null)
 const educationExperimentDownloading = ref(false)
+const educationExperimentPairedDownloading = ref(false)
 async function downloadEducationExperimentCsv() {
   if (educationExperimentDownloading.value) return
   educationExperimentDownloading.value = true
@@ -2502,6 +2504,23 @@ async function downloadEducationExperimentCsv() {
     educationError.value = errorText(error)
   } finally {
     educationExperimentDownloading.value = false
+  }
+}
+async function downloadPairedEducationExperimentCsv() {
+  if (educationExperimentPairedDownloading.value) return
+  educationExperimentPairedDownloading.value = true
+  try {
+    const result = await api.downloadPairedEducationExperiments()
+    const url = URL.createObjectURL(result.blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = result.filename
+    anchor.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    educationError.value = errorText(error)
+  } finally {
+    educationExperimentPairedDownloading.value = false
   }
 }
 const matchingEducationSourceCount = computed(() => {
@@ -3098,6 +3117,12 @@ function formatDate(value) {
 function formatRate(value) {
   const number = Number(value)
   return `${Math.round((Number.isFinite(number) ? number : 0) * 100)}%`
+}
+
+function formatSignedRate(value) {
+  const number = Number(value)
+  const safe = Number.isFinite(number) ? number : 0
+  return `${safe >= 0 ? '+' : ''}${Math.round(safe * 100)}%`
 }
 
 function formatScore(value) {
@@ -9659,7 +9684,7 @@ onBeforeUnmount(() => {
               </div>
             </details>
             <details v-if="educationExperiment" class="education-operations-metrics education-experiment-panel" open>
-              <summary><span>EI 检索实验诊断</span><small>基线 · 消融 · 学习效果</small><button class="inline-summary-action" type="button" :disabled="educationExperimentDownloading" @click.prevent="downloadEducationExperimentCsv">{{ educationExperimentDownloading ? '导出中…' : '导出 CSV' }}</button></summary>
+              <summary><span>EI 检索实验诊断</span><small>基线 · 消融 · 学习效果</small><button class="inline-summary-action" type="button" :disabled="educationExperimentDownloading" @click.prevent="downloadEducationExperimentCsv">{{ educationExperimentDownloading ? '导出中…' : '导出策略 CSV' }}</button><button class="inline-summary-action" type="button" :disabled="educationExperimentPairedDownloading" @click.prevent="downloadPairedEducationExperimentCsv">{{ educationExperimentPairedDownloading ? '导出中…' : '导出配对 CSV' }}</button></summary>
               <p class="learning-task-help">结果按 Run 创建时冻结的检索策略聚合；每条证据来自实际步骤快照，测评和掌握度变化按 runId 对齐。</p>
               <div class="education-experiment-overview">
                 <span><strong>{{ educationExperiment.totalRunCount }}</strong>教育 Run</span>
@@ -9683,6 +9708,25 @@ onBeforeUnmount(() => {
                     </tr>
                   </tbody>
                 </table>
+              </div>
+              <div v-if="educationExperimentPairs.length" class="education-experiment-paired">
+                <div class="education-calibration-heading"><span>配对学习效果</span><em>FULL 为参考；差值 = 对比策略 − FULL</em></div>
+                <p class="learning-task-help">仅比较同一学习者、同一学习目标且两种策略都有形成性测评的 Run。掌握度增益和达标率为正表示对比策略更好；达到目标轮次为负表示更快。</p>
+                <div class="education-experiment-table-wrap">
+                  <table class="education-experiment-table education-experiment-paired-table">
+                    <thead><tr><th>对比策略</th><th>配对目标</th><th>掌握度增益 Δ</th><th>达标率 Δ</th><th>达标轮次 Δ</th><th>缺口覆盖 Δ</th></tr></thead>
+                    <tbody>
+                      <tr v-for="item in educationExperimentPairs" :key="`${item.referenceStrategy}-${item.comparedStrategy}`">
+                        <td><strong>{{ educationExperimentStrategyLabel(item.comparedStrategy) }}</strong><small>{{ item.comparedStrategy }} · {{ educationExperimentSampleLabel(item.sampleStatus) }}</small></td>
+                        <td>{{ item.pairedLearnerGoalCount }}</td>
+                        <td :class="{ 'is-positive': Number(item.masteryGainDelta || 0) > 0, 'is-negative': Number(item.masteryGainDelta || 0) < 0 }">{{ formatSignedRate(item.masteryGainDelta) }}</td>
+                        <td :class="{ 'is-positive': Number(item.targetReachRateDelta || 0) > 0, 'is-negative': Number(item.targetReachRateDelta || 0) < 0 }">{{ formatSignedRate(item.targetReachRateDelta) }}</td>
+                        <td>{{ Number(item.averageRoundsToTargetDelta || 0) > 0 ? '+' : '' }}{{ Number(item.averageRoundsToTargetDelta || 0).toFixed(2) }}</td>
+                        <td :class="{ 'is-positive': Number(item.prerequisiteGapCoverageDelta || 0) > 0, 'is-negative': Number(item.prerequisiteGapCoverageDelta || 0) < 0 }">{{ formatSignedRate(item.prerequisiteGapCoverageDelta) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
               <div v-if="educationRetrievalCalibration" class="education-calibration-card" aria-label="教育检索校准状态">
                 <div class="education-calibration-heading"><span>检索权重校准</span><em>{{ educationRetrievalCalibration.sampleStatus }} · {{ educationRetrievalCalibration.sampleCount }} 条证据标注</em></div>
