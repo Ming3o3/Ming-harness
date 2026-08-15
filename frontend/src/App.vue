@@ -10709,7 +10709,7 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="education-course-columns">
                   <details id="education-course-roster-panel" class="education-course-roster" :open="teacherRosterPanelOpen">
-                    <summary class="education-course-step-summary"><span><strong>第 1 步：添加学生</strong><small>{{ activeTeacherCourseLearnerCount }} 名学生已加入</small></span><em>{{ teacherRosterPanelOpen ? '现在处理' : '已完成 / 查看' }}</em></summary>
+                    <summary class="education-course-step-summary"><span><strong>添加学生</strong><small>{{ activeTeacherCourseLearnerCount }} 名学生已加入</small></span><em>{{ teacherRosterPanelOpen ? '现在处理' : '已完成 / 查看' }}</em></summary>
                     <div id="education-course-roster" class="education-course-step-content">
                     <form v-if="activeEducationCourseIsOwner" class="education-course-enrollment-form" @submit.prevent="enrollEducationLearner">
                       <label class="field"><span>学生账号</span><input v-model="educationCourseEnrollmentForm.learnerUserId" required maxlength="255" placeholder="例如：student-demo" /></label>
@@ -10727,7 +10727,7 @@ onBeforeUnmount(() => {
                     </div>
                   </details>
                   <details id="education-course-assignment-panel" class="education-course-assignment" :open="teacherAssignmentPanelOpen">
-                    <summary class="education-course-step-summary"><span><strong>第 2 步：布置第一份作业</strong><small>一次提交，自动发给所有已加入的学生</small></span><em>{{ teacherAssignmentPanelOpen ? '现在处理' : (activeTeacherCourseAssignmentCount ? '已完成 / 查看' : '等待添加学生') }}</em></summary>
+                    <summary class="education-course-step-summary"><span><strong>布置课程作业</strong><small>一次提交，自动发给所有已加入的学生</small></span><em>{{ teacherAssignmentPanelOpen ? '现在处理' : (activeTeacherCourseAssignmentCount ? '已完成 / 查看' : '等待添加学生') }}</em></summary>
                     <div id="education-course-assignment" class="education-course-step-content">
                     <form v-if="activeEducationCourseIsOwner" class="education-course-assignment-form" @submit.prevent="assignEducationCourse">
                       <label class="field"><span>作业标题</span><input v-model="educationCourseAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域练习" /></label>
