@@ -2369,14 +2369,14 @@ const educationAgentTrace = computed(() => [
     id: 'course',
     label: '课程约束',
     value: activeChatCourse.value
-      ? `${activeChatCourse.value.code} · ${activeChatCourse.value.title}`
+      ? activeChatCourse.value.title
       : activeLearnerProfile.value
         ? `${activeLearnerProfile.value.subject} · ${activeLearnerProfile.value.gradeLevel}`
-        : '尚未绑定课程或学习者画像',
+        : '尚未选择课程或学习信息',
     detail: activeChatCourse.value
-      ? `${activeChatCourse.value.curriculumVersion} · 课程实例已锁定`
+      ? `${activeChatCourse.value.curriculumVersion} · 课程已锁定`
       : activeLearnerProfile.value
-        ? `${activeLearnerProfile.value.curriculumVersion} · 将按画像约束检索`
+        ? `${activeLearnerProfile.value.curriculumVersion} · 将按学习信息匹配课程资料`
         : '先填写学习信息，系统才能限制课程资料范围',
     state: activeLearnerProfile.value ? 'ready' : 'pending',
     icon: BookOpen,
@@ -2432,9 +2432,9 @@ const teacherOperationsTrace = computed(() => [
   },
   {
     id: 'course',
-    label: '课程实例',
+    label: '课程空间',
     value: teacherEducationCourses.value.length ? `${teacherEducationCourses.value.length} 门课程` : '待创建课程',
-    detail: teacherEducationCourses.value.length ? '课程已进入运营工作台。' : '创建课程实例，绑定课程版本和教学范围。',
+    detail: teacherEducationCourses.value.length ? '课程已经创建，可以继续添加学生。' : '创建课程空间，绑定课程版本和教学范围。',
     state: teacherEducationCourses.value.length ? 'ready' : 'pending',
   },
   {
@@ -10103,9 +10103,9 @@ onBeforeUnmount(() => {
                 <div><h4>{{ isAdminWorkspace ? '课程概览' : (educationWorkspaceMode === 'teacher' ? '课程运营工作台' : '我的课程与学习路径') }}</h4><span>{{ isAdminWorkspace ? `${educationCourses.length} 门课程 · ${learningAssignments.length} 份课程作业` : `${teacherEducationCourses.length} 个我创建 · ${enrolledEducationCourses.length} 个已加入` }}</span></div>
                 <span v-if="activeEducationCourse" class="context-mode-chip">{{ educationCourseStatusLabel(activeEducationCourse.status) }}</span>
               </div>
-              <p class="learning-task-help">{{ isAdminWorkspace ? '管理员在这里查看组织课程和作业规模；课程资料、名单、布置与复核由教师负责。' : (educationWorkspaceMode === 'teacher' ? '课程资料决定教学范围；请在下方依次维护名单、布置作业和查看反馈。' : '课程资料决定学习范围；系统会结合你的作业、提交内容和学习对话更新进度。') }}{{ educationWorkspaceMode === 'teacher' ? '班级进度、名单和布置动作只在课程负责人入口中展开；学生学习信息由学生本人维护。' : (!isAdminWorkspace ? '你只需要关注自己的课程行动、提交和反馈。' : '') }}</p>
+              <p class="learning-task-help">{{ isAdminWorkspace ? '管理员在这里查看组织课程和作业规模；课程资料、名单、布置与复核由教师负责。' : (educationWorkspaceMode === 'teacher' ? '课程资料决定教学范围；请在下方依次维护名单、布置作业和查看反馈。' : '课程资料决定学习范围；系统会结合你的作业、提交内容和学习对话更新进度。') }}{{ educationWorkspaceMode === 'teacher' ? '班级进度、名单和布置动作只在教师管理入口中展开；学生学习信息由学生本人维护。' : (!isAdminWorkspace ? '你只需要关注自己的课程行动、提交和反馈。' : '') }}</p>
               <details v-if="canManageEducationOperations" class="education-teacher-entry" :open="educationWorkspaceMode === 'teacher' && !teacherEducationCourses.length">
-                <summary><span><strong>课程负责人入口</strong><small>创建课程、维护名单、批量布置作业</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '管理模式' : '需要教师 / 组织权限' }}</em></summary>
+                <summary><span><strong>教师管理入口</strong><small>创建课程、添加学生、布置作业</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '管理模式' : '需要教师 / 组织权限' }}</em></summary>
                 <p class="education-teacher-entry-help">这是课程管理操作，不会改变学生的学习状态；提交后仍由系统做最终权限校验。</p>
                 <form class="education-course-form" @submit.prevent="createEducationCourse">
                   <label class="field"><span>课程名称</span><input v-model="educationCourseForm.title" required maxlength="255" placeholder="例如：高中数学函数基础" /></label>
@@ -10136,7 +10136,7 @@ onBeforeUnmount(() => {
                   <strong>{{ activeLearnerProfile ? '学习画像已建立，等待教师加入课程' : '先建立学习画像，再等待教师加入课程' }}</strong>
                   <span>{{ activeLearnerProfile ? '教师发布课程后，课程约束、作业和下一步行动会自动出现在这里。' : '保存学科、年级和课程版本后，教师才能把你加入匹配课程。' }}</span>
                 </template>
-                <template v-else>还没有可访问的课程；如需开课，请展开课程负责人入口。</template>
+                <template v-else>还没有可访问的课程；如需开课，请展开教师管理入口。</template>
               </div>
               <div v-if="activeEducationCourse && (activeEducationCourseIsOwner || isAdminWorkspace)" class="education-course-detail">
                 <div class="education-course-detail-heading">
@@ -10166,7 +10166,7 @@ onBeforeUnmount(() => {
                     <div v-else class="context-preview-empty">名单为空；请先加入学习者。</div>
                   </div>
                   <div id="education-course-assignment" class="education-course-assignment">
-                    <div class="subsection-title"><div><h4>课程批量布置作业</h4><span>首选入口 · 一次提交，逐人追踪</span></div></div>
+                    <div class="subsection-title"><div><h4>给全班布置作业</h4><span>一次提交，自动发给所有学生</span></div></div>
                     <form v-if="activeEducationCourseIsOwner" class="education-course-assignment-form" @submit.prevent="assignEducationCourse">
                       <label class="field"><span>作业标题</span><input v-model="educationCourseAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域练习" /></label>
                       <label class="field"><span>目标知识点</span><input v-model="educationCourseAssignmentForm.conceptKey" required maxlength="255" placeholder="函数定义域" /></label>
@@ -10305,7 +10305,7 @@ onBeforeUnmount(() => {
               </div>
               <details v-if="canManageEducationOperations" class="education-teacher-entry education-assignment-entry" :open="false">
                 <summary><span><strong>单独补发作业</strong><small>无课程时，或只给一名学生补发一份作业</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '次要入口' : '需要教师 / 组织权限' }}</em></summary>
-                <p class="education-teacher-entry-help">正常课程作业请回到上方选中课程后，使用“课程批量布置作业”。这里不会自动加入课程名单，适合临时补发、个别学生或尚未建立课程实例的作业。</p>
+                <p class="education-teacher-entry-help">正常课程作业请回到上方选中课程后，使用“给全班布置作业”。这里不会自动加入课程名单，适合临时补发、个别学生或尚未建立课程空间的作业。</p>
                 <form class="learning-assignment-form" @submit.prevent="createLearningAssignment">
                   <label class="field"><span>学生账号</span><input v-model="learningAssignmentForm.learnerUserId" required maxlength="255" placeholder="例如：student-demo" /></label>
                   <label class="field"><span>作业标题</span><input v-model="learningAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域作业" /></label>
@@ -10436,9 +10436,9 @@ onBeforeUnmount(() => {
               </details>
             </div>
             <details v-if="canManageEducationOperations" class="education-source-editor education-teacher-entry" :open="educationWorkspaceMode === 'teacher' && !manageableEducationDocuments.length">
-              <summary><span><strong>课程资料维护入口</strong><small>为可见知识文档补充学科、版本、章节和知识点边界</small></span><em>{{ educationSources.length }} 个课程来源</em></summary>
+              <summary><span><strong>课程资料设置</strong><small>为课程文件补充学科、版本、章节和知识点范围</small></span><em>{{ educationSources.length }} 个课程来源</em></summary>
               <form v-if="manageableEducationDocuments.length" class="education-source-form" @submit.prevent="saveEducationSource">
-                <label class="field field-wide"><span>知识文档</span><select v-model="educationSourceForm.documentId" required><option value="">选择可见的知识文档</option><option v-for="document in manageableEducationDocuments" :key="document.id" :value="document.id">{{ document.title }}{{ document.ownerUserId !== form.userId ? ' · 组织共享' : '' }}</option></select></label>
+                <label class="field field-wide"><span>课程文件</span><select v-model="educationSourceForm.documentId" required><option value="">选择可用的课程文件</option><option v-for="document in manageableEducationDocuments" :key="document.id" :value="document.id">{{ document.title }}{{ document.ownerUserId !== form.userId ? ' · 组织共享' : '' }}</option></select></label>
                 <label class="field"><span>学科</span><input v-model="educationSourceForm.subject" required /></label>
                 <label class="field"><span>年级</span><input v-model="educationSourceForm.gradeLevel" required /></label>
                 <label class="field"><span>课程版本</span><input v-model="educationSourceForm.curriculumVersion" required /></label>
