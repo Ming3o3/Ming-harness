@@ -3709,8 +3709,33 @@ function handleChatGlobalKeydown(event) {
 }
 
 function errorText(error) {
-  if (!error) return '请求失败'
-  return error.traceId ? `${error.message}（追踪 ID：${error.traceId}）` : error.message
+  if (!error) return '暂时无法完成请求，请稍后再试。'
+
+  const rawMessage = String(error.message || '').trim()
+  const status = Number(error.status || 0)
+  const isNetworkFailure = !status && /failed to fetch|networkerror|网络|连接失败|请求失败/i.test(rawMessage)
+  const isServiceFailure = status >= 500 || /请求失败（5\d{2}）|实时执行连接失败（5\d{2}）/.test(rawMessage)
+
+  if (isNetworkFailure || isServiceFailure) {
+    return isLearnerOnlyRole.value
+      ? '暂时连接不上学习服务，请稍后再试；如果一直出现，请联系老师。'
+      : '暂时连接不上服务，请稍后再试；如果持续出现，请检查系统状态或联系管理员。'
+  }
+
+  if (status === 401 || status === 403 || /未授权|无权限|禁止访问|forbidden|unauthorized/i.test(rawMessage)) {
+    return isLearnerOnlyRole.value
+      ? '当前账号暂时没有这项操作的权限，请联系老师确认课程安排。'
+      : '当前账号没有这项操作的权限，请切换账号或联系管理员。'
+  }
+
+  if (status === 404 || /请求失败（404）/.test(rawMessage)) {
+    return '这项内容暂时不存在或已被移除，请刷新页面后再试。'
+  }
+
+  if (!rawMessage) return '暂时无法完成请求，请稍后再试。'
+  return error.traceId && !isLearnerOnlyRole.value
+    ? `${rawMessage}（错误编号：${error.traceId}）`
+    : rawMessage
 }
 
 function messageStatusLabel(status) {

@@ -4371,6 +4371,18 @@ select:focus-visible,
   .chat-course-assignment-feedback .secondary-button { grid-column: 2; justify-self: start; }
 }
 
+/* 手机端错误提示参与页面流，给导航和“学习轨迹”标题留出空间，
+ * 不再用 fixed toast 覆盖用户正在阅读的内容。 */
+@media (max-width: 720px) {
+  .chat-message-banner,
+  .console-message-banner {
+    position: static;
+    width: auto;
+    margin: 8px 14px 0;
+    transform: none;
+  }
+}
+
 /* 窄屏时把课程作业收敛成“先做主操作，再看记录”的单列动作区，
  * 避免标题被截断、主按钮和辅助链接挤在同一行。 */
 @media (max-width: 720px) {
