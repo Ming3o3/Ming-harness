@@ -8587,14 +8587,23 @@ onBeforeUnmount(() => {
             <button class="chat-primary-nav-item chat-primary-nav-item-primary" type="button" :disabled="chatLoading || chatSending || chatUploading" @click="createChatConversation">
               <MessageSquarePlus :size="15" /><span>新建学习任务</span><kbd>⌘N</kbd>
             </button>
-            <button v-if="!isAdminRole" class="chat-primary-nav-item chat-primary-nav-item-education" type="button" @click="openRoleWorkspaceEntry(isTeacherRole ? 'teacher-course' : 'student-plan')">
-              <Sparkles :size="15" /><span>{{ isTeacherRole ? '课程运营' : '学习计划与目标' }}</span>
+            <button v-if="isTeacherRole" class="chat-primary-nav-item chat-primary-nav-item-education" type="button" @click="openRoleWorkspaceEntry('teacher-course')">
+              <Sparkles :size="15" /><span>课程运营</span>
             </button>
-            <button v-if="!isAdminRole" class="chat-primary-nav-item" type="button" @click="openRoleWorkspaceEntry(isTeacherRole ? 'teacher-roster' : 'student-profile')">
-              <CircleDot :size="15" /><span>{{ isTeacherRole ? '课程与学生' : '学习档案' }}</span>
+            <button v-if="isTeacherRole" class="chat-primary-nav-item" type="button" @click="openRoleWorkspaceEntry('teacher-roster')">
+              <CircleDot :size="15" /><span>课程与学生</span>
             </button>
-              <button v-if="!isAdminRole" class="chat-primary-nav-item" type="button" @click="openRoleWorkspaceEntry(isTeacherRole ? 'teacher-review' : 'student-evidence')">
-                <Check :size="15" /><span>{{ isTeacherRole ? '作业复核' : '作业与反馈' }}</span>
+            <details v-if="isLearnerOnlyRole" class="chat-student-settings-nav">
+              <summary class="chat-primary-nav-item"><CircleDot :size="15" /><span>更多学习设置</span></summary>
+              <button class="chat-primary-nav-item chat-primary-nav-item-secondary" type="button" @click="openRoleWorkspaceEntry('student-plan')">
+                <Sparkles :size="14" /><span>学习计划与目标</span>
+              </button>
+              <button class="chat-primary-nav-item chat-primary-nav-item-secondary" type="button" @click="openRoleWorkspaceEntry('student-profile')">
+                <CircleDot :size="14" /><span>学习档案</span>
+              </button>
+            </details>
+            <button v-if="!isAdminRole" class="chat-primary-nav-item" type="button" @click="openRoleWorkspaceEntry(isTeacherRole ? 'teacher-review' : 'student-evidence')">
+              <Check :size="15" /><span>{{ isTeacherRole ? '作业复核' : '作业与反馈' }}</span>
             </button>
             <button v-if="isAdminRole" class="chat-primary-nav-item" type="button" @click="chatMode = false; navigateConsoleSection('runtime')">
               <ShieldCheck :size="15" /><span>系统治理与审计</span>

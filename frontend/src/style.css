@@ -2405,6 +2405,13 @@ button svg {
   padding: 2px 4px;
   font: 8px "DM Mono", monospace;
 }
+.chat-student-settings-nav { display: grid; gap: 2px; }
+.chat-student-settings-nav > summary { list-style: none; cursor: pointer; }
+.chat-student-settings-nav > summary::-webkit-details-marker { display: none; }
+.chat-student-settings-nav > summary::after { content: '▸'; margin-left: auto; color: var(--muted); font-size: 11px; }
+.chat-student-settings-nav[open] > summary::after { content: '▾'; }
+.chat-primary-nav-item-secondary { margin-left: 24px; width: calc(100% - 24px); color: var(--muted); font-size: 10px; }
+.chat-primary-nav-item-secondary svg { color: var(--muted); }
 
 .learning-sidebar-contract {
   display: grid;
