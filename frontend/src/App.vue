@@ -9043,7 +9043,7 @@ onBeforeUnmount(() => {
                   <label><span>学科</span><input v-model="learnerProfileForm.subject" required maxlength="128" placeholder="例如：数学" /></label>
                   <label><span>年级</span><input v-model="learnerProfileForm.gradeLevel" required maxlength="128" placeholder="例如：高中一年级" /></label>
                   <label><span>教材版本</span><input v-model="learnerProfileForm.curriculumVersion" required maxlength="128" placeholder="例如：人教A版" title="填写教材或课程使用的版本，用来匹配老师上传的资料" /></label>
-                  <label class="learning-onboarding-wide"><span>当前学习诉求（可选）</span><input v-model="learnerProfileForm.learningGoal" maxlength="512" placeholder="例如：理解函数定义域，并能独立完成基础题" /></label>
+                  <label class="learning-onboarding-wide"><span>你想先学会什么（可选）</span><input v-model="learnerProfileForm.learningGoal" maxlength="512" placeholder="例如：理解函数定义域，并能独立完成基础题" /></label>
                   <button class="primary-button" type="submit" :disabled="educationLoading">{{ educationLoading ? '保存中…' : '保存并继续' }}</button>
                 </form>
               </div>
@@ -9056,7 +9056,7 @@ onBeforeUnmount(() => {
                   <div v-for="profile in learnerProfiles.slice(0, 4)" :key="profile.id" class="learning-onboarding-profile-item">
                     <button type="button" class="learning-onboarding-profile-select" @click="selectLearnerProfile(profile)">
                       <span class="learning-onboarding-profile-icon"><Brain :size="14" /></span>
-                      <span><strong>{{ profile.subject }} · {{ profile.gradeLevel }}</strong><small>{{ profile.curriculumVersion }} · {{ profile.learningGoal || '尚未设置学习诉求' }}</small></span>
+                      <span><strong>{{ profile.subject }} · {{ profile.gradeLevel }}</strong><small>{{ profile.curriculumVersion }} · {{ profile.learningGoal || '尚未设置学习目标' }}</small></span>
                       <ArrowUp :size="13" />
                     </button>
                     <button type="button" class="learning-onboarding-profile-delete" :disabled="learnerProfileDeletingId === profile.id" title="删除学习信息" @click.stop="deleteLearnerProfile(profile)"><Trash2 :size="13" /></button>
@@ -9163,8 +9163,8 @@ onBeforeUnmount(() => {
                 <button type="button" aria-label="取消设定学习目标" @click="showQuickLearningGoalForm = false"><X :size="14" /></button>
               </div>
               <label><span>目标名称</span><input v-model="learningGoalForm.title" required maxlength="255" placeholder="例如：掌握函数定义域" /></label>
-              <label><span>目标知识点</span><input v-model="learningGoalForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
-              <label><span>{{ isLearnerOnlyRole ? '目标进度（填写百分比）' : '目标掌握度（填写百分比）' }}</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
+              <label><span>具体要学什么</span><input v-model="learningGoalForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
+              <label><span>{{ isLearnerOnlyRole ? '希望达到的程度' : '希望学生达到的程度' }} <small class="field-label-hint">例如 80 表示掌握八成</small></span><input v-model.number="learningGoalForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
               <button class="primary-button" type="submit" :disabled="educationLoading">{{ educationLoading ? '保存中…' : '保存学习目标' }}</button>
             </form>
             <div v-if="learnerMasteryPreview.length" class="learning-agent-mastery-strip" aria-label="需要关注的知识点">
@@ -10400,6 +10400,17 @@ onBeforeUnmount(() => {
               <span class="context-mode-chip">{{ educationWorkspaceModeLabel }}</span>
             </div>
             <p class="context-workbench-help">{{ educationWorkspaceModeDetail }}<template v-if="isAdminWorkspace">教育数据用于治理观察，不改变教师课程所有权或学生学习状态。</template><template v-else-if="isTeacherOnlyRole">按课程资料、作业和反馈推进，系统会自动记录学生进度。</template><template v-else>你只需要完成下面的下一步，系统会自动根据课程和作答情况安排学习。</template></p>
+            <details v-if="!isAdminRole" class="education-term-glossary">
+              <summary><span><strong>第一次使用？先看懂这些词</strong><small>不用记专业名词，按“下一步行动”操作就可以</small></span><em>查看说明</em></summary>
+              <div class="education-term-grid">
+                <article><strong>课程资料</strong><p>老师上传的课本、讲义或大纲，系统会优先根据这些内容回答。</p></article>
+                <article><strong>学习信息</strong><p>你正在学习的学科、年级和教材版本，用来匹配正确的课程。</p></article>
+                <article><strong>学习目标</strong><p>这次想学会什么，例如“能判断函数定义域”。</p></article>
+                <article><strong>知识点</strong><p>学习目标对应的具体内容，例如“函数定义域”。</p></article>
+                <article><strong>掌握度</strong><p>系统根据你的作答估算的熟练程度，不等同于考试分数。</p></article>
+                <article><strong>学习记录</strong><p>你的答案、解题过程或老师反馈，是系统判断进度的依据。</p></article>
+              </div>
+            </details>
             <p v-if="educationError" class="policy-error">{{ educationError }}</p>
             <section v-if="isLearnerOnlyRole" class="learner-focus-card" aria-label="下一步行动">
               <div class="learner-focus-copy">
@@ -10445,8 +10456,6 @@ onBeforeUnmount(() => {
                 <strong>{{ currentEducationSourceCount ? (isTeacherOnlyRole ? `${currentEducationSourceCount} 份课程资料已准备好` : `${currentEducationSourceCount} 份资料可用于当前课程`) : (educationWorkspaceMode === 'teacher' ? (manageableEducationDocuments.length ? '补充课程信息' : '先上传课程资料') : '当前课程还没有课程资料') }}</strong>
                 <span>{{ currentEducationSourceCount ? '系统会优先使用与这门课匹配的资料。' : (educationWorkspaceMode === 'teacher' ? (manageableEducationDocuments.length ? '已上传资料，请补充学科、年级和章节信息。' : '上传 PDF/DOCX，再补充学科、年级和章节信息。') : '请联系课程负责人补充资料；没有课程资料时，系统不会用通用答案代替。') }}</span>
               </div>
-              <button v-if="isTeacherOnlyRole && !manageableEducationDocuments.length" class="secondary-button" type="button" @click="openEducationDocumentUpload">上传课程资料 <ArrowUp :size="12" /></button>
-              <button v-else-if="isTeacherOnlyRole" class="secondary-button" type="button" @click="runTeacherNextAction">{{ teacherNextAction.label }} <ArrowUp :size="12" /></button>
             </section>
             <details v-if="isTeacherOnlyRole" class="education-agent-state-details">
               <summary><span><strong>课程状态概览</strong><small>{{ teacherEducationCourses.length }} 门课程 · {{ teacherActiveLearnerCount }} 名学生 · {{ teacherCoursePendingCount }} 项待处理</small></span><em>{{ teacherAgentReady ? '资料已接入' : '待配置' }}</em></summary>
@@ -10837,8 +10846,8 @@ onBeforeUnmount(() => {
                     <div id="education-course-assignment" class="education-course-step-content">
                     <form v-if="activeEducationCourseIsOwner" class="education-course-assignment-form" @submit.prevent="assignEducationCourse">
                       <label class="field"><span>作业标题</span><input v-model="educationCourseAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域练习" /></label>
-                      <label class="field"><span>目标知识点</span><input v-model="educationCourseAssignmentForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
-                      <label class="field"><span>希望学生掌握到（百分比）</span><input v-model="educationCourseAssignmentForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
+                      <label class="field"><span>这次主要学什么</span><input v-model="educationCourseAssignmentForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
+                      <label class="field"><span>希望学生达到的程度 <small class="field-label-hint">例如 80 表示掌握八成</small></span><input v-model="educationCourseAssignmentForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
                       <label class="field"><span>截止时间（可选）</span><input v-model="educationCourseAssignmentForm.dueAt" type="datetime-local" /></label>
                       <label class="field education-course-wide"><span>作业说明</span><textarea v-model="educationCourseAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作答范围、提交要求或迁移任务"></textarea></label>
                       <button class="secondary-button" type="submit" :disabled="educationCourseAssignmentSaving || !educationCourseEnrollments.some((item) => item.status === 'ACTIVE')">{{ educationCourseAssignmentSaving ? '布置中…' : '布置给已加入的学生' }}</button>
@@ -10982,8 +10991,8 @@ onBeforeUnmount(() => {
                   <label class="field"><span>学科</span><input v-model="learningAssignmentForm.subject" required maxlength="128" placeholder="数学" /></label>
                   <label class="field"><span>年级</span><input v-model="learningAssignmentForm.gradeLevel" required maxlength="128" placeholder="高中一年级" /></label>
                   <label class="field"><span>课程版本</span><input v-model="learningAssignmentForm.curriculumVersion" required maxlength="128" placeholder="人教A版" /></label>
-                  <label class="field"><span>目标知识点</span><input v-model="learningAssignmentForm.conceptKey" required maxlength="255" placeholder="函数定义域" /></label>
-                  <label class="field"><span>目标掌握度（填写百分比）</span><input v-model="learningAssignmentForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
+                  <label class="field"><span>这次主要学什么</span><input v-model="learningAssignmentForm.conceptKey" required maxlength="255" placeholder="函数定义域" /></label>
+                  <label class="field"><span>希望学生达到的程度 <small class="field-label-hint">例如 80 表示掌握八成</small></span><input v-model="learningAssignmentForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
                   <label class="field"><span>截止时间（可选）</span><input v-model="learningAssignmentForm.dueAt" type="datetime-local" /></label>
                   <label class="field learning-assignment-wide"><span>作业说明</span><textarea v-model="learningAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作业要求、作答范围或迁移任务"></textarea></label>
                   <button class="secondary-button learning-assignment-submit" type="submit" :disabled="learningAssignmentSaving">{{ learningAssignmentSaving ? '补发中…' : '单独补发作业' }}</button>
@@ -11065,8 +11074,8 @@ onBeforeUnmount(() => {
                   <form class="learning-goal-form" @submit.prevent="createLearningGoal">
                     <label class="field"><span>学习信息</span><select v-model="learningGoalForm.learnerProfileId" required><option value="">请选择学习信息</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>
                     <label class="field"><span>目标名称</span><input v-model="learningGoalForm.title" required maxlength="255" placeholder="例如：掌握函数定义域" /></label>
-                    <label class="field"><span>知识点</span><input v-model="learningGoalForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
-                    <label class="field"><span>{{ isLearnerOnlyRole ? '目标进度（填写百分比）' : '目标掌握度（填写百分比）' }}</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
+                    <label class="field"><span>具体要学什么</span><input v-model="learningGoalForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
+                    <label class="field"><span>{{ isLearnerOnlyRole ? '希望达到的程度' : '希望学生达到的程度' }} <small class="field-label-hint">例如 80 表示掌握八成</small></span><input v-model.number="learningGoalForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
                     <button class="secondary-button" type="submit" :disabled="educationLoading || !learnerProfiles.length">保存目标</button>
                   </form>
                   <div v-if="learningGoals.length" class="learning-goal-list">

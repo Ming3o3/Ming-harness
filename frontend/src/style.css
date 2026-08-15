@@ -540,6 +540,21 @@ h3 { margin: 0; font-size: 13px; }
 .education-agent-state-details > summary strong { color: var(--soft); font-size: 10px; }
 .education-agent-state-details > summary small { overflow: hidden; color: var(--muted); font: 8px/1.4 "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .education-agent-state-details > summary em { flex: 0 0 auto; border: 1px solid rgba(76,226,213,.22); border-radius: 5px; color: var(--cyan); padding: 4px 6px; font: 8px "DM Mono", monospace; font-style: normal; }
+.education-term-glossary { display: grid; gap: 9px; margin: 0 0 10px; border: 1px solid rgba(153,174,218,.16); border-radius: 8px; background: rgba(153,174,218,.035); padding: 0 10px; }
+.education-term-glossary > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 42px; cursor: pointer; list-style: none; }
+.education-term-glossary > summary::-webkit-details-marker { display: none; }
+.education-term-glossary > summary::before { content: '▸'; flex: 0 0 auto; color: var(--cyan); font-size: 12px; }
+.education-term-glossary[open] > summary::before { content: '▾'; }
+.education-term-glossary[open] > summary { border-bottom: 1px solid rgba(153,174,218,.14); }
+.education-term-glossary > summary > span { display: grid; min-width: 0; gap: 3px; }
+.education-term-glossary > summary strong { color: var(--soft); font-size: 10px; }
+.education-term-glossary > summary small { overflow: hidden; color: var(--muted); font: 8px/1.4 "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.education-term-glossary > summary em { flex: 0 0 auto; border: 1px solid rgba(153,174,218,.2); border-radius: 5px; color: var(--muted); padding: 4px 6px; font: 8px "DM Mono", monospace; font-style: normal; }
+.education-term-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: 1px 0 2px; }
+.education-term-grid article { display: grid; align-content: start; gap: 4px; min-width: 0; border: 1px solid rgba(153,174,218,.12); border-radius: 6px; background: var(--input-bg); padding: 8px; }
+.education-term-grid strong { color: var(--cyan); font-size: 9px; }
+.education-term-grid p { margin: 0; color: var(--muted); font: 8px/1.55 "DM Mono", monospace; }
+.field-label-hint { color: var(--muted); font: 8px "DM Mono", monospace; font-weight: 400; }
 .education-agent-loop { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
 .education-agent-loop li { position: relative; display: flex; align-items: flex-start; gap: 7px; min-width: 0; border: 1px solid rgba(153,174,218,.14); border-radius: 7px; background: var(--input-bg); padding: 8px; }
 .education-agent-loop li.is-ready { border-color: rgba(76,226,213,.25); background: rgba(76,226,213,.035); }
@@ -913,6 +928,7 @@ h3 { margin: 0; font-size: 13px; }
   .education-profile-form, .education-source-form, .education-run-grid, .learning-goal-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .education-profile-form > button, .education-source-form > button, .learning-goal-form > button { margin-top: 0; }
   .education-agent-state-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .education-term-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .education-knowledge-base-bridge { grid-template-columns: auto minmax(0, 1fr); }
   .education-knowledge-base-bridge .secondary-button { grid-column: 2; justify-self: start; }
   .education-agent-loop { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -940,6 +956,7 @@ h3 { margin: 0; font-size: 13px; }
 @media (max-width: 520px) {
   .education-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .education-agent-state-grid { grid-template-columns: 1fr; }
+  .education-term-grid { grid-template-columns: 1fr; }
   .education-knowledge-base-bridge { grid-template-columns: auto minmax(0, 1fr); align-items: start; }
   .education-knowledge-base-bridge .secondary-button { grid-column: 2; }
   .education-agent-loop { grid-template-columns: 1fr; }
