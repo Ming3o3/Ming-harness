@@ -609,7 +609,7 @@ const quickStartPrompts = [
     id: 'diagnose-mastery',
     label: '诊断我的薄弱点',
     description: '结合掌握度记录，找出下一步最值得补的知识点。',
-    prompt: '请结合我的学习者画像和已有掌握度记录，诊断当前最薄弱的知识点，并给出一个可执行的补强建议。',
+    prompt: '请结合我的学习信息和已有掌握度记录，诊断当前最薄弱的知识点，并给出一个可执行的补强建议。',
   },
   {
     id: 'make-review-plan',
@@ -2126,7 +2126,7 @@ function courseSourceBlockReason(scope) {
   if (!availability.courseSourceCount) {
     if (availability.sameSubjectGradeSourceCount) {
       const versions = availability.availableCurriculumVersions.join('、')
-      return `当前课程版本「${scope.curriculumVersion}」没有匹配来源，但同学科「${scope.subject}」${scope.gradeLevel}已有 ${availability.sameSubjectGradeSourceCount} 个来源（${versions}）。请统一学习者画像与课程资料的课程版本。`
+      return `当前课程版本「${scope.curriculumVersion}」没有匹配来源，但同学科「${scope.subject}」${scope.gradeLevel}已有 ${availability.sameSubjectGradeSourceCount} 个来源（${versions}）。请统一学习信息与课程资料的课程版本。`
     }
     return `课程版本「${scope.curriculumVersion}」还没有可检索的课程资料。请先补充与当前课程匹配的课程资料。`
   }
@@ -2159,7 +2159,7 @@ function learningGoalSourceBlockReason(goalId) {
   const goal = learningGoals.value.find((item) => item.id === goalId)
   if (!goal) return '当前学习目标不可用，请刷新学习状态后重试。'
   const profile = learnerProfiles.value.find((item) => item.id === goal.learnerProfileId)
-  if (!profile) return '学习目标缺少对应学习者画像，请先恢复或重新选择学习上下文。'
+  if (!profile) return '学习目标缺少对应学习信息，请先恢复或重新选择学习上下文。'
   return courseSourceBlockReason({
     subject: profile.subject,
     gradeLevel: profile.gradeLevel,
@@ -2547,7 +2547,7 @@ const educationAgentTrace = computed(() => [
     label: '学习进度',
     value: activeLearnerProfile.value
       ? (learnerMasteryLoading.value ? '正在读取掌握度…' : `${learnerMastery.value.length} 个知识点已建档`)
-      : '等待学习者画像',
+      : '等待学习信息',
     detail: activeLearningRecommendation.value
       ? `当前掌握度 ${formatRate(activeLearningRecommendation.value.currentMastery)} · 目标 ${formatRate(activeLearningRecommendation.value.targetMastery)}`
       : learnerMasteryPreview.value.length
@@ -6775,7 +6775,7 @@ async function selectChatLearnerProfile() {
       return
     }
     setChatInput(draft)
-    noticeMessage.value = '已切换学习者画像，并创建新学习对话以隔离历史上下文。'
+    noticeMessage.value = '已切换学习信息，并创建新学习对话以隔离历史上下文。'
   }
   await selectLearnerProfile(profile, false)
 }
@@ -7456,7 +7456,7 @@ async function saveLearnerProfile() {
 async function deleteLearnerProfile(profile) {
   if (!profile?.id || learnerProfileDeletingId.value) return
   if (typeof window !== 'undefined'
-    && !window.confirm(`确认删除学习画像“${profile.subject} · ${profile.gradeLevel} · ${profile.curriculumVersion}”吗？\n\n已产生的学习目标、测评和历史 Run 会保留，画像只会从当前可选列表中移除。`)) return
+    && !window.confirm(`确认删除学习信息“${profile.subject} · ${profile.gradeLevel} · ${profile.curriculumVersion}”吗？\n\n已产生的学习目标、测评和历史 Run 会保留，这条信息只会从当前可选列表中移除。`)) return
   clearMessages()
   learnerProfileDeletingId.value = profile.id
   try {
@@ -7491,7 +7491,7 @@ async function deleteLearnerProfile(profile) {
         chatEducation.courseId = ''
       }
     }
-    noticeMessage.value = `学习画像“${profile.subject} · ${profile.gradeLevel}”已删除`
+    noticeMessage.value = `学习信息“${profile.subject} · ${profile.gradeLevel}”已删除`
     educationError.value = ''
   } catch (error) {
     educationError.value = errorText(error)
@@ -9451,15 +9451,15 @@ onBeforeUnmount(() => {
               </label>
             </div>
             <div v-if="form.education.enabled" class="education-run-grid">
-              <label class="field"><span>学习者画像</span><select v-model="form.education.learnerProfileId" @change="syncEducationRunProfile"><option value="">请选择画像</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>
+              <label class="field"><span>学习信息</span><select v-model="form.education.learnerProfileId" @change="syncEducationRunProfile"><option value="">请选择学习信息</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>
               <label class="field"><span>学习目标</span><select v-model="form.education.learningGoalId" @change="selectLearningGoal(learningGoals.find((goal) => goal.id === form.education.learningGoalId), false)"><option value="">不绑定目标</option><option v-for="goal in learningGoals.filter((item) => item.status === 'ACTIVE')" :key="goal.id" :value="goal.id">{{ goal.title }} · {{ goal.conceptKey }}</option></select></label>
-              <label class="field"><span>学科</span><input v-model="form.education.subject" required :readonly="Boolean(form.education.learnerProfileId)" :title="form.education.learnerProfileId ? '由学习者画像锁定' : ''" /></label>
-              <label class="field"><span>年级</span><input v-model="form.education.gradeLevel" required :readonly="Boolean(form.education.learnerProfileId)" :title="form.education.learnerProfileId ? '由学习者画像锁定' : ''" /></label>
-              <label class="field"><span>课程版本</span><input v-model="form.education.curriculumVersion" required :readonly="Boolean(form.education.learnerProfileId)" :title="form.education.learnerProfileId ? '由学习者画像锁定' : ''" /></label>
+              <label class="field"><span>学科</span><input v-model="form.education.subject" required :readonly="Boolean(form.education.learnerProfileId)" :title="form.education.learnerProfileId ? '由学习信息锁定' : ''" /></label>
+              <label class="field"><span>年级</span><input v-model="form.education.gradeLevel" required :readonly="Boolean(form.education.learnerProfileId)" :title="form.education.learnerProfileId ? '由学习信息锁定' : ''" /></label>
+              <label class="field"><span>课程版本</span><input v-model="form.education.curriculumVersion" required :readonly="Boolean(form.education.learnerProfileId)" :title="form.education.learnerProfileId ? '由学习信息锁定' : ''" /></label>
               <label class="field"><span>目标知识点（可选）</span><input v-model="form.education.conceptKey" placeholder="例如：函数定义域" /></label>
               <label class="field"><span>难度范围（可选）</span><div class="education-difficulty-range"><input v-model.number="form.education.minDifficulty" type="number" min="1" max="5" placeholder="1" /><span>—</span><input v-model.number="form.education.maxDifficulty" type="number" min="1" max="5" placeholder="5" /></div></label>
             </div>
-            <small class="form-hint">教育模式必须绑定学习者画像；绑定学习目标后，测评会累计目标进度，并给出下一步学习动作。</small>
+            <small class="form-hint">学习模式需要先绑定学习信息；绑定学习目标后，系统会累计进度并给出下一步行动。</small>
           </div>
           <div class="form-actions field-wide">
             <span class="form-hint">{{ form.agentMode ? '创建后会按模型决策循环执行，并持久化每一轮模型与工具步骤。' : '创建后会依次执行模型步骤和工具步骤，并记录完整审计链。' }}</span>
@@ -10234,7 +10234,7 @@ onBeforeUnmount(() => {
                     <button type="button" class="education-profile-select" @click="selectLearnerProfile(profile)">
                       <strong>{{ profile.subject }} · {{ profile.gradeLevel }}</strong><small>{{ profile.curriculumVersion }} · {{ profile.learningGoal || '未设置学习目标' }}</small>
                     </button>
-                    <button type="button" class="education-profile-delete" :disabled="learnerProfileDeletingId === profile.id" title="删除学习画像" @click.stop="deleteLearnerProfile(profile)"><Trash2 :size="13" /></button>
+                    <button type="button" class="education-profile-delete" :disabled="learnerProfileDeletingId === profile.id" title="删除学习信息" @click.stop="deleteLearnerProfile(profile)"><Trash2 :size="13" /></button>
                   </div>
                 </div>
               </div>
@@ -10274,7 +10274,7 @@ onBeforeUnmount(() => {
               <div v-else class="context-preview-empty">
                 <template v-if="isAdminWorkspace">当前组织还没有课程；课程由教师创建并运营。</template>
                 <template v-else-if="educationWorkspaceMode === 'learner'">
-                  <strong>{{ activeLearnerProfile ? '学习画像已建立，等待教师加入课程' : '先建立学习画像，再等待教师加入课程' }}</strong>
+                  <strong>{{ activeLearnerProfile ? '学习信息已保存，等待教师加入课程' : '先填写学习信息，再等待教师加入课程' }}</strong>
                   <span>{{ activeLearnerProfile ? '教师发布课程后，课程范围、作业和下一步行动会自动出现在这里。' : '保存学科、年级和课程版本后，教师才能把你加入匹配课程。' }}</span>
                 </template>
                 <template v-else>还没有可访问的课程；如需开课，请展开教师管理入口。</template>
