@@ -881,12 +881,14 @@ h3 { margin: 0; font-size: 13px; }
 .learning-notification-list { display: grid; gap: 6px; }
 .learning-notification-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; border: 1px solid rgba(153,174,218,.12); border-radius: 7px; background: var(--input-bg); padding: 8px 10px; }
 .learning-notification-row.unread { border-color: rgba(255,196,92,.38); box-shadow: inset 3px 0 0 rgba(255,196,92,.75); }
+.learning-notification-row.supporting { background: color-mix(in srgb, var(--input-bg) 88%, var(--cyan)); }
 .learning-notification-main { min-width: 0; }
 .learning-notification-meta { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .learning-notification-meta strong { overflow: hidden; color: var(--soft); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .learning-notification-meta small { flex: 0 0 auto; color: var(--muted); font: 8px "DM Mono", monospace; }
 .learning-notification-main p { margin: 5px 0 0; color: var(--muted); font-size: 9px; line-height: 1.45; }
 .learning-notification-actions { display: grid; justify-items: end; gap: 4px; }
+.learning-notification-supporting-note { color: var(--cyan); font: 8px "DM Mono", monospace; white-space: nowrap; }
 .learning-task-help { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
 .learning-task-list { display: grid; gap: 6px; }
 .learning-task-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; border: 1px solid rgba(153,174,218,.12); border-radius: 7px; background: var(--input-bg); padding: 9px 10px; }

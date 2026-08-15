@@ -2013,6 +2013,28 @@ const learnerCourseAssignments = computed(() => learningAssignments.value
       || new Date(left.dueAt || left.createdAt) - new Date(right.dueAt || right.createdAt)
   }))
 const nextLearnerCourseAssignment = computed(() => learnerCourseAssignments.value[0] || null)
+// 学生工作台把最优先的作业收敛到顶部“下一步行动”。同一份作业在通知和
+// 列表中仍保留定位入口，但不再出现第二个会改变状态的按钮。
+function learningAssignmentUsesOverviewPrimaryAction(assignment) {
+  return Boolean(isLearnerOnlyRole.value
+    && assignment?.id
+    && assignment.id === nextLearnerCourseAssignment.value?.id
+    && learningOverviewNextAction.value.kind === 'assignment')
+}
+
+function learningAssignmentNotificationUsesOverviewPrimaryAction(notification) {
+  if (!notification?.learningAssignmentId) return false
+  return learningAssignmentUsesOverviewPrimaryAction(
+    learningAssignments.value.find((assignment) => assignment.id === notification.learningAssignmentId),
+  )
+}
+
+function focusEducationOverviewPrimaryAction() {
+  document.getElementById('education-next-action')?.scrollIntoView({
+    behavior: 'smooth', block: 'center',
+  })
+}
+
 // 首页课程作业卡片需要和聊天作业卡片共享同一份“待确认反馈”判断。
 // 之前模板引用了未定义的状态，教师反馈虽已写入数据，却不会出现“确认并继续”入口。
 const nextLearnerCourseAssignmentOpenFeedback = computed(() => {
@@ -6371,6 +6393,7 @@ function learningAssignmentNotificationActionLabel(notification) {
     return notification.notificationType === 'OVERDUE' ? '查看逾期作业' : '查看作业'
   }
   if (isAdminWorkspace.value) return '查看作业详情'
+  if (isLearnerOnlyRole.value) return '查看详情'
   if (notification.notificationType === 'ASSIGNED') return '接受并开始'
   if (notification.notificationType === 'EVIDENCE_REQUIRED') {
     return notification.assignmentStatus === 'AWAITING_EVIDENCE' ? '补充作答并继续' : '查看待补记录'
@@ -6741,18 +6764,21 @@ async function openLearningAssignmentNotification(notification) {
   const isTeacher = assignment.teacherUserId === form.userId
   const type = notification.notificationType
 
-  // 学习者通知优先落到可执行动作；逾期和已确认结果只打开证据链，避免误导为可启动 Run。
-  if (isLearner && type === 'ASSIGNED' && assignment.status === 'ASSIGNED') {
-    await startLearningAssignment(assignment)
-    return
-  }
-  if (isLearner && type === 'EVIDENCE_REQUIRED' && assignment.status === 'AWAITING_EVIDENCE') {
-    await startLearningAssignment(assignment)
-    return
-  }
-  if (isLearner && ['RETRY_REQUIRED', 'REVISION_REQUIRED'].includes(type)
-    && assignment.status === 'RETRY_REQUIRED') {
-    await startLearningAssignment(assignment)
+  // 通知对学生只承担“为什么会出现这份作业”的说明与定位职责。真正的
+  // 状态改变集中在顶部下一步和作业卡片，避免同一件事出现多个开始按钮。
+  if (isLearner) {
+    const issue = {
+      ASSIGNED: 'assigned',
+      ACCEPTED: 'accepted',
+      EVIDENCE_REQUIRED: 'evidence',
+      RETRY_REQUIRED: 'retry',
+      REVISION_REQUIRED: 'revision',
+      OVERDUE: 'overdue',
+      REVIEW_REQUIRED: 'review',
+    }[type] || ''
+    const expandFeedback = ['FEEDBACK', 'FEEDBACK_ACKNOWLEDGED'].includes(type)
+    await focusLearningAssignmentNotificationAssignment(assignment, issue, expandFeedback)
+    noticeMessage.value = `已打开课程作业“${assignment.title}”的详细记录。`
     return
   }
   if (type === 'OVERDUE') {
@@ -10495,7 +10521,7 @@ onBeforeUnmount(() => {
               </div>
             </details>
             <p v-if="educationError" class="policy-error">{{ educationError }}</p>
-            <section v-if="isLearnerOnlyRole" class="learner-focus-card" aria-label="下一步行动">
+            <section v-if="isLearnerOnlyRole" id="education-next-action" class="learner-focus-card" aria-label="下一步行动">
               <div class="learner-focus-copy">
                 <p class="eyebrow">下一步行动</p>
                 <h4>{{ learningOverviewNextAction.label }}</h4>
@@ -11077,9 +11103,9 @@ onBeforeUnmount(() => {
               <p class="learning-task-help">{{ isAdminWorkspace ? '管理员只读查看作业状态与学习记录；确认、返工和反馈由课程教师执行。' : (educationWorkspaceMode === 'teacher' ? '查看学生提交和反馈，再决定确认、返工或重试。' : (learningAssignmentActionableCount ? '先处理需要行动的作业；已完成记录可以按需展开。' : '当前没有待处理作业，可以查看已完成记录或等待老师发布下一份作业。')) }}</p>
               <div v-if="!isAdminWorkspace && learningAssignmentNotificationsForView.length" class="subsection-title learning-task-heading"><div><h4>作业通知</h4><span>{{ learningAssignmentNotificationsForView.length }} 条</span></div><div class="learning-notification-heading-actions"><span>{{ learningAssignmentNotificationUnreadCountForView }} 条未读</span><button v-if="learningAssignmentNotificationUnreadCountForView" class="text-button" type="button" @click="markAllLearningAssignmentNotificationsRead">全部已读</button></div></div>
               <div v-if="!isAdminWorkspace && learningAssignmentNotificationsForView.length" class="learning-notification-list" aria-label="课程作业通知">
-                <article v-for="notification in learningAssignmentNotificationsForView.slice(0, 5)" :key="notification.id" class="learning-notification-row" :class="{ unread: notification.unread }">
+                <article v-for="notification in learningAssignmentNotificationsForView.slice(0, 5)" :key="notification.id" class="learning-notification-row" :class="{ unread: notification.unread, supporting: learningAssignmentNotificationUsesOverviewPrimaryAction(notification) }">
                   <div class="learning-notification-main"><div class="learning-notification-meta"><strong>{{ learnerFriendlyNotificationTitle(notification) }}</strong><small>{{ formatDate(notification.createdAt) }}</small></div><p>{{ learnerFriendlyNotificationBody(notification) }}</p></div>
-                  <div class="learning-notification-actions"><button class="secondary-button" type="button" @click="openLearningAssignmentNotification(notification)">{{ learningAssignmentNotificationActionLabel(notification) }}</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningAssignmentNotificationRead(notification)">标记已读</button></div>
+                  <div class="learning-notification-actions"><small v-if="learningAssignmentNotificationUsesOverviewPrimaryAction(notification)" class="learning-notification-supporting-note">上方“下一步行动”已提示</small><button :class="isLearnerOnlyRole ? 'text-button' : 'secondary-button'" type="button" @click="openLearningAssignmentNotification(notification)">{{ learningAssignmentNotificationActionLabel(notification) }}</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningAssignmentNotificationRead(notification)">标记已读</button></div>
                 </article>
               </div>
               <details v-if="canManageEducationOperations" class="education-teacher-entry education-assignment-entry" :open="false">
@@ -11140,7 +11166,7 @@ onBeforeUnmount(() => {
                     <details v-if="learningAssignmentEvaluationMap[assignment.id]?.length" class="learning-assessment-history"><summary>{{ isLearnerOnlyRole ? '教师评分细节' : '教师量规评价' }}（{{ learningAssignmentEvaluationMap[assignment.id].length }}）</summary><div v-for="evaluation in learningAssignmentEvaluationMap[assignment.id].slice(0, 5)" :key="evaluation.id"><span>{{ evaluation.decision === 'VERIFY' ? '确认' : '退回' }} · {{ evaluation.rubricVersion }}</span><span>内容 {{ evaluation.contentCorrectnessScore }} / 5 · 证据 {{ evaluation.evidenceQualityScore }} / 5 · 迁移 {{ evaluation.transferReadinessScore }} / 5</span><small>{{ evaluation.evaluatorUserId }} · {{ formatDate(evaluation.createdAt) }}<span v-if="evaluation.note"> · {{ evaluation.note }}</span></small></div></details>
                   </div>
                   <div class="learning-assignment-actions">
-                    <button :class="learningAssignmentPrimaryAction(assignment).kind === 'view' || learningAssignmentPrimaryAction(assignment).kind === 'setup' ? 'secondary-button' : 'primary-button'" type="button" :title="learningAssignmentPrimaryAction(assignment).detail" :disabled="learningAssignmentPrimaryActionBusy(assignment)" @click="runLearningAssignmentPrimaryAction(assignment)">{{ learningAssignmentPrimaryActionLabel(assignment) }}</button>
+                    <button :class="learningAssignmentUsesOverviewPrimaryAction(assignment) ? 'text-button' : (learningAssignmentPrimaryAction(assignment).kind === 'view' || learningAssignmentPrimaryAction(assignment).kind === 'setup' ? 'secondary-button' : 'primary-button')" type="button" :title="learningAssignmentUsesOverviewPrimaryAction(assignment) ? '使用上方“下一步行动”继续这份作业' : learningAssignmentPrimaryAction(assignment).detail" :disabled="learningAssignmentPrimaryActionBusy(assignment)" @click="learningAssignmentUsesOverviewPrimaryAction(assignment) ? focusEducationOverviewPrimaryAction() : runLearningAssignmentPrimaryAction(assignment)">{{ learningAssignmentUsesOverviewPrimaryAction(assignment) ? '回到上方继续' : learningAssignmentPrimaryActionLabel(assignment) }}</button>
                     <button v-if="educationWorkspaceMode === 'teacher' && assignment.teacherUserId === form.userId && assignment.status === 'COMPLETED' && assignment.reviewStatus === 'PENDING'" class="text-button" type="button" :disabled="learningAssignmentReviewSavingId === assignment.id" @click="returnLearningAssignmentForRevision(assignment)">{{ learningAssignmentReviewSavingId === assignment.id ? '处理中…' : '退回返工' }}</button>
                     <button v-if="educationWorkspaceMode === 'teacher' && assignment.teacherUserId === form.userId && assignment.status !== 'CANCELLED'" class="text-button" type="button" @click="startLearningAssignmentFeedback(assignment)">写教师反馈</button>
                     <button v-if="educationWorkspaceMode === 'teacher' && assignment.teacherUserId === form.userId && ['ASSIGNED', 'ACCEPTED', 'RETRY_REQUIRED', 'OVERDUE'].includes(assignment.status)" class="text-button" type="button" @click="cancelLearningAssignment(assignment)">取消作业</button>
