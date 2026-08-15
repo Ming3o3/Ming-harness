@@ -9675,8 +9675,19 @@ onBeforeUnmount(() => {
               <div><p class="eyebrow">EDUCATION AGENT</p><h3>{{ isAdminWorkspace ? '教育概览与 Agent 状态' : (educationWorkspaceMode === 'teacher' ? '课程运营与 Agent 状态' : '学习契约与 Agent 状态') }}</h3></div>
               <span class="context-mode-chip">{{ educationWorkspaceModeLabel }}</span>
             </div>
-            <p class="context-workbench-help">{{ educationWorkspaceModeDetail }}<template v-if="isAdminWorkspace">教育数据用于治理观察，不改变教师课程所有权或学生学习状态。</template><template v-else-if="isTeacherOnlyRole">课程元数据决定 Agent 的知识边界，学生提交物和测评证据决定后续复核动作。</template><template v-else>课程元数据决定检索范围，学习者状态和形成性证据决定 Agent 的教学动作。</template></p>
+            <p class="context-workbench-help">{{ educationWorkspaceModeDetail }}<template v-if="isAdminWorkspace">教育数据用于治理观察，不改变教师课程所有权或学生学习状态。</template><template v-else-if="isTeacherOnlyRole">课程元数据决定 Agent 的知识边界，学生提交物和测评证据决定后续复核动作。</template><template v-else>你只需要完成下面的下一步，系统会自动根据课程和作答情况安排学习。</template></p>
             <p v-if="educationError" class="policy-error">{{ educationError }}</p>
+            <section v-if="isLearnerOnlyRole" class="learner-focus-card" aria-label="今天的学习重点">
+              <div class="learner-focus-copy">
+                <p class="eyebrow">TODAY'S FOCUS</p>
+                <h4>{{ learningOverviewNextAction.label }}</h4>
+                <p>{{ learningOverviewNextAction.detail }}</p>
+                <small v-if="activeEducationCourse?.title || activeChatCourse?.title">{{ activeEducationCourse?.title || activeChatCourse?.title }}</small>
+              </div>
+              <button class="primary-button learner-focus-action" type="button" :disabled="chatSending || chatUploading || (learningOverviewNextAction.kind === 'task' && learningTaskStartingId)" @click="runLearningOverviewNextAction">
+                {{ learningOverviewNextAction.label }} <ArrowRight :size="13" />
+              </button>
+            </section>
             <ol v-if="isLearnerOnlyRole" class="learner-journey-steps" aria-label="学生使用路径">
               <li v-for="(step, index) in learnerJourneySteps" :key="step.title" :class="`is-${step.state}`">
                 <span>{{ String(index + 1).padStart(2, '0') }}</span>
@@ -9719,21 +9730,21 @@ onBeforeUnmount(() => {
             </section>
             <section v-else-if="isLearnerOnlyRole" class="education-agent-state-card" :class="{ ready: educationAgentReady }" aria-label="教育 Agent 当前状态">
               <div class="education-agent-state-heading">
-                <div><p class="eyebrow">CURRENT AGENT STATE</p><h4>当前学习状态与下一步</h4><span>Agent 将课程边界、学习者证据和教学动作串成一条可追踪的学习回路。</span></div>
-                <span class="education-agent-state-pill"><i></i>{{ educationAgentReady ? '课程与学情已接入' : '等待配置' }}</span>
+                <div><p class="eyebrow">YOUR LEARNING STATE</p><h4>你的学习状态</h4><span>系统会根据课程资料和你的作答情况，安排下一步学习。</span></div>
+                <span class="education-agent-state-pill"><i></i>{{ educationAgentReady ? '可以开始学习' : '还差一步准备' }}</span>
               </div>
               <div class="education-agent-state-grid">
                 <article class="education-agent-state-item">
-                  <small>01 · 课程边界</small><strong>{{ currentEducationSourceLabel }}</strong><p>{{ currentEducationRetrievalDetail }}</p><small v-if="educationVersionRepairHint" class="education-version-repair-hint">{{ educationVersionRepairHint }}</small>
+                  <small>01 · 课程资料</small><strong>{{ currentEducationSourceLabel }}</strong><p>{{ currentEducationRetrievalDetail }}</p><small v-if="educationVersionRepairHint" class="education-version-repair-hint">{{ educationVersionRepairHint }}</small>
                 </article>
                 <article class="education-agent-state-item">
-                  <small>02 · 学习者状态</small><strong>{{ learnerStateDiagnosis.title }}</strong><p>{{ learnerStateDiagnosis.detail }}</p>
+                  <small>02 · 当前掌握情况</small><strong>{{ learnerStateDiagnosis.title }}</strong><p>{{ learnerStateDiagnosis.detail }}</p>
                 </article>
                 <article class="education-agent-state-item">
-                  <small>03 · Agent 下一动作</small><strong>{{ agentTeachingAction.title }}</strong><p>{{ agentTeachingAction.detail }}</p>
+                  <small>03 · 推荐下一步</small><strong>{{ agentTeachingAction.title }}</strong><p>{{ agentTeachingAction.detail }}</p>
                 </article>
                 <article class="education-agent-state-item">
-                  <small>04 · 需要的证据</small><strong>{{ agentEvidenceRequest.title }}</strong><p>{{ agentEvidenceRequest.detail }}</p>
+                  <small>04 · 完成标准</small><strong>{{ agentEvidenceRequest.title }}</strong><p>{{ agentEvidenceRequest.detail }}</p>
                 </article>
               </div>
               <footer class="education-agent-state-footer">
@@ -9741,11 +9752,21 @@ onBeforeUnmount(() => {
                 <button class="secondary-button" type="button" @click="educationAgentReady ? (chatMode = true) : openEducationAgentSetup()">{{ educationAgentReady ? '进入学习对话' : '配置并开始' }} <ArrowUp :size="12" /></button>
               </footer>
             </section>
-            <ol class="education-agent-loop" aria-label="教育 Agent 学习闭环">
-              <li v-for="(trace, index) in (isAdminWorkspace ? adminOperationsTrace : (isTeacherOnlyRole ? teacherOperationsTrace : educationAgentTrace))" :key="trace.id" :class="`is-${trace.state}`">
+            <details v-if="isLearnerOnlyRole" class="learner-advanced-details">
+              <summary><span>查看系统如何安排学习</span><small>了解课程、作答和复习之间的关系</small></summary>
+              <ol class="education-agent-loop" aria-label="教育 Agent 学习闭环">
+                <li v-for="(trace, index) in educationAgentTrace" :key="trace.id" :class="`is-${trace.state}`">
+                  <span class="education-agent-loop-index">{{ String(index + 1).padStart(2, '0') }}</span>
+                  <div><strong>{{ trace.label }}</strong><small>{{ trace.value }}</small></div>
+                  <ArrowDown v-if="index < educationAgentTrace.length - 1" class="education-agent-loop-arrow" :size="13" />
+                </li>
+              </ol>
+            </details>
+            <ol v-else class="education-agent-loop" aria-label="教育 Agent 学习闭环">
+              <li v-for="(trace, index) in (isAdminWorkspace ? adminOperationsTrace : teacherOperationsTrace)" :key="trace.id" :class="`is-${trace.state}`">
                 <span class="education-agent-loop-index">{{ String(index + 1).padStart(2, '0') }}</span>
                 <div><strong>{{ trace.label }}</strong><small>{{ trace.value }}</small></div>
-                <ArrowDown v-if="index < (isAdminWorkspace ? adminOperationsTrace.length : (isTeacherOnlyRole ? teacherOperationsTrace.length : educationAgentTrace.length)) - 1" class="education-agent-loop-arrow" :size="13" />
+                <ArrowDown v-if="index < (isAdminWorkspace ? adminOperationsTrace.length : teacherOperationsTrace.length) - 1" class="education-agent-loop-arrow" :size="13" />
               </li>
             </ol>
             <details v-if="isTeacherOnlyRole && educationMetrics && teacherEducationCourses.length" class="education-operations-metrics">

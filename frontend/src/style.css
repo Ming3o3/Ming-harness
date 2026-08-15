@@ -542,6 +542,19 @@ h3 { margin: 0; font-size: 13px; }
 .education-profile-setup-content { display: grid; gap: 10px; padding: 10px 0 2px; }
 .education-profile-next-step { margin: 0; border-left: 2px solid color-mix(in srgb, var(--cyan) 45%, var(--line)); background: color-mix(in srgb, var(--cyan) 5%, transparent); color: var(--muted); padding: 7px 9px; font-size: 9px; line-height: 1.5; }
 .education-profile-next-step strong { color: var(--soft); font-weight: 600; }
+.learner-focus-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 10px; border: 1px solid color-mix(in srgb, var(--cyan) 42%, var(--line)); border-radius: 10px; background: linear-gradient(135deg, color-mix(in srgb, var(--cyan) 10%, var(--panel)), var(--panel-soft)); padding: 13px 14px; }
+.learner-focus-copy { display: grid; min-width: 0; gap: 4px; }
+.learner-focus-copy h4 { margin: 0; color: var(--heading); font-size: 16px; letter-spacing: -.02em; }
+.learner-focus-copy p:not(.eyebrow) { margin: 0; color: var(--soft); font-size: 10px; line-height: 1.5; }
+.learner-focus-copy small { overflow: hidden; color: var(--muted); font: 8px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.learner-focus-action { flex: 0 0 auto; white-space: nowrap; }
+.learner-advanced-details { border-top: 1px solid var(--line); padding-top: 10px; }
+.learner-advanced-details > summary { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: var(--soft); cursor: pointer; font-size: 10px; list-style: none; }
+.learner-advanced-details > summary::-webkit-details-marker { display: none; }
+.learner-advanced-details > summary::before { content: '▸'; margin-right: 5px; color: var(--cyan); font-size: 12px; }
+.learner-advanced-details[open] > summary::before { content: '▾'; }
+.learner-advanced-details > summary small { margin-left: auto; color: var(--muted); font: 8px "DM Mono", monospace; }
+.learner-advanced-details .education-agent-loop { margin-top: 10px; }
 .learner-journey-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 0 0 10px; padding: 0; list-style: none; }
 .learner-journey-steps > li { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 6px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-soft); padding: 7px; }
 .learner-journey-steps > li > span { color: var(--muted); font: 8px "DM Mono", monospace; }
@@ -551,6 +564,7 @@ h3 { margin: 0; font-size: 13px; }
 .learner-journey-steps > li.is-current { border-color: color-mix(in srgb, var(--cyan) 45%, var(--line)); background: color-mix(in srgb, var(--cyan) 6%, var(--panel-soft)); }
 .learner-journey-steps > li.is-current > span, .learner-journey-steps > li.is-ready > span { color: var(--cyan); }
 @media (max-width: 760px) { .learner-journey-steps { grid-template-columns: 1fr; } }
+@media (max-width: 760px) { .learner-focus-card { align-items: stretch; flex-direction: column; } .learner-focus-action { align-self: flex-start; } }
 .education-teacher-entry { border-color: rgba(241,184,91,.24); background: rgba(241,184,91,.035); }
 .education-teacher-entry > summary em { color: #f1b85b; }
 .education-teacher-entry-help { margin: 9px 0 0; color: var(--muted); font: 8px/1.5 "DM Mono", monospace; }
