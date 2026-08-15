@@ -2188,6 +2188,19 @@ const actionableLearningTasks = computed(() => {
   const activeStatuses = new Set(['OPEN', 'IN_PROGRESS', 'AWAITING_EVIDENCE', 'DEFERRED', 'FAILED'])
   return learningTasks.value.filter((task) => activeStatuses.has(task.status))
 })
+
+function learningTaskUsesOverviewPrimaryAction(task) {
+  return Boolean(isLearnerOnlyRole.value
+    && task?.id
+    && task.id === activeLearningTask.value?.id
+    && ['task', 'task-scheduled'].includes(learningOverviewNextAction.value.kind))
+}
+
+function learningTaskNotificationUsesTaskCard(notification) {
+  if (!isLearnerOnlyRole.value || !notification?.learningTaskId) return false
+  return actionableLearningTasks.value.some((task) => task.id === notification.learningTaskId)
+}
+
 const shouldShowLearningTaskWorkbench = computed(() => {
   return actionableLearningTasks.value.length > 0 || learningNotifications.value.length > 0
 })
@@ -6307,13 +6320,11 @@ async function openLearningNotification(notification) {
     noticeMessage.value = '通知对应的学习任务已不在当前列表中，请刷新教育状态。'
     return
   }
-  if (learningTaskIsScheduled(task)) {
+  if (actionableLearningTasks.value.some((item) => item.id === task.id)) {
     focusLearningTask(task)
-    noticeMessage.value = `复习任务已安排在 ${formatDate(task.scheduledAt)} 开放。`
-    return
-  }
-  if (['OPEN', 'IN_PROGRESS', 'AWAITING_EVIDENCE', 'FAILED'].includes(task.status)) {
-    await startLearningTask(task)
+    noticeMessage.value = learningTaskIsScheduled(task)
+      ? `复习任务已安排在 ${formatDate(task.scheduledAt)} 开放。`
+      : '已打开学习提醒；请使用下方任务卡开始或继续。'
     return
   }
   const goal = learningGoals.value.find((item) => item.id === task.learningGoalId)
@@ -11193,16 +11204,16 @@ onBeforeUnmount(() => {
                 <div class="subsection-title learning-task-heading"><div><h4>学习提醒</h4><span>{{ actionableLearningTasks.length }} 条</span></div><div class="learning-notification-heading-actions"><span>{{ learningNotificationUnreadCount }} 条未读</span><button v-if="learningNotificationUnreadCount" class="text-button" type="button" @click="markAllLearningNotificationsRead">全部已读</button></div></div>
                 <p class="learning-task-help">需要复习或补充回答时，提醒会出现在这里；没有提醒时无需额外处理。</p>
                 <div v-if="learningNotifications.length" class="learning-notification-list" aria-label="学习任务通知">
-                  <article v-for="notification in learningNotifications.slice(0, 5)" :key="notification.id" class="learning-notification-row" :class="{ unread: notification.unread }">
+                  <article v-for="notification in learningNotifications.slice(0, 5)" :key="notification.id" class="learning-notification-row" :class="{ unread: notification.unread, supporting: learningTaskNotificationUsesTaskCard(notification) }">
                     <div class="learning-notification-main"><div class="learning-notification-meta"><strong>{{ learnerFriendlyNotificationTitle(notification) }}</strong><small>{{ formatDate(notification.createdAt) }}</small></div><p>{{ learningNotificationBody(notification) }}</p></div>
-                    <div class="learning-notification-actions"><button class="secondary-button" type="button" @click="openLearningNotification(notification)">{{ notification.notificationType === 'EVIDENCE_REQUIRED' ? '补充作答' : (notification.notificationType === 'FAILED' ? '重试任务' : (notification.taskStatus === 'DEFERRED' ? '查看复习安排' : '打开任务')) }}</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningNotificationRead(notification)">标记已读</button></div>
+                    <div class="learning-notification-actions"><small v-if="learningTaskNotificationUsesTaskCard(notification)" class="learning-notification-supporting-note">下方任务卡可继续</small><button class="text-button" type="button" @click="openLearningNotification(notification)">查看详情</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningNotificationRead(notification)">标记已读</button></div>
                   </article>
                 </div>
                 <div v-if="actionableLearningTasks.length" class="learning-task-list">
                   <article v-for="task in actionableLearningTasks.slice(0, 8)" :id="`learning-task-${task.id}`" :key="task.id" class="learning-task-row">
                     <div class="learning-task-main"><strong>{{ task.title }}</strong><small>{{ task.status === 'IN_PROGRESS' ? '进行中' : (task.status === 'AWAITING_EVIDENCE' ? '待补充答案' : (task.status === 'FAILED' ? `执行失败${task.failureReason ? `：${task.failureReason}` : ''}` : (task.status === 'DEFERRED' ? `延期至 ${formatDate(task.scheduledAt)}` : `到期 ${formatDate(task.scheduledAt)}`))) }} · 第 {{ task.reviewSequence + 1 }} 次复习</small><p>{{ task.prompt }}</p></div>
                     <div class="learning-task-actions">
-                    <button class="secondary-button" type="button" :title="learningTaskIsScheduled(task) ? `任务将在 ${formatDate(task.scheduledAt)} 开放` : learningTaskSourceBlockReason(task)" :disabled="learningTaskStartingId === task.id || learningTaskDeferringId === task.id || Boolean(learningTaskSourceBlockReason(task))" @click="learningTaskIsScheduled(task) ? focusLearningTask(task) : startLearningTask(task)">{{ learningTaskSourceBlockReason(task) ? '需课程资料' : learningTaskActionLabel(task, learningTaskStartingId === task.id) }}</button>
+                    <button :class="learningTaskUsesOverviewPrimaryAction(task) ? 'text-button' : 'secondary-button'" type="button" :title="learningTaskUsesOverviewPrimaryAction(task) ? '使用上方“下一步行动”继续这项任务' : (learningTaskIsScheduled(task) ? `任务将在 ${formatDate(task.scheduledAt)} 开放` : learningTaskSourceBlockReason(task))" :disabled="learningTaskStartingId === task.id || learningTaskDeferringId === task.id || Boolean(learningTaskSourceBlockReason(task))" @click="learningTaskUsesOverviewPrimaryAction(task) ? focusEducationOverviewPrimaryAction() : (learningTaskIsScheduled(task) ? focusLearningTask(task) : startLearningTask(task))">{{ learningTaskUsesOverviewPrimaryAction(task) ? '回到上方继续' : (learningTaskSourceBlockReason(task) ? '需课程资料' : learningTaskActionLabel(task, learningTaskStartingId === task.id)) }}</button>
                     <button v-if="learningTaskSourceBlockReason(task)" class="text-button" type="button" @click="openEducationAgentSetup">{{ educationSetupActionLabel }}</button>
                       <button v-if="task.status === 'OPEN'" class="text-button" type="button" :disabled="learningTaskDeferringId === task.id" @click="deferLearningTask(task)">{{ learningTaskDeferringId === task.id ? '延期中…' : '明天再复习' }}</button>
                     </div>
