@@ -2798,7 +2798,7 @@ const chatRunStatus = computed(() => {
 const chatRunActivity = computed(() => {
   const runId = pendingChatMessage.value?.runId
   if (!runId) return ''
-  if (selectedRun.value?.run?.id !== runId) return 'Agent 正在准备任务…'
+  if (selectedRun.value?.run?.id !== runId) return '学习助手正在准备任务…'
   const steps = selectedRun.value.steps || []
   const activeStep = steps.find((step) => step.status === 'RUNNING')
     || steps.find((step) => step.status === 'WAITING_APPROVAL')
@@ -2807,9 +2807,9 @@ const chatRunActivity = computed(() => {
     const fallbackStep = steps.slice().reverse().find((step) => isRecoverableToolFallback(step)
       && step.sequence < activeStep.sequence)
     if (fallbackStep?.name?.startsWith('workspace.git.')) {
-      return 'Git 审阅不可用，Agent 正在改用文件工具…'
+      return 'Git 审阅不可用，学习助手正在改用文件工具…'
     }
-    if (fallbackStep) return '文件定位未成功，Agent 正在重新浏览工作区…'
+    if (fallbackStep) return '文件定位未成功，学习助手正在重新浏览工作区…'
   }
   return agentActivityLabel(activeStep)
 })
@@ -3008,9 +3008,9 @@ function activityValue(value, maximum = 46) {
 }
 
 function agentActivityLabel(step) {
-  if (!step) return 'Agent 正在整理结果…'
+  if (!step) return '学习助手正在整理结果…'
   if (step.status === 'WAITING_APPROVAL') return `等待你审批：${step.name}`
-  if (step.type === 'MODEL') return 'Agent 正在思考…'
+  if (step.type === 'MODEL') return '学习助手正在思考…'
   const input = decodeToolInput(step)
   const path = activityValue(input?.path)
   const query = activityValue(input?.query, 32)
@@ -3920,7 +3920,7 @@ async function retryChatMessage(message) {
     noticeMessage.value = retryStatus === 'WAITING_APPROVAL'
       ? '本轮重试已进入人工审批'
       : ['QUEUED', 'RUNNING'].includes(retryStatus)
-        ? '本轮已重新提交，Agent 正在执行'
+        ? '本轮已重新提交，学习助手正在执行'
         : retryStatus === 'SUCCEEDED'
           ? '本轮重试已完成'
           : `本轮重试状态：${statusLabel(retryStatus)}`
@@ -4849,7 +4849,7 @@ async function cancelChatRun() {
   chatCancellingRunId.value = runId
   try {
     await api.cancelRun(runId)
-    noticeMessage.value = chatRunStatus.value === 'WAITING_APPROVAL' ? '已撤回当前审批请求' : '已停止当前 Agent 执行'
+    noticeMessage.value = chatRunStatus.value === 'WAITING_APPROVAL' ? '已撤回当前审批请求' : '已停止当前学习任务'
     await refreshActiveConversation()
     await selectRun(runId, false, false)
   } catch (error) {
@@ -5798,7 +5798,7 @@ async function focusLearningAssignmentNotificationAssignment(assignment, issue =
 
 function learningAssignmentActionHint(assignment) {
   if (!assignment) return ''
-  if (assignment.status === 'ASSIGNED') return '先接受作业，Agent 会按课程约束启动第一轮学习。'
+  if (assignment.status === 'ASSIGNED') return '先接受作业，学习助手会按课程范围启动第一轮学习。'
   if (assignment.status === 'ACCEPTED') return '继续当前学习对话；完成后再提交作业内容。'
   if (assignment.status === 'AWAITING_EVIDENCE') {
     return '上一轮已完成，但还缺少可验证的测评证据；先补证据并继续。'
@@ -5833,7 +5833,7 @@ function chatAssessmentsForRun(runId) {
 function assessmentObservationLabel(attempt) {
   if (attempt?.evidenceSource === 'MANUAL_REVIEW') return '人工复核'
   if (attempt?.assessmentType === 'REVIEW') return '保持度复习'
-  return 'Agent 形成性评价'
+  return '系统学习评价'
 }
 
 function formatMasteryDelta(attempt) {
@@ -8167,7 +8167,7 @@ onBeforeUnmount(() => {
             </div>
             <template v-if="activeLearnerProfile">
               <strong class="learning-sidebar-contract-course">{{ activeChatCourse?.title || `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` }}</strong>
-              <p>{{ activeChatCourse?.code ? `${activeChatCourse.code} · ` : '' }}{{ activeLearnerProfile.curriculumVersion }}</p>
+              <p>{{ activeLearnerProfile.curriculumVersion }}</p>
               <div class="learning-sidebar-contract-metrics">
                 <div><small>课程资料</small><strong>{{ currentEducationSourceCount }} <em>份</em></strong></div>
                 <div><small>学习目标</small><strong>{{ activeLearningGoal ? '已绑定' : '待设定' }}</strong></div>
@@ -8647,7 +8647,7 @@ onBeforeUnmount(() => {
                 </div>
                 <section v-if="message.role === 'ASSISTANT' && message.runId && chatAssessmentsForRun(message.runId).length" class="chat-assessment-evidence" aria-label="本轮学习记录">
                   <div class="chat-assessment-evidence-heading">
-                    <span>FORMATION EVIDENCE</span>
+                    <span>本轮学习记录</span>
                     <small>本轮学习记录已保存</small>
                   </div>
                   <article v-for="attempt in chatAssessmentsForRun(message.runId)" :key="attempt.id" class="chat-assessment-evidence-card">
@@ -8738,10 +8738,10 @@ onBeforeUnmount(() => {
                   <label><span>当前课程</span><select v-model="chatEducation.courseId" :disabled="chatSending || chatUploading || !chatEducation.learnerProfileId" @change="selectChatCourse"><option value="">仅使用当前学习信息</option><option v-for="course in availableChatCourses" :key="course.id" :value="course.id">{{ course.title }} · {{ course.subject }} · {{ course.gradeLevel }}</option></select></label>
                   <label><span>学习目标</span><select v-model="chatEducation.learningGoalId" :disabled="chatSending || chatUploading" @change="selectLearningGoal(learningGoals.find((goal) => goal.id === chatEducation.learningGoalId), false)"><option value="">不绑定目标</option><option v-for="goal in learningGoals.filter((item) => item.status === 'ACTIVE')" :key="goal.id" :value="goal.id">{{ goal.title }} · {{ goal.conceptKey }}</option></select></label>
                   <label><span>教学策略</span><select v-model="chatEducation.pedagogicalMode" :disabled="chatSending || chatUploading"><option value="AUTO">自动选择</option><option value="EXPLAIN">概念讲解</option><option value="SOCRATIC">启发式引导</option><option value="PRACTICE">练习优先</option><option value="DIAGNOSE">错误诊断</option></select></label>
-                  <label><span>检索策略</span><select v-model="chatEducation.retrievalStrategy" :disabled="chatSending || chatUploading"><option value="FULL">完整方法</option><option value="ADAPTIVE">状态自适应（历史学习结果）</option><option value="BALANCED_EXPERIMENT">均衡实验分配（按状态）</option><option value="VECTOR_ONLY">向量基线</option><option value="KEYWORD_ONLY">关键词基线</option><option value="NO_LEARNER_STATE">去学习状态消融</option><option value="NO_DEPENDENCY_GRAPH">去知识依赖图消融</option><option value="STATIC_WEIGHT">固定权重消融</option><option value="CALIBRATED">教师校准</option></select></label>
+                  <label v-if="isAdminRole"><span>检索策略</span><select v-model="chatEducation.retrievalStrategy" :disabled="chatSending || chatUploading"><option value="FULL">完整方法</option><option value="ADAPTIVE">状态自适应（历史学习结果）</option><option value="BALANCED_EXPERIMENT">均衡实验分配（按状态）</option><option value="VECTOR_ONLY">向量基线</option><option value="KEYWORD_ONLY">关键词基线</option><option value="NO_LEARNER_STATE">去学习状态消融</option><option value="NO_DEPENDENCY_GRAPH">去知识依赖图消融</option><option value="STATIC_WEIGHT">固定权重消融</option><option value="CALIBRATED">教师校准</option></select></label>
                   <label><span>目标知识点</span><input v-model="chatEducation.conceptKey" maxlength="255" placeholder="例如：函数定义域" :disabled="chatSending || chatUploading" /></label>
                   <label><span>难度范围</span><div class="chat-education-difficulty"><input v-model.number="chatEducation.minDifficulty" type="number" min="1" max="5" placeholder="1" :disabled="chatSending || chatUploading" /><span>—</span><input v-model.number="chatEducation.maxDifficulty" type="number" min="1" max="5" placeholder="5" :disabled="chatSending || chatUploading" /></div></label>
-                  <small class="chat-education-context">{{ activeChatCourse ? `已锁定 ${activeChatCourse.code} · ${activeChatCourse.title}` : '尚未绑定课程；将按学习信息和课程资料范围运行' }} · {{ currentEducationRetrievalScope.subject || '未选择学科' }} · {{ currentEducationRetrievalScope.gradeLevel || '未选择年级' }} · {{ currentEducationRetrievalScope.curriculumVersion || '未选择课程版本' }}</small>
+                  <small class="chat-education-context">{{ activeChatCourse ? `已锁定课程：${activeChatCourse.title}` : '尚未绑定课程；将按学习信息和课程资料范围运行' }} · {{ currentEducationRetrievalScope.subject || '未选择学科' }} · {{ currentEducationRetrievalScope.gradeLevel || '未选择年级' }} · {{ currentEducationRetrievalScope.curriculumVersion || '未选择课程版本' }}</small>
                 </div>
               </div>
             </div>
