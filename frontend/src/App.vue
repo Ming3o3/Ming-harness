@@ -8520,11 +8520,11 @@ onBeforeUnmount(() => {
               </article>
               <article class="learning-onboarding-step" :class="{ ready: matchingEducationSourceCount > 0 }">
                 <span>2</span>
-                <div><strong>课程资料</strong><small>{{ matchingEducationSourceCount ? `当前有 ${matchingEducationSourceCount} 份匹配资料` : '系统会使用匹配的课程资料' }}</small></div>
+                <div><strong>课程资料</strong><small>{{ matchingEducationSourceCount ? `当前有 ${matchingEducationSourceCount} 份匹配资料` : '老师上传的教材或讲义' }}</small></div>
               </article>
               <article class="learning-onboarding-step" :class="{ ready: activeLearningGoal }">
                 <span>3</span>
-                <div><strong>学习目标</strong><small>{{ activeLearningGoal ? activeLearningGoal.title : '设定目标后，系统会持续记录进度' }}</small></div>
+                <div><strong>学习目标</strong><small>{{ activeLearningGoal ? activeLearningGoal.title : '告诉系统你想掌握什么' }}</small></div>
               </article>
             </div>
             <div class="learning-onboarding-content">
@@ -8534,9 +8534,9 @@ onBeforeUnmount(() => {
                   <small>用于匹配课程，并记录你的学习进度</small>
                 </div>
                 <form class="learning-onboarding-profile-form" @submit.prevent="saveLearnerProfile">
-                  <label><span>学科</span><input v-model="learnerProfileForm.subject" required maxlength="128" /></label>
-                  <label><span>年级</span><input v-model="learnerProfileForm.gradeLevel" required maxlength="128" /></label>
-                  <label><span>课程版本</span><input v-model="learnerProfileForm.curriculumVersion" required maxlength="128" /></label>
+                  <label><span>学科</span><input v-model="learnerProfileForm.subject" required maxlength="128" placeholder="例如：数学" /></label>
+                  <label><span>年级</span><input v-model="learnerProfileForm.gradeLevel" required maxlength="128" placeholder="例如：高中一年级" /></label>
+                  <label><span>课程版本</span><input v-model="learnerProfileForm.curriculumVersion" required maxlength="128" placeholder="例如：人教A版" title="填写教材或课程使用的版本，用来匹配老师上传的资料" /></label>
                   <label class="learning-onboarding-wide"><span>当前学习诉求（可选）</span><input v-model="learnerProfileForm.learningGoal" maxlength="512" placeholder="例如：理解函数定义域，并能独立完成基础题" /></label>
                   <button class="primary-button" type="submit" :disabled="educationLoading">{{ educationLoading ? '保存中…' : '保存并继续' }}</button>
                 </form>
@@ -10250,9 +10250,9 @@ onBeforeUnmount(() => {
                 <p class="education-teacher-entry-help">这是课程管理操作，不会改变学生的学习状态；提交后仍由系统做最终权限校验。</p>
                 <form class="education-course-form" @submit.prevent="createEducationCourse">
                   <label class="field"><span>课程名称</span><input v-model="educationCourseForm.title" required maxlength="255" placeholder="例如：高中数学函数基础" /></label>
-                  <label class="field"><span>学科</span><input v-model="educationCourseForm.subject" required maxlength="128" /></label>
-                  <label class="field"><span>年级</span><input v-model="educationCourseForm.gradeLevel" required maxlength="128" /></label>
-                  <label class="field"><span>课程版本</span><input v-model="educationCourseForm.curriculumVersion" required maxlength="128" /></label>
+                  <label class="field"><span>学科</span><input v-model="educationCourseForm.subject" required maxlength="128" placeholder="例如：数学" /></label>
+                  <label class="field"><span>年级</span><input v-model="educationCourseForm.gradeLevel" required maxlength="128" placeholder="例如：高中一年级" /></label>
+                  <label class="field"><span>课程版本</span><input v-model="educationCourseForm.curriculumVersion" required maxlength="128" placeholder="例如：人教A版" title="要与课程资料中的版本保持一致" /></label>
                   <label class="field"><span>课程编号（可选）</span><input v-model="educationCourseForm.code" maxlength="128" placeholder="留空，由系统自动生成" /></label>
                   <button class="secondary-button" type="submit" :disabled="educationCourseSaving">{{ educationCourseSaving ? '创建中…' : '创建课程' }}</button>
                 </form>
@@ -10310,8 +10310,8 @@ onBeforeUnmount(() => {
                     <div class="subsection-title"><div><h4>给全班布置作业</h4><span>一次提交，自动发给所有学生</span></div></div>
                     <form v-if="activeEducationCourseIsOwner" class="education-course-assignment-form" @submit.prevent="assignEducationCourse">
                       <label class="field"><span>作业标题</span><input v-model="educationCourseAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域练习" /></label>
-                      <label class="field"><span>目标知识点</span><input v-model="educationCourseAssignmentForm.conceptKey" required maxlength="255" placeholder="函数定义域" /></label>
-                      <label class="field"><span>目标掌握度</span><input v-model="educationCourseAssignmentForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required /></label>
+                      <label class="field"><span>目标知识点</span><input v-model="educationCourseAssignmentForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
+                      <label class="field"><span>达成标准</span><input v-model="educationCourseAssignmentForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required placeholder="例如：0.8" title="0.8 表示希望学生达到 80% 的掌握度" /></label>
                       <label class="field"><span>截止时间（可选）</span><input v-model="educationCourseAssignmentForm.dueAt" type="datetime-local" /></label>
                       <label class="field education-course-wide"><span>作业说明</span><textarea v-model="educationCourseAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作答范围、提交要求或迁移任务"></textarea></label>
                       <button class="secondary-button" type="submit" :disabled="educationCourseAssignmentSaving || !educationCourseEnrollments.some((item) => item.status === 'ACTIVE')">{{ educationCourseAssignmentSaving ? '布置中…' : '向活跃名单布置' }}</button>
@@ -10454,7 +10454,7 @@ onBeforeUnmount(() => {
                   <label class="field"><span>年级</span><input v-model="learningAssignmentForm.gradeLevel" required maxlength="128" placeholder="高中一年级" /></label>
                   <label class="field"><span>课程版本</span><input v-model="learningAssignmentForm.curriculumVersion" required maxlength="128" placeholder="人教A版" /></label>
                   <label class="field"><span>目标知识点</span><input v-model="learningAssignmentForm.conceptKey" required maxlength="255" placeholder="函数定义域" /></label>
-                  <label class="field"><span>目标掌握度</span><input v-model="learningAssignmentForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required /></label>
+                  <label class="field"><span>达成标准</span><input v-model="learningAssignmentForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required placeholder="例如：0.8" title="0.8 表示希望学生达到 80% 的掌握度" /></label>
                   <label class="field"><span>截止时间（可选）</span><input v-model="learningAssignmentForm.dueAt" type="datetime-local" /></label>
                   <label class="field learning-assignment-wide"><span>作业说明</span><textarea v-model="learningAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作业要求、作答范围或迁移任务"></textarea></label>
                   <button class="secondary-button learning-assignment-submit" type="submit" :disabled="learningAssignmentSaving">{{ learningAssignmentSaving ? '补发中…' : '单独补发作业' }}</button>
@@ -10536,7 +10536,7 @@ onBeforeUnmount(() => {
                     <label class="field"><span>学习信息</span><select v-model="learningGoalForm.learnerProfileId" required><option value="">请选择学习信息</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>
                     <label class="field"><span>目标名称</span><input v-model="learningGoalForm.title" required maxlength="255" placeholder="例如：掌握函数定义域" /></label>
                     <label class="field"><span>知识点</span><input v-model="learningGoalForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
-                    <label class="field"><span>达成标准</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required /></label>
+                    <label class="field"><span>达成标准</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required placeholder="例如：0.8" title="0.8 表示希望达到 80% 的掌握度" /></label>
                     <button class="secondary-button" type="submit" :disabled="educationLoading || !learnerProfiles.length">保存目标</button>
                   </form>
                   <div v-if="learningGoals.length" class="learning-goal-list">
