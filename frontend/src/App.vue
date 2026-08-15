@@ -2715,6 +2715,17 @@ const learnerStateDiagnosis = computed(() => {
       targetMastery: null,
     }
   }
+  if (isLearnerOnlyRole.value
+    && !enrolledEducationCourses.value.length
+    && !learnerLearningAssignmentCount.value) {
+    return {
+      state: 'pending',
+      title: '等待加入课程',
+      detail: '加入课程后，老师提供的材料和作业才会出现在这里；有邀请码时可以直接输入。',
+      currentMastery: null,
+      targetMastery: null,
+    }
+  }
   if (!activeLearningGoal.value) {
     return {
       state: 'pending',
@@ -2764,6 +2775,16 @@ const learnerStateDiagnosis = computed(() => {
   }
 })
 const agentTeachingAction = computed(() => {
+  if (isLearnerOnlyRole.value
+    && !enrolledEducationCourses.value.length
+    && !learnerLearningAssignmentCount.value) {
+    return {
+      state: 'blocked',
+      title: '先加入课程',
+      detail: educationSendBlockReason.value
+        || '如果老师给了邀请码，请先输入邀请码；没有邀请码时，等待老师把你加入课程。',
+    }
+  }
   if (!currentEducationSourceCount.value) {
     return {
       state: 'blocked',
@@ -11110,7 +11131,7 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </details>
-            <component v-if="!isTeacherOnlyRole || manageableEducationSources.length || teacherEducationCourses.length" :is="isLearnerOnlyRole ? 'details' : 'div'" class="education-course-workbench-shell" :open="isLearnerOnlyRole ? Boolean(enrolledEducationCourses.length || educationCourseJoinPrefill) : undefined">
+            <component v-if="!isTeacherOnlyRole || manageableEducationSources.length || teacherEducationCourses.length" :is="isLearnerOnlyRole ? 'details' : 'div'" class="education-course-workbench-shell" :open="isLearnerOnlyRole ? Boolean(activeLearnerProfile || enrolledEducationCourses.length || educationCourseJoinPrefill) : undefined">
               <summary v-if="isLearnerOnlyRole" class="education-course-workbench-summary">
                 <span><strong>我的课程</strong><small>{{ enrolledEducationCourses.length ? `已加入 ${enrolledEducationCourses.length} 门课程；需要时可查看课程和邀请码` : (activeLearnerProfile ? '有课程邀请码时，可以在这里加入' : '先填写学习信息；有邀请码时再展开加入') }}</small></span>
                 <em>{{ enrolledEducationCourses.length ? '查看' : (activeLearnerProfile ? '输入邀请码' : '有邀请码？') }}</em>
