@@ -10581,7 +10581,7 @@ onBeforeUnmount(() => {
                   <span v-if="isAdminWorkspace" class="context-mode-chip">管理员只读</span>
                   <div class="education-course-detail-actions">
                     <div v-if="activeEducationCourseIsOwner && activeEducationCourse.joinCode" class="education-course-join-code"><span>邀请码</span><strong>{{ activeEducationCourse.joinCode }}</strong><button class="text-button" type="button" @click="copyEducationCourseJoinCode(activeEducationCourse)">复制</button></div>
-                    <button v-if="activeEducationCourseIsOwner && activeEducationCourse.status === 'ACTIVE'" class="secondary-button" type="button" :title="educationCourseProgress?.readyToComplete ? '结课结果会固化当前课程证据快照' : '请先处理下方结课阻塞清单；Runtime 仍会在提交时做最终校验'" :disabled="educationCourseActionId === activeEducationCourse.id || !educationCourseProgress?.readyToComplete" @click="completeEducationCourse(activeEducationCourse)">{{ educationCourseActionId === activeEducationCourse.id ? '结课中…' : '完成结课' }}</button>
+                    <button v-if="activeEducationCourseIsOwner && activeEducationCourse.status === 'ACTIVE'" class="secondary-button" type="button" :title="educationCourseProgress?.readyToComplete ? '结课结果会保存当前课程记录' : '请先完成下方结课前待办；系统会在提交时再次检查'" :disabled="educationCourseActionId === activeEducationCourse.id || !educationCourseProgress?.readyToComplete" @click="completeEducationCourse(activeEducationCourse)">{{ educationCourseActionId === activeEducationCourse.id ? '结课中…' : '完成结课' }}</button>
                     <button v-if="activeEducationCourseIsOwner && ['ACTIVE', 'COMPLETED'].includes(activeEducationCourse.status)" class="text-button" type="button" :disabled="educationCourseActionId === activeEducationCourse.id" @click="archiveEducationCourse(activeEducationCourse)">{{ educationCourseActionId === activeEducationCourse.id ? '处理中…' : '归档课程' }}</button>
                   </div>
                 </div>
@@ -10617,24 +10617,24 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
                 <div v-if="educationCourseProgress" class="education-course-progress">
-                  <div class="subsection-title"><div><h4>课程进度与干预队列</h4><span>{{ educationCourseProgress.truncated ? '仅展示最近 500 份作业' : '覆盖全部课程作业' }}</span></div><button class="text-button" type="button" :disabled="educationCourseLoading" @click="loadEducationCourseWorkspace(activeEducationCourse.id)">{{ educationCourseLoading ? '刷新中…' : '刷新进度' }}</button></div>
+                  <div class="subsection-title"><div><h4>课程进度与待办</h4><span>{{ educationCourseProgress.truncated ? '仅展示最近 500 份作业' : '覆盖全部课程作业' }}</span></div><button class="text-button" type="button" :disabled="educationCourseLoading" @click="loadEducationCourseWorkspace(activeEducationCourse.id)">{{ educationCourseLoading ? '刷新中…' : '刷新进度' }}</button></div>
                   <div class="education-course-summary-grid">
-                    <div><span>名单覆盖</span><strong>{{ formatRate(educationCourseProgress.rosterCoverageRate) }}</strong><small>{{ educationCourseProgress.learnersWithAssignments }} / {{ educationCourseProgress.activeLearnerTotal }} 名活跃学习者</small></div>
+                    <div><span>学生覆盖</span><strong>{{ formatRate(educationCourseProgress.rosterCoverageRate) }}</strong><small>{{ educationCourseProgress.learnersWithAssignments }} / {{ educationCourseProgress.activeLearnerTotal }} 名活跃学习者</small></div>
                     <div><span>作业完成</span><strong>{{ formatRate(educationCourseProgress.assignmentCompletionRate) }}</strong><small>{{ educationCourseProgress.completed }} / {{ educationCourseProgress.assignmentTotal }}</small></div>
-                    <div><span>教师确认</span><strong>{{ formatRate(educationCourseProgress.teacherVerificationRate) }}</strong><small>{{ educationCourseProgress.reviewVerified }} / {{ educationCourseProgress.reviewPending + educationCourseProgress.reviewVerified + educationCourseProgress.revisionRequired }}</small></div>
-                    <div><span>待补作答</span><strong>{{ educationCourseProgress.awaitingEvidence }}</strong><small>学习已结束但作答记录未补齐</small></div>
+                    <div><span>老师确认</span><strong>{{ formatRate(educationCourseProgress.teacherVerificationRate) }}</strong><small>{{ educationCourseProgress.reviewVerified }} / {{ educationCourseProgress.reviewPending + educationCourseProgress.reviewVerified + educationCourseProgress.revisionRequired }}</small></div>
+                    <div><span>待补学习记录</span><strong>{{ educationCourseProgress.awaitingEvidence }}</strong><small>学习已结束但作答记录未补齐</small></div>
                     <div><span>待重试</span><strong>{{ educationCourseProgress.retryRequired }}</strong><small>失败、超时或返工</small></div>
                     <div><span>待处理反馈</span><strong>{{ educationCourseProgress.openInterventionCount }}</strong><small>补作答或建议重试</small></div>
-                    <div><span>结课判定</span><strong>{{ educationCourseProgress.readyToComplete ? '可结课' : '未就绪' }}</strong><small>{{ educationCourseProgress.readyToComplete ? '名单、确认与提交物齐全' : `作业待处理 ${educationCourseProgress.completionBlockerCount} · 缺提交物 ${educationCourseProgress.submissionBlockerCount} · 名单缺口 ${educationCourseProgress.rosterCoverageBlockerCount}` }}</small></div>
+                    <div><span>是否可以结课</span><strong>{{ educationCourseProgress.readyToComplete ? '可以结课' : '还需处理' }}</strong><small>{{ educationCourseProgress.readyToComplete ? '学生、确认与提交物齐全' : `作业待处理 ${educationCourseProgress.completionBlockerCount} · 缺提交物 ${educationCourseProgress.submissionBlockerCount} · 学生缺口 ${educationCourseProgress.rosterCoverageBlockerCount}` }}</small></div>
                   </div>
-                  <section v-if="!educationCourseProgress.readyToComplete" class="education-course-completion-blockers" aria-label="结课阻塞清单">
+                  <section v-if="!educationCourseProgress.readyToComplete" class="education-course-completion-blockers" aria-label="结课前待办">
                     <header>
-                      <div><strong>结课阻塞清单</strong><span>系统不会跳过未完成的作业、学习记录或名单要求直接结课。</span></div>
+                      <div><strong>结课前还要处理</strong><span>完成下面这些事项后，课程才能结课。</span></div>
                       <em>{{ Number(educationCourseProgress.completionBlockerCount || 0) + Number(educationCourseProgress.submissionBlockerCount || 0) + Number(educationCourseProgress.rosterCoverageBlockerCount || 0) }} 项待处理</em>
                     </header>
                     <div class="education-course-completion-blocker-list">
                       <button v-if="Number(educationCourseProgress.activeLearnerTotal || 0) === 0 || Number(educationCourseProgress.rosterCoverageBlockerCount || 0)" type="button" class="education-course-completion-blocker is-roster" @click="focusEducationCourseRoster">
-                        <span><BookOpen :size="14" /></span><strong>补齐活跃名单覆盖</strong><small>{{ Number(educationCourseProgress.activeLearnerTotal || 0) === 0 ? '还没有活跃学习者' : `${educationCourseProgress.rosterCoverageBlockerCount} 名学习者尚未覆盖作业` }}</small><b>去名单</b>
+                        <span><BookOpen :size="14" /></span><strong>补齐学生名单</strong><small>{{ Number(educationCourseProgress.activeLearnerTotal || 0) === 0 ? '还没有活跃学习者' : `${educationCourseProgress.rosterCoverageBlockerCount} 名学生尚未覆盖作业` }}</small><b>去名单</b>
                       </button>
                       <button v-if="Number(educationCourseProgress.assignmentTotal || 0) === 0" type="button" class="education-course-completion-blocker" @click="focusEducationCourseAssignment">
                         <span><ListChecks :size="14" /></span><strong>先布置课程作业</strong><small>没有有效作业，系统无法判断课程是否完成。</small><b>去布置</b>
@@ -10643,13 +10643,13 @@ onBeforeUnmount(() => {
                         <span><CircleAlert :size="14" /></span><strong>处理未完成作业</strong><small>{{ educationCourseProgress.completionBlockerCount }} 份作业尚未完成或完成复核。</small><b>看作业</b>
                       </button>
                       <button v-if="Number(educationCourseProgress.awaitingEvidence || 0)" type="button" class="education-course-completion-blocker" @click="focusCourseBlocker('evidence')">
-                        <span><ShieldCheck :size="14" /></span><strong>补回学习记录</strong><small>{{ educationCourseProgress.awaitingEvidence }} 份作业已结束，但还没有可验证的作答或评分记录。</small><b>补记录</b>
+                        <span><ShieldCheck :size="14" /></span><strong>补齐学习记录</strong><small>{{ educationCourseProgress.awaitingEvidence }} 份作业已结束，但还没有可验证的作答或评分记录。</small><b>补记录</b>
                       </button>
                       <button v-if="Number(educationCourseProgress.retryRequired || 0)" type="button" class="education-course-completion-blocker" @click="focusCourseBlocker('retry')">
-                        <span><RefreshCw :size="14" /></span><strong>安排失败作业重试</strong><small>{{ educationCourseProgress.retryRequired }} 份作业需要重新执行或重新学习。</small><b>看重试</b>
+                        <span><RefreshCw :size="14" /></span><strong>安排作业重试</strong><small>{{ educationCourseProgress.retryRequired }} 份作业需要重新执行或重新学习。</small><b>看重试</b>
                       </button>
                       <button v-if="Number(educationCourseProgress.reviewPending || 0)" type="button" class="education-course-completion-blocker" @click="focusCourseBlocker('review')">
-                        <span><Check :size="14" /></span><strong>完成教师确认</strong><small>{{ educationCourseProgress.reviewPending }} 份作业等待教师依据提交物与证据确认。</small><b>去确认</b>
+                        <span><Check :size="14" /></span><strong>完成老师确认</strong><small>{{ educationCourseProgress.reviewPending }} 份作业等待你依据提交物与学习记录确认。</small><b>去确认</b>
                       </button>
                       <button v-if="Number(educationCourseProgress.revisionRequired || 0)" type="button" class="education-course-completion-blocker" @click="focusCourseBlocker('revision')">
                         <span><PenLine :size="14" /></span><strong>跟进返工作业</strong><small>{{ educationCourseProgress.revisionRequired }} 份作业已退回，需要学习者重新提交。</small><b>看返工</b>
@@ -10663,7 +10663,7 @@ onBeforeUnmount(() => {
                     <div class="education-course-progress-header"><span>学习者</span><span>作业状态</span><span>掌握度进度</span><span>下一步</span></div>
                     <div v-for="learner in educationCourseProgress.learners" :key="learner.learnerUserId" class="education-course-progress-row">
                       <span><strong>{{ learner.learnerUserId }}</strong><small>{{ learner.lastActivityAt ? `最近 ${formatDate(learner.lastActivityAt)}` : '尚无作业活动' }}</small></span>
-                      <span class="education-course-status-copy">{{ learner.assigned }} 待接受 · {{ learner.completed }} 完成 · {{ learner.awaitingEvidence }} 待补作答 · {{ learner.retryRequired }} 待重试 · {{ learner.reviewPending }} 待确认 · {{ learner.submissionMissing }} 缺提交物</span>
+                      <span class="education-course-status-copy">{{ learner.assigned }} 待接受 · {{ learner.completed }} 完成 · {{ learner.awaitingEvidence }} 待补学习记录 · {{ learner.retryRequired }} 待重试 · {{ learner.reviewPending }} 待确认 · {{ learner.submissionMissing }} 缺提交物</span>
                       <span><strong>{{ formatRate(learner.averageMasteryProgress) }}</strong><small>提升 {{ learner.averageMasteryGain >= 0 ? '+' : '' }}{{ formatRate(learner.averageMasteryGain) }}</small></span>
                       <button class="text-button education-course-next-action" type="button" @click="focusCourseLearnerAction(learner)">{{ courseLearnerNextAction(learner).label }}<small v-if="courseLearnerAttentionCount(learner)">{{ courseLearnerAttentionCount(learner) }} 项待处理</small></button>
                     </div>
@@ -10672,7 +10672,7 @@ onBeforeUnmount(() => {
                   <div v-if="educationCourseResult" class="education-course-progress education-course-result">
                     <div class="subsection-title"><div><h4>结课结果快照</h4><span>{{ formatDate(educationCourseResult.completedAt) }}</span></div><div><span class="context-mode-chip">不可被后续复习改写</span><button v-if="activeEducationCourseIsOwner" class="text-button" type="button" :disabled="educationCourseActionId === activeEducationCourse.id" @click="exportEducationCourseResult(activeEducationCourse)">{{ educationCourseActionId === activeEducationCourse.id ? '导出中…' : '导出报告' }}</button></div></div>
                     <div class="education-course-summary-grid">
-                      <div><span>有效作业</span><strong>{{ educationCourseResult.assignmentCompleted }} / {{ educationCourseResult.effectiveAssignmentTotal }}</strong><small>教师确认 {{ educationCourseResult.assignmentVerified }}</small></div>
+                      <div><span>有效作业</span><strong>{{ educationCourseResult.assignmentCompleted }} / {{ educationCourseResult.effectiveAssignmentTotal }}</strong><small>老师已确认 {{ educationCourseResult.assignmentVerified }}</small></div>
                       <div><span>提交物覆盖</span><strong>{{ formatRate(educationCourseResult.effectiveAssignmentTotal ? educationCourseResult.submissionCovered / educationCourseResult.effectiveAssignmentTotal : 0) }}</strong><small>{{ educationCourseResult.submissionCovered }} 份</small></div>
                       <div><span>平均目标进度</span><strong>{{ formatRate(educationCourseResult.averageMasteryProgress) }}</strong><small>平均提升 {{ formatRate(educationCourseResult.averageMasteryGain) }}</small></div>
                       <div><span>学习者结果</span><strong>{{ educationCourseResult.learners?.length || 0 }} / {{ educationCourseResult.activeLearnerTotal }}</strong><small>覆盖 {{ educationCourseResult.learnersWithAssignments }} 人</small></div>
@@ -10732,8 +10732,8 @@ onBeforeUnmount(() => {
               </div>
             </section>
             <section class="learning-assignment-workbench" aria-label="我的作业">
-              <div class="subsection-title"><h4>{{ isAdminWorkspace ? '课程作业概览' : (educationWorkspaceMode === 'teacher' ? '课程作业与复核' : '我的作业与反馈') }}</h4><div><span v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter || learningAssignmentIssueFilter">{{ learningAssignmentIssueFilter ? `正在处理：${learningAssignmentIssueLabel}` : '当前已筛选' }}</span><button v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter || learningAssignmentIssueFilter" class="text-button" type="button" @click="clearLearningAssignmentFilter">清除筛选</button><button v-else-if="isLearnerOnlyRole && learningAssignmentHistoryCount && learningAssignmentActionableCount" class="text-button" type="button" @click="toggleLearningAssignmentHistory">{{ learningAssignmentHistoryExpanded ? '只看待处理' : `查看已完成记录（${learningAssignmentHistoryCount}）` }}</button><span v-else>{{ isLearnerOnlyRole && learningAssignmentActionableCount ? `${learningAssignmentActionableCount} 个待处理` : `${educationAssignmentsForView.length} 个作业` }}</span></div></div>
-              <p class="learning-task-help">{{ isAdminWorkspace ? '管理员只读查看作业状态与学习记录；确认、返工和反馈由课程教师执行。' : (educationWorkspaceMode === 'teacher' ? '围绕课程资料布置作业，并根据学生提交和反馈决定确认、返工或重试。' : (learningAssignmentActionableCount ? '先处理需要行动的作业；已完成记录可以按需展开。' : '当前没有待处理作业，可以查看已完成记录或等待老师发布下一份作业。')) }}</p>
+              <div class="subsection-title"><h4>{{ isAdminWorkspace ? '课程作业概览' : (educationWorkspaceMode === 'teacher' ? '作业与反馈' : '我的作业与反馈') }}</h4><div><span v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter || learningAssignmentIssueFilter">{{ learningAssignmentIssueFilter ? `正在处理：${learningAssignmentIssueLabel}` : '当前已筛选' }}</span><button v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter || learningAssignmentIssueFilter" class="text-button" type="button" @click="clearLearningAssignmentFilter">清除筛选</button><button v-else-if="isLearnerOnlyRole && learningAssignmentHistoryCount && learningAssignmentActionableCount" class="text-button" type="button" @click="toggleLearningAssignmentHistory">{{ learningAssignmentHistoryExpanded ? '只看待处理' : `查看已完成记录（${learningAssignmentHistoryCount}）` }}</button><span v-else>{{ isLearnerOnlyRole && learningAssignmentActionableCount ? `${learningAssignmentActionableCount} 个待处理` : `${educationAssignmentsForView.length} 个作业` }}</span></div></div>
+              <p class="learning-task-help">{{ isAdminWorkspace ? '管理员只读查看作业状态与学习记录；确认、返工和反馈由课程教师执行。' : (educationWorkspaceMode === 'teacher' ? '查看学生提交和反馈，再决定确认、返工或重试。' : (learningAssignmentActionableCount ? '先处理需要行动的作业；已完成记录可以按需展开。' : '当前没有待处理作业，可以查看已完成记录或等待老师发布下一份作业。')) }}</p>
               <div v-if="!isAdminWorkspace && learningAssignmentNotificationsForView.length" class="subsection-title learning-task-heading"><div><h4>作业通知</h4><span>{{ learningAssignmentNotificationsForView.length }} 条</span></div><div class="learning-notification-heading-actions"><span>{{ learningAssignmentNotificationUnreadCountForView }} 条未读</span><button v-if="learningAssignmentNotificationUnreadCountForView" class="text-button" type="button" @click="markAllLearningAssignmentNotificationsRead">全部已读</button></div></div>
               <div v-if="!isAdminWorkspace && learningAssignmentNotificationsForView.length" class="learning-notification-list" aria-label="课程作业通知">
                 <article v-for="notification in learningAssignmentNotificationsForView.slice(0, 5)" :key="notification.id" class="learning-notification-row" :class="{ unread: notification.unread }">
