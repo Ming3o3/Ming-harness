@@ -8585,7 +8585,7 @@ onBeforeUnmount(() => {
         <aside class="conversation-sidebar">
           <nav class="chat-primary-nav" aria-label="工作台导航">
             <button class="chat-primary-nav-item chat-primary-nav-item-primary" type="button" :disabled="chatLoading || chatSending || chatUploading" @click="createChatConversation">
-              <MessageSquarePlus :size="15" /><span>新建学习任务</span><kbd>⌘N</kbd>
+              <MessageSquarePlus :size="15" /><span>{{ isLearnerOnlyRole ? '开始新学习' : '新建学习对话' }}</span><kbd>⌘N</kbd>
             </button>
             <button v-if="isTeacherRole" class="chat-primary-nav-item chat-primary-nav-item-education" type="button" @click="openRoleWorkspaceEntry('teacher-course')">
               <Sparkles :size="15" /><span>课程运营</span>
