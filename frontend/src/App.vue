@@ -1191,9 +1191,9 @@ const memoryForm = reactive({
 const memoryDeletingId = ref('')
 
 const learnerProfileForm = reactive({
-  subject: '数学',
-  gradeLevel: '高中一年级',
-  curriculumVersion: '人教A版',
+  subject: '',
+  gradeLevel: '',
+  curriculumVersion: '',
   learningGoal: '',
   language: 'zh-CN',
 })
@@ -7536,6 +7536,10 @@ async function deleteLearnerProfile(profile) {
       } else {
         activeLearnerProfile.value = null
         learnerMastery.value = []
+        learnerProfileForm.subject = ''
+        learnerProfileForm.gradeLevel = ''
+        learnerProfileForm.curriculumVersion = ''
+        learnerProfileForm.learningGoal = ''
         form.education.learnerProfileId = ''
         form.education.subject = ''
         form.education.gradeLevel = ''
