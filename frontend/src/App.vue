@@ -1071,7 +1071,7 @@ const learnerStateAction = computed(() => {
     return { kind: 'profile', label: '填写学习信息' }
   }
   if (!enrolledEducationCourses.value.length && !learnerLearningAssignmentCount.value) {
-    return { kind: 'courses', label: '查看我的课程' }
+    return { kind: 'courses', label: '输入课程邀请码' }
   }
   if (!educationSendBlockReason.value) {
     return { kind: 'chat', label: '进入学习对话' }
@@ -2578,7 +2578,7 @@ const educationSendBlockReason = computed(() => {
     return '还没有学习信息，请先填写学科、年级和课程版本。'
   }
   if (isLearnerOnlyRole.value && !enrolledEducationCourses.value.length && !learnerLearningAssignmentCount.value) {
-    return '学习信息已保存，等待老师加入课程；课程资料和作业会在课程授权后显示。'
+    return '学习信息已保存；如果老师给了邀请码，请先输入邀请码加入课程；没有邀请码时，等待老师把你加入课程。'
   }
   const scope = currentEducationRetrievalScope.value
   if (!scope.configured) {
@@ -2592,7 +2592,7 @@ const educationSendBlockReason = computed(() => {
 const educationSetupActionLabel = computed(() => {
   if (educationWorkspaceMode.value === 'teacher' && !manageableEducationDocuments.value.length) return '上传课程资料'
   if (!activeLearnerProfile.value) return '设置学习信息'
-  if (isLearnerOnlyRole.value && !enrolledEducationCourses.value.length && !learnerLearningAssignmentCount.value) return '查看我的课程'
+  if (isLearnerOnlyRole.value && !enrolledEducationCourses.value.length && !learnerLearningAssignmentCount.value) return '输入课程邀请码'
   const scope = currentEducationRetrievalScope.value
   const availability = courseSourceAvailability(scope)
   if (scope.configured && !availability.courseSourceCount && availability.sameSubjectGradeSourceCount) {
@@ -2610,8 +2610,8 @@ const studentQuickStartAction = computed(() => {
   if (!enrolledEducationCourses.value.length && !learnerLearningAssignmentCount.value) {
     return {
       kind: 'courses',
-      label: '查看我的课程',
-      detail: '学习信息已填写；等待教师加入课程，课程作业会出现在这里。',
+      label: '输入课程邀请码',
+      detail: '有老师发的邀请码就先加入课程；没有邀请码时，等待老师把你加入课程。',
       section: 'education',
     }
   }
@@ -2652,7 +2652,7 @@ const educationComposerPlaceholder = computed(() => {
 const currentEducationSourceLabel = computed(() => {
   const scope = currentEducationRetrievalScope.value
   if (!scope.configured) return '待配置学习上下文'
-  if (isLearnerOnlyRole.value && !enrolledEducationCourses.value.length && !learnerLearningAssignmentCount.value) return '等待教师加入课程'
+  if (isLearnerOnlyRole.value && !enrolledEducationCourses.value.length && !learnerLearningAssignmentCount.value) return '还没有课程'
   if (scope.sourceCount) return isLearnerOnlyRole.value
     ? `${scope.sourceCount} 份课程资料可用`
     : `${scope.sourceCount} 个当前可检索来源`
@@ -2662,7 +2662,7 @@ const currentEducationRetrievalDetail = computed(() => {
   const scope = currentEducationRetrievalScope.value
   if (!scope.configured) return '先填写学习信息，系统才能确定课程范围'
   if (isLearnerOnlyRole.value && !enrolledEducationCourses.value.length && !learnerLearningAssignmentCount.value) {
-    return '学习信息已保存；教师加入课程后，系统会自动显示匹配的课程资料、作业和学习路径。'
+    return '输入老师提供的邀请码即可加入；如果还没有邀请码，等待老师把你加入课程后，资料、作业和学习路径会自动显示。'
   }
   const base = `${scope.subject} · ${scope.gradeLevel} · ${scope.curriculumVersion}`
   if (isLearnerOnlyRole.value) {
