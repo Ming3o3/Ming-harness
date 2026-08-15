@@ -4370,3 +4370,159 @@ select:focus-visible,
   .chat-course-assignment-feedback { grid-template-columns: auto minmax(0, 1fr); align-items: start; }
   .chat-course-assignment-feedback .secondary-button { grid-column: 2; justify-self: start; }
 }
+
+/* 窄屏时把课程作业收敛成“先做主操作，再看记录”的单列动作区，
+ * 避免标题被截断、主按钮和辅助链接挤在同一行。 */
+@media (max-width: 720px) {
+  .learning-agent-assignment-inline {
+    align-items: start;
+  }
+
+  .learning-agent-assignment-inline strong {
+    display: -webkit-box;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  .learning-agent-assignment-inline p:not(.learning-agent-assignment-review-note) {
+    overflow: visible;
+    line-height: 1.45;
+    text-overflow: initial;
+    white-space: normal;
+  }
+
+  .learning-agent-assignment-inline > button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .learning-agent-assignment-inline > .text-button {
+    width: auto;
+    justify-self: start;
+    justify-content: flex-start;
+  }
+
+  .chat-course-assignment-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .chat-course-assignment-actions > button:first-child {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .chat-course-assignment-actions > .text-button {
+    align-self: flex-start;
+    margin-left: 0;
+  }
+
+  .chat-course-assignment-submission > div:last-child {
+    align-items: stretch;
+    flex-direction: column-reverse;
+    gap: 6px;
+  }
+
+  .chat-course-assignment-submission > div:last-child .primary-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .chat-course-assignment-submission > div:last-child .text-button {
+    align-self: flex-start;
+  }
+
+  .learning-assignment-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-items: initial;
+    justify-content: flex-start;
+    gap: 6px;
+  }
+
+  .learning-assignment-actions > button:first-child {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+
+  .education-course-progress > .subsection-title {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .education-course-progress > .subsection-title > div {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .education-course-progress > .subsection-title > button {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .education-course-detail-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .education-course-detail-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .education-course-detail-actions > .secondary-button {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+
+  .education-course-join-code {
+    max-width: 100%;
+  }
+
+  .education-course-join-code strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .education-course-progress-row {
+    align-items: start;
+  }
+
+  .education-course-progress-row > span:nth-child(2) {
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+  }
+
+  .education-course-next-action {
+    justify-self: stretch;
+    align-items: flex-end;
+    text-align: right;
+  }
+
+  .education-course-completion-blockers > header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .education-course-completion-blockers > header em {
+    align-self: flex-start;
+  }
+
+  .learning-assignment-meta {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+  }
+
+  .learning-assignment-meta strong {
+    overflow: visible;
+    text-overflow: initial;
+    white-space: normal;
+  }
+}
