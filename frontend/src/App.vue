@@ -1353,6 +1353,15 @@ const activeEducationCourse = computed(() => educationCourses.value
   .find((course) => course.id === activeEducationCourseId.value) || null)
 const teacherEducationCourses = computed(() => educationCourses.value
   .filter((course) => course.ownerUserId === form.userId))
+// 归档课程属于历史记录，不应阻断教师首次开课路径，也不应让“已有课程”
+// 把新用户直接带进名单、作业和结课操作。需要回看历史时，仍可从下方收起入口打开。
+const teacherCurrentEducationCourses = computed(() => teacherEducationCourses.value
+  .filter((course) => ['ACTIVE', 'COMPLETED'].includes(course.status)))
+const teacherArchivedEducationCourses = computed(() => teacherEducationCourses.value
+  .filter((course) => course.status === 'ARCHIVED'))
+const educationCoursesForWorkspace = computed(() => (
+  isTeacherOnlyRole.value ? teacherCurrentEducationCourses.value : educationCourses.value
+))
 const activeTeacherEducationCourses = computed(() => teacherEducationCourses.value
   .filter((course) => course.status === 'ACTIVE'))
 const learningAssignmentScopeCourse = computed(() => activeTeacherEducationCourses.value
@@ -1492,11 +1501,11 @@ const teacherCourseMetadataSuggestion = computed(() => (
 const teacherCourseMetadataConflict = computed(() => (
   teacherCourseMetadata.value?.conflict ? teacherCourseMetadata.value : null
 ))
-const teacherActiveLearnerCount = computed(() => teacherEducationCourses.value
+const teacherActiveLearnerCount = computed(() => teacherCurrentEducationCourses.value
   .reduce((total, course) => total + Number(course.activeEnrollmentCount || 0), 0))
 const teacherAssignmentCount = computed(() => learningAssignments.value
   .filter((assignment) => assignment.teacherUserId === form.userId
-    || teacherEducationCourses.value.some((course) => course.id === assignment.courseId)).length)
+    || teacherCurrentEducationCourses.value.some((course) => course.id === assignment.courseId)).length)
 const teacherCoursePendingCount = computed(() => {
   const metrics = educationMetrics.value || {}
   return Number(metrics.assignmentReviewPending || 0)
@@ -1637,7 +1646,7 @@ const teacherNextAction = computed(() => {
   if (!manageableEducationSources.value.length) {
     return { label: '补充课程信息', detail: '选择学科、年级和章节，让系统知道这门课适用范围。', kind: 'metadata' }
   }
-  if (!teacherEducationCourses.value.length) {
+  if (!teacherCurrentEducationCourses.value.length) {
     return { label: '创建课程', detail: '把课程资料建成一门课程，让学生可以加入并学习。', kind: 'course' }
   }
   if (!teacherActiveLearnerCount.value) {
@@ -2900,7 +2909,7 @@ const educationSendBlockReason = computed(() => {
 const educationSetupActionLabel = computed(() => {
   if (isTeacherOnlyRole.value && !activeChatCourse.value) {
     if (!manageableEducationDocuments.value.length) return '上传课程资料'
-    if (!teacherEducationCourses.value.length) return '创建课程'
+    if (!teacherCurrentEducationCourses.value.length) return '创建课程'
     return '选择课程'
   }
   if (educationWorkspaceMode.value === 'teacher' && !manageableEducationDocuments.value.length) return '上传课程资料'
@@ -3093,9 +3102,9 @@ const teacherOperationsTrace = computed(() => [
   {
     id: 'course',
     label: '创建课程',
-    value: teacherEducationCourses.value.length ? `${teacherEducationCourses.value.length} 门课程` : '待创建课程',
-    detail: teacherEducationCourses.value.length ? '课程已经创建，可以继续添加学生。' : '把课程资料建成一门课程，供学生加入和学习。',
-    state: teacherEducationCourses.value.length ? 'ready' : 'pending',
+    value: teacherCurrentEducationCourses.value.length ? `${teacherCurrentEducationCourses.value.length} 门课程` : '待创建课程',
+    detail: teacherCurrentEducationCourses.value.length ? '课程已经创建，可以继续添加学生。' : '把课程资料建成一门课程，供学生加入和学习。',
+    state: teacherCurrentEducationCourses.value.length ? 'ready' : 'pending',
   },
   {
     id: 'roster',
@@ -5924,12 +5933,15 @@ async function loadEducationData() {
       || goals.find((goal) => goal.status === 'ACTIVE')
       || goals[0]
     if (nextGoal) await selectLearningGoal(nextGoal, false)
-    const ownerCourses = teacherEducationCourses.value
+    const currentOwnerCourses = teacherCurrentEducationCourses.value
     // 课程列表同时包含我创建和我已加入的课程。优先保留用户刚刚选择的课程，
     // 这样教师在查看自己加入的课程、学习者刷新页面时都不会被强行切回教师视图。
-    const nextCourse = educationCourses.value.find((course) => course.id === activeEducationCourseId.value)
-      || ownerCourses.find((course) => course.status === 'ACTIVE')
-      || ownerCourses[0]
+    const rememberedCourse = educationCourses.value.find((course) => course.id === activeEducationCourseId.value)
+    const nextCourse = (rememberedCourse
+      && (!isTeacherOnlyRole.value || ['ACTIVE', 'COMPLETED'].includes(rememberedCourse.status))
+      ? rememberedCourse : null)
+      || currentOwnerCourses.find((course) => course.status === 'ACTIVE')
+      || currentOwnerCourses[0]
       || enrolledEducationCourses.value.find((course) => course.status === 'ACTIVE')
       || enrolledEducationCourses.value[0]
     if (nextCourse) {
@@ -9146,7 +9158,7 @@ onBeforeUnmount(() => {
             <button v-if="isTeacherRole" class="chat-primary-nav-item chat-primary-nav-item-education" type="button" @click="openRoleWorkspaceEntry('teacher-course')">
               <Sparkles :size="15" /><span>课程运营</span>
             </button>
-            <button v-if="isTeacherRole && teacherEducationCourses.length" class="chat-primary-nav-item" type="button" @click="openRoleWorkspaceEntry('teacher-roster')">
+            <button v-if="isTeacherRole && teacherCurrentEducationCourses.length" class="chat-primary-nav-item" type="button" @click="openRoleWorkspaceEntry('teacher-roster')">
               <CircleDot :size="15" /><span>课程与学生</span>
             </button>
             <details v-if="isLearnerOnlyRole" class="chat-student-settings-nav">
@@ -9202,10 +9214,10 @@ onBeforeUnmount(() => {
               <button type="button" @click="openRoleWorkspaceEntry('student-course')">已有邀请码？直接加入 <ArrowUp :size="12" /></button>
             </template>
           </section>
-          <section v-if="teacherEducationCourses.length" class="chat-teaching-brief" aria-label="教师课程待办">
+          <section v-if="teacherCurrentEducationCourses.length" class="chat-teaching-brief" aria-label="教师课程待办">
             <div class="chat-teaching-brief-heading">
               <div><p class="eyebrow">教师工作台</p><strong>教师课程待办</strong></div>
-              <span>{{ teacherEducationCourses.length }} 门课程</span>
+              <span>{{ teacherCurrentEducationCourses.length }} 门进行中课程</span>
             </div>
             <div class="chat-teaching-brief-stats">
               <div><strong>{{ teacherWorkspacePendingCount }}</strong><small>待处理</small></div>
@@ -10794,7 +10806,7 @@ onBeforeUnmount(() => {
                 <p class="eyebrow">今天优先处理</p>
                 <h4>{{ teacherNextAction.label }}</h4>
                 <p>{{ teacherNextAction.detail }}</p>
-                <small>{{ teacherEducationCourses.length ? `${teacherEducationCourses.length} 门课程 · ${teacherActiveLearnerCount} 名活跃学生` : '先完成课程配置，系统会带你进入下一步' }}</small>
+                <small>{{ teacherCurrentEducationCourses.length ? `${teacherCurrentEducationCourses.length} 门课程 · ${teacherActiveLearnerCount} 名活跃学生` : '先完成课程配置，系统会带你进入下一步' }}</small>
               </div>
               <button class="primary-button learner-focus-action" type="button" @click="runTeacherNextAction">
                 {{ teacherNextAction.label }} <ArrowRight :size="13" />
@@ -10824,7 +10836,7 @@ onBeforeUnmount(() => {
               </div>
             </section>
             <details v-if="isTeacherOnlyRole" class="education-agent-state-details">
-              <summary><span><strong>课程状态概览</strong><small>{{ teacherEducationCourses.length }} 门课程 · {{ teacherActiveLearnerCount }} 名学生 · {{ activeTeacherCoursePendingCount }} 项当前课程待办</small></span><em>{{ teacherAgentReady ? '资料已接入' : '待配置' }}</em></summary>
+              <summary><span><strong>课程状态概览</strong><small>{{ teacherCurrentEducationCourses.length }} 门进行中课程 · {{ teacherActiveLearnerCount }} 名学生 · {{ activeTeacherCoursePendingCount }} 项当前课程待办</small></span><em>{{ teacherAgentReady ? '资料已接入' : '待配置' }}</em></summary>
               <section class="education-agent-state-card education-teacher-state-card" :class="{ ready: teacherAgentReady }" aria-label="教师课程运营状态">
                 <div class="education-agent-state-heading">
                   <div><p class="eyebrow">课程概览</p><h4>课程运营概览</h4><span>看资料、名单、作业和反馈，按顺序处理即可。</span></div>
@@ -10835,7 +10847,7 @@ onBeforeUnmount(() => {
                     <small>01 · 课程资料</small><strong>{{ manageableEducationSources.length ? `${manageableEducationSources.length} 个来源已配置` : '尚未配置课程资料' }}</strong><p>{{ manageableEducationSources.length ? '资料准备好了，可以继续加入学生。' : '先上传 PDF/DOCX，再补充课程信息。' }}</p>
                   </article>
                   <article class="education-agent-state-item">
-                    <small>02 · 课程与学生</small><strong>{{ teacherEducationCourses.length }} 门课程 · {{ teacherActiveLearnerCount }} 名学生</strong><p>{{ teacherEducationCourses.length ? (teacherActiveLearnerCount ? '学生名单已建立，可以继续布置作业。' : '课程已创建，但还没有学生。') : '先创建课程，让学生可以加入并学习。' }}</p>
+                    <small>02 · 课程与学生</small><strong>{{ teacherCurrentEducationCourses.length }} 门进行中课程 · {{ teacherActiveLearnerCount }} 名学生</strong><p>{{ teacherCurrentEducationCourses.length ? (teacherActiveLearnerCount ? '学生名单已建立，可以继续布置作业。' : '课程已创建，但还没有学生。') : '先创建课程，让学生可以加入并学习。' }}</p>
                   </article>
                   <article class="education-agent-state-item">
                     <small>03 · 下一步行动</small><strong>{{ teacherNextAction.label }}</strong><p>{{ teacherNextAction.detail }}</p>
@@ -10905,7 +10917,7 @@ onBeforeUnmount(() => {
                 <ArrowDown v-if="index < (isAdminWorkspace ? adminOperationsTrace.length : teacherOperationsTrace.length) - 1" class="education-agent-loop-arrow" :size="13" />
               </li>
             </ol>
-            <details v-if="isTeacherOnlyRole && educationMetrics && teacherEducationCourses.length" class="education-operations-metrics">
+            <details v-if="isTeacherOnlyRole && educationMetrics && teacherCurrentEducationCourses.length" class="education-operations-metrics">
               <summary><span>教师运营指标</span><small>完成率 · 证据覆盖 · 复核与干预</small></summary>
               <div class="education-metrics" aria-label="教育业务闭环指标">
               <div><span>作业完成率</span><strong>{{ formatRate(educationMetrics.assignmentCompletionRate) }}</strong><small>{{ educationMetrics.assignmentCompleted }} / {{ educationMetrics.assignmentTotal }}</small></div>
@@ -11131,18 +11143,28 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </details>
-            <component v-if="!isTeacherOnlyRole || manageableEducationSources.length || teacherEducationCourses.length" :is="isLearnerOnlyRole ? 'details' : 'div'" class="education-course-workbench-shell" :open="isLearnerOnlyRole ? Boolean(activeLearnerProfile || enrolledEducationCourses.length || educationCourseJoinPrefill) : undefined">
+            <details v-if="isTeacherOnlyRole && teacherArchivedEducationCourses.length && !teacherCurrentEducationCourses.length && !manageableEducationSources.length && activeEducationCourse?.status !== 'ARCHIVED'" class="education-teacher-entry education-archived-course-entry">
+              <summary><span><strong>已归档课程</strong><small>历史记录，不影响当前开课路径</small></span><em>{{ teacherArchivedEducationCourses.length }} 门</em></summary>
+              <p class="education-teacher-entry-help">归档课程不能继续添加学生或布置新作业；如需回看历史提交，可从这里打开。</p>
+              <div class="education-course-list">
+                <button v-for="course in teacherArchivedEducationCourses" :key="course.id" type="button" class="education-course-chip" :class="{ active: course.id === activeEducationCourseId }" @click="selectEducationCourse(course)">
+                  <span><strong>{{ course.title }}</strong><small>{{ course.code }} · {{ course.subject }} · {{ course.gradeLevel }} · {{ course.curriculumVersion }}</small></span>
+                  <em>已归档</em>
+                </button>
+              </div>
+            </details>
+            <component v-if="!isTeacherOnlyRole || manageableEducationSources.length || teacherCurrentEducationCourses.length || activeEducationCourse?.status === 'ARCHIVED'" :is="isLearnerOnlyRole ? 'details' : 'div'" class="education-course-workbench-shell" :open="isLearnerOnlyRole ? Boolean(activeLearnerProfile || enrolledEducationCourses.length || educationCourseJoinPrefill) : undefined">
               <summary v-if="isLearnerOnlyRole" class="education-course-workbench-summary">
                 <span><strong>我的课程</strong><small>{{ enrolledEducationCourses.length ? `已加入 ${enrolledEducationCourses.length} 门课程；需要时可查看课程和邀请码` : (activeLearnerProfile ? '有课程邀请码时，可以在这里加入' : '先填写学习信息；有邀请码时再展开加入') }}</small></span>
                 <em>{{ enrolledEducationCourses.length ? '查看' : (activeLearnerProfile ? '输入邀请码' : '有邀请码？') }}</em>
               </summary>
               <section class="education-course-workbench" aria-label="课程工作台">
               <div class="subsection-title education-course-heading">
-                <div><h4>{{ isAdminWorkspace ? '课程概览' : (educationWorkspaceMode === 'teacher' ? '课程运营工作台' : '我的课程与学习路径') }}</h4><span>{{ isAdminWorkspace ? `${educationCourses.length} 门课程 · ${learningAssignments.length} 份课程作业` : (educationWorkspaceMode === 'teacher' ? `${teacherEducationCourses.length} 个我创建 · ${enrolledEducationCourses.length} 个已加入` : (enrolledEducationCourses.length ? `已加入 ${enrolledEducationCourses.length} 门课程` : '还没有加入课程')) }}</span></div>
+                <div><h4>{{ isAdminWorkspace ? '课程概览' : (educationWorkspaceMode === 'teacher' ? '课程运营工作台' : '我的课程与学习路径') }}</h4><span>{{ isAdminWorkspace ? `${educationCourses.length} 门课程 · ${learningAssignments.length} 份课程作业` : (educationWorkspaceMode === 'teacher' ? `${teacherCurrentEducationCourses.length} 个进行中课程 · ${enrolledEducationCourses.length} 个已加入` : (enrolledEducationCourses.length ? `已加入 ${enrolledEducationCourses.length} 门课程` : '还没有加入课程')) }}</span></div>
                 <span v-if="activeEducationCourse" class="context-mode-chip">{{ educationCourseStatusLabel(activeEducationCourse.status) }}</span>
               </div>
               <p class="learning-task-help">{{ isAdminWorkspace ? '管理员在这里查看组织课程和作业规模；课程资料、名单、布置与复核由教师负责。' : (educationWorkspaceMode === 'teacher' ? '按顺序完成三件事：创建课程、添加学生、布置作业。学生学习信息由学生本人维护。' : '老师提供的学习材料决定课程范围；系统会结合你的作业、答案和学习对话更新进度。') }}{{ !isAdminWorkspace && !isTeacherOnlyRole ? '你只需要关注自己的课程行动、提交和反馈。' : '' }}</p>
-              <details v-if="canManageEducationOperations" class="education-teacher-entry" :open="educationWorkspaceMode === 'teacher' && !teacherEducationCourses.length && manageableEducationSources.length > 0">
+              <details v-if="canManageEducationOperations" class="education-teacher-entry" :open="educationWorkspaceMode === 'teacher' && !teacherCurrentEducationCourses.length && manageableEducationSources.length > 0">
                 <summary><span><strong>创建或管理课程</strong><small>先建课，再添加学生和布置作业</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '课程设置' : '需要教师 / 组织权限' }}</em></summary>
                 <p class="education-teacher-entry-help">这是教师的课程设置区域；完成后，学生会自动看到课程和作业。</p>
                 <form class="education-course-form" @submit.prevent="createEducationCourse">
@@ -11164,8 +11186,8 @@ onBeforeUnmount(() => {
                 </form>
                 <p class="learning-task-help">邀请码只用于找到课程；系统会自动使用当前学生账号加入，不需要你填写别人账号。</p>
               </details>
-              <div v-if="educationCourses.length" class="education-course-list">
-                <button v-for="course in educationCourses" :key="course.id" type="button" class="education-course-chip" :class="{ active: course.id === activeEducationCourseId }" @click="selectEducationCourse(course)">
+              <div v-if="educationCoursesForWorkspace.length" class="education-course-list">
+                <button v-for="course in educationCoursesForWorkspace" :key="course.id" type="button" class="education-course-chip" :class="{ active: course.id === activeEducationCourseId }" @click="selectEducationCourse(course)">
                   <span><strong>{{ course.title }}</strong><small>{{ isLearnerOnlyRole ? `${course.subject} · ${course.gradeLevel}` : `${course.code} · ${course.subject} · ${course.gradeLevel} · ${course.curriculumVersion}` }}</small></span>
                   <em>{{ isAdminWorkspace ? `组织课程 · ${course.activeEnrollmentCount} 人` : (course.ownerUserId === form.userId ? `我的课程 · ${course.activeEnrollmentCount} 人` : '已加入') }}</em>
                 </button>
@@ -11178,6 +11200,16 @@ onBeforeUnmount(() => {
                 </template>
                 <template v-else>还没有可访问的课程；如需开课，请展开课程管理入口。</template>
               </div>
+              <details v-if="isTeacherOnlyRole && teacherArchivedEducationCourses.length" class="education-teacher-entry education-archived-course-entry">
+                <summary><span><strong>已归档课程</strong><small>历史记录，不影响当前开课路径</small></span><em>{{ teacherArchivedEducationCourses.length }} 门</em></summary>
+                <p class="education-teacher-entry-help">归档课程不能继续添加学生或布置新作业；如需回看历史提交，可从这里打开。</p>
+                <div class="education-course-list">
+                  <button v-for="course in teacherArchivedEducationCourses" :key="course.id" type="button" class="education-course-chip" :class="{ active: course.id === activeEducationCourseId }" @click="selectEducationCourse(course)">
+                    <span><strong>{{ course.title }}</strong><small>{{ course.code }} · {{ course.subject }} · {{ course.gradeLevel }} · {{ course.curriculumVersion }}</small></span>
+                    <em>已归档</em>
+                  </button>
+                </div>
+              </details>
               <div v-if="activeEducationCourse && (activeEducationCourseIsOwner || isAdminWorkspace)" class="education-course-detail">
                 <div class="education-course-detail-heading">
                   <div><strong>{{ activeEducationCourse.title }}</strong><small>课程和作业由老师统一安排</small></div>
@@ -11355,7 +11387,7 @@ onBeforeUnmount(() => {
                 </article>
               </div>
             </section>
-            <section v-if="!isTeacherOnlyRole || teacherEducationCourses.length || educationAssignmentsForView.length || learningAssignmentNotificationsForView.length || learningEvaluationQueue.length" class="learning-assignment-workbench" aria-label="我的作业">
+            <section v-if="!isTeacherOnlyRole || teacherCurrentEducationCourses.length || educationAssignmentsForView.length || learningAssignmentNotificationsForView.length || learningEvaluationQueue.length" class="learning-assignment-workbench" aria-label="我的作业">
               <div class="subsection-title"><h4>{{ isAdminWorkspace ? '课程作业概览' : (educationWorkspaceMode === 'teacher' ? '作业与反馈' : '我的作业与反馈') }}</h4><div><span v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter || learningAssignmentIssueFilter">{{ learningAssignmentIssueFilter ? `正在处理：${learningAssignmentIssueLabel}` : '当前已筛选' }}</span><button v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter || learningAssignmentIssueFilter" class="text-button" type="button" @click="clearLearningAssignmentFilter">清除筛选</button><button v-else-if="isLearnerOnlyRole && learningAssignmentHistoryCount && learningAssignmentActionableCount" class="text-button" type="button" @click="toggleLearningAssignmentHistory">{{ learningAssignmentHistoryExpanded ? '只看待处理' : `查看已完成记录（${learningAssignmentHistoryCount}）` }}</button><span v-else>{{ isLearnerOnlyRole && learningAssignmentActionableCount ? `${learningAssignmentActionableCount} 个待处理` : `${educationAssignmentsForView.length} 个作业` }}</span></div></div>
               <p class="learning-task-help">{{ isAdminWorkspace ? '管理员只读查看作业状态与学习记录；确认、返工和反馈由课程教师执行。' : (educationWorkspaceMode === 'teacher' ? '查看学生提交和反馈，再决定确认、返工或重试。' : (learningAssignmentActionableCount ? '先处理需要行动的作业；已完成记录可以按需展开。' : '当前没有待处理作业，可以查看已完成记录或等待老师发布下一份作业。')) }}</p>
               <div v-if="!isAdminWorkspace && learningAssignmentNotificationsForView.length" class="subsection-title learning-task-heading"><div><h4>作业通知</h4><span>{{ learningAssignmentNotificationsForView.length }} 条</span></div><div class="learning-notification-heading-actions"><span>{{ learningAssignmentNotificationUnreadCountForView }} 条未读</span><button v-if="learningAssignmentNotificationUnreadCountForView" class="text-button" type="button" @click="markAllLearningAssignmentNotificationsRead">全部已读</button></div></div>
