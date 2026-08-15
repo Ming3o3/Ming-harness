@@ -474,6 +474,15 @@ h3 { margin: 0; font-size: 13px; }
 .document-upload-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 .document-upload-actions .text-button { border: 0; background: transparent; color: var(--muted); padding: 5px; font-size: 10px; }
 .document-upload-actions .text-button:hover { color: var(--red); }
+.education-document-upload-shell { display: grid; gap: 10px; }
+.education-document-upload-summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid rgba(141,124,255,.24); border-radius: 8px; background: rgba(141,124,255,.04); cursor: pointer; list-style: none; padding: 10px 11px; }
+.education-document-upload-summary::-webkit-details-marker { display: none; }
+.education-document-upload-summary::before { content: '▸'; flex: 0 0 auto; color: var(--accent-light); font-size: 12px; }
+.education-document-upload-shell[open] > .education-document-upload-summary::before { content: '▾'; }
+.education-document-upload-summary > span { display: grid; min-width: 0; gap: 3px; }
+.education-document-upload-summary strong { color: var(--soft); font-size: 10px; }
+.education-document-upload-summary small { overflow: hidden; color: var(--muted); font: 8px/1.4 "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.education-document-upload-summary em { flex: 0 0 auto; border: 1px solid rgba(141,124,255,.32); border-radius: 5px; color: var(--accent-light); padding: 4px 6px; font: 8px "DM Mono", monospace; font-style: normal; }
 .document-list { display: grid; gap: 5px; max-height: 230px; overflow-y: auto; margin-top: 4px; border-top: 1px solid var(--line); padding-top: 13px; padding-right: 4px; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .document-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; border-bottom: 1px solid rgba(153,174,218,.08); padding: 9px 0; }
 .document-row-content { min-width: 0; }

@@ -1028,7 +1028,12 @@ function openEducationDocumentUpload() {
     window.history.pushState({ consoleSection: 'runtime' }, '', '#runtime')
   }
   scrollToConsoleSection('runtime', 'auto')
-  void nextTick(() => scrollConsoleTargetIntoView(document.getElementById('education-document-upload')))
+  void nextTick(() => {
+    const target = document.getElementById('education-document-upload')
+    const parentDetails = target?.closest('details')
+    if (parentDetails) parentDetails.open = true
+    scrollConsoleTargetIntoView(target)
+  })
 }
 
 /**
@@ -10111,7 +10116,12 @@ onBeforeUnmount(() => {
             <div v-else class="context-preview-empty">正在读取 Runtime 配置…</div>
             <small class="form-hint">配置按组织保存；修改后旧向量会失效，请使用上方索引操作重新建立向量。</small>
           </section>
-          <form v-if="isTeacherOnlyRole" id="education-document-upload" class="governance-card governance-fixed-card" @submit.prevent="createDocument">
+          <component :is="documents.length ? 'details' : 'div'" v-if="isTeacherOnlyRole" class="education-document-upload-shell" :open="documents.length ? false : undefined">
+            <summary v-if="documents.length" class="education-document-upload-summary">
+              <span><strong>课程资料</strong><small>已上传 {{ documents.length }} 份；需要时继续添加或管理</small></span>
+              <em>按需查看</em>
+            </summary>
+            <form id="education-document-upload" class="governance-card governance-fixed-card" @submit.prevent="createDocument">
             <div class="context-workbench-heading">
               <div><h3>添加课程资料</h3><small class="form-hint">支持 PDF/DOCX，上传后系统会自动整理成可用于课程的资料。</small></div>
               <span class="context-mode-chip">课程资料</span>
@@ -10162,7 +10172,8 @@ onBeforeUnmount(() => {
                 <small v-else class="document-owner-hint">仅所有者可删</small>
               </div>
             </div>
-          </form>
+            </form>
+          </component>
           <section id="education" class="governance-card governance-fixed-card education-governance-card">
             <div class="context-workbench-heading">
               <div><p class="eyebrow">{{ isAdminWorkspace ? '教育概览' : (educationWorkspaceMode === 'teacher' ? '课程工作台' : '学习空间') }}</p><h3>{{ isAdminWorkspace ? '教育概览' : (educationWorkspaceMode === 'teacher' ? '教师工作台' : '学习空间') }}</h3></div>
@@ -10525,7 +10536,7 @@ onBeforeUnmount(() => {
                 <span><strong>课程与加入信息</strong><small>{{ enrolledEducationCourses.length ? `已加入 ${enrolledEducationCourses.length} 门课程；需要时可查看课程和邀请码` : '还没有加入课程；从这里开始' }}</small></span>
                 <em>{{ enrolledEducationCourses.length ? '按需查看' : '开始设置' }}</em>
               </summary>
-              <section class="education-course-workbench" aria-label="课程与加入信息">
+              <section class="education-course-workbench" aria-label="课程工作台">
               <div class="subsection-title education-course-heading">
                 <div><h4>{{ isAdminWorkspace ? '课程概览' : (educationWorkspaceMode === 'teacher' ? '课程运营工作台' : '我的课程与学习路径') }}</h4><span>{{ isAdminWorkspace ? `${educationCourses.length} 门课程 · ${learningAssignments.length} 份课程作业` : (educationWorkspaceMode === 'teacher' ? `${teacherEducationCourses.length} 个我创建 · ${enrolledEducationCourses.length} 个已加入` : (enrolledEducationCourses.length ? `已加入 ${enrolledEducationCourses.length} 门课程` : '还没有加入课程')) }}</span></div>
                 <span v-if="activeEducationCourse" class="context-mode-chip">{{ educationCourseStatusLabel(activeEducationCourse.status) }}</span>
