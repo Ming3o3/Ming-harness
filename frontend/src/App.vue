@@ -397,6 +397,12 @@ const localDemoUsers = [
     name: '学生演示账号',
     detail: '填写学习信息、加入课程、完成任务和查看反馈。',
   },
+  {
+    role: 'STUDENT',
+    userId: 'student-first-demo',
+    name: '学生首次体验',
+    detail: '没有学习信息、课程和作业，用来体验第一次进入系统。',
+  },
 ]
 const currentPrimaryRole = computed(() => String(
   currentUser.value?.primaryRole || demoRole.value || 'STUDENT',
@@ -8547,7 +8553,7 @@ onBeforeUnmount(() => {
       <h1 id="local-demo-login-title">你要以什么身份进入系统？</h1>
       <p class="local-demo-login-help">本地演示账号只用于体验不同工作台。正式环境会使用 API Key 或企业 OIDC 登录，角色由服务端权限决定。</p>
       <div class="local-demo-user-list">
-        <button v-for="user in localDemoUsers" :key="user.role" class="local-demo-user-card" type="button" :disabled="localDemoLoginBusy" @click="beginLocalDemoSession(user)">
+        <button v-for="user in localDemoUsers" :key="user.userId" class="local-demo-user-card" type="button" :disabled="localDemoLoginBusy" @click="beginLocalDemoSession(user)">
           <span class="local-demo-user-icon"><ShieldCheck v-if="user.role === 'ADMIN'" :size="17" /><PenLine v-else-if="user.role === 'TEACHER'" :size="17" /><BookOpen v-else :size="17" /></span>
           <span><strong>{{ user.name }}</strong><small>{{ user.detail }}</small><em>{{ user.userId }}</em></span>
           <ArrowRight :size="15" />
@@ -9591,7 +9597,7 @@ onBeforeUnmount(() => {
       <div v-if="noticeMessage" :key="`notice-${noticeMessage}`" class="message notice-message console-message-banner">{{ noticeMessage }}</div>
       <div v-if="educationRuntimeDiagnostic" class="message education-runtime-message console-message-banner" role="alert">{{ educationRuntimeDiagnostic }}</div>
 
-      <section v-if="(!isLearnerOnlyRole || !activeLearnerProfile) && (!isTeacherOnlyRole || (!manageableEducationSources.length && !teacherEducationCourses.length))" class="role-welcome panel" :class="`role-welcome-${currentPrimaryRole.toLowerCase()}`" aria-label="当前角色工作台">
+      <section v-if="!isLearnerOnlyRole && (!isTeacherOnlyRole || (!manageableEducationSources.length && !teacherEducationCourses.length))" class="role-welcome panel" :class="`role-welcome-${currentPrimaryRole.toLowerCase()}`" aria-label="当前角色工作台">
         <div class="role-welcome-copy">
           <p class="eyebrow">{{ isLearnerOnlyRole ? '学生工作台' : `${currentPrimaryRole} WORKSPACE` }}</p>
           <h1>{{ roleWorkspaceTitle }}</h1>
@@ -10268,7 +10274,7 @@ onBeforeUnmount(() => {
                 </footer>
               </section>
             </details>
-            <details v-else-if="isLearnerOnlyRole" class="education-agent-state-details learner-status-details" :open="!educationAgentReady" aria-label="当前学习状态">
+            <details v-else-if="isLearnerOnlyRole" class="education-agent-state-details learner-status-details" :open="Boolean(activeLearnerProfile && !educationAgentReady)" aria-label="当前学习状态">
               <summary>
                 <span><strong>学习状态摘要</strong><small>{{ educationAgentReady ? '学习材料已准备好；完成一次练习后会更新进度' : '还需要补充学习信息或课程材料' }}</small></span>
                 <em>{{ educationAgentReady ? '已准备好' : '待补充' }}</em>
@@ -10824,7 +10830,7 @@ onBeforeUnmount(() => {
                 <button class="secondary-button" type="submit" :disabled="learningAssignmentSubmissionSavingId === learningAssignmentSubmissionForm.assignmentId">{{ learningAssignmentSubmissionSavingId ? '提交中…' : '保存提交物' }}</button>
               </form>
             </section>
-            <div v-if="isLearnerOnlyRole" class="learning-goal-workbench">
+            <div v-if="isLearnerOnlyRole && activeLearnerProfile" class="learning-goal-workbench">
               <div v-if="shouldShowLearningTaskWorkbench" class="learning-task-workbench">
                 <div class="subsection-title learning-task-heading"><div><h4>学习提醒</h4><span>{{ actionableLearningTasks.length }} 条</span></div><div class="learning-notification-heading-actions"><span>{{ learningNotificationUnreadCount }} 条未读</span><button v-if="learningNotificationUnreadCount" class="text-button" type="button" @click="markAllLearningNotificationsRead">全部已读</button></div></div>
                 <p class="learning-task-help">需要复习或补充回答时，提醒会出现在这里；没有提醒时无需额外处理。</p>
@@ -10846,7 +10852,7 @@ onBeforeUnmount(() => {
                 </div>
                 <div v-else-if="!learningNotifications.length" class="context-preview-empty">暂无学习提醒。</div>
               </div>
-              <details class="learning-goal-settings" :open="!learningGoals.length">
+              <details class="learning-goal-settings" :open="!learningGoals.length && Boolean(enrolledEducationCourses.length || learnerLearningAssignmentCount)">
                 <summary><span><strong>学习目标与进度设置</strong><small>{{ learningGoals.length ? `${learningGoals.length} 个目标 · 当前${activeLearningGoal ? `：${activeLearningGoal.title}` : '未选择目标'}` : '可选；设置后系统会持续记录进度' }}</small></span><em>{{ learningGoals.length ? '查看进度' : '建议设置' }}</em></summary>
                 <div class="learning-goal-settings-content">
                   <div class="subsection-title"><h4>我的学习目标</h4><span>{{ learningGoals.length }} 个目标</span></div>
