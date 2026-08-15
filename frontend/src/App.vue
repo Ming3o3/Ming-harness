@@ -1469,6 +1469,22 @@ const teacherNextAction = computed(() => {
   }
   return { label: '查看课程进度', detail: '课程状态正常，可以继续跟进学生学习情况。', kind: 'progress' }
 })
+// 课程详情默认只展开当前要做的步骤，避免教师首次进入时同时看到名单、
+// 作业表单和结课指标。管理员仍保留完整展开，便于治理查看。
+const activeTeacherCourseLearnerCount = computed(() => educationCourseEnrollments.value
+  .filter((item) => item.status === 'ACTIVE').length)
+const activeTeacherCourseAssignmentCount = computed(() => learningAssignments.value
+  .filter((assignment) => assignment.courseId === activeEducationCourseId.value).length)
+const teacherRosterPanelOpen = computed(() => Boolean(
+  isAdminWorkspace.value
+  || (activeEducationCourse.value && !activeTeacherCourseLearnerCount.value),
+))
+const teacherAssignmentPanelOpen = computed(() => Boolean(
+  isAdminWorkspace.value
+  || (activeEducationCourse.value
+    && activeTeacherCourseLearnerCount.value
+    && !activeTeacherCourseAssignmentCount.value),
+))
 function runTeacherNextAction() {
   const action = teacherNextAction.value
   if (action.kind === 'upload') {
@@ -6045,11 +6061,19 @@ function focusCourseBlocker(issue) {
 }
 
 function focusEducationCourseRoster() {
-  nextTick(() => document.getElementById('education-course-roster')?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
+  nextTick(() => {
+    const panel = document.getElementById('education-course-roster-panel')
+    if (panel instanceof HTMLDetailsElement) panel.open = true
+    document.getElementById('education-course-roster')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
 }
 
 function focusEducationCourseAssignment() {
-  nextTick(() => document.getElementById('education-course-assignment')?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
+  nextTick(() => {
+    const panel = document.getElementById('education-course-assignment-panel')
+    if (panel instanceof HTMLDetailsElement) panel.open = true
+    document.getElementById('education-course-assignment')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
 }
 
 async function loadLearningTasks() {
@@ -10638,10 +10662,10 @@ onBeforeUnmount(() => {
                 <div><h4>{{ isAdminWorkspace ? '课程概览' : (educationWorkspaceMode === 'teacher' ? '课程运营工作台' : '我的课程与学习路径') }}</h4><span>{{ isAdminWorkspace ? `${educationCourses.length} 门课程 · ${learningAssignments.length} 份课程作业` : (educationWorkspaceMode === 'teacher' ? `${teacherEducationCourses.length} 个我创建 · ${enrolledEducationCourses.length} 个已加入` : (enrolledEducationCourses.length ? `已加入 ${enrolledEducationCourses.length} 门课程` : '还没有加入课程')) }}</span></div>
                 <span v-if="activeEducationCourse" class="context-mode-chip">{{ educationCourseStatusLabel(activeEducationCourse.status) }}</span>
               </div>
-              <p class="learning-task-help">{{ isAdminWorkspace ? '管理员在这里查看组织课程和作业规模；课程资料、名单、布置与复核由教师负责。' : (educationWorkspaceMode === 'teacher' ? '课程资料决定教学范围；请在下方依次维护名单、布置作业和查看反馈。' : '老师提供的学习材料决定课程范围；系统会结合你的作业、答案和学习对话更新进度。') }}{{ educationWorkspaceMode === 'teacher' ? '班级进度、名单和布置动作只在课程管理入口中展开；学生学习信息由学生本人维护。' : (!isAdminWorkspace ? '你只需要关注自己的课程行动、提交和反馈。' : '') }}</p>
+              <p class="learning-task-help">{{ isAdminWorkspace ? '管理员在这里查看组织课程和作业规模；课程资料、名单、布置与复核由教师负责。' : (educationWorkspaceMode === 'teacher' ? '按顺序完成三件事：创建课程、添加学生、布置作业。学生学习信息由学生本人维护。' : '老师提供的学习材料决定课程范围；系统会结合你的作业、答案和学习对话更新进度。') }}{{ !isAdminWorkspace && !isTeacherOnlyRole ? '你只需要关注自己的课程行动、提交和反馈。' : '' }}</p>
               <details v-if="canManageEducationOperations" class="education-teacher-entry" :open="educationWorkspaceMode === 'teacher' && !teacherEducationCourses.length && manageableEducationSources.length > 0">
-                <summary><span><strong>课程管理入口</strong><small>创建课程、添加学生、布置作业</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '管理模式' : '需要教师 / 组织权限' }}</em></summary>
-                <p class="education-teacher-entry-help">这是课程管理操作，不会改变学生的学习状态；提交后仍由系统做最终权限校验。</p>
+                <summary><span><strong>创建或管理课程</strong><small>先建课，再添加学生和布置作业</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '课程设置' : '需要教师 / 组织权限' }}</em></summary>
+                <p class="education-teacher-entry-help">这是教师的课程设置区域；完成后，学生会自动看到课程和作业。</p>
                 <form class="education-course-form" @submit.prevent="createEducationCourse">
                   <label class="field"><span>课程名称</span><input v-model="educationCourseForm.title" required maxlength="255" placeholder="例如：高中数学函数基础" /></label>
                   <label class="field"><span>学科</span><input v-model="educationCourseForm.subject" required maxlength="128" placeholder="例如：数学" /></label>
@@ -10684,13 +10708,14 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
                 <div class="education-course-columns">
-                  <div id="education-course-roster" class="education-course-roster">
-                    <div class="subsection-title"><div><h4>活跃名单</h4><span>{{ educationCourseEnrollments.filter((item) => item.status === 'ACTIVE').length }} 人</span></div></div>
+                  <details id="education-course-roster-panel" class="education-course-roster" :open="teacherRosterPanelOpen">
+                    <summary class="education-course-step-summary"><span><strong>第 1 步：添加学生</strong><small>{{ activeTeacherCourseLearnerCount }} 名学生已加入</small></span><em>{{ teacherRosterPanelOpen ? '现在处理' : '已完成 / 查看' }}</em></summary>
+                    <div id="education-course-roster" class="education-course-step-content">
                     <form v-if="activeEducationCourseIsOwner" class="education-course-enrollment-form" @submit.prevent="enrollEducationLearner">
                       <label class="field"><span>学生账号</span><input v-model="educationCourseEnrollmentForm.learnerUserId" required maxlength="255" placeholder="例如：student-demo" /></label>
-                      <button class="secondary-button" type="submit" :disabled="educationCourseRosterSaving || activeEducationCourse.status !== 'ACTIVE'">{{ educationCourseRosterSaving ? '加入中…' : '加入名单' }}</button>
+                      <button class="secondary-button" type="submit" :disabled="educationCourseRosterSaving || activeEducationCourse.status !== 'ACTIVE'">{{ educationCourseRosterSaving ? '添加中…' : '添加学生' }}</button>
                     </form>
-                    <p v-if="activeEducationCourseIsOwner" class="learning-task-help">填写学生登录系统时使用的账号名；加入后，学生会自动看到这门课程和后续作业。</p>
+                    <p v-if="activeEducationCourseIsOwner" class="learning-task-help">填写学生登录系统时使用的账号名；添加后，学生会自动看到这门课程和后续作业。</p>
                     <p v-else class="learning-task-help">管理员只读查看名单；加入或移除学习者由课程教师执行。</p>
                     <div v-if="educationCourseEnrollments.length" class="education-course-roster-list">
                       <div v-for="enrollment in educationCourseEnrollments" :key="enrollment.id" class="education-course-roster-row" :class="{ inactive: enrollment.status !== 'ACTIVE' }">
@@ -10699,20 +10724,23 @@ onBeforeUnmount(() => {
                       </div>
                     </div>
                     <div v-else class="context-preview-empty">名单为空；请先加入学习者。</div>
-                  </div>
-                  <div id="education-course-assignment" class="education-course-assignment">
-                    <div class="subsection-title"><div><h4>给全班布置作业</h4><span>一次提交，自动发给所有学生</span></div></div>
+                    </div>
+                  </details>
+                  <details id="education-course-assignment-panel" class="education-course-assignment" :open="teacherAssignmentPanelOpen">
+                    <summary class="education-course-step-summary"><span><strong>第 2 步：布置第一份作业</strong><small>一次提交，自动发给所有已加入的学生</small></span><em>{{ teacherAssignmentPanelOpen ? '现在处理' : (activeTeacherCourseAssignmentCount ? '已完成 / 查看' : '等待添加学生') }}</em></summary>
+                    <div id="education-course-assignment" class="education-course-step-content">
                     <form v-if="activeEducationCourseIsOwner" class="education-course-assignment-form" @submit.prevent="assignEducationCourse">
                       <label class="field"><span>作业标题</span><input v-model="educationCourseAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域练习" /></label>
                       <label class="field"><span>目标知识点</span><input v-model="educationCourseAssignmentForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
-                      <label class="field"><span>目标掌握度（填写百分比）</span><input v-model="educationCourseAssignmentForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
+                      <label class="field"><span>希望学生掌握到（百分比）</span><input v-model="educationCourseAssignmentForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
                       <label class="field"><span>截止时间（可选）</span><input v-model="educationCourseAssignmentForm.dueAt" type="datetime-local" /></label>
                       <label class="field education-course-wide"><span>作业说明</span><textarea v-model="educationCourseAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作答范围、提交要求或迁移任务"></textarea></label>
-                      <button class="secondary-button" type="submit" :disabled="educationCourseAssignmentSaving || !educationCourseEnrollments.some((item) => item.status === 'ACTIVE')">{{ educationCourseAssignmentSaving ? '布置中…' : '向活跃名单布置' }}</button>
+                      <button class="secondary-button" type="submit" :disabled="educationCourseAssignmentSaving || !educationCourseEnrollments.some((item) => item.status === 'ACTIVE')">{{ educationCourseAssignmentSaving ? '布置中…' : '布置给已加入的学生' }}</button>
                     </form>
-                    <p v-if="activeEducationCourseIsOwner" class="learning-task-help">已有课程和活跃名单时，请优先使用这里；系统会自动把同一份作业下发给所有活跃学生，并保留课程范围。</p>
+                    <p v-if="activeEducationCourseIsOwner" class="learning-task-help">系统会把同一份作业发给所有已加入的学生，并保留课程范围。</p>
                     <p v-else class="learning-task-help">管理员只读查看作业规模与证据覆盖；布置作业由课程教师执行。</p>
-                  </div>
+                    </div>
+                  </details>
                 </div>
                 <div v-if="educationCourseProgress" class="education-course-progress">
                   <div class="subsection-title"><div><h4>课程进度与待办</h4><span>{{ educationCourseProgress.truncated ? '仅展示最近 500 份作业' : '覆盖全部课程作业' }}</span></div><button class="text-button" type="button" :disabled="educationCourseLoading" @click="loadEducationCourseWorkspace(activeEducationCourse.id)">{{ educationCourseLoading ? '刷新中…' : '刷新进度' }}</button></div>

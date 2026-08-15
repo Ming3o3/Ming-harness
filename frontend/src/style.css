@@ -701,6 +701,16 @@ h3 { margin: 0; font-size: 13px; }
 .education-course-detail-heading small { color: var(--muted); font: 8px "DM Mono", monospace; }
 .education-course-columns { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 10px; }
 .education-course-roster, .education-course-assignment { display: grid; align-content: start; gap: 8px; min-width: 0; border: 1px solid rgba(153,174,218,.12); border-radius: 7px; background: var(--input-bg); padding: 9px 10px; }
+.education-course-roster > summary, .education-course-assignment > summary { display: flex; align-items: center; justify-content: space-between; gap: 9px; margin: -9px -10px 0; border-bottom: 1px solid transparent; cursor: pointer; list-style: none; padding: 9px 10px; }
+.education-course-roster > summary::-webkit-details-marker, .education-course-assignment > summary::-webkit-details-marker { display: none; }
+.education-course-roster > summary::before, .education-course-assignment > summary::before { content: '▸'; flex: 0 0 auto; color: var(--orange); font-size: 12px; }
+.education-course-roster[open] > summary::before, .education-course-assignment[open] > summary::before { content: '▾'; }
+.education-course-roster[open] > summary, .education-course-assignment[open] > summary { border-bottom-color: rgba(153,174,218,.12); }
+.education-course-step-summary > span { display: grid; min-width: 0; gap: 3px; }
+.education-course-step-summary strong { color: var(--soft); font-size: 10px; }
+.education-course-step-summary small { overflow: hidden; color: var(--muted); font: 8px/1.4 "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.education-course-step-summary em { flex: 0 0 auto; color: var(--orange); font: 8px "DM Mono", monospace; font-style: normal; }
+.education-course-step-content { display: grid; align-content: start; gap: 8px; min-width: 0; }
 .education-course-enrollment-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; align-items: end; }
 .education-governance-card .education-course-enrollment-form .secondary-button { align-self: start; margin-top: 24px; height: 37px; min-height: 37px; box-sizing: border-box; padding: 0 11px; }
 .education-course-roster-list { display: grid; gap: 4px; max-height: 190px; overflow-y: auto; }
