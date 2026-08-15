@@ -389,33 +389,38 @@ const localDemoUsers = [
   {
     role: 'ADMIN',
     userId: 'admin-demo',
-    name: '管理员演示账号',
-    detail: '管理模型、知识库、权限、策略和审计。',
+    name: '管理员：系统设置',
+    detail: '维护模型、知识库、权限和系统运行状态。',
+    modeLabel: '系统管理',
   },
   {
     role: 'TEACHER',
     userId: 'teacher-demo',
-    name: '老师演示账号',
-    detail: '配置课程资料、发布课程、布置作业和复核反馈。',
+    name: '老师：查看示例课程',
+    detail: '已有课程、学生和作业，可直接查看完整教学流程。',
+    modeLabel: '已有示例数据',
   },
   {
     role: 'TEACHER',
     userId: 'teacher-first-demo',
-    name: '老师首次体验',
-    detail: '没有课程资料和课程，用来体验第一次开课。',
+    name: '老师：从零开始开课',
+    detail: '没有课程资料和课程，按提示完成第一次开课。',
+    modeLabel: '从零开始',
     tenantId: 'tenant-first-demo',
   },
   {
     role: 'STUDENT',
     userId: 'student-demo',
-    name: '学生演示账号',
-    detail: '填写学习信息、加入课程、完成任务和查看反馈。',
+    name: '学生：查看示例课程',
+    detail: '已有课程和作业，可直接体验学习、提交和反馈。',
+    modeLabel: '已有示例数据',
   },
   {
     role: 'STUDENT',
     userId: 'student-first-demo',
-    name: '学生首次体验',
-    detail: '没有学习信息、课程和作业，用来体验第一次进入系统。',
+    name: '学生：第一次使用',
+    detail: '没有学习信息、课程和作业，按提示完成第一次使用。',
+    modeLabel: '从零开始',
     tenantId: 'tenant-first-demo',
   },
 ]
@@ -9104,15 +9109,15 @@ onBeforeUnmount(() => {
     <div class="local-demo-login-card">
       <div class="local-demo-login-brand">
         <div class="brand-mark" aria-hidden="true"><Sparkles :size="17" :stroke-width="1.8" /></div>
-        <div><strong>Ming Harness</strong><span>LOCAL DEMO LOGIN</span></div>
+        <div><strong>Ming Harness</strong><span>演示登录</span></div>
       </div>
-      <p class="eyebrow">选择体验身份</p>
-      <h1 id="local-demo-login-title">你要以什么身份进入系统？</h1>
-      <p class="local-demo-login-help">本地演示账号只用于体验不同工作台。正式环境会使用 API Key 或企业 OIDC 登录，角色由服务端权限决定。</p>
+      <p class="eyebrow">选择进入方式</p>
+      <h1 id="local-demo-login-title">你想先做什么？</h1>
+      <p class="local-demo-login-help">选择已有示例数据直接查看完整流程，或从零开始体验第一次开课、第一次学习。这里的选择只用于本地演示。</p>
       <div class="local-demo-user-list">
         <button v-for="user in localDemoUsers" :key="user.userId" class="local-demo-user-card" type="button" :disabled="localDemoLoginBusy" @click="beginLocalDemoSession(user)">
           <span class="local-demo-user-icon"><ShieldCheck v-if="user.role === 'ADMIN'" :size="17" /><PenLine v-else-if="user.role === 'TEACHER'" :size="17" /><BookOpen v-else :size="17" /></span>
-          <span><strong>{{ user.name }}</strong><small>{{ user.detail }}</small><em>{{ user.userId }}</em></span>
+          <span><strong>{{ user.name }}</strong><small>{{ user.detail }}</small><em>{{ user.modeLabel }}</em></span>
           <ArrowRight :size="15" />
         </button>
       </div>
