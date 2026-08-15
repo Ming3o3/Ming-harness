@@ -3634,7 +3634,7 @@ function useQuickStartPrompt(prompt) {
 }
 
 function openCommandPalette() {
-  if (showModelSettings.value || showEmbeddingSettings.value) return
+  if (isLearnerOnlyRole.value || showModelSettings.value || showEmbeddingSettings.value) return
   showCommandPalette.value = true
   commandQuery.value = ''
   commandSelectedIndex.value = 0
@@ -3679,6 +3679,7 @@ function handleChatKeydown(event) {
 function handleChatGlobalKeydown(event) {
   const key = event.key.toLowerCase()
   if (!event.isComposing && (event.metaKey || event.ctrlKey) && key === 'k') {
+    if (isLearnerOnlyRole.value) return
     event.preventDefault()
     if (showCommandPalette.value) closeCommandPalette()
     else openCommandPalette()
@@ -8370,7 +8371,7 @@ onBeforeUnmount(() => {
           <div><strong>学习助手</strong><span>YOUR LEARNING SPACE</span></div>
         </div>
         <div class="chat-topbar-actions">
-          <button class="command-palette-trigger" type="button" title="打开命令面板（⌘/Ctrl + K）" @click="openCommandPalette"><Command :size="14" /><span>⌘K</span><em>命令</em></button>
+          <button v-if="!isLearnerOnlyRole" class="command-palette-trigger" type="button" title="打开命令面板（⌘/Ctrl + K）" @click="openCommandPalette"><Command :size="14" /><span>⌘K</span><em>命令</em></button>
           <button class="theme-toggle" type="button" :aria-label="theme === 'dark' ? '切换到白天模式' : '切换到黑夜模式'" @click="toggleTheme">
             <Sun v-if="theme === 'dark'" :size="15" aria-hidden="true" /><Moon v-else :size="15" aria-hidden="true" />{{ theme === 'dark' ? '白天' : '黑夜' }}
           </button>
@@ -10965,7 +10966,7 @@ onBeforeUnmount(() => {
     </form>
   </div>
   <div
-    v-if="showCommandPalette"
+    v-if="showCommandPalette && !isLearnerOnlyRole"
     class="command-palette-overlay"
     role="dialog"
     aria-modal="true"
