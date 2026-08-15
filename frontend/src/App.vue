@@ -10203,7 +10203,7 @@ onBeforeUnmount(() => {
                 {{ teacherNextAction.label }} <ArrowRight :size="13" />
               </button>
             </section>
-            <section v-if="isTeacherOnlyRole" class="teacher-onboarding-progress" aria-label="教师开课路径">
+            <section v-if="isTeacherOnlyRole && teacherOnboardingCurrentIndex < teacherOperationsTrace.length" class="teacher-onboarding-progress" aria-label="教师开课路径">
               <div class="teacher-onboarding-progress-heading"><div><p class="eyebrow">开课路径</p><strong>开课路径</strong></div><span>第 {{ Math.min(teacherOnboardingCurrentIndex + 1, teacherOperationsTrace.length) }} / {{ teacherOperationsTrace.length }} 步</span></div>
               <ol class="teacher-onboarding-progress-list">
                 <li v-for="(step, index) in teacherOperationsTrace" :key="step.id" :class="[`is-${step.state}`, { current: index === teacherOnboardingCurrentIndex }]">
