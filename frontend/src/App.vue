@@ -1547,12 +1547,16 @@ function runTeacherNextAction() {
   }
   navigateConsoleSection('education')
   void nextTick(() => {
-    if (action.kind === 'roster') focusEducationCourseRoster()
-    else if (action.kind === 'assignment') focusEducationCourseAssignment()
-    else if (action.kind === 'review') focusCourseBlocker(action.issue)
-    else if (action.kind === 'evaluation') document.querySelector('[aria-label="独立评价队列"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    else if (action.kind === 'progress') document.querySelector('.education-course-progress')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    else document.querySelector('.education-course-workbench')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    // 导航到教育区会在下一帧调整内部滚动容器；再等一帧后定位具体动作，
+    // 避免两个平滑滚动相互覆盖，让“今天优先处理”看起来没有反应。
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      if (action.kind === 'roster') focusEducationCourseRoster()
+      else if (action.kind === 'assignment') focusEducationCourseAssignment()
+      else if (action.kind === 'review') focusCourseBlocker(action.issue)
+      else if (action.kind === 'evaluation') document.querySelector('[aria-label="独立评价队列"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      else if (action.kind === 'progress') focusEducationCourseProgress()
+      else scrollConsoleTargetIntoView(document.querySelector('.education-course-workbench'))
+    }))
   })
 }
 
@@ -6133,6 +6137,14 @@ function focusEducationCourseAssignment() {
     const panel = document.getElementById('education-course-assignment-panel')
     if (panel instanceof HTMLDetailsElement) panel.open = true
     document.getElementById('education-course-assignment')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  })
+}
+
+function focusEducationCourseProgress() {
+  nextTick(() => {
+    const panel = document.querySelector('.education-course-progress-details')
+    if (panel instanceof HTMLDetailsElement) panel.open = true
+    scrollConsoleTargetIntoView(document.querySelector('.education-course-progress'))
   })
 }
 
@@ -10885,15 +10897,23 @@ onBeforeUnmount(() => {
                 </div>
                 <div v-if="educationCourseProgress" class="education-course-progress">
                   <div class="subsection-title"><div><h4>课程进度与待办</h4><span>{{ educationCourseProgress.truncated ? '仅展示最近 500 份作业' : '覆盖全部课程作业' }}</span></div><button class="text-button" type="button" :disabled="educationCourseLoading" @click="loadEducationCourseWorkspace(activeEducationCourse.id)">{{ educationCourseLoading ? '刷新中…' : '刷新进度' }}</button></div>
+                  <div class="education-course-quick-summary">
+                    <div><span>学生覆盖</span><strong>{{ formatRate(educationCourseProgress.rosterCoverageRate) }}</strong><small>{{ educationCourseProgress.learnersWithAssignments }} / {{ educationCourseProgress.activeLearnerTotal }} 名学生已有作业</small></div>
+                    <div><span>作业完成</span><strong>{{ formatRate(educationCourseProgress.assignmentCompletionRate) }}</strong><small>{{ educationCourseProgress.completed }} / {{ educationCourseProgress.assignmentTotal }} 份已完成</small></div>
+                    <div><span>现在要做什么</span><strong>{{ educationCourseProgress.readyToComplete ? '可以结课' : `${Number(educationCourseProgress.completionBlockerCount || 0) + Number(educationCourseProgress.submissionBlockerCount || 0) + Number(educationCourseProgress.rosterCoverageBlockerCount || 0)} 项待处理` }}</strong><small>{{ educationCourseProgress.readyToComplete ? '所有学生、作业和记录已齐全' : '按下方待办逐项处理即可' }}</small></div>
+                  </div>
+                  <details class="education-course-progress-details" :open="isAdminWorkspace">
+                    <summary><span><strong>查看详细进度</strong><small>按学生查看作业状态和学习进度</small></span><em>{{ educationCourseProgress.learners?.length || 0 }} 名学生</em></summary>
+                    <div class="education-course-progress-details-content">
                   <div class="education-course-summary-grid">
-                    <div><span>学生覆盖</span><strong>{{ formatRate(educationCourseProgress.rosterCoverageRate) }}</strong><small>{{ educationCourseProgress.learnersWithAssignments }} / {{ educationCourseProgress.activeLearnerTotal }} 名活跃学习者</small></div>
-                    <div><span>作业完成</span><strong>{{ formatRate(educationCourseProgress.assignmentCompletionRate) }}</strong><small>{{ educationCourseProgress.completed }} / {{ educationCourseProgress.assignmentTotal }}</small></div>
                     <div><span>老师确认</span><strong>{{ formatRate(educationCourseProgress.teacherVerificationRate) }}</strong><small>{{ educationCourseProgress.reviewVerified }} / {{ educationCourseProgress.reviewPending + educationCourseProgress.reviewVerified + educationCourseProgress.revisionRequired }}</small></div>
                     <div><span>待补学习记录</span><strong>{{ educationCourseProgress.awaitingEvidence }}</strong><small>学习已结束但作答记录未补齐</small></div>
                     <div><span>待重试</span><strong>{{ educationCourseProgress.retryRequired }}</strong><small>失败、超时或返工</small></div>
                     <div><span>待处理反馈</span><strong>{{ educationCourseProgress.openInterventionCount }}</strong><small>补作答或建议重试</small></div>
                     <div><span>是否可以结课</span><strong>{{ educationCourseProgress.readyToComplete ? '可以结课' : '还需处理' }}</strong><small>{{ educationCourseProgress.readyToComplete ? '学生、确认与提交物齐全' : `作业待处理 ${educationCourseProgress.completionBlockerCount} · 缺提交物 ${educationCourseProgress.submissionBlockerCount} · 学生缺口 ${educationCourseProgress.rosterCoverageBlockerCount}` }}</small></div>
                   </div>
+                    </div>
+                  </details>
                   <section v-if="!educationCourseProgress.readyToComplete" class="education-course-completion-blockers" aria-label="结课前待办">
                     <header>
                       <div><strong>结课前还要处理</strong><span>完成下面这些事项后，课程才能结课。</span></div>
@@ -10926,6 +10946,9 @@ onBeforeUnmount(() => {
                       </button>
                     </div>
                   </section>
+                  <details class="education-course-progress-details education-course-learner-details" :open="isAdminWorkspace">
+                    <summary><span><strong>按学生查看进度</strong><small>查看每名学生的作业状态和下一步</small></span><em>{{ educationCourseProgress.learners?.length || 0 }} 名学生</em></summary>
+                    <div class="education-course-progress-details-content">
                   <div v-if="educationCourseProgress.learners?.length" class="education-course-progress-list">
                     <div class="education-course-progress-header"><span>学习者</span><span>作业状态</span><span>掌握度进度</span><span>下一步</span></div>
                     <div v-for="learner in educationCourseProgress.learners" :key="learner.learnerUserId" class="education-course-progress-row">
@@ -10936,6 +10959,8 @@ onBeforeUnmount(() => {
                     </div>
                   </div>
                   <div v-else class="context-preview-empty">名单中的学习者还没有作业；布置作业后，这里会显示每人的业务状态。</div>
+                    </div>
+                  </details>
                   <div v-if="educationCourseResult" class="education-course-progress education-course-result">
                     <div class="subsection-title"><div><h4>结课结果快照</h4><span>{{ formatDate(educationCourseResult.completedAt) }}</span></div><div><span class="context-mode-chip">不可被后续复习改写</span><button v-if="activeEducationCourseIsOwner" class="text-button" type="button" :disabled="educationCourseActionId === activeEducationCourse.id" @click="exportEducationCourseResult(activeEducationCourse)">{{ educationCourseActionId === activeEducationCourse.id ? '导出中…' : '导出报告' }}</button></div></div>
                     <div class="education-course-summary-grid">
