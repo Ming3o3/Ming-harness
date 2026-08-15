@@ -141,7 +141,7 @@ const learningAssignmentForm = reactive({
   gradeLevel: '',
   curriculumVersion: '',
   conceptKey: '',
-  targetMastery: '0.8',
+  targetMastery: '80',
   dueAt: '',
 })
 const educationCourseForm = reactive({
@@ -164,7 +164,7 @@ const educationCourseAssignmentForm = reactive({
   title: '',
   instructions: '',
   conceptKey: '',
-  targetMastery: '0.8',
+  targetMastery: '80',
   dueAt: '',
 })
 const manualAssessmentForm = reactive({
@@ -1208,8 +1208,16 @@ const learningGoalForm = reactive({
   learnerProfileId: '',
   title: '',
   conceptKey: '',
-  targetMastery: 0.8,
+  targetMastery: 80,
 })
+
+// 后端仍以 0～1 的比例保存掌握度；界面统一让用户填写百分比，
+// 避免把 0.8 这样的内部数值误认为题目分数或数量。
+function targetMasteryFromPercent(value, fallback = 0.8) {
+  const percent = Number(value)
+  if (!Number.isFinite(percent)) return fallback
+  return Math.max(1, Math.min(100, percent)) / 100
+}
 
 const educationSourceForm = reactive({
   documentId: '',
@@ -5832,7 +5840,7 @@ async function assignEducationCourse() {
       title: educationCourseAssignmentForm.title.trim(),
       instructions: educationCourseAssignmentForm.instructions.trim(),
       conceptKey: educationCourseAssignmentForm.conceptKey.trim(),
-      targetMastery: Number(educationCourseAssignmentForm.targetMastery) || 0.8,
+      targetMastery: targetMasteryFromPercent(educationCourseAssignmentForm.targetMastery),
       dueAt: educationCourseAssignmentForm.dueAt
         ? new Date(educationCourseAssignmentForm.dueAt).toISOString() : null,
     }, idempotencyKey)
@@ -6753,7 +6761,7 @@ async function createLearningGoal() {
       learnerProfileId: learningGoalForm.learnerProfileId || activeLearnerProfile.value?.id || null,
       title: learningGoalForm.title.trim(),
       conceptKey: learningGoalForm.conceptKey.trim(),
-      targetMastery: Number(learningGoalForm.targetMastery) || 0.8,
+      targetMastery: targetMasteryFromPercent(learningGoalForm.targetMastery),
     })
     learningGoals.value = [goal, ...learningGoals.value.filter((item) => item.id !== goal.id)]
     learningGoalForm.title = ''
@@ -6789,7 +6797,7 @@ async function createLearningAssignment() {
       gradeLevel: learningAssignmentForm.gradeLevel.trim(),
       curriculumVersion: learningAssignmentForm.curriculumVersion.trim(),
       conceptKey: learningAssignmentForm.conceptKey.trim(),
-      targetMastery: Number(learningAssignmentForm.targetMastery) || 0.8,
+      targetMastery: targetMasteryFromPercent(learningAssignmentForm.targetMastery),
       dueAt: learningAssignmentForm.dueAt
         ? new Date(learningAssignmentForm.dueAt).toISOString() : null,
     })
@@ -8924,7 +8932,7 @@ onBeforeUnmount(() => {
               </div>
               <label><span>目标名称</span><input v-model="learningGoalForm.title" required maxlength="255" placeholder="例如：掌握函数定义域" /></label>
               <label><span>目标知识点</span><input v-model="learningGoalForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
-              <label><span>目标掌握度（0.8 表示 80%）</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required placeholder="例如：0.8" title="请输入 0 到 1 之间的小数，例如 0.8 表示 80%" /></label>
+              <label><span>目标掌握度（填写百分比）</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
               <button class="primary-button" type="submit" :disabled="educationLoading">{{ educationLoading ? '保存中…' : '保存学习目标' }}</button>
             </form>
             <div v-if="learnerMasteryPreview.length" class="learning-agent-mastery-strip" aria-label="需要关注的知识点">
@@ -10577,7 +10585,7 @@ onBeforeUnmount(() => {
                     <form v-if="activeEducationCourseIsOwner" class="education-course-assignment-form" @submit.prevent="assignEducationCourse">
                       <label class="field"><span>作业标题</span><input v-model="educationCourseAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域练习" /></label>
                       <label class="field"><span>目标知识点</span><input v-model="educationCourseAssignmentForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
-                      <label class="field"><span>目标掌握度（0.8 表示 80%）</span><input v-model="educationCourseAssignmentForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required placeholder="例如：0.8" title="请输入 0 到 1 之间的小数，例如 0.8 表示 80%" /></label>
+                      <label class="field"><span>目标掌握度（填写百分比）</span><input v-model="educationCourseAssignmentForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
                       <label class="field"><span>截止时间（可选）</span><input v-model="educationCourseAssignmentForm.dueAt" type="datetime-local" /></label>
                       <label class="field education-course-wide"><span>作业说明</span><textarea v-model="educationCourseAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作答范围、提交要求或迁移任务"></textarea></label>
                       <button class="secondary-button" type="submit" :disabled="educationCourseAssignmentSaving || !educationCourseEnrollments.some((item) => item.status === 'ACTIVE')">{{ educationCourseAssignmentSaving ? '布置中…' : '向活跃名单布置' }}</button>
@@ -10720,7 +10728,7 @@ onBeforeUnmount(() => {
                   <label class="field"><span>年级</span><input v-model="learningAssignmentForm.gradeLevel" required maxlength="128" placeholder="高中一年级" /></label>
                   <label class="field"><span>课程版本</span><input v-model="learningAssignmentForm.curriculumVersion" required maxlength="128" placeholder="人教A版" /></label>
                   <label class="field"><span>目标知识点</span><input v-model="learningAssignmentForm.conceptKey" required maxlength="255" placeholder="函数定义域" /></label>
-                  <label class="field"><span>目标掌握度（0.8 表示 80%）</span><input v-model="learningAssignmentForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required placeholder="例如：0.8" title="请输入 0 到 1 之间的小数，例如 0.8 表示 80%" /></label>
+                  <label class="field"><span>目标掌握度（填写百分比）</span><input v-model="learningAssignmentForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
                   <label class="field"><span>截止时间（可选）</span><input v-model="learningAssignmentForm.dueAt" type="datetime-local" /></label>
                   <label class="field learning-assignment-wide"><span>作业说明</span><textarea v-model="learningAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作业要求、作答范围或迁移任务"></textarea></label>
                   <button class="secondary-button learning-assignment-submit" type="submit" :disabled="learningAssignmentSaving">{{ learningAssignmentSaving ? '补发中…' : '单独补发作业' }}</button>
@@ -10803,7 +10811,7 @@ onBeforeUnmount(() => {
                     <label class="field"><span>学习信息</span><select v-model="learningGoalForm.learnerProfileId" required><option value="">请选择学习信息</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>
                     <label class="field"><span>目标名称</span><input v-model="learningGoalForm.title" required maxlength="255" placeholder="例如：掌握函数定义域" /></label>
                     <label class="field"><span>知识点</span><input v-model="learningGoalForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
-                    <label class="field"><span>目标掌握度（0.8 表示 80%）</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required placeholder="例如：0.8" title="请输入 0 到 1 之间的小数，例如 0.8 表示 80%" /></label>
+                    <label class="field"><span>目标掌握度（填写百分比）</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
                     <button class="secondary-button" type="submit" :disabled="educationLoading || !learnerProfiles.length">保存目标</button>
                   </form>
                   <div v-if="learningGoals.length" class="learning-goal-list">
