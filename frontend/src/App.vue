@@ -609,19 +609,19 @@ const quickStartPrompts = [
   {
     id: 'diagnose-mastery',
     label: '诊断我的薄弱点',
-    description: '结合掌握度记录，找出下一步最值得补的知识点。',
+    description: '结合学习记录，找出下一步最值得补的知识点。',
     prompt: '请结合我的学习信息和已有掌握度记录，诊断当前最薄弱的知识点，并给出一个可执行的补强建议。',
   },
   {
     id: 'make-review-plan',
     label: '制定复习计划',
-    description: '按课程范围和目标掌握度安排复习节奏。',
+    description: '按课程范围和目标进度安排复习节奏。',
     prompt: '请围绕当前学习目标制定一份分阶段复习计划，包含每阶段目标、练习方式、检查点和预计完成条件。',
   },
   {
     id: 'start-practice',
-    label: '开始分层练习',
-    description: '从当前掌握度出发，生成一道带提示的练习题。',
+    label: '开始练习',
+    description: '根据当前进度，生成一道带提示的练习题。',
     prompt: '请根据我的当前掌握度和课程版本，出一道难度合适的练习题。先不要直接给答案，按需要提供分层提示，并在我作答后帮我复盘。',
   },
 ]
@@ -2349,7 +2349,7 @@ const learnerStateDiagnosis = computed(() => {
     return {
       state: 'observed',
       title: `优先诊断：${learnerMasteryPreview.value[0].conceptKey}`,
-      detail: `已发现 ${learnerMasteryPreview.value.length} 个待补强知识点；先完成本轮目标的作答，才会写入新的掌握度。`,
+      detail: `已发现 ${learnerMasteryPreview.value.length} 个待补强知识点；先完成本轮目标的作答，才会更新学习进度。`,
       currentMastery: null,
       targetMastery: Number(activeLearningGoal.value.targetMastery),
     }
@@ -2374,7 +2374,7 @@ const agentTeachingAction = computed(() => {
     return {
       state: 'pending',
       title: '先把学习诉求变成达标目标',
-      detail: '目标会提供知识点、目标掌握度和后续证据的归属。',
+      detail: '目标会提供知识点、目标进度和后续学习记录的归属。',
     }
   }
   if (activeLearningTask.value) {
@@ -2398,7 +2398,7 @@ const agentTeachingAction = computed(() => {
     return {
       state: 'ready',
       title: activeLearningRecommendation.value.nextActionTitle,
-      detail: activeLearningRecommendation.value.rationale || '根据当前掌握度与目标自动选择教学动作。',
+      detail: activeLearningRecommendation.value.rationale || '根据当前进度与目标自动选择教学动作。',
     }
   }
   return {
@@ -2412,14 +2412,14 @@ const agentEvidenceRequest = computed(() => {
     return {
       state: 'pending',
       title: '先绑定学习目标',
-      detail: '没有目标时，作答无法沉淀为可追踪的掌握度证据。',
+      detail: '没有目标时，作答无法沉淀为可追踪的学习进度。',
     }
   }
   if (activeLearningTask.value?.status === 'AWAITING_EVIDENCE') {
     return {
       state: 'required',
       title: '需要补充本轮证据',
-      detail: '提交解题过程、作答理由或教师评分；仅完成对话不会自动提升掌握度。',
+      detail: '提交解题过程、作答理由或教师评分；仅完成对话不会自动更新学习进度。',
     }
   }
   if (learningTaskIsScheduled(activeLearningTask.value)) {
@@ -2576,10 +2576,10 @@ const educationAgentTrace = computed(() => [
     id: 'learner',
     label: '学习进度',
     value: activeLearnerProfile.value
-      ? (learnerMasteryLoading.value ? '正在读取掌握度…' : `${learnerMastery.value.length} 个知识点已建档`)
+      ? (learnerMasteryLoading.value ? '正在读取学习记录…' : `${learnerMastery.value.length} 个知识点已有记录`)
       : '等待学习信息',
     detail: activeLearningRecommendation.value
-      ? `当前掌握度 ${formatRate(activeLearningRecommendation.value.currentMastery)} · 目标 ${formatRate(activeLearningRecommendation.value.targetMastery)}`
+      ? `当前进度 ${formatRate(activeLearningRecommendation.value.currentMastery)} · 目标 ${formatRate(activeLearningRecommendation.value.targetMastery)}`
       : learnerMasteryPreview.value.length
         ? `优先关注：${learnerMasteryPreview.value.map((item) => item.conceptKey).join('、')}`
         : '完成带证据的测评后会更新状态',
@@ -2591,7 +2591,7 @@ const educationAgentTrace = computed(() => [
     label: '下一步安排',
     value: educationAgentReady.value ? pedagogicalModeLabel.value : '等待课程资料与学习状态就绪',
     detail: educationAgentReady.value
-      ? (chatEducation.conceptKey ? `目标知识点：${chatEducation.conceptKey}` : '会根据问题和掌握度选择讲解、练习或诊断')
+      ? (chatEducation.conceptKey ? `目标知识点：${chatEducation.conceptKey}` : '会根据问题和学习进度选择讲解、练习或诊断')
       : educationSendBlockReason.value || '先填写学习信息，再由系统决定合适的学习方式',
     state: educationAgentReady.value ? 'ready' : 'pending',
     icon: Target,
@@ -2807,7 +2807,7 @@ const learningSetupProgress = computed(() => {
 const learningEvidenceSummary = computed(() => {
   if (!activeLearningGoal.value) return '等待学习目标'
   const count = learningGoalAssessments.value.length
-  return count ? `${count} 条测评证据` : '尚无测评证据'
+  return count ? `${count} 条学习记录` : '尚无学习记录'
 })
 // 把课程来源、当前目标和已有掌握度合并成一条可读的课程路径。教育 Agent
 // 的核心不是“回答得像老师”，而是能指出学习者正在课程中的哪个节点、
@@ -2836,7 +2836,7 @@ const learningConceptTrail = computed(() => {
       : (Number.isFinite(score) ? (score >= 0.8 ? 'ready' : 'attention') : (index === 0 ? 'available' : 'pending'))
     return {
       concept,
-      detail: isTarget ? '本轮目标' : (Number.isFinite(score) ? `掌握度 ${formatRate(score)}` : '课程来源'),
+      detail: isTarget ? '本轮目标' : (Number.isFinite(score) ? `学习进度 ${formatRate(score)}` : '课程来源'),
       state,
       score: Number.isFinite(score) ? score : null,
     }
@@ -3740,10 +3740,10 @@ function errorText(error) {
 
 function messageStatusLabel(status) {
   return {
-    PENDING: '学习助手处理中',
+    PENDING: '正在准备学习内容',
     COMPLETED: '已完成',
-    FAILED: '执行失败',
-    CANCELLED: '已取消',
+    FAILED: '本次学习未完成',
+    CANCELLED: '已停止',
   }[status] || status || ''
 }
 
@@ -3766,7 +3766,9 @@ function chatFailureGuidance(message) {
   if (assignment?.learnerUserId === form.userId && assignment.status === 'ACCEPTED') {
     return '课程作业仍在同步状态；稍后刷新作业卡片，确认是否已进入“待重试/返工”。'
   }
-  return '可以点击“重试本轮”；如果多次失败，请联系教师检查课程资料，或联系管理员检查模型与 Runtime。'
+  return isLearnerOnlyRole.value
+    ? '可以点击“重试本轮”；如果多次失败，请联系老师检查课程资料。'
+    : '可以点击“重试本轮”；如果多次失败，请联系教师检查课程资料，或联系管理员检查模型与 Runtime。'
 }
 
 function messageStatusClass(status) {
@@ -3868,9 +3870,13 @@ async function loadEducationDependencyGraph() {
 function mergeChatSourceProvenance(source, provenance, evidence = null) {
   const current = source.provenance || ''
   source.provenance = !current || current === provenance || current === 'BOTH' ? (current || provenance) : 'BOTH'
-  source.provenanceLabel = source.provenance === 'BOTH'
-    ? '模型引用 · Runtime 授权'
-    : provenance === 'RUNTIME' ? 'Runtime 授权证据' : '模型引用'
+  source.provenanceLabel = isLearnerOnlyRole.value
+    ? (source.provenance === 'BOTH'
+      ? '课程资料与学习助手'
+      : provenance === 'RUNTIME' ? '课程资料' : '学习助手整理')
+    : source.provenance === 'BOTH'
+      ? '模型引用 · Runtime 授权'
+      : provenance === 'RUNTIME' ? 'Runtime 授权证据' : '模型引用'
   if (evidence) {
     source.runtimeEvidence = true
     source.excerpt = evidence.excerpt || source.excerpt || ''
@@ -8379,7 +8385,7 @@ onBeforeUnmount(() => {
           </nav>
           <section v-if="isLearnerOnlyRole" class="learning-sidebar-contract" :class="{ ready: educationAgentReady }" aria-label="当前学习计划">
             <div class="learning-sidebar-contract-heading">
-              <div><p class="eyebrow">CURRENT LEARNING PLAN</p><strong>当前学习计划</strong></div>
+              <div><p class="eyebrow">当前学习计划</p><strong>当前学习计划</strong></div>
               <span><i></i>{{ educationAgentReady ? '已准备好' : '待补充' }}</span>
             </div>
             <template v-if="activeLearnerProfile">
@@ -8395,8 +8401,8 @@ onBeforeUnmount(() => {
                   <strong :class="`is-${learnerStateDiagnosis.state}`">{{ learnerStateDiagnosis.title }}</strong>
                 </div>
                 <div v-if="Number.isFinite(learnerStateDiagnosis.currentMastery) && Number.isFinite(learnerStateDiagnosis.targetMastery)" class="learning-sidebar-mastery">
-                  <div><small>当前掌握度</small><b>{{ formatRate(learnerStateDiagnosis.currentMastery) }}</b></div>
-                  <div><small>目标掌握度</small><b>{{ formatRate(learnerStateDiagnosis.targetMastery) }}</b></div>
+                  <div><small>当前进度</small><b>{{ formatRate(learnerStateDiagnosis.currentMastery) }}</b></div>
+                  <div><small>目标进度</small><b>{{ formatRate(learnerStateDiagnosis.targetMastery) }}</b></div>
                   <i aria-hidden="true"><span :style="{ width: `${Math.min(100, Math.max(0, learnerStateDiagnosis.currentMastery / Math.max(learnerStateDiagnosis.targetMastery, 0.01) * 100))}%` }"></span></i>
                 </div>
                 <p>{{ learnerStateDiagnosis.detail }}</p>
@@ -8427,7 +8433,7 @@ onBeforeUnmount(() => {
             <button type="button" @click="chatMode = false; navigateConsoleSection('education')">打开教师工作台 <ArrowUp :size="13" /></button>
           </section>
           <div class="conversation-sidebar-heading">
-            <div><p class="eyebrow">LEARNING TRAJECTORY</p><h2>学习轨迹</h2></div>
+            <div><p class="eyebrow">学习记录</p><h2>学习记录</h2></div>
           </div>
           <label class="conversation-search">
             <span class="sr-only">搜索学习任务</span>
@@ -8458,7 +8464,7 @@ onBeforeUnmount(() => {
             </button>
           </div>
           <section v-if="chatUserMessages.length" class="chat-turn-navigation" aria-label="本轮消息导航">
-            <p class="eyebrow">MESSAGE NAVIGATION</p>
+            <p class="eyebrow">本轮消息</p>
             <strong>本轮导航</strong>
             <div class="chat-turn-navigation-list">
               <button
@@ -8482,7 +8488,7 @@ onBeforeUnmount(() => {
         <main class="chat-main">
           <div class="chat-heading">
             <div>
-              <p class="eyebrow">YOUR LEARNING SPACE</p>
+              <p class="eyebrow">我的学习空间</p>
               <form v-if="showConversationRename" class="conversation-rename-form" @submit.prevent="renameActiveConversation">
                 <input ref="conversationRenameInputRef" v-model="conversationRenameValue" maxlength="255" :disabled="conversationRenaming" aria-label="对话标题" @keydown.esc.prevent="cancelConversationRename" />
                 <button class="secondary-button" type="button" :disabled="conversationRenaming" @click="cancelConversationRename">取消</button>
@@ -8506,7 +8512,7 @@ onBeforeUnmount(() => {
               ><i></i>{{ runEventStatusLabel }}</span>
               <span v-if="pendingChatMessage" class="chat-run-pill" :class="statusClass(chatRunStatus)"><i></i>{{ statusLabel(chatRunStatus) }}</span>
               <span v-if="pendingChatMessage && chatRunActivity" class="chat-activity-pill" role="status" aria-live="polite">{{ chatRunActivity }}</span>
-              <button v-if="activeLearnerProfile" class="secondary-button chat-agent-trace-button" type="button" :class="{ active: showLearningTrace }" @click="toggleLearningTrace"><Brain :size="14" />{{ showLearningTrace ? '收起安排依据' : '查看安排依据' }}</button>
+              <button v-if="activeLearnerProfile" class="secondary-button chat-agent-trace-button" type="button" :class="{ active: showLearningTrace }" @click="toggleLearningTrace"><Brain :size="14" />{{ showLearningTrace ? '收起说明' : '为什么这样安排' }}</button>
               <button v-if="activeConversationId && !showConversationRename" class="secondary-button" type="button" :disabled="conversationRenaming" @click="beginConversationRename">重命名</button>
             </div>
           </div>
@@ -8515,7 +8521,7 @@ onBeforeUnmount(() => {
           <section v-if="activeLearnerProfile" v-show="!learningOverviewCollapsed" class="education-agent-context-strip" aria-label="当前学习情况">
             <div class="education-agent-context-heading">
               <div>
-                <p class="eyebrow">CURRENT LEARNING CONTEXT</p>
+                <p class="eyebrow">本次学习依据</p>
                 <strong>这次学习会参考课程资料和你的作答</strong>
                 <span>系统会使用当前课程资料和你的作答，完成后更新学习进度。</span>
               </div>
@@ -8536,7 +8542,7 @@ onBeforeUnmount(() => {
           </section>
           <div v-if="activeLearnerProfile" class="learning-overview-collapse-bar">
             <div class="learning-overview-collapse-copy">
-              <p class="eyebrow">CURRENT LEARNING PLAN</p>
+              <p class="eyebrow">当前学习计划</p>
               <strong>{{ activeLearningGoal?.title || '本轮学习计划' }}</strong>
               <span>{{ activeChatCourse?.title || `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` }} · {{ learningOverviewNextAction.detail }}</span>
             </div>
@@ -8570,7 +8576,7 @@ onBeforeUnmount(() => {
             <div class="learning-onboarding-intro">
               <div class="learning-onboarding-mark" aria-hidden="true"><Sparkles :size="20" /></div>
               <div>
-                <p class="eyebrow">START LEARNING</p>
+                <p class="eyebrow">开始学习</p>
                 <h2>开始你的学习</h2>
                 <p>先告诉系统你在学什么、使用哪套教材，之后它会根据你的作答安排讲解、练习和复习。</p>
               </div>
@@ -8627,7 +8633,7 @@ onBeforeUnmount(() => {
           <section v-if="activeLearnerProfile" class="learning-agent-workbench" aria-label="当前学习计划">
             <div class="learning-agent-workbench-heading">
               <div>
-                <p>LEARNING PLAN</p>
+                <p>学习计划</p>
                 <strong>这次学习会怎样进行</strong>
                 <span>系统会参考课程资料、你的当前状态和作答结果，安排下一步。</span>
               </div>
@@ -8636,7 +8642,7 @@ onBeforeUnmount(() => {
             <section class="learning-session-focus" aria-label="当前学习任务">
               <header class="learning-session-focus-heading">
                 <div>
-                  <p>CURRENT TASK</p>
+                  <p>当前任务</p>
                   <strong>{{ activeLearningGoal?.title || '尚未设定学习目标' }}</strong>
                   <span>{{ activeLearningGoal ? `围绕「${activeLearningGoal.conceptKey}」完成一次练习，系统会据此更新学习进度。` : '先设定目标，系统才能记录这次学习是否达成。' }}</span>
                 </div>
@@ -8665,8 +8671,8 @@ onBeforeUnmount(() => {
               <summary><span>查看系统为什么这样安排</span><small>课程资料 · 学习状态 · 作答结果</small></summary>
             <section class="learning-agent-decision-board" aria-label="系统实时教学安排">
               <header class="learning-agent-decision-board-heading">
-                <div><p>LEARNING PLAN DETAILS</p><strong>系统会先参考课程资料，再根据你的作答安排下一步</strong><span>这些信息会影响本次安排，也可以随时查看和调整。</span></div>
-                <button class="text-button" type="button" @click="toggleLearningTrace"><Brain :size="13" />{{ showLearningTrace ? '收起完整依据' : '查看完整依据' }}</button>
+                <div><p>安排说明</p><strong>系统会先参考课程资料，再根据你的作答安排下一步</strong><span>这些信息会影响本次安排，也可以随时查看和调整。</span></div>
+                <button class="text-button" type="button" @click="toggleLearningTrace"><Brain :size="13" />{{ showLearningTrace ? '收起详细说明' : '查看详细说明' }}</button>
               </header>
               <div class="learning-agent-decision-summary">
                 <article class="learning-agent-boundary-card" :class="{ empty: !currentEducationSourceCount }">
@@ -8685,7 +8691,7 @@ onBeforeUnmount(() => {
                   <div v-if="Number.isFinite(learnerStateDiagnosis.currentMastery) && Number.isFinite(learnerStateDiagnosis.targetMastery)" class="learning-agent-diagnosis-meter">
                     <span>当前 <b>{{ formatRate(learnerStateDiagnosis.currentMastery) }}</b></span><i><b :style="{ width: `${Math.min(100, Math.max(0, learnerStateDiagnosis.currentMastery / Math.max(learnerStateDiagnosis.targetMastery, 0.01) * 100))}%` }"></b></i><span>目标 {{ formatRate(learnerStateDiagnosis.targetMastery) }}</span>
                   </div>
-                  <div v-else class="learning-agent-diagnosis-note"><CircleDot :size="12" />{{ activeLearningGoal ? `目标掌握度 ${formatRate(activeLearningGoal.targetMastery)}` : '创建目标后显示达标条件' }}</div>
+                  <div v-else class="learning-agent-diagnosis-note"><CircleDot :size="12" />{{ activeLearningGoal ? `目标进度 ${formatRate(activeLearningGoal.targetMastery)}` : '创建目标后显示达标条件' }}</div>
                 </article>
               </div>
               <section class="learning-agent-action-plan" aria-label="系统教学计划">
@@ -8693,7 +8699,7 @@ onBeforeUnmount(() => {
                 <ol>
                   <li class="learning-agent-plan-action"><span>1</span><div><small>教学动作</small><strong>{{ agentTeachingAction.title }}</strong><p>{{ agentTeachingAction.detail }}</p></div></li>
                   <li class="learning-agent-plan-evidence"><span>2</span><div><small>需要观察的结果</small><strong>{{ agentEvidenceRequest.title }}</strong><p>{{ agentEvidenceRequest.detail }}</p></div></li>
-                  <li class="learning-agent-plan-writeback"><span>3</span><div><small>学习进度如何更新</small><strong>{{ activeLearningGoal ? `更新「${activeLearningGoal.conceptKey}」的学习进度` : '等待设定学习目标' }}</strong><p>只有作答、解题过程或老师评分会改变掌握度；聊天内容本身不会直接算作已经掌握。</p></div></li>
+                  <li class="learning-agent-plan-writeback"><span>3</span><div><small>学习进度如何更新</small><strong>{{ activeLearningGoal ? `更新「${activeLearningGoal.conceptKey}」的学习进度` : '等待设定学习目标' }}</strong><p>只有作答、解题过程或老师评分会改变学习进度；聊天内容本身不会直接算作已经掌握。</p></div></li>
                 </ol>
                 <footer>
                   <span><ListChecks :size="13" />{{ activeLearningGoal ? learningEvidenceSummary : '先定义目标，再开始累积学习记录' }}</span>
@@ -8733,7 +8739,7 @@ onBeforeUnmount(() => {
           <section v-if="chatCourseAssignment" class="chat-course-assignment-panel" aria-label="当前课程作业">
             <header class="chat-course-assignment-heading">
               <div>
-                <p class="eyebrow">COURSE ASSIGNMENT / EVIDENCE LOOP</p>
+                <p class="eyebrow">课程作业</p>
                 <h2>{{ chatCourseAssignment.title }}</h2>
                 <p>{{ chatCourseAssignment.instructions }}</p>
               </div>
@@ -8870,14 +8876,14 @@ onBeforeUnmount(() => {
                       <small>{{ assessmentObservationLabel(attempt) }}</small>
                     </header>
                     <div class="chat-assessment-mastery">
-                      <span>掌握度 <b>{{ formatRate(attempt.masteryBefore) }} → {{ formatRate(attempt.masteryAfter) }}</b></span>
+                      <span>{{ isLearnerOnlyRole ? '学习进度' : '掌握度' }} <b>{{ formatRate(attempt.masteryBefore) }} → {{ formatRate(attempt.masteryAfter) }}</b></span>
                       <em :class="{ 'is-positive': Number(attempt.masteryAfter) >= Number(attempt.masteryBefore) }">{{ formatMasteryDelta(attempt) }}</em>
                     </div>
                     <blockquote v-if="attempt.learnerEvidenceQuote" class="chat-assessment-learner-quote"><span>学习者本轮原话</span>{{ attempt.learnerEvidenceQuote }}</blockquote>
                     <p v-if="attempt.evidenceText"><b>系统观察：</b>{{ attempt.evidenceText }}</p>
                     <p v-else-if="attempt.feedback">{{ attempt.feedback }}</p>
                     <footer>
-                      <span v-if="assessmentRetrievalEvidenceLabel(attempt)"><BookOpen :size="12" />知识源：{{ assessmentRetrievalEvidenceLabel(attempt) }}</span>
+                      <span v-if="assessmentRetrievalEvidenceLabel(attempt)"><BookOpen :size="12" />课程资料：{{ assessmentRetrievalEvidenceLabel(attempt) }}</span>
                       <span v-if="attempt.learningAssignmentId"><ListChecks :size="12" />已回写课程作业</span>
                       <span v-if="attempt.feedback && attempt.evidenceText"><CircleDot :size="12" />{{ attempt.feedback }}</span>
                     </footer>
@@ -8993,7 +8999,7 @@ onBeforeUnmount(() => {
 
         <aside v-if="showLearningTrace && !showChatWorkspace && !showChatRun" class="chat-learning-trace-panel" aria-label="学习依据">
           <div class="chat-run-panel-heading">
-            <div><p class="eyebrow">LEARNING CONTEXT</p><h2>学习依据</h2></div>
+            <div><p class="eyebrow">学习说明</p><h2>为什么这样安排</h2></div>
             <button class="icon-button" type="button" aria-label="关闭学习依据" @click="showLearningTrace = false"><X :size="15" /></button>
           </div>
           <div class="learning-trace-intro" :class="{ ready: educationAgentReady }">
@@ -9004,7 +9010,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <section class="learning-trace-section" aria-label="学习依据链路">
-            <div class="learning-trace-section-heading"><span>DECISION PIPELINE</span><small>{{ educationAgentTrace.filter((item) => item.state === 'ready').length }} / {{ educationAgentTrace.length }} 已就绪</small></div>
+            <div class="learning-trace-section-heading"><span>安排依据</span><small>{{ educationAgentTrace.filter((item) => item.state === 'ready').length }} / {{ educationAgentTrace.length }} 已准备好</small></div>
             <div class="learning-trace-list">
               <article v-for="(item, index) in educationAgentTrace" :key="item.id" class="learning-trace-row" :class="`is-${item.state}`">
                 <div class="learning-trace-index"><span>{{ index + 1 }}</span><i v-if="index < educationAgentTrace.length - 1"></i></div>
@@ -9017,7 +9023,7 @@ onBeforeUnmount(() => {
             </div>
           </section>
           <section class="learning-trace-next" aria-label="下一步学习动作">
-            <div class="learning-trace-section-heading"><span>NEXT LEARNING ACTION</span></div>
+            <div class="learning-trace-section-heading"><span>下一步学习</span></div>
             <strong>{{ activeLearningTask?.title || activeLearningRecommendation?.nextActionTitle || '绑定学习目标后生成' }}</strong>
             <p>{{ activeLearningTask?.prompt || activeLearningRecommendation?.rationale || '系统会根据学习进度和学习记录，给出下一步练习、诊断或复习。' }}</p>
             <button class="secondary-button" type="button" @click="chatMode = false; navigateConsoleSection('education')">{{ activeLearnerProfile ? '调整课程与学习目标' : '填写学习信息' }} <ArrowUp :size="13" /></button>
@@ -10045,7 +10051,7 @@ onBeforeUnmount(() => {
                 </article>
               </div>
               <footer class="education-agent-state-footer">
-                <span>{{ activeLearningGoal ? `当前目标：${activeLearningGoal.title} · ${learningEvidenceSummary}` : '尚未绑定学习目标；聊天内容不会被直接当作掌握度证据。' }}</span>
+                <span>{{ activeLearningGoal ? `当前目标：${activeLearningGoal.title} · ${learningEvidenceSummary}` : '尚未绑定学习目标；聊天内容不会直接算作学习进度。' }}</span>
                 <button class="secondary-button" type="button" @click="educationAgentReady ? (chatMode = true) : openEducationAgentSetup()">{{ educationAgentReady ? '进入学习对话' : '配置并开始' }} <ArrowUp :size="12" /></button>
               </footer>
             </section>
@@ -10600,7 +10606,7 @@ onBeforeUnmount(() => {
                     <label class="field"><span>学习信息</span><select v-model="learningGoalForm.learnerProfileId" required><option value="">请选择学习信息</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>
                     <label class="field"><span>目标名称</span><input v-model="learningGoalForm.title" required maxlength="255" placeholder="例如：掌握函数定义域" /></label>
                     <label class="field"><span>知识点</span><input v-model="learningGoalForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
-                    <label class="field"><span>达成标准</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required placeholder="例如：0.8" title="0.8 表示希望达到 80% 的掌握度" /></label>
+                    <label class="field"><span>达成标准</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required placeholder="例如：0.8" title="0.8 表示希望达到 80% 的目标进度" /></label>
                     <button class="secondary-button" type="submit" :disabled="educationLoading || !learnerProfiles.length">保存目标</button>
                   </form>
                   <div v-if="learningGoals.length" class="learning-goal-list">
@@ -10612,7 +10618,7 @@ onBeforeUnmount(() => {
                   <div v-if="activeLearningGoal && learningRecommendation" class="learning-recommendation">
                     <div class="learning-recommendation-heading"><div><span>下一步学习动作</span><strong>{{ learningRecommendation.nextActionTitle }}</strong></div><div><button class="secondary-button" type="button" :title="learningGoalSourceBlockReason(learningRecommendation.learningGoalId)" :disabled="Boolean(learningGoalSourceBlockReason(learningRecommendation.learningGoalId))" @click="useLearningRecommendation">{{ learningGoalSourceBlockReason(learningRecommendation.learningGoalId) ? educationSetupActionLabel : '带着建议开始' }}</button><button v-if="learningGoalSourceBlockReason(learningRecommendation.learningGoalId)" class="text-button" type="button" @click="openEducationAgentSetup">{{ educationSetupActionLabel }}</button></div></div>
                     <p>{{ learningRecommendation.rationale }}</p>
-                    <small>掌握度 {{ Math.round(learningRecommendation.currentMastery * 100) }}% / 目标 {{ Math.round(learningRecommendation.targetMastery * 100) }}% · 测评 {{ learningRecommendation.attemptCount }} 次 · 正确 {{ learningRecommendation.correctAttemptCount }} 次</small>
+                    <small>当前进度 {{ Math.round(learningRecommendation.currentMastery * 100) }}% / 目标 {{ Math.round(learningRecommendation.targetMastery * 100) }}% · 学习记录 {{ learningRecommendation.attemptCount }} 次 · 正确 {{ learningRecommendation.correctAttemptCount }} 次</small>
                     <small v-if="learningRecommendation.reviewPlanId">保持度复习 {{ learningRecommendation.reviewCount }} 次 · 成功 {{ learningRecommendation.successfulReviewCount }} 次 · 下次 {{ formatDate(learningRecommendation.nextReviewAt) }}</small>
                     <details v-if="learningGoalAssessments.length" class="learning-assessment-history"><summary>查看测评历史（{{ learningGoalAssessments.length }}）</summary><div v-for="attempt in learningGoalAssessments.slice().reverse().slice(0, 5)" :key="attempt.id"><span :class="attempt.correct ? 'assessment-correct' : 'assessment-wrong'">{{ attempt.correct ? '正确' : '错误' }}</span><span>{{ Math.round(attempt.masteryBefore * 100) }}% → {{ Math.round(attempt.masteryAfter * 100) }}%</span><small>{{ attempt.assessmentType === 'REVIEW' ? '保持度复习' : (attempt.evidenceSource === 'MANUAL_REVIEW' ? '人工复核' : '系统观察') }} · {{ formatDate(attempt.createdAt) }}</small></div></details>
                   </div>
@@ -10628,11 +10634,11 @@ onBeforeUnmount(() => {
                       <div v-for="path in educationDependencyGraph.prerequisites" :key="`${path.conceptKey}-${path.depth}`" class="learning-dependency-row">
                         <span class="learning-dependency-depth">L{{ path.depth }}</span>
                         <strong>{{ path.conceptKey }}</strong>
-                        <span class="learning-dependency-mastery">掌握度 {{ formatRate(path.masteryScore) }}</span>
+                        <span class="learning-dependency-mastery">学习进度 {{ formatRate(path.masteryScore) }}</span>
                         <span class="learning-dependency-gap" :class="{ 'is-gap': path.deficit >= 0.5 }">{{ path.deficit >= 0.5 ? '需补强' : '已覆盖' }}</span>
                       </div>
                     </div>
-                    <small class="learning-dependency-note">系统会优先补足掌握度不足的前置知识。</small>
+                    <small class="learning-dependency-note">系统会优先补足进度不足的前置知识。</small>
                   </div>
                 </div>
               </details>
