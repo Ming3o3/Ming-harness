@@ -1346,7 +1346,7 @@ const learnerJourneySteps = computed(() => {
       state: hasCompletedAssignment ? 'ready' : (hasAssignment ? 'current' : 'pending'),
     },
     {
-      title: '查看反馈',
+      title: '查看老师反馈',
       detail: hasFeedback ? '已有教师确认结果' : (waitingTeacherReview ? '等待教师确认' : '完成作业后查看'),
       state: hasFeedback ? 'ready' : (waitingTeacherReview ? 'current' : 'pending'),
     },
@@ -2459,12 +2459,12 @@ const learnerStateDiagnosis = computed(() => {
     return {
       state: evidenceCount ? (gap > 0.01 ? 'observed' : 'ready') : 'unverified',
       title: !evidenceCount
-        ? `还没有学习记录 · 距离目标 ${formatRate(gap)}`
+        ? `${isLearnerOnlyRole.value ? '还没有练习记录' : '还没有学习记录'} · 距离目标 ${formatRate(gap)}`
         : (gap > 0.01 ? `距离目标还差 ${formatRate(gap)}` : (isLearnerOnlyRole.value ? '当前学习进度已达到目标' : '当前证据已达到目标')),
       detail: evidenceCount
         ? `围绕「${activeLearningGoal.value.conceptKey}」已有 ${evidenceCount} 次学习记录；系统会按此状态调整难度与动作。`
         : (isLearnerOnlyRole.value
-          ? '完成一次作答后，系统会更准确地判断当前进度。'
+          ? '完成一次练习后，系统会更准确地判断当前进度。'
           : '还没有可验证的学习记录；完成一次作答后，系统会更准确地判断当前进度。'),
       currentMastery,
       targetMastery,
@@ -2481,7 +2481,7 @@ const learnerStateDiagnosis = computed(() => {
   }
   return {
     state: 'unverified',
-    title: isLearnerOnlyRole.value ? '还没有足够的学习记录' : '还没有可靠的作答证据',
+    title: isLearnerOnlyRole.value ? '还没有足够的练习记录' : '还没有可靠的作答证据',
     detail: '系统会先通过一道题或追问了解你的掌握情况，不会只根据提问内容判断。',
     currentMastery: null,
     targetMastery: Number(activeLearningGoal.value.targetMastery),
@@ -2491,8 +2491,10 @@ const agentTeachingAction = computed(() => {
   if (!currentEducationSourceCount.value) {
     return {
       state: 'blocked',
-      title: '先补齐可检索的课程资料',
-      detail: educationSendBlockReason.value || '课程范围为空，系统不会直接给出脱离课程的通用答案。',
+      title: isLearnerOnlyRole.value ? '等待老师准备学习材料' : '先补齐可检索的课程资料',
+      detail: educationSendBlockReason.value || (isLearnerOnlyRole.value
+        ? '老师准备好本课程材料后，你就可以开始学习。'
+        : '课程范围为空，系统不会直接给出脱离课程的通用答案。'),
     }
   }
   if (!activeLearningGoal.value) {
@@ -2560,7 +2562,9 @@ const agentEvidenceRequest = computed(() => {
     return {
       state: 'required',
       title: isLearnerOnlyRole.value ? '先完成一次练习' : '先用一次作答建立基线',
-      detail: '系统会记录正确性、推理过程和反馈，再更新学习进度。',
+      detail: isLearnerOnlyRole.value
+        ? '系统会根据你的答案、解题过程和反馈更新学习进度。'
+        : '系统会记录正确性、推理过程和反馈，再更新学习进度。',
     }
   }
   return {
@@ -2654,7 +2658,7 @@ const currentEducationSourceLabel = computed(() => {
   if (!scope.configured) return '待配置学习上下文'
   if (isLearnerOnlyRole.value && !enrolledEducationCourses.value.length && !learnerLearningAssignmentCount.value) return '还没有课程'
   if (scope.sourceCount) return isLearnerOnlyRole.value
-    ? `${scope.sourceCount} 份课程资料可用`
+    ? `${scope.sourceCount} 份学习材料可用`
     : `${scope.sourceCount} 个当前可检索来源`
   return scope.conceptKey ? '当前知识点暂无匹配来源' : '当前约束下暂无匹配来源'
 })
@@ -2666,9 +2670,9 @@ const currentEducationRetrievalDetail = computed(() => {
   }
   const base = `${scope.subject} · ${scope.gradeLevel} · ${scope.curriculumVersion}`
   if (isLearnerOnlyRole.value) {
-    if (scope.sourceCount) return `${base} · 已匹配 ${scope.sourceCount} 份课程资料`
-    if (scope.sameSubjectGradeSourceCount) return `${base} · 当前版本没有资料，可用版本：${scope.availableCurriculumVersions.join('、')}`
-    return `${base} · 当前课程版本还没有课程资料`
+    if (scope.sourceCount) return `${base} · 已匹配 ${scope.sourceCount} 份学习材料`
+    if (scope.sameSubjectGradeSourceCount) return `${base} · 当前版本没有材料，可用版本：${scope.availableCurriculumVersions.join('、')}`
+    return `${base} · 当前课程版本还没有学习材料`
   }
   const available = scope.courseSourceCount
     ? (scope.sourceCount === scope.courseSourceCount
@@ -2945,6 +2949,7 @@ const learningSetupProgress = computed(() => {
 const learningEvidenceSummary = computed(() => {
   if (!activeLearningGoal.value) return '等待学习目标'
   const count = learningGoalAssessments.value.length
+  if (isLearnerOnlyRole.value) return count ? `${count} 次练习记录` : '还没有练习记录'
   return count ? `${count} 条学习记录` : '尚无学习记录'
 })
 // 把课程来源、当前目标和已有掌握度合并成一条可读的课程路径。教育 Agent
@@ -10190,9 +10195,9 @@ onBeforeUnmount(() => {
             </div>
             <p class="context-workbench-help">{{ educationWorkspaceModeDetail }}<template v-if="isAdminWorkspace">教育数据用于治理观察，不改变教师课程所有权或学生学习状态。</template><template v-else-if="isTeacherOnlyRole">按课程资料、作业和反馈推进，系统会自动记录学生进度。</template><template v-else>你只需要完成下面的下一步，系统会自动根据课程和作答情况安排学习。</template></p>
             <p v-if="educationError" class="policy-error">{{ educationError }}</p>
-            <section v-if="isLearnerOnlyRole" class="learner-focus-card" aria-label="今天的学习重点">
+            <section v-if="isLearnerOnlyRole" class="learner-focus-card" aria-label="下一步行动">
               <div class="learner-focus-copy">
-                <p class="eyebrow">今天的学习重点</p>
+                <p class="eyebrow">下一步行动</p>
                 <h4>{{ learningOverviewNextAction.label }}</h4>
                 <p>{{ learningOverviewNextAction.detail }}</p>
                 <small v-if="activeEducationCourse?.title || activeChatCourse?.title">{{ activeEducationCourse?.title || activeChatCourse?.title }}</small>
@@ -10263,29 +10268,35 @@ onBeforeUnmount(() => {
                 </footer>
               </section>
             </details>
-            <section v-else-if="isLearnerOnlyRole" class="education-agent-state-card" :class="{ ready: educationAgentReady }" aria-label="当前学习状态">
-              <div class="education-agent-state-heading">
-                <div><p class="eyebrow">当前学习状态</p><h4>你的学习状态</h4><span>系统会根据课程资料和你的作答情况，安排下一步学习。</span></div>
-                <span class="education-agent-state-pill"><i></i>{{ educationAgentReady ? '可以开始学习' : '还差一步准备' }}</span>
-              </div>
-              <div class="education-agent-state-grid">
-                <article class="education-agent-state-item">
-                  <small>01 · 课程资料</small><strong>{{ currentEducationSourceLabel }}</strong><p>{{ currentEducationRetrievalDetail }}</p><small v-if="educationVersionRepairHint" class="education-version-repair-hint">{{ educationVersionRepairHint }}</small>
-                </article>
-                <article class="education-agent-state-item">
-                  <small>02 · {{ isLearnerOnlyRole ? '当前学习进度' : '当前掌握情况' }}</small><strong>{{ learnerStateDiagnosis.title }}</strong><p>{{ learnerStateDiagnosis.detail }}</p>
-                </article>
-                <article class="education-agent-state-item">
-                  <small>03 · 下一步学习</small><strong>{{ agentTeachingAction.title }}</strong><p>{{ agentTeachingAction.detail }}</p>
-                </article>
-                <article class="education-agent-state-item">
-                  <small>04 · 作答后会更新</small><strong>{{ agentEvidenceRequest.title }}</strong><p>{{ agentEvidenceRequest.detail }}</p>
-                </article>
-              </div>
-              <footer class="education-agent-state-footer">
-                <span>{{ activeLearningGoal ? `当前目标：${activeLearningGoal.title} · ${learningEvidenceSummary}` : '尚未绑定学习目标；聊天内容不会直接算作学习进度。' }}</span>
-              </footer>
-            </section>
+            <details v-else-if="isLearnerOnlyRole" class="education-agent-state-details learner-status-details" :open="!educationAgentReady" aria-label="当前学习状态">
+              <summary>
+                <span><strong>学习状态摘要</strong><small>{{ educationAgentReady ? '学习材料已准备好；完成一次练习后会更新进度' : '还需要补充学习信息或课程材料' }}</small></span>
+                <em>{{ educationAgentReady ? '已准备好' : '待补充' }}</em>
+              </summary>
+              <section class="education-agent-state-card" :class="{ ready: educationAgentReady }" aria-label="学习状态详情">
+                <div class="education-agent-state-heading">
+                  <div><p class="eyebrow">学习状态摘要</p><h4>系统会根据你的答案安排下一步</h4><span>完成练习后，系统会更新你的进度并调整后续学习。</span></div>
+                  <span class="education-agent-state-pill"><i></i>{{ educationAgentReady ? '可以开始学习' : '还差一步准备' }}</span>
+                </div>
+                <div class="education-agent-state-grid">
+                  <article class="education-agent-state-item">
+                    <small>01 · 老师提供的材料</small><strong>{{ currentEducationSourceLabel }}</strong><p>{{ currentEducationRetrievalDetail }}</p><small v-if="educationVersionRepairHint" class="education-version-repair-hint">{{ educationVersionRepairHint }}</small>
+                  </article>
+                  <article class="education-agent-state-item">
+                    <small>02 · 目前的学习进度</small><strong>{{ learnerStateDiagnosis.title }}</strong><p>{{ learnerStateDiagnosis.detail }}</p>
+                  </article>
+                  <article class="education-agent-state-item">
+                    <small>03 · 下一步</small><strong>{{ agentTeachingAction.title }}</strong><p>{{ agentTeachingAction.detail }}</p>
+                  </article>
+                  <article class="education-agent-state-item">
+                    <small>04 · 完成后会更新</small><strong>{{ agentEvidenceRequest.title }}</strong><p>{{ agentEvidenceRequest.detail }}</p>
+                  </article>
+                </div>
+                <footer class="education-agent-state-footer">
+                  <span>{{ activeLearningGoal ? `当前目标：${activeLearningGoal.title} · ${learningEvidenceSummary}` : '还没有学习目标；先设定目标，系统才能记录进度。' }}</span>
+                </footer>
+              </section>
+            </details>
             <details v-if="isLearnerOnlyRole" class="learner-advanced-details">
               <summary><span>查看系统如何安排学习</span><small>了解课程、作答和复习之间的关系</small></summary>
               <ol class="education-agent-loop" aria-label="学习安排闭环">
@@ -10514,7 +10525,7 @@ onBeforeUnmount(() => {
               <div v-else class="context-preview-empty">组织内还没有配置课程知识源；请让教师上传资料并补充课程元数据。</div>
             </section>
             <details v-if="isLearnerOnlyRole" class="education-profile-setup" :open="!activeLearnerProfile">
-              <summary><span><strong>学习信息与目标</strong><small>{{ activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel} · ${activeLearnerProfile.curriculumVersion}` : '填写学科、年级和教材版本' }}</small></span><em>{{ activeLearnerProfile ? '已设置' : '待设置' }}</em></summary>
+              <summary><span><strong>我的学习设置</strong><small>{{ activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel} · ${activeLearnerProfile.curriculumVersion}` : '填写学科、年级和教材版本' }}</small></span><em>{{ activeLearnerProfile ? '已设置' : '待设置' }}</em></summary>
               <div class="education-profile-setup-content">
                 <div v-if="educationCourseJoinPrefill" class="education-profile-prefill">
                   <strong>已根据“{{ educationCourseJoinPrefill.title }}”填好课程信息</strong>
@@ -10541,15 +10552,15 @@ onBeforeUnmount(() => {
             </details>
             <component :is="isLearnerOnlyRole ? 'details' : 'div'" class="education-course-workbench-shell" :open="isLearnerOnlyRole ? !enrolledEducationCourses.length : undefined">
               <summary v-if="isLearnerOnlyRole" class="education-course-workbench-summary">
-                <span><strong>课程与加入信息</strong><small>{{ enrolledEducationCourses.length ? `已加入 ${enrolledEducationCourses.length} 门课程；需要时可查看课程和邀请码` : '还没有加入课程；从这里开始' }}</small></span>
-                <em>{{ enrolledEducationCourses.length ? '按需查看' : '开始设置' }}</em>
+                <span><strong>我的课程</strong><small>{{ enrolledEducationCourses.length ? `已加入 ${enrolledEducationCourses.length} 门课程；需要时可查看课程和邀请码` : '还没有加入课程；从这里开始' }}</small></span>
+                <em>{{ enrolledEducationCourses.length ? '查看' : '开始设置' }}</em>
               </summary>
               <section class="education-course-workbench" aria-label="课程工作台">
               <div class="subsection-title education-course-heading">
                 <div><h4>{{ isAdminWorkspace ? '课程概览' : (educationWorkspaceMode === 'teacher' ? '课程运营工作台' : '我的课程与学习路径') }}</h4><span>{{ isAdminWorkspace ? `${educationCourses.length} 门课程 · ${learningAssignments.length} 份课程作业` : (educationWorkspaceMode === 'teacher' ? `${teacherEducationCourses.length} 个我创建 · ${enrolledEducationCourses.length} 个已加入` : (enrolledEducationCourses.length ? `已加入 ${enrolledEducationCourses.length} 门课程` : '还没有加入课程')) }}</span></div>
                 <span v-if="activeEducationCourse" class="context-mode-chip">{{ educationCourseStatusLabel(activeEducationCourse.status) }}</span>
               </div>
-              <p class="learning-task-help">{{ isAdminWorkspace ? '管理员在这里查看组织课程和作业规模；课程资料、名单、布置与复核由教师负责。' : (educationWorkspaceMode === 'teacher' ? '课程资料决定教学范围；请在下方依次维护名单、布置作业和查看反馈。' : '课程资料决定学习范围；系统会结合你的作业、提交内容和学习对话更新进度。') }}{{ educationWorkspaceMode === 'teacher' ? '班级进度、名单和布置动作只在教师管理入口中展开；学生学习信息由学生本人维护。' : (!isAdminWorkspace ? '你只需要关注自己的课程行动、提交和反馈。' : '') }}</p>
+              <p class="learning-task-help">{{ isAdminWorkspace ? '管理员在这里查看组织课程和作业规模；课程资料、名单、布置与复核由教师负责。' : (educationWorkspaceMode === 'teacher' ? '课程资料决定教学范围；请在下方依次维护名单、布置作业和查看反馈。' : '老师提供的学习材料决定课程范围；系统会结合你的作业、答案和学习对话更新进度。') }}{{ educationWorkspaceMode === 'teacher' ? '班级进度、名单和布置动作只在教师管理入口中展开；学生学习信息由学生本人维护。' : (!isAdminWorkspace ? '你只需要关注自己的课程行动、提交和反馈。' : '') }}</p>
               <details v-if="canManageEducationOperations" class="education-teacher-entry" :open="educationWorkspaceMode === 'teacher' && !teacherEducationCourses.length">
                 <summary><span><strong>教师管理入口</strong><small>创建课程、添加学生、布置作业</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '管理模式' : '需要教师 / 组织权限' }}</em></summary>
                 <p class="education-teacher-entry-help">这是课程管理操作，不会改变学生的学习状态；提交后仍由系统做最终权限校验。</p>
