@@ -11095,7 +11095,7 @@ onBeforeUnmount(() => {
                   <label class="field"><span>学科</span><input v-model="learnerProfileForm.subject" required maxlength="128" /></label>
                   <label class="field"><span>年级</span><input v-model="learnerProfileForm.gradeLevel" required maxlength="128" /></label>
                   <label class="field"><span>教材版本</span><input v-model="learnerProfileForm.curriculumVersion" required maxlength="128" placeholder="例如：人教A版" /></label>
-                  <label class="field"><span>学习目标</span><input v-model="learnerProfileForm.learningGoal" maxlength="512" placeholder="例如：掌握函数基础并能独立完成练习" /></label>
+                  <label class="field"><span>学习目标（可选）</span><input v-model="learnerProfileForm.learningGoal" maxlength="512" placeholder="例如：掌握函数基础并能独立完成练习" /></label>
                   <button class="secondary-button" type="submit" :disabled="educationLoading">{{ educationLoading ? '保存中…' : (educationCourseJoinPrefill ? '确认并保存学习信息' : '保存学习信息') }}</button>
                 </form>
                 <p v-if="educationCourseJoinPrefill" class="education-profile-next-step"><strong>保存后怎么继续？</strong> 你已经加入课程；保存后课程作业会自动出现在下方，不需要自己上传资料。</p>
@@ -11110,10 +11110,10 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </details>
-            <component v-if="!isTeacherOnlyRole || manageableEducationSources.length || teacherEducationCourses.length" :is="isLearnerOnlyRole ? 'details' : 'div'" class="education-course-workbench-shell" :open="isLearnerOnlyRole ? !enrolledEducationCourses.length : undefined">
+            <component v-if="!isTeacherOnlyRole || manageableEducationSources.length || teacherEducationCourses.length" :is="isLearnerOnlyRole ? 'details' : 'div'" class="education-course-workbench-shell" :open="isLearnerOnlyRole ? Boolean(enrolledEducationCourses.length || educationCourseJoinPrefill) : undefined">
               <summary v-if="isLearnerOnlyRole" class="education-course-workbench-summary">
-                <span><strong>我的课程</strong><small>{{ enrolledEducationCourses.length ? `已加入 ${enrolledEducationCourses.length} 门课程；需要时可查看课程和邀请码` : '还没有加入课程；从这里开始' }}</small></span>
-                <em>{{ enrolledEducationCourses.length ? '查看' : '开始设置' }}</em>
+                <span><strong>我的课程</strong><small>{{ enrolledEducationCourses.length ? `已加入 ${enrolledEducationCourses.length} 门课程；需要时可查看课程和邀请码` : (activeLearnerProfile ? '有课程邀请码时，可以在这里加入' : '先填写学习信息；有邀请码时再展开加入') }}</small></span>
+                <em>{{ enrolledEducationCourses.length ? '查看' : (activeLearnerProfile ? '输入邀请码' : '有邀请码？') }}</em>
               </summary>
               <section class="education-course-workbench" aria-label="课程工作台">
               <div class="subsection-title education-course-heading">
