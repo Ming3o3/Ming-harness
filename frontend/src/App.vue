@@ -4059,7 +4059,9 @@ function messageNavigationLabel(message) {
 
 function conversationLearningContext(conversation) {
   if (!conversation?.educationMode) return ''
-  const course = [conversation.educationCourseCode, conversation.educationCourseTitle]
+  const course = (isLearnerOnlyRole.value
+    ? [conversation.educationCourseTitle]
+    : [conversation.educationCourseCode, conversation.educationCourseTitle])
     .filter(Boolean).join(' · ')
   const curriculum = [conversation.educationSubject, conversation.educationGradeLevel,
     conversation.educationCurriculumVersion].filter(Boolean).join(' · ')
@@ -4085,6 +4087,11 @@ function learnerFriendlyConversationPreview(conversation) {
       : '本次学习已准备好，等待你的作答'
   }
   return preview
+}
+
+function learnerFriendlySourceReason(source) {
+  if (source?.prerequisiteGaps?.length) return '这份资料适合当前学习阶段，并会先补充需要的基础知识'
+  return '这份资料与当前课程和学习目标匹配，适合现在学习'
 }
 
 async function loadConversationFeedback(detail) {
@@ -8621,7 +8628,7 @@ onBeforeUnmount(() => {
             <div class="chat-heading-actions">
               <button class="chat-education-status-chip" type="button" title="打开学习设置" @click="chatMode = false; navigateConsoleSection('education')">
                 <Sparkles :size="14" />
-                <span><small>当前学习信息</small><strong>{{ activeChatCourse ? `${activeChatCourse.code} · ${activeChatCourse.title}` : (activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` : '尚未设置') }}</strong></span>
+                <span><small>当前学习信息</small><strong>{{ activeChatCourse ? (isLearnerOnlyRole ? activeChatCourse.title : `${activeChatCourse.code} · ${activeChatCourse.title}`) : (activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` : '尚未设置') }}</strong></span>
               </button>
               <span
                 v-if="runEventConnectionState !== 'idle' && !isTerminal(selectedStatus)"
@@ -8963,10 +8970,10 @@ onBeforeUnmount(() => {
                           <code v-if="source.citation && !isLearnerOnlyRole">{{ source.citation }}</code>
                           <p v-if="source.excerpt">{{ source.excerpt }}</p>
                           <div v-if="source.runtimeEvidence && (source.rankingReason || source.prerequisiteGaps?.length)" class="chat-source-explanation">
-                            <span>选择理由</span><strong>{{ source.rankingReason || '已符合当前课程范围' }}</strong>
+                            <span>{{ isLearnerOnlyRole ? '为什么推荐' : '选择理由' }}</span><strong>{{ isLearnerOnlyRole ? learnerFriendlySourceReason(source) : (source.rankingReason || '已符合当前课程范围') }}</strong>
                             <small v-if="source.prerequisiteGaps?.length">{{ isLearnerOnlyRole ? '还需要先会：' : '前置缺口：' }}{{ source.prerequisiteGaps.join('、') }}</small>
                           </div>
-                          <small v-if="source.runtimeEvidence">系统已从该来源读取本轮摘录<span v-if="source.stepName && !isLearnerOnlyRole"> · {{ source.stepName }}</span></small>
+                          <small v-if="source.runtimeEvidence">{{ isLearnerOnlyRole ? '本次回答参考了这份课程资料' : '系统已从该来源读取本轮摘录' }}<span v-if="source.stepName && !isLearnerOnlyRole"> · {{ source.stepName }}</span></small>
                           <small v-else-if="source.updatedAt">更新于 {{ formatDate(source.updatedAt) }}</small>
                         </article>
                       </div>
