@@ -834,6 +834,15 @@ h3 { margin: 0; font-size: 13px; }
 .learning-assignment-form .field { min-width: 0; }
 .learning-assignment-wide { grid-column: 1 / -1; }
 .learning-assignment-submit { justify-self: start; }
+.learning-assignment-context-details, .learning-assignment-settings { display: grid; gap: 8px; border: 1px solid rgba(153,174,218,.14); border-radius: 7px; background: rgba(153,174,218,.025); padding: 0 8px 8px; }
+.learning-assignment-context-details > summary, .learning-assignment-settings > summary { display: flex; align-items: baseline; gap: 8px; min-height: 34px; color: var(--soft); cursor: pointer; list-style: none; }
+.learning-assignment-context-details > summary::-webkit-details-marker, .learning-assignment-settings > summary::-webkit-details-marker { display: none; }
+.learning-assignment-context-details > summary::before, .learning-assignment-settings > summary::before { content: '▸'; flex: 0 0 auto; color: var(--orange); font-size: 11px; }
+.learning-assignment-context-details[open] > summary::before, .learning-assignment-settings[open] > summary::before { content: '▾'; }
+.learning-assignment-context-details > summary > span, .learning-assignment-settings > summary > span { display: grid; min-width: 0; gap: 2px; }
+.learning-assignment-context-details > summary strong, .learning-assignment-settings > summary strong { color: var(--soft); font-size: 9px; }
+.learning-assignment-context-details > summary small, .learning-assignment-settings > summary small { color: var(--muted); font: 8px/1.35 "DM Mono", monospace; }
+.learning-assignment-context-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .learning-assignment-feedback-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; border-top: 1px solid rgba(76,226,213,.18); padding-top: 10px; }
 .learning-assignment-feedback-form .subsection-title, .learning-assignment-feedback-form .learning-assignment-wide { grid-column: 1 / -1; }
 .learning-assignment-list { display: grid; gap: 6px; }
@@ -962,7 +971,7 @@ h3 { margin: 0; font-size: 13px; }
   .education-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .learning-task-row { grid-template-columns: 1fr; }
   .learning-task-actions { grid-auto-flow: column; justify-content: start; justify-items: start; }
-  .learning-assignment-form, .learning-assignment-feedback-form { grid-template-columns: 1fr; }
+  .learning-assignment-form, .learning-assignment-feedback-form, .learning-assignment-context-fields { grid-template-columns: 1fr; }
   .learning-assignment-wide { grid-column: auto; }
   .learning-assignment-row { grid-template-columns: 1fr; }
   .learning-assignment-actions { grid-auto-flow: column; justify-content: start; justify-items: start; }

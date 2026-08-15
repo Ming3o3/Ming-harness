@@ -129,11 +129,13 @@ const learningAssignmentFeedbackForm = reactive({
   message: '',
   suggestedDueAt: '',
 })
+const learningAssignmentScopeTouched = ref(false)
 const learningAssignmentSubmissionForm = reactive({
   assignmentId: '',
   content: '',
 })
 const learningAssignmentForm = reactive({
+  courseId: '',
   learnerUserId: '',
   title: '',
   instructions: '',
@@ -1308,6 +1310,15 @@ const activeEducationCourse = computed(() => educationCourses.value
   .find((course) => course.id === activeEducationCourseId.value) || null)
 const teacherEducationCourses = computed(() => educationCourses.value
   .filter((course) => course.ownerUserId === form.userId))
+const activeTeacherEducationCourses = computed(() => teacherEducationCourses.value
+  .filter((course) => course.status === 'ACTIVE'))
+const learningAssignmentScopeCourse = computed(() => activeTeacherEducationCourses.value
+  .find((course) => course.id === learningAssignmentForm.courseId) || null)
+const learningAssignmentScopeLearners = computed(() => {
+  if (!learningAssignmentScopeCourse.value
+    || learningAssignmentScopeCourse.value.id !== activeEducationCourseId.value) return []
+  return educationCourseEnrollments.value.filter((enrollment) => enrollment.status === 'ACTIVE')
+})
 const enrolledEducationCourses = computed(() => educationCourses.value
   .filter((course) => course.ownerUserId !== form.userId))
 const learnerLearningAssignmentCount = computed(() => learningAssignments.value
@@ -5693,6 +5704,15 @@ async function loadEducationData() {
       || enrolledEducationCourses.value.find((course) => course.status === 'ACTIVE')
       || enrolledEducationCourses.value[0]
     if (nextCourse) {
+      if (!learningAssignmentScopeTouched.value
+        && !learningAssignmentForm.courseId
+        && nextCourse.ownerUserId === form.userId
+        && nextCourse.status === 'ACTIVE') {
+        learningAssignmentForm.courseId = nextCourse.id
+        learningAssignmentForm.subject = nextCourse.subject || ''
+        learningAssignmentForm.gradeLevel = nextCourse.gradeLevel || ''
+        learningAssignmentForm.curriculumVersion = nextCourse.curriculumVersion || ''
+      }
       await loadEducationCourseWorkspace(nextCourse.id)
     } else {
       activeEducationCourseId.value = ''
@@ -5780,8 +5800,27 @@ async function selectEducationCourse(course) {
   learningAssignmentForm.subject = course.subject || learningAssignmentForm.subject
   learningAssignmentForm.gradeLevel = course.gradeLevel || learningAssignmentForm.gradeLevel
   learningAssignmentForm.curriculumVersion = course.curriculumVersion || learningAssignmentForm.curriculumVersion
+  if (course.ownerUserId === form.userId && course.status === 'ACTIVE') {
+    learningAssignmentForm.courseId = course.id
+  }
   await loadEducationCourseWorkspace(course.id)
   noticeMessage.value = `已打开课程：${course.title}`
+}
+
+async function selectLearningAssignmentScope() {
+  learningAssignmentScopeTouched.value = true
+  const course = learningAssignmentScopeCourse.value
+  if (!course) return
+  // 课程内补发始终以课程本身的范围为准，避免表单残留内容造成不一致。
+  learningAssignmentForm.subject = course.subject || ''
+  learningAssignmentForm.gradeLevel = course.gradeLevel || ''
+  learningAssignmentForm.curriculumVersion = course.curriculumVersion || ''
+  if (activeEducationCourseId.value === course.id) return
+  activeEducationCourseId.value = course.id
+  learningAssignmentCourseFilter.value = course.id
+  learningAssignmentLearnerFilter.value = ''
+  learningAssignmentIssueFilter.value = ''
+  await loadEducationCourseWorkspace(course.id)
 }
 
 function selectEducationCourseConcept(concept) {
@@ -6959,34 +6998,44 @@ async function createLearningGoal() {
 }
 
 async function createLearningAssignment() {
+  const course = learningAssignmentScopeCourse.value
+  const learnerUserId = learningAssignmentForm.learnerUserId.trim()
+  const title = learningAssignmentForm.title.trim()
+  const instructions = learningAssignmentForm.instructions.trim()
+  const conceptKey = learningAssignmentForm.conceptKey.trim()
+  const requiresManualScope = !course
   if (learningAssignmentSaving.value
-    || !learningAssignmentForm.learnerUserId.trim()
-    || !learningAssignmentForm.title.trim()
-    || !learningAssignmentForm.instructions.trim()
-    || !learningAssignmentForm.subject.trim()
-    || !learningAssignmentForm.gradeLevel.trim()
-    || !learningAssignmentForm.curriculumVersion.trim()
-    || !learningAssignmentForm.conceptKey.trim()) return
+    || !learnerUserId
+    || !title
+    || !instructions
+    || !conceptKey
+    || (requiresManualScope && (!learningAssignmentForm.subject.trim()
+      || !learningAssignmentForm.gradeLevel.trim()
+      || !learningAssignmentForm.curriculumVersion.trim()))) return
   clearMessages()
   learningAssignmentSaving.value = true
   try {
     await api.createLearningAssignment({
-      learnerUserId: learningAssignmentForm.learnerUserId.trim(),
-      title: learningAssignmentForm.title.trim(),
-      instructions: learningAssignmentForm.instructions.trim(),
+      learnerUserId,
+      title,
+      instructions,
       subject: learningAssignmentForm.subject.trim(),
       gradeLevel: learningAssignmentForm.gradeLevel.trim(),
       curriculumVersion: learningAssignmentForm.curriculumVersion.trim(),
-      conceptKey: learningAssignmentForm.conceptKey.trim(),
+      conceptKey,
       targetMastery: targetMasteryFromPercent(learningAssignmentForm.targetMastery),
       dueAt: learningAssignmentForm.dueAt
         ? new Date(learningAssignmentForm.dueAt).toISOString() : null,
+      courseId: course?.id || null,
     })
     learningAssignmentForm.title = ''
     learningAssignmentForm.instructions = ''
     learningAssignmentForm.conceptKey = ''
     await loadEducationData()
-    noticeMessage.value = `已向 ${learningAssignmentForm.learnerUserId.trim()} 布置课程作业。`
+    if (course) await loadEducationCourseWorkspace(course.id)
+    noticeMessage.value = course
+      ? `已向 ${learnerUserId} 补发“${course.title}”的课程作业。`
+      : `已向 ${learnerUserId} 布置临时作业。`
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
@@ -11034,19 +11083,36 @@ onBeforeUnmount(() => {
                 </article>
               </div>
               <details v-if="canManageEducationOperations" class="education-teacher-entry education-assignment-entry" :open="false">
-                <summary><span><strong>单独补发作业</strong><small>无课程时，或只给一名学生补发一份作业</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '次要入口' : '需要教师 / 组织权限' }}</em></summary>
-                <p class="education-teacher-entry-help">正常课程作业请回到上方选中课程后，使用“给全班布置作业”。这里不会自动加入课程名单，适合临时补发、个别学生或尚未建立课程的作业。</p>
+                <summary><span><strong>给一名学生补发作业</strong><small>课程内补发或临时安排个别练习</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '次要入口' : '需要教师 / 组织权限' }}</em></summary>
+                <p class="education-teacher-entry-help">大多数课程作业请在上方一次布置给全班。这里只在个别学生漏收作业、需要额外练习，或暂未建立课程时使用。</p>
                 <form class="learning-assignment-form" @submit.prevent="createLearningAssignment">
-                  <label class="field"><span>学生账号</span><input v-model="learningAssignmentForm.learnerUserId" required maxlength="255" placeholder="例如：student-demo" /></label>
-                  <label class="field"><span>作业标题</span><input v-model="learningAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域作业" /></label>
-                  <label class="field"><span>学科</span><input v-model="learningAssignmentForm.subject" required maxlength="128" placeholder="数学" /></label>
-                  <label class="field"><span>年级</span><input v-model="learningAssignmentForm.gradeLevel" required maxlength="128" placeholder="高中一年级" /></label>
-                  <label class="field"><span>课程版本</span><input v-model="learningAssignmentForm.curriculumVersion" required maxlength="128" placeholder="人教A版" /></label>
+                  <label class="field learning-assignment-wide"><span>补发范围</span><select v-model="learningAssignmentForm.courseId" @change="selectLearningAssignmentScope"><option value="">临时作业（不关联已有课程）</option><option v-for="course in activeTeacherEducationCourses" :key="course.id" :value="course.id">课程内补发：{{ course.title }} · {{ course.subject }} · {{ course.gradeLevel }}</option></select></label>
+                  <div v-if="learningAssignmentScopeCourse" class="education-course-prefill-note learning-assignment-wide">
+                    <strong>已使用“{{ learningAssignmentScopeCourse.title }}”的课程信息</strong>
+                    <span>{{ learningAssignmentScopeCourse.subject }} · {{ learningAssignmentScopeCourse.gradeLevel }} · {{ learningAssignmentScopeCourse.curriculumVersion }}</span>
+                    <small>学生账号必须已经加入这门课程；输入时可从当前课程名单中选择。</small>
+                  </div>
+                  <label class="field"><span>学生账号</span><input v-model="learningAssignmentForm.learnerUserId" :list="learningAssignmentScopeCourse ? 'learning-assignment-course-learners' : undefined" required maxlength="255" placeholder="例如：student-demo" /></label>
+                  <datalist v-if="learningAssignmentScopeCourse" id="learning-assignment-course-learners"><option v-for="enrollment in learningAssignmentScopeLearners" :key="enrollment.id" :value="enrollment.learnerUserId" /></datalist>
+                  <label class="field"><span>作业标题</span><input v-model="learningAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域练习" /></label>
                   <label class="field"><span>这次主要学什么</span><input v-model="learningAssignmentForm.conceptKey" required maxlength="255" placeholder="函数定义域" /></label>
-                  <label class="field"><span>希望学生达到的程度 <small class="field-label-hint">例如 80 表示掌握八成</small></span><input v-model="learningAssignmentForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
-                  <label class="field"><span>截止时间（可选）</span><input v-model="learningAssignmentForm.dueAt" type="datetime-local" /></label>
                   <label class="field learning-assignment-wide"><span>作业说明</span><textarea v-model="learningAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作业要求、作答范围或迁移任务"></textarea></label>
-                  <button class="secondary-button learning-assignment-submit" type="submit" :disabled="learningAssignmentSaving">{{ learningAssignmentSaving ? '补发中…' : '单独补发作业' }}</button>
+                  <details v-if="!learningAssignmentScopeCourse" class="learning-assignment-context-details learning-assignment-wide" open>
+                    <summary><span><strong>补充临时作业的课程信息</strong><small>临时作业不会加入课程，请填写学习范围</small></span></summary>
+                    <div class="learning-assignment-context-fields">
+                      <label class="field"><span>学科</span><input v-model="learningAssignmentForm.subject" required maxlength="128" placeholder="例如：数学" /></label>
+                      <label class="field"><span>年级</span><input v-model="learningAssignmentForm.gradeLevel" required maxlength="128" placeholder="例如：高中一年级" /></label>
+                      <label class="field learning-assignment-context-version"><span>教材版本</span><input v-model="learningAssignmentForm.curriculumVersion" required maxlength="128" placeholder="例如：人教A版" /></label>
+                    </div>
+                  </details>
+                  <details class="learning-assignment-settings learning-assignment-wide">
+                    <summary><span><strong>学习要求与时间（可选）</strong><small>默认目标为掌握八成</small></span></summary>
+                    <div class="learning-assignment-context-fields">
+                      <label class="field"><span>希望学生达到的程度 <small class="field-label-hint">80 表示掌握八成</small></span><input v-model="learningAssignmentForm.targetMastery" type="number" min="1" max="100" step="1" placeholder="80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
+                      <label class="field"><span>截止时间（可选）</span><input v-model="learningAssignmentForm.dueAt" type="datetime-local" /></label>
+                    </div>
+                  </details>
+                  <button class="secondary-button learning-assignment-submit" type="submit" :disabled="learningAssignmentSaving">{{ learningAssignmentSaving ? '发送中…' : '发给这名学生' }}</button>
                 </form>
               </details>
               <div v-if="visibleLearningAssignments.length" id="learning-assignment-list" class="learning-assignment-list">
