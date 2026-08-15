@@ -7701,8 +7701,16 @@ async function createDocument() {
     })
     documents.value = [document, ...documents.value.filter((item) => item.id !== document.id)]
     clearDocumentUploadFile()
-    noticeMessage.value = '课程资料已整理完成；后续学习会按课程范围和用户权限使用。'
     await loadDashboard()
+    if (isTeacherOnlyRole.value) {
+      noticeMessage.value = manageableEducationSources.value.length
+        ? '课程资料已上传；下一步可以创建课程。'
+        : '课程资料已上传；下一步请补充课程信息。'
+      await nextTick()
+      runTeacherNextAction()
+    } else {
+      noticeMessage.value = '课程资料已整理完成；后续学习会按课程范围和用户权限使用。'
+    }
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
@@ -7821,8 +7829,10 @@ async function saveEducationSource() {
       difficultyLevel: Number(educationSourceForm.difficultyLevel) || 3,
     })
     educationSources.value = [source, ...educationSources.value.filter((item) => item.documentId !== source.documentId)]
-    noticeMessage.value = '课程资料信息已保存；学习系统会按课程范围选择资料。'
+    noticeMessage.value = '课程信息已保存；下一步可以创建课程。'
     educationError.value = ''
+    await nextTick()
+    runTeacherNextAction()
   } catch (error) {
     educationError.value = errorText(error)
   } finally {
@@ -10256,11 +10266,11 @@ onBeforeUnmount(() => {
               <div class="education-knowledge-base-bridge-icon"><BookOpen :size="16" /></div>
               <div class="education-knowledge-base-bridge-copy">
                 <p class="eyebrow">课程资料</p>
-                <strong>{{ currentEducationSourceCount ? (isTeacherOnlyRole ? `${currentEducationSourceCount} 份课程资料已准备好` : `${currentEducationSourceCount} 份资料可用于当前课程`) : (educationWorkspaceMode === 'teacher' ? '先上传课程资料' : '当前课程还没有课程资料') }}</strong>
-                <span>{{ currentEducationSourceCount ? '系统会优先使用与这门课匹配的资料。' : (educationWorkspaceMode === 'teacher' ? '上传 PDF/DOCX，再补充学科、年级和章节信息。' : '请联系课程负责人补充资料；没有课程资料时，系统不会用通用答案代替。') }}</span>
+                <strong>{{ currentEducationSourceCount ? (isTeacherOnlyRole ? `${currentEducationSourceCount} 份课程资料已准备好` : `${currentEducationSourceCount} 份资料可用于当前课程`) : (educationWorkspaceMode === 'teacher' ? (manageableEducationDocuments.length ? '补充课程信息' : '先上传课程资料') : '当前课程还没有课程资料') }}</strong>
+                <span>{{ currentEducationSourceCount ? '系统会优先使用与这门课匹配的资料。' : (educationWorkspaceMode === 'teacher' ? (manageableEducationDocuments.length ? '已上传资料，请补充学科、年级和章节信息。' : '上传 PDF/DOCX，再补充学科、年级和章节信息。') : '请联系课程负责人补充资料；没有课程资料时，系统不会用通用答案代替。') }}</span>
               </div>
               <button v-if="isTeacherOnlyRole && !manageableEducationDocuments.length" class="secondary-button" type="button" @click="openEducationDocumentUpload">上传课程资料 <ArrowUp :size="12" /></button>
-              <button v-else-if="isTeacherOnlyRole" class="secondary-button" type="button" @click="openEducationAgentSetup">补充课程信息 <ArrowUp :size="12" /></button>
+              <button v-else-if="isTeacherOnlyRole" class="secondary-button" type="button" @click="runTeacherNextAction">{{ teacherNextAction.label }} <ArrowUp :size="12" /></button>
             </section>
             <details v-if="isTeacherOnlyRole" class="education-agent-state-details">
               <summary><span><strong>课程状态概览</strong><small>{{ teacherEducationCourses.length }} 门课程 · {{ teacherActiveLearnerCount }} 名学生 · {{ teacherCoursePendingCount }} 项待处理</small></span><em>{{ teacherAgentReady ? '资料已接入' : '待配置' }}</em></summary>
