@@ -10369,45 +10369,50 @@ onBeforeUnmount(() => {
                 </div>
                 <div v-else class="context-preview-empty">暂无待处理任务；完成学习目标后，系统会在合适时间提醒你复习。</div>
               </div>
-              <div class="subsection-title"><h4>我的学习目标</h4><span>{{ learningGoals.length }} 个目标</span></div>
-              <form class="learning-goal-form" @submit.prevent="createLearningGoal">
-                <label class="field"><span>学习信息</span><select v-model="learningGoalForm.learnerProfileId" required><option value="">请选择学习信息</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>
-                <label class="field"><span>目标名称</span><input v-model="learningGoalForm.title" required maxlength="255" placeholder="例如：掌握函数定义域" /></label>
-                <label class="field"><span>知识点</span><input v-model="learningGoalForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
-                <label class="field"><span>达成标准</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required /></label>
-                <button class="secondary-button" type="submit" :disabled="educationLoading || !learnerProfiles.length">保存目标</button>
-              </form>
-              <div v-if="learningGoals.length" class="learning-goal-list">
-                <button v-for="goal in learningGoals" :key="goal.id" type="button" class="learning-goal-row" :class="{ active: goal.id === activeLearningGoal?.id }" @click="selectLearningGoal(goal)">
-                  <span class="learning-goal-row-main"><strong>{{ goal.title }}</strong><small>{{ goal.conceptKey }} · {{ goal.status === 'COMPLETED' ? '已完成' : '进行中' }}</small></span>
-                  <span class="learning-goal-row-progress"><span>{{ Math.round((learningGoalRecommendationMap[goal.id]?.progressRatio || 0) * 100) }}%</span><i><b :style="{ width: `${(learningGoalRecommendationMap[goal.id]?.progressRatio || 0) * 100}%` }"></b></i></span>
-                </button>
-              </div>
-              <div v-if="activeLearningGoal && learningRecommendation" class="learning-recommendation">
-                <div class="learning-recommendation-heading"><div><span>下一步学习动作</span><strong>{{ learningRecommendation.nextActionTitle }}</strong></div><div><button class="secondary-button" type="button" :title="learningGoalSourceBlockReason(learningRecommendation.learningGoalId)" :disabled="Boolean(learningGoalSourceBlockReason(learningRecommendation.learningGoalId))" @click="useLearningRecommendation">{{ learningGoalSourceBlockReason(learningRecommendation.learningGoalId) ? educationSetupActionLabel : '带着建议开始' }}</button><button v-if="learningGoalSourceBlockReason(learningRecommendation.learningGoalId)" class="text-button" type="button" @click="openEducationAgentSetup">{{ educationSetupActionLabel }}</button></div></div>
-                <p>{{ learningRecommendation.rationale }}</p>
-                <small>掌握度 {{ Math.round(learningRecommendation.currentMastery * 100) }}% / 目标 {{ Math.round(learningRecommendation.targetMastery * 100) }}% · 测评 {{ learningRecommendation.attemptCount }} 次 · 正确 {{ learningRecommendation.correctAttemptCount }} 次</small>
-                <small v-if="learningRecommendation.reviewPlanId">保持度复习 {{ learningRecommendation.reviewCount }} 次 · 成功 {{ learningRecommendation.successfulReviewCount }} 次 · 下次 {{ formatDate(learningRecommendation.nextReviewAt) }}</small>
-                <details v-if="learningGoalAssessments.length" class="learning-assessment-history"><summary>查看测评历史（{{ learningGoalAssessments.length }}）</summary><div v-for="attempt in learningGoalAssessments.slice().reverse().slice(0, 5)" :key="attempt.id"><span :class="attempt.correct ? 'assessment-correct' : 'assessment-wrong'">{{ attempt.correct ? '正确' : '错误' }}</span><span>{{ Math.round(attempt.masteryBefore * 100) }}% → {{ Math.round(attempt.masteryAfter * 100) }}%</span><small>{{ attempt.assessmentType === 'REVIEW' ? '保持度复习' : (attempt.evidenceSource === 'MANUAL_REVIEW' ? '人工复核' : 'Agent观察') }} · {{ formatDate(attempt.createdAt) }}</small></div></details>
-              </div>
-              <div v-if="activeLearningGoal" class="learning-dependency-card">
-                <div class="learning-dependency-heading">
-                  <div><span>知识依赖图</span><strong>{{ educationDependencyGraph?.targetConcept || activeLearningGoal.conceptKey }}</strong></div>
-                  <small v-if="educationDependencyGraphLoading">计算中…</small>
-                  <small v-else-if="educationDependencyGraph?.truncated">已按安全上限截断</small>
-                  <small v-else>{{ educationDependencyGraph?.prerequisites?.length || 0 }} 个前置节点</small>
-                </div>
-                <p v-if="!educationDependencyGraph?.prerequisites?.length">当前目标还没有维护可追踪的前置知识关系。</p>
-                <div v-else class="learning-dependency-list">
-                  <div v-for="path in educationDependencyGraph.prerequisites" :key="`${path.conceptKey}-${path.depth}`" class="learning-dependency-row">
-                    <span class="learning-dependency-depth">L{{ path.depth }}</span>
-                    <strong>{{ path.conceptKey }}</strong>
-                    <span class="learning-dependency-mastery">掌握度 {{ formatRate(path.masteryScore) }}</span>
-                    <span class="learning-dependency-gap" :class="{ 'is-gap': path.deficit >= 0.5 }">{{ path.deficit >= 0.5 ? '需补强' : '已覆盖' }}</span>
+              <details class="learning-goal-settings" :open="!learningGoals.length">
+                <summary><span><strong>学习目标与进度设置</strong><small>{{ learningGoals.length ? `${learningGoals.length} 个目标 · 当前${activeLearningGoal ? `：${activeLearningGoal.title}` : '未选择目标'}` : '可选；设置后系统会持续记录进度' }}</small></span><em>{{ learningGoals.length ? '查看进度' : '建议设置' }}</em></summary>
+                <div class="learning-goal-settings-content">
+                  <div class="subsection-title"><h4>我的学习目标</h4><span>{{ learningGoals.length }} 个目标</span></div>
+                  <form class="learning-goal-form" @submit.prevent="createLearningGoal">
+                    <label class="field"><span>学习信息</span><select v-model="learningGoalForm.learnerProfileId" required><option value="">请选择学习信息</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>
+                    <label class="field"><span>目标名称</span><input v-model="learningGoalForm.title" required maxlength="255" placeholder="例如：掌握函数定义域" /></label>
+                    <label class="field"><span>知识点</span><input v-model="learningGoalForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
+                    <label class="field"><span>达成标准</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required /></label>
+                    <button class="secondary-button" type="submit" :disabled="educationLoading || !learnerProfiles.length">保存目标</button>
+                  </form>
+                  <div v-if="learningGoals.length" class="learning-goal-list">
+                    <button v-for="goal in learningGoals" :key="goal.id" type="button" class="learning-goal-row" :class="{ active: goal.id === activeLearningGoal?.id }" @click="selectLearningGoal(goal)">
+                      <span class="learning-goal-row-main"><strong>{{ goal.title }}</strong><small>{{ goal.conceptKey }} · {{ goal.status === 'COMPLETED' ? '已完成' : '进行中' }}</small></span>
+                      <span class="learning-goal-row-progress"><span>{{ Math.round((learningGoalRecommendationMap[goal.id]?.progressRatio || 0) * 100) }}%</span><i><b :style="{ width: `${(learningGoalRecommendationMap[goal.id]?.progressRatio || 0) * 100}%` }"></b></i></span>
+                    </button>
+                  </div>
+                  <div v-if="activeLearningGoal && learningRecommendation" class="learning-recommendation">
+                    <div class="learning-recommendation-heading"><div><span>下一步学习动作</span><strong>{{ learningRecommendation.nextActionTitle }}</strong></div><div><button class="secondary-button" type="button" :title="learningGoalSourceBlockReason(learningRecommendation.learningGoalId)" :disabled="Boolean(learningGoalSourceBlockReason(learningRecommendation.learningGoalId))" @click="useLearningRecommendation">{{ learningGoalSourceBlockReason(learningRecommendation.learningGoalId) ? educationSetupActionLabel : '带着建议开始' }}</button><button v-if="learningGoalSourceBlockReason(learningRecommendation.learningGoalId)" class="text-button" type="button" @click="openEducationAgentSetup">{{ educationSetupActionLabel }}</button></div></div>
+                    <p>{{ learningRecommendation.rationale }}</p>
+                    <small>掌握度 {{ Math.round(learningRecommendation.currentMastery * 100) }}% / 目标 {{ Math.round(learningRecommendation.targetMastery * 100) }}% · 测评 {{ learningRecommendation.attemptCount }} 次 · 正确 {{ learningRecommendation.correctAttemptCount }} 次</small>
+                    <small v-if="learningRecommendation.reviewPlanId">保持度复习 {{ learningRecommendation.reviewCount }} 次 · 成功 {{ learningRecommendation.successfulReviewCount }} 次 · 下次 {{ formatDate(learningRecommendation.nextReviewAt) }}</small>
+                    <details v-if="learningGoalAssessments.length" class="learning-assessment-history"><summary>查看测评历史（{{ learningGoalAssessments.length }}）</summary><div v-for="attempt in learningGoalAssessments.slice().reverse().slice(0, 5)" :key="attempt.id"><span :class="attempt.correct ? 'assessment-correct' : 'assessment-wrong'">{{ attempt.correct ? '正确' : '错误' }}</span><span>{{ Math.round(attempt.masteryBefore * 100) }}% → {{ Math.round(attempt.masteryAfter * 100) }}%</span><small>{{ attempt.assessmentType === 'REVIEW' ? '保持度复习' : (attempt.evidenceSource === 'MANUAL_REVIEW' ? '人工复核' : '系统观察') }} · {{ formatDate(attempt.createdAt) }}</small></div></details>
+                  </div>
+                  <div v-if="activeLearningGoal" class="learning-dependency-card">
+                    <div class="learning-dependency-heading">
+                      <div><span>知识依赖图</span><strong>{{ educationDependencyGraph?.targetConcept || activeLearningGoal.conceptKey }}</strong></div>
+                      <small v-if="educationDependencyGraphLoading">计算中…</small>
+                      <small v-else-if="educationDependencyGraph?.truncated">已按安全上限截断</small>
+                      <small v-else>{{ educationDependencyGraph?.prerequisites?.length || 0 }} 个前置节点</small>
+                    </div>
+                    <p v-if="!educationDependencyGraph?.prerequisites?.length">当前目标还没有维护可追踪的前置知识关系。</p>
+                    <div v-else class="learning-dependency-list">
+                      <div v-for="path in educationDependencyGraph.prerequisites" :key="`${path.conceptKey}-${path.depth}`" class="learning-dependency-row">
+                        <span class="learning-dependency-depth">L{{ path.depth }}</span>
+                        <strong>{{ path.conceptKey }}</strong>
+                        <span class="learning-dependency-mastery">掌握度 {{ formatRate(path.masteryScore) }}</span>
+                        <span class="learning-dependency-gap" :class="{ 'is-gap': path.deficit >= 0.5 }">{{ path.deficit >= 0.5 ? '需补强' : '已覆盖' }}</span>
+                      </div>
+                    </div>
+                    <small class="learning-dependency-note">系统会优先补足掌握度不足的前置知识。</small>
                   </div>
                 </div>
-                <small class="learning-dependency-note">检索会优先覆盖掌握度不足的传递前置知识，并在每条课程证据中记录选择理由。</small>
-              </div>
+              </details>
             </div>
             <details v-if="canManageEducationOperations" class="education-source-editor education-teacher-entry" :open="educationWorkspaceMode === 'teacher' && !manageableEducationDocuments.length">
               <summary><span><strong>课程资料维护入口</strong><small>为可见知识文档补充学科、版本、章节和知识点边界</small></span><em>{{ educationSources.length }} 个课程来源</em></summary>

@@ -711,6 +711,16 @@ h3 { margin: 0; font-size: 13px; }
 .education-course-learner-live span { color: var(--muted); font-size: 8px; line-height: 1.4; }
 .education-source-editor { display: grid; gap: 11px; border-top: 1px solid var(--line); padding-top: 13px; }
 .learning-goal-workbench { display: grid; gap: 11px; border-top: 1px solid var(--line); padding-top: 13px; }
+.learning-goal-settings { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 11px; }
+.learning-goal-settings > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; list-style: none; }
+.learning-goal-settings > summary::-webkit-details-marker { display: none; }
+.learning-goal-settings > summary::before { content: '▸'; flex: 0 0 auto; color: var(--cyan); font-size: 12px; }
+.learning-goal-settings[open] > summary::before { content: '▾'; }
+.learning-goal-settings > summary > span { display: grid; min-width: 0; gap: 3px; }
+.learning-goal-settings > summary strong { color: var(--soft); font-size: 10px; }
+.learning-goal-settings > summary small { overflow: hidden; color: var(--muted); font: 8px/1.4 "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.learning-goal-settings > summary em { flex: 0 0 auto; border: 1px solid rgba(76,226,213,.22); border-radius: 5px; color: var(--cyan); padding: 4px 6px; font: 8px "DM Mono", monospace; font-style: normal; }
+.learning-goal-settings-content { display: grid; gap: 11px; padding-top: 2px; }
 .learning-assignment-workbench { display: grid; gap: 8px; border: 1px solid rgba(76,226,213,.22); border-radius: 8px; background: rgba(76,226,213,.035); padding: 11px; }
 .learning-assignment-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .learning-assignment-form .field { min-width: 0; }
