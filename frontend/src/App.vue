@@ -392,6 +392,13 @@ const localDemoUsers = [
     detail: '配置课程资料、发布课程、布置作业和复核反馈。',
   },
   {
+    role: 'TEACHER',
+    userId: 'teacher-first-demo',
+    name: '老师首次体验',
+    detail: '没有课程资料和课程，用来体验第一次开课。',
+    tenantId: 'tenant-first-demo',
+  },
+  {
     role: 'STUDENT',
     userId: 'student-demo',
     name: '学生演示账号',
@@ -402,6 +409,7 @@ const localDemoUsers = [
     userId: 'student-first-demo',
     name: '学生首次体验',
     detail: '没有学习信息、课程和作业，用来体验第一次进入系统。',
+    tenantId: 'tenant-first-demo',
   },
 ]
 const currentPrimaryRole = computed(() => String(
@@ -868,6 +876,7 @@ function beginLocalDemoSession(user) {
   try {
     localStorage.setItem('harnessDemoRole', user.role)
     localStorage.setItem('harnessUserId', user.userId)
+    localStorage.setItem('harnessTenantId', user.tenantId || 'tenant-demo')
     localStorage.setItem('harnessLocalSession', 'active')
     resetRoleNavigation()
     demoRole.value = user.role
@@ -900,6 +909,7 @@ function switchDemoRole(nextRole) {
   try {
     localStorage.setItem('harnessDemoRole', normalized)
     localStorage.setItem('harnessUserId', demoRoleUserIds[normalized])
+    localStorage.setItem('harnessTenantId', 'tenant-demo')
     localStorage.setItem('harnessLocalSession', 'active')
     resetRoleNavigation()
     form.userId = demoRoleUserIds[normalized]
@@ -1322,7 +1332,7 @@ const educationWorkspaceModeDetail = computed(() => {
     return '先处理今天的待办，再查看课程进度和学生情况。'
   }
   if (educationWorkspaceMode.value === 'learner') {
-    return '先看课程边界、当前状态和下一步行动；教师管理入口按需展开。'
+    return '先看课程范围、当前状态和下一步行动；课程管理由老师负责。'
   }
   return '先填写学习信息或加入课程，系统才能安排合适的学习内容。'
 })
@@ -1442,7 +1452,7 @@ const teacherNextAction = computed(() => {
     return { label: '补充课程信息', detail: '选择学科、年级和章节，让系统知道这门课适用范围。', kind: 'metadata' }
   }
   if (!teacherEducationCourses.value.length) {
-    return { label: '创建课程', detail: '把课程资料建成一个班级或课程空间。', kind: 'course' }
+    return { label: '创建课程', detail: '把课程资料建成一门课程，让学生可以加入并学习。', kind: 'course' }
   }
   if (!teacherActiveLearnerCount.value) {
     return { label: '加入学生', detail: '添加学生后，才能布置作业并查看完成情况。', kind: 'roster' }
@@ -2763,9 +2773,9 @@ const teacherOperationsTrace = computed(() => [
   },
   {
     id: 'course',
-    label: '课程空间',
+    label: '创建课程',
     value: teacherEducationCourses.value.length ? `${teacherEducationCourses.value.length} 门课程` : '待创建课程',
-    detail: teacherEducationCourses.value.length ? '课程已经创建，可以继续添加学生。' : '创建课程空间，绑定课程版本和教学范围。',
+    detail: teacherEducationCourses.value.length ? '课程已经创建，可以继续添加学生。' : '把课程资料建成一门课程，供学生加入和学习。',
     state: teacherEducationCourses.value.length ? 'ready' : 'pending',
   },
   {
@@ -2777,17 +2787,21 @@ const teacherOperationsTrace = computed(() => [
   },
   {
     id: 'assignment',
-    label: '课程作业',
+    label: '布置作业',
     value: teacherAssignmentCount.value ? `${teacherAssignmentCount.value} 份作业` : '待布置作业',
     detail: teacherAssignmentCount.value ? '作业已下发，可继续查看完成和提交记录。' : '把目标知识点和作业说明下发给活跃名单。',
     state: teacherAssignmentCount.value ? 'ready' : 'pending',
   },
   {
     id: 'review',
-    label: '复核与反馈',
-    value: teacherCoursePendingCount.value ? `${teacherCoursePendingCount.value} 项待处理` : '暂无待办',
-    detail: teacherCoursePendingCount.value ? '依据学生提交内容和学习记录确认、退回或反馈。' : '新的学生提交后会出现在这里。',
-    state: teacherCoursePendingCount.value ? 'attention' : 'ready',
+    label: '查看提交与反馈',
+    value: teacherCoursePendingCount.value
+      ? `${teacherCoursePendingCount.value} 项待处理`
+      : (teacherAssignmentCount.value ? '暂无待办' : '等待学生提交'),
+    detail: teacherCoursePendingCount.value
+      ? '依据学生提交内容和学习记录确认、退回或反馈。'
+      : (teacherAssignmentCount.value ? '新的学生提交后会出现在这里。' : '布置作业后，学生提交内容和老师反馈会出现在这里。'),
+    state: teacherCoursePendingCount.value ? 'attention' : (teacherAssignmentCount.value ? 'ready' : 'pending'),
   },
 ])
 const teacherOnboardingCurrentIndex = computed(() => {
@@ -9597,7 +9611,7 @@ onBeforeUnmount(() => {
       <div v-if="noticeMessage" :key="`notice-${noticeMessage}`" class="message notice-message console-message-banner">{{ noticeMessage }}</div>
       <div v-if="educationRuntimeDiagnostic" class="message education-runtime-message console-message-banner" role="alert">{{ educationRuntimeDiagnostic }}</div>
 
-      <section v-if="!isLearnerOnlyRole && (!isTeacherOnlyRole || (!manageableEducationSources.length && !teacherEducationCourses.length))" class="role-welcome panel" :class="`role-welcome-${currentPrimaryRole.toLowerCase()}`" aria-label="当前角色工作台">
+      <section v-if="isAdminRole" class="role-welcome panel" :class="`role-welcome-${currentPrimaryRole.toLowerCase()}`" aria-label="当前角色工作台">
         <div class="role-welcome-copy">
           <p class="eyebrow">{{ isLearnerOnlyRole ? '学生工作台' : `${currentPrimaryRole} WORKSPACE` }}</p>
           <h1>{{ roleWorkspaceTitle }}</h1>
@@ -10030,7 +10044,7 @@ onBeforeUnmount(() => {
       </section>
 
       <section class="governance-section panel" id="governance">
-        <div class="panel-heading">
+        <div v-if="isAdminRole" class="panel-heading">
           <div><p class="eyebrow">{{ isAdminRole ? '高级治理设置' : (isTeacherRole ? '课程工作台' : '学习空间') }}</p><h2>{{ isAdminRole ? '高级治理设置' : roleWorkspaceTitle }}</h2><p class="panel-heading-help">{{ isAdminRole ? '知识源、索引、组织策略和凭证设置只在这里维护。' : roleWorkspaceDetail }}</p></div>
           <button v-if="isAdminRole" class="secondary-button" type="button" @click="showGovernance = !showGovernance">{{ showGovernance ? '收起高级设置' : '展开高级设置' }}</button>
         </div>
@@ -10260,7 +10274,7 @@ onBeforeUnmount(() => {
                     <small>01 · 课程资料</small><strong>{{ manageableEducationSources.length ? `${manageableEducationSources.length} 个来源已配置` : '尚未配置课程资料' }}</strong><p>{{ manageableEducationSources.length ? '资料准备好了，可以继续加入学生。' : '先上传 PDF/DOCX，再补充课程信息。' }}</p>
                   </article>
                   <article class="education-agent-state-item">
-                    <small>02 · 班级与学生</small><strong>{{ teacherEducationCourses.length }} 门课程 · {{ teacherActiveLearnerCount }} 名学生</strong><p>{{ teacherEducationCourses.length ? (teacherActiveLearnerCount ? '学生名单已建立，可以继续布置作业。' : '课程已创建，但还没有学生。') : '先创建课程，把资料变成一个可使用的课程空间。' }}</p>
+                    <small>02 · 课程与学生</small><strong>{{ teacherEducationCourses.length }} 门课程 · {{ teacherActiveLearnerCount }} 名学生</strong><p>{{ teacherEducationCourses.length ? (teacherActiveLearnerCount ? '学生名单已建立，可以继续布置作业。' : '课程已创建，但还没有学生。') : '先创建课程，让学生可以加入并学习。' }}</p>
                   </article>
                   <article class="education-agent-state-item">
                     <small>03 · 下一步行动</small><strong>{{ teacherNextAction.label }}</strong><p>{{ teacherNextAction.detail }}</p>
@@ -10566,9 +10580,9 @@ onBeforeUnmount(() => {
                 <div><h4>{{ isAdminWorkspace ? '课程概览' : (educationWorkspaceMode === 'teacher' ? '课程运营工作台' : '我的课程与学习路径') }}</h4><span>{{ isAdminWorkspace ? `${educationCourses.length} 门课程 · ${learningAssignments.length} 份课程作业` : (educationWorkspaceMode === 'teacher' ? `${teacherEducationCourses.length} 个我创建 · ${enrolledEducationCourses.length} 个已加入` : (enrolledEducationCourses.length ? `已加入 ${enrolledEducationCourses.length} 门课程` : '还没有加入课程')) }}</span></div>
                 <span v-if="activeEducationCourse" class="context-mode-chip">{{ educationCourseStatusLabel(activeEducationCourse.status) }}</span>
               </div>
-              <p class="learning-task-help">{{ isAdminWorkspace ? '管理员在这里查看组织课程和作业规模；课程资料、名单、布置与复核由教师负责。' : (educationWorkspaceMode === 'teacher' ? '课程资料决定教学范围；请在下方依次维护名单、布置作业和查看反馈。' : '老师提供的学习材料决定课程范围；系统会结合你的作业、答案和学习对话更新进度。') }}{{ educationWorkspaceMode === 'teacher' ? '班级进度、名单和布置动作只在教师管理入口中展开；学生学习信息由学生本人维护。' : (!isAdminWorkspace ? '你只需要关注自己的课程行动、提交和反馈。' : '') }}</p>
-              <details v-if="canManageEducationOperations" class="education-teacher-entry" :open="educationWorkspaceMode === 'teacher' && !teacherEducationCourses.length">
-                <summary><span><strong>教师管理入口</strong><small>创建课程、添加学生、布置作业</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '管理模式' : '需要教师 / 组织权限' }}</em></summary>
+              <p class="learning-task-help">{{ isAdminWorkspace ? '管理员在这里查看组织课程和作业规模；课程资料、名单、布置与复核由教师负责。' : (educationWorkspaceMode === 'teacher' ? '课程资料决定教学范围；请在下方依次维护名单、布置作业和查看反馈。' : '老师提供的学习材料决定课程范围；系统会结合你的作业、答案和学习对话更新进度。') }}{{ educationWorkspaceMode === 'teacher' ? '班级进度、名单和布置动作只在课程管理入口中展开；学生学习信息由学生本人维护。' : (!isAdminWorkspace ? '你只需要关注自己的课程行动、提交和反馈。' : '') }}</p>
+              <details v-if="canManageEducationOperations" class="education-teacher-entry" :open="educationWorkspaceMode === 'teacher' && !teacherEducationCourses.length && manageableEducationSources.length > 0">
+                <summary><span><strong>课程管理入口</strong><small>创建课程、添加学生、布置作业</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '管理模式' : '需要教师 / 组织权限' }}</em></summary>
                 <p class="education-teacher-entry-help">这是课程管理操作，不会改变学生的学习状态；提交后仍由系统做最终权限校验。</p>
                 <form class="education-course-form" @submit.prevent="createEducationCourse">
                   <label class="field"><span>课程名称</span><input v-model="educationCourseForm.title" required maxlength="255" placeholder="例如：高中数学函数基础" /></label>
@@ -10599,7 +10613,7 @@ onBeforeUnmount(() => {
                   <strong>{{ activeLearnerProfile ? '学习信息已保存，等待教师加入课程' : '先填写学习信息，再等待教师加入课程' }}</strong>
                   <span>{{ activeLearnerProfile ? '教师发布课程后，课程范围、作业和下一步行动会自动出现在这里。' : '保存学科、年级和课程版本后，教师才能把你加入匹配课程。' }}</span>
                 </template>
-                <template v-else>还没有可访问的课程；如需开课，请展开教师管理入口。</template>
+                <template v-else>还没有可访问的课程；如需开课，请展开课程管理入口。</template>
               </div>
               <div v-if="activeEducationCourse && (activeEducationCourseIsOwner || isAdminWorkspace)" class="education-course-detail">
                 <div class="education-course-detail-heading">
@@ -10769,7 +10783,7 @@ onBeforeUnmount(() => {
               </div>
               <details v-if="canManageEducationOperations" class="education-teacher-entry education-assignment-entry" :open="false">
                 <summary><span><strong>单独补发作业</strong><small>无课程时，或只给一名学生补发一份作业</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '次要入口' : '需要教师 / 组织权限' }}</em></summary>
-                <p class="education-teacher-entry-help">正常课程作业请回到上方选中课程后，使用“给全班布置作业”。这里不会自动加入课程名单，适合临时补发、个别学生或尚未建立课程空间的作业。</p>
+                <p class="education-teacher-entry-help">正常课程作业请回到上方选中课程后，使用“给全班布置作业”。这里不会自动加入课程名单，适合临时补发、个别学生或尚未建立课程的作业。</p>
                 <form class="learning-assignment-form" @submit.prevent="createLearningAssignment">
                   <label class="field"><span>学生账号</span><input v-model="learningAssignmentForm.learnerUserId" required maxlength="255" placeholder="例如：student-demo" /></label>
                   <label class="field"><span>作业标题</span><input v-model="learningAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域作业" /></label>
