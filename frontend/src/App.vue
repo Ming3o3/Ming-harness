@@ -614,7 +614,7 @@ const quickStartPrompts = [
   {
     id: 'make-review-plan',
     label: '制定复习计划',
-    description: '按课程约束和目标掌握度安排复习节奏。',
+    description: '按课程范围和目标掌握度安排复习节奏。',
     prompt: '请围绕当前学习目标制定一份分阶段复习计划，包含每阶段目标、练习方式、检查点和预计完成条件。',
   },
   {
@@ -1290,7 +1290,7 @@ const educationWorkspaceModeLabel = computed(() => {
 })
 const educationWorkspaceModeDetail = computed(() => {
   if (educationWorkspaceMode.value === 'admin') {
-    return '查看课程资料、课程实例、作业和学习证据的整体状态；具体课程运营由教师负责。'
+    return '查看课程资料、课程与班级、作业和学习记录的整体状态；具体课程运营由教师负责。'
   }
   if (educationWorkspaceMode.value === 'teacher') {
     return '先处理今天的待办，再查看课程进度和学生情况。'
@@ -1542,7 +1542,7 @@ function learningAssignmentNextAction(assignment) {
     }
   }
   if (assignment.status === 'ASSIGNED') {
-    return { label: '接受并开始', detail: '按课程约束启动第一轮学习。', issue: 'assigned', actionable: true }
+    return { label: '接受并开始', detail: '按课程范围启动第一轮学习。', issue: 'assigned', actionable: true }
   }
   if (assignment.status === 'AWAITING_EVIDENCE') {
     return { label: '补充证据并继续', detail: '上一轮已结束，但还缺少测评证据。', issue: 'evidence', actionable: true }
@@ -2120,7 +2120,7 @@ function courseSourceAvailability(scope) {
 function courseSourceBlockReason(scope) {
   const availability = courseSourceAvailability(scope)
   if (!scope?.subject || !scope?.gradeLevel || !scope?.curriculumVersion) {
-    return '学习动作缺少完整课程约束，请先补齐学科、年级和课程版本。'
+    return '学习动作缺少完整课程范围，请先补齐学科、年级和课程版本。'
   }
   if (availability.sourceCount) return ''
   if (!availability.courseSourceCount) {
@@ -2128,7 +2128,7 @@ function courseSourceBlockReason(scope) {
       const versions = availability.availableCurriculumVersions.join('、')
       return `当前课程版本「${scope.curriculumVersion}」没有匹配来源，但同学科「${scope.subject}」${scope.gradeLevel}已有 ${availability.sameSubjectGradeSourceCount} 个来源（${versions}）。请统一学习者画像与课程资料的课程版本。`
     }
-    return `课程版本「${scope.curriculumVersion}」还没有可检索的课程资料。请先绑定与当前课程匹配的知识文档。`
+    return `课程版本「${scope.curriculumVersion}」还没有可检索的课程资料。请先补充与当前课程匹配的课程资料。`
   }
   if (scope.conceptKey) {
     if (!availability.conceptSourceCount) {
@@ -2142,7 +2142,7 @@ function courseSourceBlockReason(scope) {
   if (scope.minDifficulty !== null || scope.maxDifficulty !== null) {
     return `当前课程版本已有 ${availability.courseSourceCount} 个来源，但没有落在难度范围（${formatDifficultyRange(scope)}）。请放宽难度范围，或维护课程来源难度。`
   }
-  return '当前课程约束下没有可检索的课程资料，请先补充匹配的知识文档。'
+  return '当前课程范围内没有可检索的课程资料，请先补充匹配的课程资料。'
 }
 
 function formatDifficultyRange(scope) {
@@ -2310,7 +2310,7 @@ const learnerStateDiagnosis = computed(() => {
         : (gap > 0.01 ? `距离目标还差 ${formatRate(gap)}` : '当前证据已达到目标'),
       detail: evidenceCount
         ? `围绕「${activeLearningGoal.value.conceptKey}」已有 ${evidenceCount} 次学习记录；系统会按此状态调整难度与动作。`
-        : '尚无形成性证据；当前数值只作为初始状态，下一轮需要用作答或评分验证。',
+        : '还没有可验证的学习记录；当前数值只是初始状态，下一轮需要用作答或评分确认。',
       currentMastery,
       targetMastery,
     }
@@ -2520,7 +2520,7 @@ const educationVersionRepairHint = computed(() => {
 const educationAgentTrace = computed(() => [
   {
     id: 'course',
-    label: '课程约束',
+    label: '课程范围',
     value: activeChatCourse.value
       ? activeChatCourse.value.title
       : activeLearnerProfile.value
@@ -2536,7 +2536,7 @@ const educationAgentTrace = computed(() => [
   },
   {
     id: 'knowledge',
-    label: '知识库检索',
+    label: '课程资料',
     value: currentEducationSourceLabel.value,
     detail: currentEducationRetrievalDetail.value,
     state: currentEducationSourceCount.value ? 'ready' : 'pending',
@@ -2544,7 +2544,7 @@ const educationAgentTrace = computed(() => [
   },
   {
     id: 'learner',
-    label: '学习者状态',
+    label: '学习进度',
     value: activeLearnerProfile.value
       ? (learnerMasteryLoading.value ? '正在读取掌握度…' : `${learnerMastery.value.length} 个知识点已建档`)
       : '等待学习者画像',
@@ -2558,7 +2558,7 @@ const educationAgentTrace = computed(() => [
   },
   {
     id: 'teaching',
-    label: '教学决策',
+    label: '下一步安排',
     value: educationAgentReady.value ? pedagogicalModeLabel.value : '等待课程资料与学习状态就绪',
     detail: educationAgentReady.value
       ? (chatEducation.conceptKey ? `目标知识点：${chatEducation.conceptKey}` : '会根据问题和掌握度选择讲解、练习或诊断')
@@ -2568,9 +2568,9 @@ const educationAgentTrace = computed(() => [
   },
   {
     id: 'evidence',
-    label: '形成性证据',
-    value: activeLearningGoal.value ? `${learningGoalAssessments.value.length} 次测评记录` : '回答后可生成测评证据',
-    detail: activeLearningGoal.value ? '结果会累计到学习目标并触发下一步动作' : '绑定学习目标后，系统会追踪进度和复习任务',
+    label: '学习记录',
+    value: activeLearningGoal.value ? `${learningGoalAssessments.value.length} 次学习记录` : '回答后可生成学习记录',
+    detail: activeLearningGoal.value ? '结果会累计到学习目标并触发下一步安排' : '绑定学习目标后，系统会追踪进度和复习任务',
     state: activeLearningGoal.value ? 'ready' : 'pending',
     icon: ListChecks,
   },
@@ -2624,16 +2624,16 @@ function teacherOnboardingStepStatus(step, index) {
 const adminOperationsTrace = computed(() => [
   {
     id: 'sources',
-    label: '课程知识源',
+    label: '课程资料来源',
     value: `${educationSources.value.length} 个课程来源`,
     detail: '查看课程知识边界是否已经接入；具体资料维护由教师负责。',
     state: educationSources.value.length ? 'ready' : 'pending',
   },
   {
     id: 'courses',
-    label: '课程实例',
+    label: '课程与班级',
     value: `${educationCourses.value.length} 门课程`,
-    detail: '查看组织内课程实例和课程状态。',
+    detail: '查看组织内课程与班级状态。',
     state: educationCourses.value.length ? 'ready' : 'pending',
   },
   {
@@ -2654,7 +2654,7 @@ const adminOperationsTrace = computed(() => [
     id: 'governance',
     label: '系统治理',
     value: '模型 · 索引 · 审计',
-    detail: '管理员的主要职责是保持教育 Agent 的运行边界和可审计性。',
+    detail: '管理员的主要职责是保持学习系统的运行边界和可审计性。',
     state: 'ready',
   },
 ])
@@ -2835,7 +2835,7 @@ const educationRuntimeDiagnostic = computed(() => {
   const currentHealth = health.value
   if (!currentHealth || currentHealth.error) return ''
   if (currentHealth.education?.courseBoundRunsEnabled === true) return ''
-  return '当前连接的 Runtime 未包含教育知识库 Agent；请使用 npm run desktop:dev 启动当前源码。'
+  return '当前学习功能还没有连接到最新课程服务；请使用 npm run desktop:dev 启动当前源码。'
 })
 const infraLabel = computed(() => {
   if (!currentUserHasPermission('ops.read')) return '平台状态由管理员维护'
@@ -3742,12 +3742,12 @@ function chatSourceMetadata(citation, fallbackTitle = '') {
   const title = document?.title
     || (memory ? `长期记忆 · ${memory.memoryType}` : '')
     || cleanFallbackTitle
-    || (type === 'memory' ? '长期记忆' : '知识文档')
+    || (type === 'memory' ? '长期记忆' : '课程资料')
   return {
     key: normalized || `title:${title}`,
     citation,
     title,
-    kindLabel: type === 'memory' || memory ? '长期记忆' : '知识文档',
+    kindLabel: type === 'memory' || memory ? '长期记忆' : '课程资料',
     updatedAt: document?.updatedAt || document?.createdAt || memory?.createdAt || '',
   }
 }
@@ -5342,7 +5342,7 @@ async function educationLoadErrorText(error) {
   if (currentHealth && !currentHealth.error
     && currentHealth.education?.courseBoundRunsEnabled !== true) {
     return educationRuntimeDiagnostic.value
-      || '当前连接的 Runtime 未包含教育知识库 Agent；请使用 npm run desktop:dev 启动当前源码。'
+      || '当前学习功能还没有连接到最新课程服务；请使用 npm run desktop:dev 启动当前源码。'
   }
   return errorText(error)
 }
@@ -6409,7 +6409,7 @@ async function selectChatCourse() {
       const created = await createChatConversation()
       if (created) {
         setChatInput(draft)
-        noticeMessage.value = '已解除课程实例绑定，并创建新学习对话以隔离历史上下文。'
+        noticeMessage.value = '已解除课程绑定，并创建新学习对话以隔离历史上下文。'
       }
     }
     return
@@ -7510,7 +7510,7 @@ async function saveEducationSource() {
       difficultyLevel: Number(educationSourceForm.difficultyLevel) || 3,
     })
     educationSources.value = [source, ...educationSources.value.filter((item) => item.documentId !== source.documentId)]
-    noticeMessage.value = '课程元数据已保存；教育 Agent 检索时会执行课程约束过滤。'
+    noticeMessage.value = '课程资料信息已保存；学习系统会按课程范围选择资料。'
     educationError.value = ''
   } catch (error) {
     educationError.value = errorText(error)
@@ -8773,7 +8773,7 @@ onBeforeUnmount(() => {
                           <code v-if="source.citation">{{ source.citation }}</code>
                           <p v-if="source.excerpt">{{ source.excerpt }}</p>
                           <div v-if="source.runtimeEvidence && (source.rankingReason || source.prerequisiteGaps?.length)" class="chat-source-explanation">
-                            <span>选择理由</span><strong>{{ source.rankingReason || '已满足当前课程约束' }}</strong>
+                            <span>选择理由</span><strong>{{ source.rankingReason || '已符合当前课程范围' }}</strong>
                             <small v-if="source.prerequisiteGaps?.length">前置缺口：{{ source.prerequisiteGaps.join('、') }}</small>
                           </div>
                           <small v-if="source.runtimeEvidence">系统已从该来源读取本轮摘录{{ source.stepName ? ` · ${source.stepName}` : '' }}</small>
@@ -9622,7 +9622,7 @@ onBeforeUnmount(() => {
                         <div><strong>{{ evidence.title || '未命名来源' }}</strong><code>{{ evidence.citation }}</code></div>
                         <p>{{ evidence.excerpt }}</p>
                         <div v-if="evidence.rankingReason || evidence.prerequisiteGaps?.length" class="run-evidence-explanation">
-                          <strong>{{ evidence.rankingReason || '已满足当前课程约束' }}</strong>
+                          <strong>{{ evidence.rankingReason || '已符合当前课程范围' }}</strong>
                           <small v-if="evidence.prerequisiteGaps?.length">前置缺口：{{ evidence.prerequisiteGaps.join('、') }}</small>
                         </div>
                       </article>
@@ -9988,7 +9988,7 @@ onBeforeUnmount(() => {
             </section>
             <details v-if="isLearnerOnlyRole" class="learner-advanced-details">
               <summary><span>查看系统如何安排学习</span><small>了解课程、作答和复习之间的关系</small></summary>
-              <ol class="education-agent-loop" aria-label="教育 Agent 学习闭环">
+              <ol class="education-agent-loop" aria-label="学习安排闭环">
                 <li v-for="(trace, index) in educationAgentTrace" :key="trace.id" :class="`is-${trace.state}`">
                   <span class="education-agent-loop-index">{{ String(index + 1).padStart(2, '0') }}</span>
                   <div><strong>{{ trace.label }}</strong><small>{{ trace.value }}</small></div>
@@ -10006,7 +10006,7 @@ onBeforeUnmount(() => {
                 </li>
               </ol>
             </details>
-            <ol v-else class="education-agent-loop" aria-label="教育 Agent 学习闭环">
+            <ol v-else class="education-agent-loop" aria-label="学习安排闭环">
               <li v-for="(trace, index) in (isAdminWorkspace ? adminOperationsTrace : teacherOperationsTrace)" :key="trace.id" :class="`is-${trace.state}`">
                 <span class="education-agent-loop-index">{{ String(index + 1).padStart(2, '0') }}</span>
                 <div><strong>{{ trace.label }}</strong><small>{{ trace.value }}</small></div>
@@ -10038,8 +10038,8 @@ onBeforeUnmount(() => {
               <summary><span>组织教育指标</span><small>课程规模 · 作业闭环 · 证据质量</small></summary>
               <p class="learning-task-help">管理员查看同租户聚合结果；课程资料、名单、布置和教师复核仍由课程负责人操作。</p>
               <div class="education-metrics" aria-label="管理员组织教育指标">
-                <div><span>课程知识源</span><strong>{{ educationSources.length }}</strong><small>已接入课程元数据</small></div>
-                <div><span>课程实例</span><strong>{{ educationCourses.length }}</strong><small>组织内课程</small></div>
+                <div><span>课程资料来源</span><strong>{{ educationSources.length }}</strong><small>已接入课程资料信息</small></div>
+                <div><span>课程与班级</span><strong>{{ educationCourses.length }}</strong><small>组织内课程</small></div>
                 <div><span>课程作业</span><strong>{{ educationMetrics.assignmentTotal }}</strong><small>教师发布的作业</small></div>
                 <div><span>作业完成率</span><strong>{{ formatRate(educationMetrics.assignmentCompletionRate) }}</strong><small>{{ educationMetrics.assignmentCompleted }} / {{ educationMetrics.assignmentTotal }}</small></div>
                 <div><span>提交物覆盖</span><strong>{{ formatRate(educationMetrics.assignmentSubmissionCoverageRate) }}</strong><small>{{ educationMetrics.assignmentSubmissionCovered }} / {{ educationMetrics.assignmentTotal }}</small></div>
@@ -10272,10 +10272,10 @@ onBeforeUnmount(() => {
                 </button>
               </div>
               <div v-else class="context-preview-empty">
-                <template v-if="isAdminWorkspace">当前组织还没有课程实例；课程由教师创建并运营。</template>
+                <template v-if="isAdminWorkspace">当前组织还没有课程；课程由教师创建并运营。</template>
                 <template v-else-if="educationWorkspaceMode === 'learner'">
                   <strong>{{ activeLearnerProfile ? '学习画像已建立，等待教师加入课程' : '先建立学习画像，再等待教师加入课程' }}</strong>
-                  <span>{{ activeLearnerProfile ? '教师发布课程后，课程约束、作业和下一步行动会自动出现在这里。' : '保存学科、年级和课程版本后，教师才能把你加入匹配课程。' }}</span>
+                  <span>{{ activeLearnerProfile ? '教师发布课程后，课程范围、作业和下一步行动会自动出现在这里。' : '保存学科、年级和课程版本后，教师才能把你加入匹配课程。' }}</span>
                 </template>
                 <template v-else>还没有可访问的课程；如需开课，请展开教师管理入口。</template>
               </div>
@@ -10316,7 +10316,7 @@ onBeforeUnmount(() => {
                       <label class="field education-course-wide"><span>作业说明</span><textarea v-model="educationCourseAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作答范围、提交要求或迁移任务"></textarea></label>
                       <button class="secondary-button" type="submit" :disabled="educationCourseAssignmentSaving || !educationCourseEnrollments.some((item) => item.status === 'ACTIVE')">{{ educationCourseAssignmentSaving ? '布置中…' : '向活跃名单布置' }}</button>
                     </form>
-                    <p v-if="activeEducationCourseIsOwner" class="learning-task-help">已有课程和活跃名单时，请优先使用这里；系统会自动把同一份作业下发给所有活跃学生，并保留课程约束。</p>
+                    <p v-if="activeEducationCourseIsOwner" class="learning-task-help">已有课程和活跃名单时，请优先使用这里；系统会自动把同一份作业下发给所有活跃学生，并保留课程范围。</p>
                     <p v-else class="learning-task-help">管理员只读查看作业规模与证据覆盖；布置作业由课程教师执行。</p>
                   </div>
                 </div>
@@ -10341,13 +10341,13 @@ onBeforeUnmount(() => {
                         <span><BookOpen :size="14" /></span><strong>补齐活跃名单覆盖</strong><small>{{ Number(educationCourseProgress.activeLearnerTotal || 0) === 0 ? '还没有活跃学习者' : `${educationCourseProgress.rosterCoverageBlockerCount} 名学习者尚未覆盖作业` }}</small><b>去名单</b>
                       </button>
                       <button v-if="Number(educationCourseProgress.assignmentTotal || 0) === 0" type="button" class="education-course-completion-blocker" @click="focusEducationCourseAssignment">
-                        <span><ListChecks :size="14" /></span><strong>先布置课程作业</strong><small>没有有效作业，Agent 无法形成课程结课证据。</small><b>去布置</b>
+                        <span><ListChecks :size="14" /></span><strong>先布置课程作业</strong><small>没有有效作业，系统无法判断课程是否完成。</small><b>去布置</b>
                       </button>
                       <button v-if="Number(educationCourseProgress.completionBlockerCount || 0)" type="button" class="education-course-completion-blocker" @click="focusCourseBlocker('completion')">
                         <span><CircleAlert :size="14" /></span><strong>处理未完成作业</strong><small>{{ educationCourseProgress.completionBlockerCount }} 份作业尚未完成或完成复核。</small><b>看作业</b>
                       </button>
                       <button v-if="Number(educationCourseProgress.awaitingEvidence || 0)" type="button" class="education-course-completion-blocker" @click="focusCourseBlocker('evidence')">
-                        <span><ShieldCheck :size="14" /></span><strong>补回形成性证据</strong><small>{{ educationCourseProgress.awaitingEvidence }} 份作业 Run 已结束，但还没有可验证测评证据。</small><b>补证据</b>
+                        <span><ShieldCheck :size="14" /></span><strong>补回学习记录</strong><small>{{ educationCourseProgress.awaitingEvidence }} 份作业已结束，但还没有可验证的作答或评分记录。</small><b>补记录</b>
                       </button>
                       <button v-if="Number(educationCourseProgress.retryRequired || 0)" type="button" class="education-course-completion-blocker" @click="focusCourseBlocker('retry')">
                         <span><RefreshCw :size="14" /></span><strong>安排失败作业重试</strong><small>{{ educationCourseProgress.retryRequired }} 份作业需要重新执行或重新学习。</small><b>看重试</b>
@@ -10425,7 +10425,7 @@ onBeforeUnmount(() => {
               </div>
             </section>
             <section v-if="isTeacherOnlyRole && learningEvaluationQueue.length" class="learning-assignment-workbench" aria-label="独立评价队列">
-              <div class="subsection-title"><div><h4>独立评价队列</h4><span>{{ learningEvaluationQueue.length }} 份已完成作业待第二评分者评价</span></div><span class="context-mode-chip">education.evaluate</span></div>
+              <div class="subsection-title"><div><h4>第二位教师评分</h4><span>{{ learningEvaluationQueue.length }} 份已完成作业待第二位教师评价</span></div><span class="context-mode-chip">协作复核</span></div>
               <p class="learning-task-help">独立评价不会改变教师确认状态；系统会将两个评分者的三维分数用于共识判定和实验审计。</p>
               <div class="learning-assignment-list">
                 <article v-for="assignment in learningEvaluationQueue" :key="assignment.id" class="learning-assignment-row">
@@ -10587,7 +10587,7 @@ onBeforeUnmount(() => {
                 <label class="field field-wide"><span>学习目标</span><textarea v-model="educationSourceForm.learningObjectives" rows="2" maxlength="4000"></textarea></label>
                 <button class="secondary-button" type="submit" :disabled="educationLoading || !educationSourceForm.documentId">保存课程元数据</button>
               </form>
-              <div v-else class="context-preview-empty">当前没有可配置的知识文档；可以先上传课程资料，或请管理员授权课程资料。</div>
+              <div v-else class="context-preview-empty">当前没有可配置的课程资料；可以先上传课程资料，或请管理员授权课程资料。</div>
               <div v-if="educationSources.length" class="education-source-list">
                   <div v-for="source in educationSources" :key="source.id" class="education-source-row">
                   <div><strong>{{ source.documentTitle || documents.find((document) => document.id === source.documentId)?.title || source.documentId }}</strong><small>{{ source.subject }} · {{ source.gradeLevel }} · {{ source.curriculumVersion }} · 难度 {{ source.difficultyLevel }}<template v-if="isAdminWorkspace && educationSourceOwnerLabel(source)"> · {{ educationSourceOwnerLabel(source) }}</template></small></div>
