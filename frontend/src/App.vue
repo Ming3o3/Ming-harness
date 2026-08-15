@@ -1527,7 +1527,7 @@ function learningAssignmentNextAction(assignment) {
     return {
       label: learningAssignmentFeedbackContinueLabel(openFeedback),
       detail: openFeedback.action === 'REQUEST_EVIDENCE'
-        ? '教师要求补充可验证证据。确认反馈后会直接启动下一轮。'
+        ? '教师要求补充可验证的作答记录。确认反馈后会直接启动下一轮。'
         : '教师建议重新学习。确认反馈后会直接启动下一轮。',
       issue: 'intervention',
       actionable: true,
@@ -1545,7 +1545,7 @@ function learningAssignmentNextAction(assignment) {
     return { label: '接受并开始', detail: '按课程范围启动第一轮学习。', issue: 'assigned', actionable: true }
   }
   if (assignment.status === 'AWAITING_EVIDENCE') {
-    return { label: '补充证据并继续', detail: '上一轮已结束，但还缺少测评证据。', issue: 'evidence', actionable: true }
+    return { label: '补充作答并继续', detail: '上一轮已结束，但还缺少可验证的作答记录。', issue: 'evidence', actionable: true }
   }
   if (assignment.status === 'RETRY_REQUIRED') {
     return assignment.reviewStatus === 'REVISION_REQUIRED'
@@ -1717,7 +1717,7 @@ function learningAssignmentJourney(assignment) {
       steps: [
         { id: 'accept', label: '接受作业', state: 'cancelled' },
         { id: 'learn', label: '课程学习', state: 'cancelled' },
-        { id: 'evidence', label: '提交证据', state: 'cancelled' },
+        { id: 'evidence', label: '提交作答', state: 'cancelled' },
         { id: 'review', label: '教师确认', state: 'cancelled' },
         { id: 'done', label: '已取消', state: 'current' },
       ],
@@ -1746,7 +1746,7 @@ function learningAssignmentJourney(assignment) {
     currentDetail = '继续课程对话，完成讲解、练习或诊断。'
   } else if (assignment.status === 'AWAITING_EVIDENCE') {
     current = 'evidence'
-    currentDetail = '补充作答、推理或测评依据，才能更新学习状态。'
+    currentDetail = '补充作答、推理过程或评分依据，才能更新学习状态。'
   } else if (reviewPending && !hasSubmission) {
     current = 'evidence'
     currentDetail = '先提交可追溯的作答内容，教师才能完成确认。'
@@ -1769,7 +1769,7 @@ function learningAssignmentJourney(assignment) {
     steps: [
     { id: 'accept', label: '接受作业', state: current === 'accept' ? 'current' : (accepted ? 'ready' : 'pending') },
     { id: 'learn', label: retry ? '返工 / 重试' : '课程学习', state: current === 'learn' ? 'current' : (learningDone || evidenceDone ? 'ready' : 'pending') },
-    { id: 'evidence', label: '提交证据', state: current === 'evidence' ? 'current' : (evidenceDone ? 'ready' : 'pending') },
+    { id: 'evidence', label: '提交作答', state: current === 'evidence' ? 'current' : (evidenceDone ? 'ready' : 'pending') },
     { id: 'review', label: assignment.reviewStatus === 'NOT_REQUIRED' ? '无需确认' : (verified ? '教师已确认' : '教师确认'), state: current === 'review' ? 'current' : (verified || assignment.reviewStatus === 'NOT_REQUIRED' ? 'ready' : 'pending') },
     { id: 'done', label: '完成 / 复习', state: current === 'done' ? 'current' : (verified || assignment.reviewStatus === 'NOT_REQUIRED' ? 'ready' : 'pending') },
     ],
@@ -1839,7 +1839,7 @@ const learningAssignmentIssueLabel = computed(() => ({
   completion: '结课待处理',
   assigned: '待接受',
   accepted: '学习中',
-  evidence: '待补证据',
+  evidence: '待补作答',
   retry: '待重试',
   review: '待教师确认',
   revision: '待返工',
@@ -2013,7 +2013,7 @@ const learningOverviewNextAction = computed(() => {
     return {
       kind: scheduled ? 'task-scheduled' : 'task',
       label: activeLearningTask.value.status === 'AWAITING_EVIDENCE'
-        ? '补充本轮证据'
+        ? '补充本轮作答'
         : (scheduled ? '查看复习安排' : '开始学习任务'),
       detail: activeLearningTask.value.title,
     }
@@ -2182,7 +2182,7 @@ function learningTaskIsScheduled(task) {
 function learningTaskActionLabel(task, starting = false) {
   if (starting) return '启动中…'
   if (task?.status === 'FAILED') return '重试任务'
-  if (task?.status === 'AWAITING_EVIDENCE') return '补充证据'
+  if (task?.status === 'AWAITING_EVIDENCE') return '补充答案'
   if (task?.status === 'IN_PROGRESS') return '继续复习'
   if (learningTaskIsScheduled(task)) return '查看复习安排'
   return '开始复习'
@@ -2601,7 +2601,7 @@ const teacherOperationsTrace = computed(() => [
     id: 'assignment',
     label: '课程作业',
     value: teacherAssignmentCount.value ? `${teacherAssignmentCount.value} 份作业` : '待布置作业',
-    detail: teacherAssignmentCount.value ? '作业已下发，可继续查看完成和提交证据。' : '把目标知识点和作业说明下发给活跃名单。',
+    detail: teacherAssignmentCount.value ? '作业已下发，可继续查看完成和提交记录。' : '把目标知识点和作业说明下发给活跃名单。',
     state: teacherAssignmentCount.value ? 'ready' : 'pending',
   },
   {
@@ -5642,7 +5642,7 @@ function courseLearnerAttentionCount(learner) {
 function courseLearnerNextAction(learner) {
   if (!learner) return { label: '查看作业', issue: '' }
   if (Number(learner.assigned || 0)) return { label: '看待接受', issue: 'assigned' }
-  if (Number(learner.awaitingEvidence || 0)) return { label: '补证据', issue: 'evidence' }
+  if (Number(learner.awaitingEvidence || 0)) return { label: '补作答', issue: 'evidence' }
   if (Number(learner.revisionRequired || 0)) return { label: '看返工', issue: 'revision' }
   if (Number(learner.retryRequired || 0)) return { label: '看重试', issue: 'retry' }
   if (Number(learner.openInterventionCount || 0)) return { label: '看干预', issue: 'intervention' }
@@ -5830,7 +5830,7 @@ function learningAssignmentStatusLabel(status) {
   return {
     ASSIGNED: '待接受',
     ACCEPTED: '学习中',
-    AWAITING_EVIDENCE: '待补证据',
+    AWAITING_EVIDENCE: '待补作答',
     RETRY_REQUIRED: '待重试/返工',
     OVERDUE: '已逾期',
     COMPLETED: '已完成',
@@ -5856,7 +5856,7 @@ function learningAssignmentReviewNoteLabel(assignment) {
 function learningAssignmentStartLabel(assignment, starting = false) {
   if (starting) return '启动中…'
   if (assignment?.status === 'ASSIGNED') return '接受并开始学习'
-  if (assignment?.status === 'AWAITING_EVIDENCE') return '补充证据并继续'
+  if (assignment?.status === 'AWAITING_EVIDENCE') return '补充作答并继续'
   if (assignment?.status === 'RETRY_REQUIRED') {
     return assignment.reviewStatus === 'REVISION_REQUIRED' ? '按教师要求返工' : '重试课程作业'
   }
@@ -5866,7 +5866,7 @@ function learningAssignmentStartLabel(assignment, starting = false) {
 function learningAssignmentFeedbackActionLabel(action) {
   return {
     COMMENT: '教师反馈',
-    REQUEST_EVIDENCE: '补充证据',
+    REQUEST_EVIDENCE: '补充作答',
     RECOMMEND_RETRY: '建议重试',
     RESCHEDULE: '重新安排',
   }[action] || action || '反馈'
@@ -5892,7 +5892,7 @@ function learningAssignmentNotificationActionLabel(notification) {
   if (!notification) return '查看作业'
   if (notification.notificationType === 'ASSIGNED') return '接受并开始'
   if (notification.notificationType === 'EVIDENCE_REQUIRED') {
-    return notification.assignmentStatus === 'AWAITING_EVIDENCE' ? '补证据并继续' : '查看补证据'
+    return notification.assignmentStatus === 'AWAITING_EVIDENCE' ? '补作答并继续' : '查看补作答'
   }
   if (['RETRY_REQUIRED', 'REVISION_REQUIRED'].includes(notification.notificationType)) {
     return '重试/返工作业'
@@ -5955,7 +5955,7 @@ function learningAssignmentActionHint(assignment) {
   if (assignment.status === 'ASSIGNED') return '先接受作业，学习助手会按课程范围启动第一轮学习。'
   if (assignment.status === 'ACCEPTED') return '继续当前学习对话；完成后再提交作业内容。'
   if (assignment.status === 'AWAITING_EVIDENCE') {
-    return '上一轮已完成，但还缺少可验证的测评证据；先补证据并继续。'
+    return '上一轮已完成，但还缺少可验证的作答记录；先补作答并继续。'
   }
   if (assignment.status === 'RETRY_REQUIRED') {
     return assignment.reviewStatus === 'REVISION_REQUIRED'
@@ -10326,9 +10326,9 @@ onBeforeUnmount(() => {
                     <div><span>名单覆盖</span><strong>{{ formatRate(educationCourseProgress.rosterCoverageRate) }}</strong><small>{{ educationCourseProgress.learnersWithAssignments }} / {{ educationCourseProgress.activeLearnerTotal }} 名活跃学习者</small></div>
                     <div><span>作业完成</span><strong>{{ formatRate(educationCourseProgress.assignmentCompletionRate) }}</strong><small>{{ educationCourseProgress.completed }} / {{ educationCourseProgress.assignmentTotal }}</small></div>
                     <div><span>教师确认</span><strong>{{ formatRate(educationCourseProgress.teacherVerificationRate) }}</strong><small>{{ educationCourseProgress.reviewVerified }} / {{ educationCourseProgress.reviewPending + educationCourseProgress.reviewVerified + educationCourseProgress.revisionRequired }}</small></div>
-                    <div><span>待证据</span><strong>{{ educationCourseProgress.awaitingEvidence }}</strong><small>Run 已结束但证据未回写</small></div>
+                    <div><span>待补作答</span><strong>{{ educationCourseProgress.awaitingEvidence }}</strong><small>学习已结束但作答记录未补齐</small></div>
                     <div><span>待重试</span><strong>{{ educationCourseProgress.retryRequired }}</strong><small>失败、超时或返工</small></div>
-                    <div><span>开放干预</span><strong>{{ educationCourseProgress.openInterventionCount }}</strong><small>补证据或建议重试</small></div>
+                    <div><span>待处理反馈</span><strong>{{ educationCourseProgress.openInterventionCount }}</strong><small>补作答或建议重试</small></div>
                     <div><span>结课判定</span><strong>{{ educationCourseProgress.readyToComplete ? '可结课' : '未就绪' }}</strong><small>{{ educationCourseProgress.readyToComplete ? '名单、确认与提交物齐全' : `作业待处理 ${educationCourseProgress.completionBlockerCount} · 缺提交物 ${educationCourseProgress.submissionBlockerCount} · 名单缺口 ${educationCourseProgress.rosterCoverageBlockerCount}` }}</small></div>
                   </div>
                   <section v-if="!educationCourseProgress.readyToComplete" class="education-course-completion-blockers" aria-label="结课阻塞清单">
@@ -10367,7 +10367,7 @@ onBeforeUnmount(() => {
                     <div class="education-course-progress-header"><span>学习者</span><span>作业状态</span><span>掌握度进度</span><span>下一步</span></div>
                     <div v-for="learner in educationCourseProgress.learners" :key="learner.learnerUserId" class="education-course-progress-row">
                       <span><strong>{{ learner.learnerUserId }}</strong><small>{{ learner.lastActivityAt ? `最近 ${formatDate(learner.lastActivityAt)}` : '尚无作业活动' }}</small></span>
-                      <span class="education-course-status-copy">{{ learner.assigned }} 待接受 · {{ learner.completed }} 完成 · {{ learner.awaitingEvidence }} 待证据 · {{ learner.retryRequired }} 待重试 · {{ learner.reviewPending }} 待确认 · {{ learner.submissionMissing }} 缺提交物</span>
+                      <span class="education-course-status-copy">{{ learner.assigned }} 待接受 · {{ learner.completed }} 完成 · {{ learner.awaitingEvidence }} 待补作答 · {{ learner.retryRequired }} 待重试 · {{ learner.reviewPending }} 待确认 · {{ learner.submissionMissing }} 缺提交物</span>
                       <span><strong>{{ formatRate(learner.averageMasteryProgress) }}</strong><small>提升 {{ learner.averageMasteryGain >= 0 ? '+' : '' }}{{ formatRate(learner.averageMasteryGain) }}</small></span>
                       <button class="text-button education-course-next-action" type="button" @click="focusCourseLearnerAction(learner)">{{ courseLearnerNextAction(learner).label }}<small v-if="courseLearnerAttentionCount(learner)">{{ courseLearnerAttentionCount(learner) }} 项待处理</small></button>
                     </div>
@@ -10494,7 +10494,7 @@ onBeforeUnmount(() => {
               <div v-else class="context-preview-empty">{{ educationAssignmentsForView.length ? '当前筛选范围没有作业。' : (isAdminWorkspace ? '暂无课程作业；教师发布作业后，组织概览会在这里显示状态。' : (educationWorkspaceMode === 'teacher' ? '还没有课程作业；可在教师布置入口创建。' : '暂无课程作业；老师发布后，你可以在这里接受作业并查看下一步。')) }}</div>
               <form v-if="learningAssignmentFeedbackForm.assignmentId" class="learning-assignment-feedback-form" @submit.prevent="submitLearningAssignmentFeedback">
                 <div class="subsection-title"><h4>教师反馈</h4><button class="text-button" type="button" @click="closeLearningAssignmentFeedback">关闭</button></div>
-                <label class="field"><span>反馈动作</span><select v-model="learningAssignmentFeedbackForm.action"><option value="COMMENT">教师反馈</option><option value="REQUEST_EVIDENCE">要求补充证据</option><option value="RECOMMEND_RETRY">建议重新学习</option><option value="RESCHEDULE">重新安排截止时间</option></select></label>
+                <label class="field"><span>反馈动作</span><select v-model="learningAssignmentFeedbackForm.action"><option value="COMMENT">教师反馈</option><option value="REQUEST_EVIDENCE">要求补充作答</option><option value="RECOMMEND_RETRY">建议重新学习</option><option value="RESCHEDULE">重新安排截止时间</option></select></label>
                 <label v-if="learningAssignmentFeedbackForm.action === 'RESCHEDULE'" class="field"><span>新的截止时间</span><input v-model="learningAssignmentFeedbackForm.suggestedDueAt" type="datetime-local" required /></label>
                 <label class="field learning-assignment-wide"><span>反馈内容</span><textarea v-model="learningAssignmentFeedbackForm.message" required maxlength="4000" rows="2" placeholder="写明证据判断和下一步行动"></textarea></label>
                 <button class="secondary-button" type="submit" :disabled="learningAssignmentFeedbackSavingId === learningAssignmentFeedbackForm.assignmentId">{{ learningAssignmentFeedbackSavingId ? '发送中…' : '发送反馈' }}</button>
@@ -10513,7 +10513,7 @@ onBeforeUnmount(() => {
                 <div v-if="learningNotifications.length" class="learning-notification-list" aria-label="学习任务通知">
                   <article v-for="notification in learningNotifications.slice(0, 5)" :key="notification.id" class="learning-notification-row" :class="{ unread: notification.unread }">
                     <div class="learning-notification-main"><div class="learning-notification-meta"><strong>{{ notification.title }}</strong><small>{{ formatDate(notification.createdAt) }}</small></div><p>{{ learningNotificationBody(notification) }}</p></div>
-                    <div class="learning-notification-actions"><button class="secondary-button" type="button" @click="openLearningNotification(notification)">{{ notification.notificationType === 'EVIDENCE_REQUIRED' ? '补充证据' : (notification.notificationType === 'FAILED' ? '重试任务' : (notification.taskStatus === 'DEFERRED' ? '查看复习安排' : '打开任务')) }}</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningNotificationRead(notification)">标记已读</button></div>
+                    <div class="learning-notification-actions"><button class="secondary-button" type="button" @click="openLearningNotification(notification)">{{ notification.notificationType === 'EVIDENCE_REQUIRED' ? '补充作答' : (notification.notificationType === 'FAILED' ? '重试任务' : (notification.taskStatus === 'DEFERRED' ? '查看复习安排' : '打开任务')) }}</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningNotificationRead(notification)">标记已读</button></div>
                   </article>
                 </div>
                 <div v-if="learningTasks.length" class="learning-task-list">
