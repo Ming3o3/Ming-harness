@@ -1476,6 +1476,20 @@ const teacherCoursePendingCount = computed(() => {
     + Number(metrics.taskAwaitingEvidence || 0)
     + learningEvaluationQueue.value.length
 })
+// 当前课程的结课待办包含名单覆盖、未完成作业和缺少提交物；它和全局
+// 批改队列的统计范围不同，必须单独展示，避免教师看到互相矛盾的数字。
+const activeTeacherCoursePendingCount = computed(() => {
+  const course = activeEducationCourse.value
+  const progress = educationCourseProgress.value
+  if (!course || course.ownerUserId !== form.userId || course.status !== 'ACTIVE' || !progress) return 0
+  return Number(progress.rosterCoverageBlockerCount || 0)
+    + Number(progress.completionBlockerCount || 0)
+    + Number(progress.submissionBlockerCount || 0)
+})
+const teacherWorkspacePendingCount = computed(() => Math.max(
+  teacherCoursePendingCount.value,
+  activeTeacherCoursePendingCount.value,
+))
 // 待办总数用于概览，但教师的主按钮必须指向真实队列；否则“待重试”会被
 // 错误地带到“待确认”筛选，造成用户以为系统没有可处理的作业。
 const teacherPendingAction = computed(() => {
@@ -1522,6 +1536,70 @@ const teacherPendingAction = computed(() => {
   }
   return null
 })
+// 课程级进度是教师真正需要处理的业务边界；全局指标可能尚未刷新，不能让
+// “课程待办”已经存在时，顶部入口仍然只显示“查看课程进度”。
+const teacherCourseProgressAction = computed(() => {
+  const course = activeEducationCourse.value
+  const progress = educationCourseProgress.value
+  if (!course || course.ownerUserId !== form.userId || course.status !== 'ACTIVE' || !progress) return null
+  if (Number(progress.reviewPending || 0) > 0) {
+    return {
+      label: '确认待批作业',
+      detail: `${progress.reviewPending} 份作业等待你查看并确认。`,
+      kind: 'review', issue: 'review',
+    }
+  }
+  if (Number(progress.revisionRequired || 0) > 0) {
+    return {
+      label: '跟进退回作业',
+      detail: `${progress.revisionRequired} 份作业已退回，等待学生重新提交。`,
+      kind: 'review', issue: 'revision',
+    }
+  }
+  if (Number(progress.retryRequired || 0) > 0) {
+    return {
+      label: '安排作业重试',
+      detail: `${progress.retryRequired} 份作业需要重新执行或重新学习。`,
+      kind: 'review', issue: 'retry',
+    }
+  }
+  if (Number(progress.rosterCoverageBlockerCount || 0) > 0) {
+    return {
+      label: '补发缺少的作业',
+      detail: `${progress.rosterCoverageBlockerCount} 名已加入学生还没有这门课的作业。`,
+      kind: 'makeup-assignment', issue: 'roster',
+    }
+  }
+  if (Number(progress.awaitingEvidence || 0) > 0) {
+    return {
+      label: '查看待补学习记录',
+      detail: `${progress.awaitingEvidence} 份作业已完成学习，但还缺少可验证的作答或评分。`,
+      kind: 'review', issue: 'evidence',
+    }
+  }
+  if (Number(progress.openInterventionCount || 0) > 0) {
+    return {
+      label: '处理教师反馈待办',
+      detail: `${progress.openInterventionCount} 份作业有待处理的补作答或重试反馈。`,
+      kind: 'review', issue: 'intervention',
+    }
+  }
+  if (Number(progress.submissionBlockerCount || 0) > 0) {
+    return {
+      label: '查看缺少提交物的作业',
+      detail: `${progress.submissionBlockerCount} 份已完成作业还没有可查看的提交内容。`,
+      kind: 'review', issue: 'submission',
+    }
+  }
+  if (Number(progress.completionBlockerCount || 0) > 0) {
+    return {
+      label: '查看课程待办',
+      detail: `${progress.completionBlockerCount} 份作业还没有完成闭环。`,
+      kind: 'review', issue: 'completion',
+    }
+  }
+  return null
+})
 const teacherAgentReady = computed(() => manageableEducationSources.value.length > 0)
 const teacherNextAction = computed(() => {
   if (!manageableEducationDocuments.value.length) {
@@ -1538,6 +1616,9 @@ const teacherNextAction = computed(() => {
   }
   if (!teacherAssignmentCount.value) {
     return { label: '布置第一份作业', detail: '给学生安排第一项学习任务。', kind: 'assignment' }
+  }
+  if (teacherCourseProgressAction.value) {
+    return teacherCourseProgressAction.value
   }
   if (teacherPendingAction.value) {
     return teacherPendingAction.value
@@ -1577,6 +1658,7 @@ function runTeacherNextAction() {
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
       if (action.kind === 'roster') focusEducationCourseRoster()
       else if (action.kind === 'assignment') focusEducationCourseAssignment()
+      else if (action.kind === 'makeup-assignment') focusCourseMakeupAssignment()
       else if (action.kind === 'review') focusCourseBlocker(action.issue)
       else if (action.kind === 'evaluation') document.querySelector('[aria-label="独立评价队列"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       else if (action.kind === 'progress') focusEducationCourseProgress()
@@ -2948,13 +3030,13 @@ const teacherOperationsTrace = computed(() => [
   {
     id: 'review',
     label: '查看提交与反馈',
-    value: teacherCoursePendingCount.value
-      ? `${teacherCoursePendingCount.value} 项待处理`
+    value: teacherWorkspacePendingCount.value
+      ? `${teacherWorkspacePendingCount.value} 项待处理`
       : (teacherAssignmentCount.value ? '暂无待办' : '等待学生提交'),
-    detail: teacherCoursePendingCount.value
-      ? '依据学生提交内容和学习记录确认、退回或反馈。'
+    detail: teacherWorkspacePendingCount.value
+      ? '按当前课程待办或其他课程的学生提交逐项处理。'
       : (teacherAssignmentCount.value ? '新的学生提交后会出现在这里。' : '布置作业后，学生提交内容和老师反馈会出现在这里。'),
-    state: teacherCoursePendingCount.value ? 'attention' : (teacherAssignmentCount.value ? 'ready' : 'pending'),
+    state: teacherWorkspacePendingCount.value ? 'attention' : (teacherAssignmentCount.value ? 'ready' : 'pending'),
   },
 ])
 const teacherOnboardingCurrentIndex = computed(() => {
@@ -6235,6 +6317,37 @@ function focusEducationCourseAssignment() {
   })
 }
 
+// 对已加入但没有课程作业的学生，批量布置会重复发给已覆盖学生。这里直接
+// 打开“课程内补发”，带入当前课程、首个未覆盖学生及已有作业的基础信息。
+function focusCourseMakeupAssignment() {
+  const course = activeEducationCourse.value
+  if (!course || course.ownerUserId !== form.userId || course.status !== 'ACTIVE') return
+  const missingLearner = (educationCourseProgress.value?.learners || [])
+    .find((learner) => Number(learner.assignmentTotal || 0) === 0)
+  const referenceAssignment = learningAssignments.value
+    .find((assignment) => assignment.courseId === course.id && assignment.status !== 'CANCELLED')
+  learningAssignmentScopeTouched.value = true
+  learningAssignmentForm.courseId = course.id
+  learningAssignmentForm.learnerUserId = missingLearner?.learnerUserId || learningAssignmentForm.learnerUserId
+  learningAssignmentForm.subject = course.subject || ''
+  learningAssignmentForm.gradeLevel = course.gradeLevel || ''
+  learningAssignmentForm.curriculumVersion = course.curriculumVersion || ''
+  if (referenceAssignment) {
+    if (!learningAssignmentForm.title.trim()) learningAssignmentForm.title = referenceAssignment.title || ''
+    if (!learningAssignmentForm.instructions.trim()) learningAssignmentForm.instructions = referenceAssignment.instructions || ''
+    if (!learningAssignmentForm.conceptKey.trim()) learningAssignmentForm.conceptKey = referenceAssignment.conceptKey || ''
+    if (learningAssignmentForm.targetMastery === '80' && Number.isFinite(Number(referenceAssignment.targetMastery))) {
+      learningAssignmentForm.targetMastery = String(Math.round(Number(referenceAssignment.targetMastery) * 100))
+    }
+  }
+  nextTick(() => {
+    const panel = document.querySelector('.education-assignment-entry')
+    if (panel instanceof HTMLDetailsElement) panel.open = true
+    scrollConsoleTargetIntoView(panel)
+    panel?.querySelector('input[placeholder="例如：student-demo"]')?.focus()
+  })
+}
+
 function focusEducationCourseProgress() {
   nextTick(() => {
     const panel = document.querySelector('.education-course-progress-details')
@@ -9004,10 +9117,10 @@ onBeforeUnmount(() => {
               <span>{{ teacherEducationCourses.length }} 门课程</span>
             </div>
             <div class="chat-teaching-brief-stats">
-              <div><strong>{{ teacherCoursePendingCount }}</strong><small>待处理</small></div>
+              <div><strong>{{ teacherWorkspacePendingCount }}</strong><small>待处理</small></div>
               <div><strong>{{ teacherActiveLearnerCount }}</strong><small>学生</small></div>
             </div>
-            <p>{{ teacherCoursePendingCount ? '有作业或反馈待处理，建议先看今天的待办。' : '课程状态正常，可以继续布置下一项学习任务。' }}</p>
+            <p>{{ teacherWorkspacePendingCount ? '有课程待办，建议先看今天的优先事项。' : '课程状态正常，可以继续布置下一项学习任务。' }}</p>
             <button type="button" @click="chatMode = false; navigateConsoleSection('education')">打开教师工作台 <ArrowUp :size="13" /></button>
           </section>
           <div class="conversation-sidebar-heading">
@@ -10606,7 +10719,7 @@ onBeforeUnmount(() => {
               </div>
             </section>
             <details v-if="isTeacherOnlyRole" class="education-agent-state-details">
-              <summary><span><strong>课程状态概览</strong><small>{{ teacherEducationCourses.length }} 门课程 · {{ teacherActiveLearnerCount }} 名学生 · {{ teacherCoursePendingCount }} 项待处理</small></span><em>{{ teacherAgentReady ? '资料已接入' : '待配置' }}</em></summary>
+              <summary><span><strong>课程状态概览</strong><small>{{ teacherEducationCourses.length }} 门课程 · {{ teacherActiveLearnerCount }} 名学生 · {{ activeTeacherCoursePendingCount }} 项当前课程待办</small></span><em>{{ teacherAgentReady ? '资料已接入' : '待配置' }}</em></summary>
               <section class="education-agent-state-card education-teacher-state-card" :class="{ ready: teacherAgentReady }" aria-label="教师课程运营状态">
                 <div class="education-agent-state-heading">
                   <div><p class="eyebrow">COURSE OVERVIEW</p><h4>课程运营概览</h4><span>看资料、名单、作业和反馈，按顺序处理即可。</span></div>
@@ -10623,7 +10736,7 @@ onBeforeUnmount(() => {
                     <small>03 · 下一步行动</small><strong>{{ teacherNextAction.label }}</strong><p>{{ teacherNextAction.detail }}</p>
                   </article>
                   <article class="education-agent-state-item">
-                    <small>04 · 待处理作业</small><strong>{{ teacherCoursePendingCount }} 项课程待办</strong><p>{{ teacherCoursePendingCount ? '查看学生提交和反馈，再确认或退回作业。' : '当前没有待处理作业，可以继续布置或查看课程进度。' }}</p>
+                    <small>04 · 当前课程待办</small><strong>{{ activeTeacherCoursePendingCount }} 项待办</strong><p>{{ activeTeacherCoursePendingCount ? '按课程进度中的名单、作业和提交物待办逐项处理。' : '当前课程没有结课待办，可以继续布置或查看课程进度。' }}</p>
                   </article>
                 </div>
                 <footer class="education-agent-state-footer">
@@ -11034,8 +11147,8 @@ onBeforeUnmount(() => {
                       <em>{{ Number(educationCourseProgress.completionBlockerCount || 0) + Number(educationCourseProgress.submissionBlockerCount || 0) + Number(educationCourseProgress.rosterCoverageBlockerCount || 0) }} 项待处理</em>
                     </header>
                     <div class="education-course-completion-blocker-list">
-                      <button v-if="Number(educationCourseProgress.activeLearnerTotal || 0) === 0 || Number(educationCourseProgress.rosterCoverageBlockerCount || 0)" type="button" class="education-course-completion-blocker is-roster" @click="focusEducationCourseRoster">
-                        <span><BookOpen :size="14" /></span><strong>补齐学生名单</strong><small>{{ Number(educationCourseProgress.activeLearnerTotal || 0) === 0 ? '还没有活跃学习者' : `${educationCourseProgress.rosterCoverageBlockerCount} 名学生尚未覆盖作业` }}</small><b>去名单</b>
+                      <button v-if="Number(educationCourseProgress.activeLearnerTotal || 0) === 0 || Number(educationCourseProgress.rosterCoverageBlockerCount || 0)" type="button" class="education-course-completion-blocker is-roster" @click="Number(educationCourseProgress.activeLearnerTotal || 0) === 0 ? focusEducationCourseRoster() : focusCourseMakeupAssignment()">
+                        <span><BookOpen :size="14" /></span><strong>{{ Number(educationCourseProgress.activeLearnerTotal || 0) === 0 ? '补齐学生名单' : '补发缺少的作业' }}</strong><small>{{ Number(educationCourseProgress.activeLearnerTotal || 0) === 0 ? '还没有活跃学习者' : `${educationCourseProgress.rosterCoverageBlockerCount} 名已加入学生尚未覆盖作业` }}</small><b>{{ Number(educationCourseProgress.activeLearnerTotal || 0) === 0 ? '去名单' : '去补发' }}</b>
                       </button>
                       <button v-if="Number(educationCourseProgress.assignmentTotal || 0) === 0" type="button" class="education-course-completion-blocker" @click="focusEducationCourseAssignment">
                         <span><ListChecks :size="14" /></span><strong>先布置课程作业</strong><small>没有有效作业，系统无法判断课程是否完成。</small><b>去布置</b>
