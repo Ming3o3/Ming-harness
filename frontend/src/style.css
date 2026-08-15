@@ -548,6 +548,8 @@ h3 { margin: 0; font-size: 13px; }
 .learner-focus-copy p:not(.eyebrow) { margin: 0; color: var(--soft); font-size: 10px; line-height: 1.5; }
 .learner-focus-copy small { overflow: hidden; color: var(--muted); font: 8px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
 .learner-focus-action { flex: 0 0 auto; white-space: nowrap; }
+.teacher-focus-card { border-color: color-mix(in srgb, var(--orange) 42%, var(--line)); background: linear-gradient(135deg, color-mix(in srgb, var(--orange) 10%, var(--panel)), var(--panel-soft)); }
+.teacher-focus-card .learner-focus-copy .eyebrow { color: var(--orange); }
 .learner-advanced-details { border-top: 1px solid var(--line); padding-top: 10px; }
 .learner-advanced-details > summary { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: var(--soft); cursor: pointer; font-size: 10px; list-style: none; }
 .learner-advanced-details > summary::-webkit-details-marker { display: none; }
@@ -555,6 +557,13 @@ h3 { margin: 0; font-size: 13px; }
 .learner-advanced-details[open] > summary::before { content: '▾'; }
 .learner-advanced-details > summary small { margin-left: auto; color: var(--muted); font: 8px "DM Mono", monospace; }
 .learner-advanced-details .education-agent-loop { margin-top: 10px; }
+.teacher-advanced-details { border-top: 1px solid var(--line); padding-top: 10px; }
+.teacher-advanced-details > summary { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: var(--soft); cursor: pointer; font-size: 10px; list-style: none; }
+.teacher-advanced-details > summary::-webkit-details-marker { display: none; }
+.teacher-advanced-details > summary::before { content: '▸'; margin-right: 5px; color: var(--orange); font-size: 12px; }
+.teacher-advanced-details[open] > summary::before { content: '▾'; }
+.teacher-advanced-details > summary small { margin-left: auto; color: var(--muted); font: 8px "DM Mono", monospace; }
+.teacher-advanced-details .education-agent-loop { margin-top: 10px; }
 .learner-journey-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 0 0 10px; padding: 0; list-style: none; }
 .learner-journey-steps > li { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 6px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-soft); padding: 7px; }
 .learner-journey-steps > li > span { color: var(--muted); font: 8px "DM Mono", monospace; }
