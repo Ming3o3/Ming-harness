@@ -9338,12 +9338,12 @@ onBeforeUnmount(() => {
         <div class="brand-mark" aria-hidden="true"><Sparkles :size="17" :stroke-width="1.8" /></div>
         <div>
           <strong>Ming Harness</strong>
-          <span>Education Agent Operations</span>
+          <span>{{ isAdminRole ? '教育系统治理' : (isTeacherRole ? '课程运营工作台' : '我的学习空间') }}</span>
         </div>
       </div>
       <div class="console-topbar-content">
         <div class="topbar-actions">
-          <button class="command-palette-trigger" type="button" title="打开命令面板（⌘/Ctrl + K）" @click="openCommandPalette"><Command :size="14" /><span>⌘K</span><em>命令</em></button>
+          <button v-if="!isLearnerOnlyRole" class="command-palette-trigger" type="button" title="打开命令面板（⌘/Ctrl + K）" @click="openCommandPalette"><Command :size="14" /><span>⌘K</span><em>命令</em></button>
           <button
             class="theme-toggle"
             type="button"
