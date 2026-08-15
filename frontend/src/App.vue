@@ -1251,9 +1251,9 @@ function targetMasteryFromPercent(value, fallback = 0.8) {
 
 const educationSourceForm = reactive({
   documentId: '',
-  subject: '数学',
-  gradeLevel: '高中一年级',
-  curriculumVersion: '人教A版',
+  subject: '',
+  gradeLevel: '',
+  curriculumVersion: '',
   chapter: '',
   learningObjectives: '',
   conceptTags: '',
@@ -1261,6 +1261,7 @@ const educationSourceForm = reactive({
   difficultyLevel: 3,
   sourceType: 'TEXTBOOK',
 })
+const educationSourceAdvancedOpen = ref(false)
 
 
 const tenantPolicyForm = reactive({
@@ -5448,7 +5449,7 @@ async function loadDashboard() {
     documents.value = visibleDocuments
     if (!visibleDocuments.some((document) => document.id === educationSourceForm.documentId
       && (document.ownerUserId === form.userId || isTeacherOnlyRole.value))) {
-      educationSourceForm.documentId = ''
+      selectEducationDocument(null)
     }
     memories.value = memoryData || []
     contextConfiguration.value = contextConfigurationData
@@ -7939,6 +7940,7 @@ async function saveEducationSource() {
     })
     educationSources.value = [source, ...educationSources.value.filter((item) => item.documentId !== source.documentId)]
     prefillEducationCourseFormFromSources()
+    educationSourceAdvancedOpen.value = false
     noticeMessage.value = '课程信息已保存；下一步可以创建课程。'
     educationError.value = ''
     await nextTick()
@@ -7951,8 +7953,54 @@ async function saveEducationSource() {
 }
 
 function selectEducationDocument(document) {
-  if (!document) return
+  if (!document) {
+    educationSourceForm.documentId = ''
+    educationSourceForm.subject = ''
+    educationSourceForm.gradeLevel = ''
+    educationSourceForm.curriculumVersion = ''
+    educationSourceForm.chapter = ''
+    educationSourceForm.conceptTags = ''
+    educationSourceForm.prerequisiteConcepts = ''
+    educationSourceForm.learningObjectives = ''
+    educationSourceForm.difficultyLevel = 3
+    educationSourceAdvancedOpen.value = false
+    return
+  }
   educationSourceForm.documentId = document.id
+  const existingSource = educationSources.value.find((source) => source.documentId === document.id)
+  if (existingSource) {
+    editEducationSource(existingSource)
+    return
+  }
+  educationSourceForm.subject = ''
+  educationSourceForm.gradeLevel = ''
+  educationSourceForm.curriculumVersion = ''
+  educationSourceForm.chapter = ''
+  educationSourceForm.conceptTags = ''
+  educationSourceForm.prerequisiteConcepts = ''
+  educationSourceForm.learningObjectives = ''
+  educationSourceForm.difficultyLevel = 3
+  educationSourceAdvancedOpen.value = false
+}
+
+function editEducationSource(source) {
+  if (!source) return
+  educationSourceForm.documentId = source.documentId
+  educationSourceForm.subject = source.subject || ''
+  educationSourceForm.gradeLevel = source.gradeLevel || ''
+  educationSourceForm.curriculumVersion = source.curriculumVersion || ''
+  educationSourceForm.chapter = source.chapter || ''
+  educationSourceForm.conceptTags = source.conceptTags || ''
+  educationSourceForm.prerequisiteConcepts = source.prerequisiteConcepts || ''
+  educationSourceForm.learningObjectives = source.learningObjectives || ''
+  educationSourceForm.difficultyLevel = source.difficultyLevel || 3
+  educationSourceAdvancedOpen.value = Boolean(
+    educationSourceForm.chapter
+    || educationSourceForm.conceptTags
+    || educationSourceForm.prerequisiteConcepts
+    || educationSourceForm.learningObjectives
+    || Number(educationSourceForm.difficultyLevel) !== 3,
+  )
 }
 
 function markEducationCourseMetadataTouched(field) {
@@ -11056,24 +11104,30 @@ onBeforeUnmount(() => {
               </details>
             </div>
             <details v-if="canManageEducationOperations && (manageableEducationDocuments.length || educationSources.length)" class="education-source-editor education-teacher-entry" :open="educationWorkspaceMode === 'teacher' && manageableEducationDocuments.length > 0 && !educationSources.length">
-              <summary><span><strong>课程资料设置</strong><small>为课程文件补充学科、版本、章节和知识点范围</small></span><em>{{ educationSources.length }} 个课程来源</em></summary>
+              <summary><span><strong>课程材料设置</strong><small>告诉系统这份材料适用于哪门课</small></span><em>{{ educationSources.length }} 份已设置</em></summary>
               <form v-if="manageableEducationDocuments.length" class="education-source-form" @submit.prevent="saveEducationSource">
-                <label class="field field-wide"><span>课程文件</span><select v-model="educationSourceForm.documentId" required><option value="">选择可用的课程文件</option><option v-for="document in manageableEducationDocuments" :key="document.id" :value="document.id">{{ document.title }}{{ document.ownerUserId !== form.userId ? ' · 组织共享' : '' }}</option></select></label>
+                <p class="education-source-form-help education-source-wide">先完成下面四项基础信息，就可以创建课程；章节、知识点等详细信息可以稍后补充。</p>
+                <label class="field education-source-wide"><span>学习材料</span><select v-model="educationSourceForm.documentId" required @change="selectEducationDocument(manageableEducationDocuments.find((document) => document.id === educationSourceForm.documentId))"><option value="">选择要用于课程的文件</option><option v-for="document in manageableEducationDocuments" :key="document.id" :value="document.id">{{ document.title }}{{ document.ownerUserId !== form.userId ? ' · 组织共享' : '' }}</option></select></label>
                 <label class="field"><span>学科</span><input v-model="educationSourceForm.subject" required /></label>
                 <label class="field"><span>年级</span><input v-model="educationSourceForm.gradeLevel" required /></label>
-                <label class="field"><span>课程版本</span><input v-model="educationSourceForm.curriculumVersion" required /></label>
-                <label class="field"><span>章节</span><input v-model="educationSourceForm.chapter" /></label>
-                <label class="field"><span>难度（1-5）</span><input v-model.number="educationSourceForm.difficultyLevel" type="number" min="1" max="5" required /></label>
-                <label class="field field-wide"><span>知识点标签（逗号分隔）</span><input v-model="educationSourceForm.conceptTags" placeholder="例如：函数,定义域,值域" /></label>
-                <label class="field field-wide"><span>前置知识（逗号分隔）</span><input v-model="educationSourceForm.prerequisiteConcepts" placeholder="例如：集合,不等式" /></label>
-                <label class="field field-wide"><span>学习目标</span><textarea v-model="educationSourceForm.learningObjectives" rows="2" maxlength="4000"></textarea></label>
+                <label class="field"><span>教材版本</span><input v-model="educationSourceForm.curriculumVersion" required placeholder="例如：人教A版" /></label>
+                <details class="education-source-advanced education-source-wide" :open="educationSourceAdvancedOpen" @toggle="educationSourceAdvancedOpen = $event.currentTarget.open">
+                  <summary><span><strong>可选的详细设置</strong><small>章节、知识点和学习目标会帮助系统更准确地安排学习</small></span><em>{{ educationSourceAdvancedOpen ? '收起' : '稍后补充' }}</em></summary>
+                  <div class="education-source-advanced-grid">
+                    <label class="field"><span>章节（可选）</span><input v-model="educationSourceForm.chapter" placeholder="例如：第一章 函数" /></label>
+                    <label class="field"><span>学习难度（可选）</span><input v-model.number="educationSourceForm.difficultyLevel" type="number" min="1" max="5" required title="1 表示基础，5 表示较难" /></label>
+                    <label class="field education-source-wide"><span>知识点（可选）</span><input v-model="educationSourceForm.conceptTags" placeholder="例如：函数、定义域、值域" /></label>
+                    <label class="field education-source-wide"><span>需要先会什么（可选）</span><input v-model="educationSourceForm.prerequisiteConcepts" placeholder="例如：集合、不等式" /></label>
+                    <label class="field education-source-wide"><span>这份材料要帮助学生学会什么（可选）</span><textarea v-model="educationSourceForm.learningObjectives" rows="2" maxlength="4000" placeholder="例如：能够判断函数定义域并独立完成基础题"></textarea></label>
+                  </div>
+                </details>
                 <button class="secondary-button" type="submit" :disabled="educationLoading || !educationSourceForm.documentId">保存课程资料信息</button>
               </form>
               <div v-else class="context-preview-empty">当前没有可配置的课程资料；可以先上传课程资料，或请管理员授权课程资料。</div>
               <div v-if="educationSources.length" class="education-source-list">
                   <div v-for="source in educationSources" :key="source.id" class="education-source-row">
                   <div><strong>{{ source.documentTitle || documents.find((document) => document.id === source.documentId)?.title || source.documentId }}</strong><small>{{ source.subject }} · {{ source.gradeLevel }} · {{ source.curriculumVersion }} · 难度 {{ source.difficultyLevel }}<template v-if="isAdminWorkspace && educationSourceOwnerLabel(source)"> · {{ educationSourceOwnerLabel(source) }}</template></small></div>
-                  <button v-if="canEditEducationSource(source)" class="text-button" type="button" @click="educationSourceForm.documentId = source.documentId; educationSourceForm.subject = source.subject; educationSourceForm.gradeLevel = source.gradeLevel; educationSourceForm.curriculumVersion = source.curriculumVersion; educationSourceForm.chapter = source.chapter || ''; educationSourceForm.conceptTags = source.conceptTags || ''; educationSourceForm.prerequisiteConcepts = source.prerequisiteConcepts || ''; educationSourceForm.learningObjectives = source.learningObjectives || ''; educationSourceForm.difficultyLevel = source.difficultyLevel">编辑</button>
+                  <button v-if="canEditEducationSource(source)" class="text-button" type="button" @click="editEducationSource(source)">编辑</button>
                   <small v-else class="document-owner-hint">仅资料所有者可删除正文</small>
                 </div>
               </div>
