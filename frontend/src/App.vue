@@ -5706,6 +5706,8 @@ async function createEducationCourse() {
     educationCourseForm.title = ''
     await loadEducationCourseWorkspace(course.id)
     noticeMessage.value = `课程“${course.title}”已创建，可以把邀请码发给学生。`
+    await nextTick()
+    runTeacherNextAction()
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
@@ -5763,6 +5765,8 @@ async function enrollEducationLearner() {
     await loadEducationCourseWorkspace(course.id)
     await loadEducationData()
     noticeMessage.value = `已将学生账号 ${learnerUserId} 加入课程。`
+    await nextTick()
+    runTeacherNextAction()
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
@@ -5887,6 +5891,8 @@ async function assignEducationCourse() {
     await loadEducationData()
     await loadEducationCourseWorkspace(course.id)
     noticeMessage.value = `已向课程活跃名单布置 ${result.assignmentCount} 份作业。`
+    await nextTick()
+    runTeacherNextAction()
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
