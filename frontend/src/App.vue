@@ -2579,8 +2579,8 @@ const teacherOperationsTrace = computed(() => [
   {
     id: 'source',
     label: '课程资料',
-    value: manageableEducationSources.value.length ? `${manageableEducationSources.value.length} 个来源已配置` : '待上传与维护',
-    detail: manageableEducationSources.value.length ? '课程资料已经具备可检索的元数据边界。' : '上传文档并补充学科、版本、章节、知识点和难度。',
+    value: manageableEducationSources.value.length ? `${manageableEducationSources.value.length} 份资料已整理` : '待上传与整理',
+    detail: manageableEducationSources.value.length ? '课程资料已经标注好适用范围，可以用于教学。' : '上传资料并补充学科、版本、章节、知识点和难度。',
     state: manageableEducationSources.value.length ? 'ready' : 'pending',
   },
   {
@@ -7367,7 +7367,7 @@ function handleDocumentUploadDrop(event) {
   documentUploadDragging.value = false
   if (loading.value || documentUploading.value) return
   const files = Array.from(event.dataTransfer?.files || [])
-  if (files.length > 1) noticeMessage.value = '一次只导入一个知识文档，已使用第一个文件。'
+  if (files.length > 1) noticeMessage.value = '一次只导入一个课程资料文件，已使用第一个文件。'
   setDocumentUploadFile(files[0])
 }
 
@@ -7394,7 +7394,7 @@ async function createDocument() {
     })
     documents.value = [document, ...documents.value.filter((item) => item.id !== document.id)]
     clearDocumentUploadFile()
-    noticeMessage.value = '文件已解析并建立知识索引；后续模型步骤会按组织和用户权限检索'
+    noticeMessage.value = '课程资料已整理完成；后续学习会按课程范围和用户权限使用。'
     await loadDashboard()
   } catch (error) {
     errorMessage.value = errorText(error)
@@ -7407,14 +7407,14 @@ async function createDocument() {
 async function deleteDocument(document) {
   if (!document?.id || documentDeletingId.value) return
   if (typeof window !== 'undefined'
-    && !window.confirm(`确认删除知识文档“${document.title}”吗？`)) return
+    && !window.confirm(`确认删除课程资料“${document.title}”吗？`)) return
   clearMessages()
   documentDeletingId.value = document.id
   try {
     await api.deleteDocument(document.id)
     documents.value = documents.value.filter((item) => item.id !== document.id)
     if (educationSourceForm.documentId === document.id) educationSourceForm.documentId = ''
-    noticeMessage.value = `知识文档“${document.title}”已删除`
+    noticeMessage.value = `课程资料“${document.title}”已删除`
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
@@ -9832,8 +9832,8 @@ onBeforeUnmount(() => {
           </section>
           <form v-if="isTeacherOnlyRole" id="education-document-upload" class="governance-card governance-fixed-card" @submit.prevent="createDocument">
             <div class="context-workbench-heading">
-              <div><h3>添加授权知识文档</h3><small class="form-hint">仅支持 PDF/DOCX 上传解析，上传后自动建立索引。</small></div>
-              <span class="context-mode-chip">文件 → 文本 → 向量</span>
+              <div><h3>添加课程资料</h3><small class="form-hint">支持 PDF/DOCX，上传后系统会自动整理成可用于课程的资料。</small></div>
+              <span class="context-mode-chip">课程资料</span>
             </div>
             <div
               class="document-upload-dropzone"
@@ -9852,7 +9852,7 @@ onBeforeUnmount(() => {
               />
               <div class="document-upload-copy">
                 <strong>{{ documentUploadFile ? documentUploadFile.name : '拖入 PDF 或 DOCX 文件' }}</strong>
-                <small v-if="documentUploadFile">{{ formatFileSize(documentUploadFile.size) }} · 上传后自动解析、切块并建立索引</small>
+                <small v-if="documentUploadFile">{{ formatFileSize(documentUploadFile.size) }} · 上传后自动整理成可检索的课程资料</small>
                 <small v-else>单个文件最大 25 MB；扫描型 PDF 需要先经过 OCR 才能提取文字</small>
               </div>
               <div class="document-upload-actions">
@@ -9863,9 +9863,9 @@ onBeforeUnmount(() => {
             <p v-if="documentUploadError" class="policy-error">{{ documentUploadError }}</p>
             <label class="field"><span>标题</span><input v-model="documentForm.title" required /></label>
             <label class="field"><span>可见用户（逗号分隔，可留空）</span><input v-model="documentForm.allowedUsers" /></label>
-            <button class="secondary-button" type="submit" :disabled="loading || documentUploading || !documentUploadFile">上传并建立索引</button>
-            <small class="form-hint">当前 {{ documents.length }} 篇文档；模型检索前会先执行组织和用户过滤。</small>
-            <div v-if="documents.length" class="document-list" aria-label="已保存知识文档">
+            <button class="secondary-button" type="submit" :disabled="loading || documentUploading || !documentUploadFile">上传课程资料</button>
+            <small class="form-hint">当前 {{ documents.length }} 份课程资料；学习系统会按课程和授权范围筛选。</small>
+            <div v-if="documents.length" class="document-list" aria-label="已保存课程资料">
               <div v-for="document in documents" :key="document.id" class="document-row">
                 <div class="document-row-content">
                   <strong>{{ document.title }}</strong>
@@ -10585,7 +10585,7 @@ onBeforeUnmount(() => {
                 <label class="field field-wide"><span>知识点标签（逗号分隔）</span><input v-model="educationSourceForm.conceptTags" placeholder="例如：函数,定义域,值域" /></label>
                 <label class="field field-wide"><span>前置知识（逗号分隔）</span><input v-model="educationSourceForm.prerequisiteConcepts" placeholder="例如：集合,不等式" /></label>
                 <label class="field field-wide"><span>学习目标</span><textarea v-model="educationSourceForm.learningObjectives" rows="2" maxlength="4000"></textarea></label>
-                <button class="secondary-button" type="submit" :disabled="educationLoading || !educationSourceForm.documentId">保存课程元数据</button>
+                <button class="secondary-button" type="submit" :disabled="educationLoading || !educationSourceForm.documentId">保存课程资料信息</button>
               </form>
               <div v-else class="context-preview-empty">当前没有可配置的课程资料；可以先上传课程资料，或请管理员授权课程资料。</div>
               <div v-if="educationSources.length" class="education-source-list">
