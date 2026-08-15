@@ -10553,6 +10553,10 @@ onBeforeUnmount(() => {
                 <article><strong>知识点</strong><p>学习目标对应的具体内容，例如“函数定义域”。</p></article>
                 <article><strong>掌握度</strong><p>系统根据你的作答估算的熟练程度，不等同于考试分数。</p></article>
                 <article><strong>学习记录</strong><p>你的答案、解题过程或老师反馈，是系统判断进度的依据。</p></article>
+                <article><strong>当前阶段</strong><p>这份作业现在进行到哪一步；按旁边的主按钮继续即可。</p></article>
+                <article><strong>教师确认</strong><p>老师查看提交内容后确认结果，或退回让你按要求重做。</p></article>
+                <article><strong>复习练习</strong><p>完成作业后系统安排的短练习，用来巩固已经学过的内容。</p></article>
+                <article><strong>学习提醒</strong><p>系统提示你补充答案、重新练习或查看老师反馈。</p></article>
               </div>
             </details>
             <p v-if="educationError" class="policy-error">{{ educationError }}</p>
