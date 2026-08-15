@@ -51,6 +51,30 @@ class DemoModelGatewayTests {
     }
 
     @Test
+    void shouldKeepEducationAgentOutputLearnerFriendly() {
+        ModelToolDefinition echo = new ModelToolDefinition(
+                "demo.echo", "返回输入内容", Map.of("type", "string"));
+        ModelRequest initial = new ModelRequest(
+                "教育任务约束（必须遵守）：学科=数学；目标知识点=函数定义域；检索策略=FULL",
+                "demo-model", "prompt-agent", List.of(echo), List.of(
+                ModelMessage.system("你是一个面向课程约束与学习者状态的教育知识库 Agent"),
+                ModelMessage.user("请开始练习")));
+
+        ModelResponse first = gateway.complete(initial);
+        ModelResponse finalResponse = gateway.complete(new ModelRequest(
+                initial.input(), initial.model(), initial.promptVersion(), initial.tools(), List.of(
+                ModelMessage.system("你是一个面向课程约束与学习者状态的教育知识库 Agent"),
+                ModelMessage.user("请开始练习"),
+                ModelMessage.assistant(first.content(), first.toolCalls()),
+                ModelMessage.tool(first.toolCalls().get(0).id(), initial.input()))));
+
+        assertTrue(finalResponse.content().contains("函数定义域"));
+        assertTrue(finalResponse.content().contains("答案或解题过程"));
+        assertTrue(!finalResponse.content().contains("教育任务约束"));
+        assertTrue(!finalResponse.content().contains("检索策略"));
+    }
+
+    @Test
     void shouldInspectARepresentativeSourceFileInWorkspaceDemoFlow() {
         ModelToolDefinition list = new ModelToolDefinition(
                 "workspace.list", "列出工作区目录结构", Map.of("type", "object"));

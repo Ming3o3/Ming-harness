@@ -3036,7 +3036,7 @@ const filteredConversations = computed(() => {
   if (!query) return learningConversations.value
   return learningConversations.value.filter((conversation) => [
     conversation.title,
-    conversation.lastMessagePreview,
+    learnerFriendlyConversationPreview(conversation),
     conversationLearningContext(conversation),
   ]
     .some((value) => String(value || '').toLowerCase().includes(query)))
@@ -3835,6 +3835,7 @@ function messageStatusLabel(status) {
 
 function chatFailureTitle(message) {
   const content = String(message?.content || '').toLowerCase()
+  if (isLearnerOnlyRole.value) return '这次学习没有完成'
   return content.includes('超时') || content.includes('timed out') || content.includes('timeout')
     ? '本轮执行超时' : '本轮执行失败'
 }
@@ -3893,6 +3894,20 @@ function chatSourceMetadata(citation, fallbackTitle = '') {
     kindLabel: type === 'memory' || memory ? '长期记忆' : '课程资料',
     updatedAt: document?.updatedAt || document?.createdAt || memory?.createdAt || '',
   }
+}
+
+// 演示模型和旧版本历史记录可能把 Agent 的内部上下文写进助手气泡。
+// 学生只需要知道下一步做什么；教师和管理员仍然看到原始诊断内容。
+function learnerFriendlyAssistantContent(content) {
+  const raw = String(content || '')
+  if (!isLearnerOnlyRole.value || !raw.trim()) return raw
+  const hasInternalContext = /教育任务约束|课程实例=|检索策略=|学习者状态=|工具结果：|演示 Agent/.test(raw)
+  if (!hasInternalContext) return raw
+  if (/正在执行工具|正在检查工作区|正在搜索|正在读取|正在浏览/.test(raw)
+    && !/已完成任务|已完成项目理解/.test(raw)) {
+    return '正在准备学习内容，请稍候…'
+  }
+  return '本次学习已准备好。请直接完成上方的练习，并在输入框写下答案或解题过程；提交后我会根据你的作答给出下一步反馈。'
 }
 
 function runtimeEvidenceForRun(runId) {
@@ -3989,7 +4004,7 @@ function presentChatCitations(content, runtimeEvidence = []) {
     return source
   }
 
-  let displayContent = String(content || '')
+  let displayContent = learnerFriendlyAssistantContent(content)
   displayContent = displayContent.replace(chatReadableCitationPattern, (match, title) => {
     const source = addSource('', title)
     return `[来源 ${source.index}]`
@@ -4059,6 +4074,17 @@ function conversationLearningContext(conversation) {
 function learningConversationTitle(conversation) {
   const title = String(conversation?.title || '').trim()
   return !title || title === '新的对话' || title === '新对话' ? '新的学习任务' : title
+}
+
+function learnerFriendlyConversationPreview(conversation) {
+  const preview = String(conversation?.lastMessagePreview || '').trim()
+  if (!isLearnerOnlyRole.value || !preview) return preview
+  if (/教育任务约束|课程实例=|检索策略=|学习者状态=|工具结果：|演示 Agent|模型调用执行超时/.test(preview)) {
+    return conversation?.educationLearningAssignmentTitle
+      ? `课程作业：${conversation.educationLearningAssignmentTitle}`
+      : '本次学习已准备好，等待你的作答'
+  }
+  return preview
 }
 
 async function loadConversationFeedback(detail) {
@@ -8552,7 +8578,7 @@ onBeforeUnmount(() => {
               <span class="conversation-row-body">
                 <strong>{{ learningConversationTitle(conversation) }}</strong>
                 <small v-if="conversationLearningContext(conversation)" class="conversation-learning-context"><BookOpen :size="11" />{{ conversationLearningContext(conversation) }}</small>
-                <small>{{ conversation.lastMessagePreview || '从一个学习问题开始' }}</small>
+                <small>{{ learnerFriendlyConversationPreview(conversation) || '从一个学习问题开始' }}</small>
                 <em>{{ conversation.messageCount }} 条消息 · {{ formatDate(conversation.updatedAt) }}</em>
               </span>
               <span v-if="conversation.activeRunId" class="conversation-running-dot" title="学习助手处理中"></span>
@@ -8949,7 +8975,7 @@ onBeforeUnmount(() => {
                     <small v-if="message.role === 'ASSISTANT' && message.status !== 'COMPLETED'">{{ messageStatusLabel(message.status) }}</small>
                     <div v-if="message.role === 'ASSISTANT' && message.status === 'FAILED'" class="chat-failure-guide" role="status">
                       <strong>{{ chatFailureTitle(message) }}</strong>
-                      <span v-if="message.content">原因：{{ message.content }}</span>
+                      <span v-if="message.content && !isLearnerOnlyRole">原因：{{ message.content }}</span>
                       <small>{{ chatFailureGuidance(message) }}</small>
                     </div>
                   </template>

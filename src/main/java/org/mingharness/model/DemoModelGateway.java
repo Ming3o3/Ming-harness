@@ -21,8 +21,12 @@ public class DemoModelGateway implements ModelGateway {
     @Override
     public ModelResponse complete(ModelRequest request) {
         String input = request.input() == null ? "" : request.input().trim();
+        boolean educationRequest = isEducationRequest(request);
         if (!request.tools().isEmpty()) {
             return completeAgentDemo(request, input);
+        }
+        if (educationRequest) {
+            return response(request, input, educationReadyResponse(input), List.of());
         }
         String content = input.isBlank()
                 ? "演示模型已收到任务，但没有可处理的输入。"
@@ -36,6 +40,7 @@ public class DemoModelGateway implements ModelGateway {
      * 通过搜索定位并读取一个代表性文本文件，或在工作区工具不可用时退回安全的回显工具。
      */
     private ModelResponse completeAgentDemo(ModelRequest request, String input) {
+        boolean educationRequest = isEducationRequest(request);
         Optional<ModelMessage> latestToolMessage = latestToolMessage(request.messages());
         if (latestToolMessage.isEmpty()) {
             Optional<ModelToolDefinition> workspaceList = request.tools().stream()
@@ -142,11 +147,18 @@ public class DemoModelGateway implements ModelGateway {
             }
         }
 
-        if ("workspace.read".equals(latestToolName)) {
+        if ("workspace.read".equals(latestToolName) && !educationRequest) {
             String readSummary = summarizeReadResult(toolResult);
             if (!readSummary.isBlank()) {
                 return response(request, input, readSummary, List.of());
             }
+        }
+
+        // 本地演示工具可能只是把教育输入原样回显；学生不应看到课程约束、课程实例
+        // 或检索策略等内部上下文。真实模型接入时仍由教育系统提示词约束输出，演示路径
+        // 也必须保持同样的用户边界。
+        if (educationRequest) {
+            return response(request, input, educationReadyResponse(input), List.of());
         }
 
         String clippedResult = toolResult.length() > 800
@@ -155,6 +167,46 @@ public class DemoModelGateway implements ModelGateway {
                 ? "演示 Agent 已完成任务，但没有可展示的工具结果。"
                 : "演示 Agent 已完成任务。\n\n工具结果：\n" + clippedResult;
         return response(request, input, content, List.of());
+    }
+
+    private boolean isEducationRequest(ModelRequest request) {
+        if (request == null) return false;
+        if (containsEducationInternals(request.input())) return true;
+        return request.messages() != null && request.messages().stream()
+                .filter(message -> message != null && ("system".equals(message.role())
+                        || "user".equals(message.role())))
+                .map(ModelMessage::content)
+                .anyMatch(this::containsEducationInternals);
+    }
+
+    private boolean containsEducationInternals(String value) {
+        if (value == null || value.isBlank()) return false;
+        return value.contains("教育任务约束")
+                || value.contains("课程实例=")
+                || value.contains("检索策略=")
+                || value.contains("教育知识库 Agent")
+                || value.contains("学习者状态=");
+    }
+
+    private String educationReadyResponse(String input) {
+        String concept = extractEducationField(input, "目标知识点");
+        if (concept.isBlank()) concept = extractEducationField(input, "知识点");
+        String focus = concept.isBlank() ? "当前课程内容" : "「" + concept + "」";
+        return "本次学习已准备好，我们来完成" + focus + "的练习。\n\n"
+                + "请直接写下你的答案或解题过程；如果暂时不会，也可以先写出你的思路。"
+                + "我会根据你的作答给出提示、反馈，并更新学习进度。";
+    }
+
+    private String extractEducationField(String input, String label) {
+        if (input == null || input.isBlank()) return "";
+        String marker = label + "=";
+        int start = input.indexOf(marker);
+        if (start < 0) return "";
+        start += marker.length();
+        int end = input.indexOf('；', start);
+        if (end < 0) end = input.indexOf('\n', start);
+        if (end < 0) end = input.length();
+        return input.substring(start, end).trim();
     }
 
     private boolean isRecoverableToolResult(String rawResult) {
