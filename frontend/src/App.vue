@@ -2599,9 +2599,9 @@ const learnerStateDiagnosis = computed(() => {
   if (!activeLearningGoal.value) {
     return {
       state: 'pending',
-      title: isLearnerOnlyRole.value ? '尚未设置学习目标' : '尚未定义本轮达标标准',
+      title: isLearnerOnlyRole.value ? '可以先开始学习' : '尚未定义本轮达标标准',
       detail: isLearnerOnlyRole.value
-        ? '先设定学习目标，系统才能记录进度并安排复习。'
+        ? '你可以先提问或作答；想持续记录进度并安排复习时，再设置学习目标。'
         : '可以先问问题，但没有学习目标时，系统无法判断何时达标或安排复习。',
       currentMastery: null,
       targetMastery: null,
@@ -2657,8 +2657,10 @@ const agentTeachingAction = computed(() => {
   if (!activeLearningGoal.value) {
     return {
       state: 'pending',
-      title: '先把学习诉求变成达标目标',
-      detail: '目标会提供知识点、目标进度和后续学习记录的归属。',
+      title: isLearnerOnlyRole.value ? '可以先开始学习' : '先把学习诉求变成达标目标',
+      detail: isLearnerOnlyRole.value
+        ? '先提问或作答即可；设置目标后，系统会继续记录你的进度并安排复习。'
+        : '目标会提供知识点、目标进度和后续学习记录的归属。',
     }
   }
   if (activeLearningTask.value) {
@@ -2695,8 +2697,10 @@ const agentEvidenceRequest = computed(() => {
   if (!activeLearningGoal.value) {
     return {
       state: 'pending',
-      title: '先绑定学习目标',
-      detail: '没有目标时，作答无法沉淀为可追踪的学习进度。',
+      title: isLearnerOnlyRole.value ? '学习目标可稍后设置' : '先绑定学习目标',
+      detail: isLearnerOnlyRole.value
+        ? '可以先完成一次学习；设置目标后，答案和作答过程才能归入可追踪的学习进度。'
+        : '没有目标时，作答无法沉淀为可追踪的学习进度。',
     }
   }
   if (activeLearningTask.value?.status === 'AWAITING_EVIDENCE') {
@@ -2907,7 +2911,7 @@ const educationAgentTrace = computed(() => [
     id: 'evidence',
     label: '学习记录',
     value: activeLearningGoal.value ? `${learningGoalAssessments.value.length} 次学习记录` : '回答后可生成学习记录',
-    detail: activeLearningGoal.value ? '结果会累计到学习目标并触发下一步安排' : '绑定学习目标后，系统会追踪进度和复习任务',
+    detail: activeLearningGoal.value ? '结果会累计到学习目标并触发下一步安排' : '设置学习目标后，系统会追踪进度和复习任务',
     state: activeLearningGoal.value ? 'ready' : 'pending',
     icon: ListChecks,
   },
@@ -3110,10 +3114,13 @@ const learnerMasteryPreview = computed(() => [...learnerMastery.value]
 const learningSetupProgress = computed(() => {
   const completed = [
     Boolean(activeLearnerProfile.value),
-    Boolean(activeLearningGoal.value),
     matchingEducationSourceCount.value > 0,
   ].filter(Boolean).length
-  return { completed, total: 3 }
+  return {
+    completed,
+    total: 2,
+    goalReady: Boolean(activeLearningGoal.value),
+  }
 })
 const learningEvidenceSummary = computed(() => {
   if (!activeLearningGoal.value) return '等待学习目标'
@@ -9151,7 +9158,10 @@ onBeforeUnmount(() => {
                 <h2>开始你的学习</h2>
                 <p>先告诉系统你在学什么、使用哪套教材，之后它会根据你的作答安排讲解、练习和复习。</p>
               </div>
-              <span class="learning-onboarding-progress">{{ learningSetupProgress.completed }} / {{ learningSetupProgress.total }} 已完成</span>
+              <span class="learning-onboarding-progress">
+                {{ learningSetupProgress.completed }} / {{ learningSetupProgress.total }} 个必要步骤
+                <em>{{ learningSetupProgress.goalReady ? '学习目标已设置' : '学习目标可稍后设置' }}</em>
+              </span>
             </div>
             <div class="learning-onboarding-steps" aria-label="开始学习的步骤">
               <article class="learning-onboarding-step" :class="{ ready: activeLearnerProfile }">
@@ -9162,9 +9172,9 @@ onBeforeUnmount(() => {
                 <span>2</span>
                 <div><strong>课程资料</strong><small>{{ matchingEducationSourceCount ? `当前有 ${matchingEducationSourceCount} 份匹配资料` : '老师上传的教材或讲义' }}</small></div>
               </article>
-              <article class="learning-onboarding-step" :class="{ ready: activeLearningGoal }">
+              <article class="learning-onboarding-step learning-onboarding-step-optional" :class="{ ready: activeLearningGoal }">
                 <span>3</span>
-                <div><strong>学习目标</strong><small>{{ activeLearningGoal ? activeLearningGoal.title : '告诉系统你想掌握什么' }}</small></div>
+                <div><strong>学习目标（可选）</strong><small>{{ activeLearningGoal ? activeLearningGoal.title : '想记录长期进度时再设置' }}</small></div>
               </article>
             </div>
             <div class="learning-onboarding-content">
@@ -9214,8 +9224,8 @@ onBeforeUnmount(() => {
               <header class="learning-session-focus-heading">
                 <div>
                   <p>当前任务</p>
-                  <strong>{{ activeLearningGoal?.title || '尚未设定学习目标' }}</strong>
-                  <span>{{ activeLearningGoal ? `围绕「${activeLearningGoal.conceptKey}」完成一次练习，系统会据此更新学习进度。` : '先设定目标，系统才能记录这次学习是否达成。' }}</span>
+                  <strong>{{ activeLearningGoal?.title || '还没有学习目标（可稍后设置）' }}</strong>
+                  <span>{{ activeLearningGoal ? `围绕「${activeLearningGoal.conceptKey}」完成一次练习，系统会据此更新学习进度。` : '可以先直接提问或作答；设置目标后，系统会持续记录学习进度。' }}</span>
                 </div>
                 <span class="learning-session-focus-status" :class="`is-${agentTeachingAction.state}`">{{ agentTeachingAction.state === 'blocked' ? '等待课程范围' : (agentTeachingAction.state === 'scheduled' ? '已安排' : (agentTeachingAction.state === 'ready' ? '正在推进' : '等待作答')) }}</span>
               </header>
@@ -9270,10 +9280,10 @@ onBeforeUnmount(() => {
                 <ol>
                   <li class="learning-agent-plan-action"><span>1</span><div><small>教学动作</small><strong>{{ agentTeachingAction.title }}</strong><p>{{ agentTeachingAction.detail }}</p></div></li>
                   <li class="learning-agent-plan-evidence"><span>2</span><div><small>需要观察的结果</small><strong>{{ agentEvidenceRequest.title }}</strong><p>{{ agentEvidenceRequest.detail }}</p></div></li>
-                  <li class="learning-agent-plan-writeback"><span>3</span><div><small>学习进度如何更新</small><strong>{{ activeLearningGoal ? `更新「${activeLearningGoal.conceptKey}」的学习进度` : '等待设定学习目标' }}</strong><p>只有作答、解题过程或老师评分会改变学习进度；聊天内容本身不会直接算作已经掌握。</p></div></li>
+                  <li class="learning-agent-plan-writeback"><span>3</span><div><small>学习进度如何更新</small><strong>{{ activeLearningGoal ? `更新「${activeLearningGoal.conceptKey}」的学习进度` : '设置目标后更新学习进度' }}</strong><p>只有作答、解题过程或老师评分会改变学习进度；聊天内容本身不会直接算作已经掌握。</p></div></li>
                 </ol>
                 <footer>
-                  <span><ListChecks :size="13" />{{ activeLearningGoal ? learningEvidenceSummary : '先定义目标，再开始累积学习记录' }}</span>
+                  <span><ListChecks :size="13" />{{ activeLearningGoal ? learningEvidenceSummary : '可以先学习；设置目标后再累计可追踪记录' }}</span>
                   <div>
                     <button v-if="agentTeachingAction.state === 'blocked'" class="secondary-button" type="button" @click="openEducationAgentSetup">{{ educationSetupActionLabel }}</button>
                     <button v-else-if="!activeLearningGoal" class="secondary-button" type="button" @click="showQuickLearningGoalForm = true">设定学习目标</button>
@@ -9556,7 +9566,7 @@ onBeforeUnmount(() => {
             <div class="chat-composer-footer">
               <span class="chat-composer-hint">
                 <span class="chat-composer-hint-primary"><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行<span v-if="canCancelChat"> · <kbd>Esc</kbd> 停止</span></span>
-                <span class="chat-composer-hint-context">{{ desktopWorkspaceDropping ? '正在导入知识材料…' : (educationSendBlockReason || (activeLearningGoal ? `本轮学习记录将归入「${activeLearningGoal.conceptKey}」；只有作答、推理或教师评分会改变学习进度` : (activeChatCourse ? `当前课程为「${activeChatCourse.title}」；设定目标后可开始累积学习记录` : '已应用学习信息与课程范围；设定目标后可开始累积学习记录'))) }}</span>
+                <span class="chat-composer-hint-context">{{ desktopWorkspaceDropping ? '正在导入知识材料…' : (educationSendBlockReason || (activeLearningGoal ? `本轮学习记录将归入「${activeLearningGoal.conceptKey}」；只有作答、推理或教师评分会改变学习进度` : (activeChatCourse ? `当前课程为「${activeChatCourse.title}」；设置目标后可累计可追踪进度` : '已应用学习信息与课程范围；设置目标后可累计可追踪进度'))) }}</span>
               </span>
               <div class="chat-composer-actions">
                 <button v-if="activeConversationId && !educationSendBlockReason" class="secondary-button chat-agent-settings-button" type="button" :disabled="chatSending || chatUploading" @click="showChatAgentSettings = !showChatAgentSettings"><Settings2 :size="14" /><span>调整学习计划</span></button>
@@ -9595,7 +9605,7 @@ onBeforeUnmount(() => {
           </section>
           <section class="learning-trace-next" aria-label="下一步学习动作">
             <div class="learning-trace-section-heading"><span>下一步学习</span></div>
-            <strong>{{ activeLearningTask?.title || learnerFriendlyLearningText(activeLearningRecommendation?.nextActionTitle) || '绑定学习目标后生成' }}</strong>
+            <strong>{{ activeLearningTask?.title || learnerFriendlyLearningText(activeLearningRecommendation?.nextActionTitle) || '设置学习目标后生成' }}</strong>
             <p>{{ activeLearningTask?.prompt || learnerFriendlyLearningText(activeLearningRecommendation?.rationale) || '系统会根据学习进度和学习记录，给出下一步练习、诊断或复习。' }}</p>
             <button class="secondary-button" type="button" @click="chatMode = false; navigateConsoleSection('education')">{{ activeLearnerProfile ? '调整课程与学习目标' : '填写学习信息' }} <ArrowUp :size="13" /></button>
           </section>
@@ -10642,7 +10652,7 @@ onBeforeUnmount(() => {
                   </article>
                 </div>
                 <footer class="education-agent-state-footer">
-                  <span>{{ activeLearningGoal ? `当前目标：${activeLearningGoal.title} · ${learningEvidenceSummary}` : '还没有学习目标；先设定目标，系统才能记录进度。' }}</span>
+                  <span>{{ activeLearningGoal ? `当前目标：${activeLearningGoal.title} · ${learningEvidenceSummary}` : '还没有学习目标；可以先学习，设置后系统会记录进度。' }}</span>
                 </footer>
               </section>
             </details>

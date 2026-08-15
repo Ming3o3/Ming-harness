@@ -1668,6 +1668,7 @@ h3 { margin: 0; font-size: 13px; }
 .learning-onboarding-intro h2 { margin: 0; color: var(--heading); font-size: 16px; }
 .learning-onboarding-intro p:not(.eyebrow) { max-width: 660px; margin: 5px 0 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
 .learning-onboarding-progress { align-self: start; border: 1px solid rgba(76, 226, 213, .25); border-radius: 14px; background: rgba(76, 226, 213, .07); color: var(--cyan); padding: 5px 8px; font: 8px "DM Mono", monospace; white-space: nowrap; }
+.learning-onboarding-progress em { display: block; margin-top: 3px; color: var(--muted); font: 7px "DM Mono", monospace; font-style: normal; }
 
 .learning-onboarding-steps {
   display: grid;
@@ -1705,6 +1706,7 @@ h3 { margin: 0; font-size: 13px; }
 .learning-onboarding-step.ready { border-color: rgba(76, 226, 213, .3); background: rgba(76, 226, 213, .055); }
 .learning-onboarding-step.ready > span { border-color: rgba(76, 226, 213, .38); background: rgba(76, 226, 213, .12); color: var(--cyan); }
 .learning-onboarding-step.ready strong { color: var(--heading); }
+.learning-onboarding-step-optional:not(.ready) { border-style: dashed; }
 
 .learning-onboarding-content {
   display: grid;
