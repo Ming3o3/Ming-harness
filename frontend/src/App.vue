@@ -10275,7 +10275,6 @@ onBeforeUnmount(() => {
               </div>
               <footer class="education-agent-state-footer">
                 <span>{{ activeLearningGoal ? `当前目标：${activeLearningGoal.title} · ${learningEvidenceSummary}` : '尚未绑定学习目标；聊天内容不会直接算作学习进度。' }}</span>
-                <button class="secondary-button" type="button" @click="educationAgentReady ? (chatMode = true) : openEducationAgentSetup()">{{ educationAgentReady ? '进入学习对话' : '配置并开始' }} <ArrowUp :size="12" /></button>
               </footer>
             </section>
             <details v-if="isLearnerOnlyRole" class="learner-advanced-details">
