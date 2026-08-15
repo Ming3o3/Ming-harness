@@ -969,6 +969,10 @@ async function runLearningOverviewNextAction() {
     chatInputRef.value?.focus()
     return
   }
+  if (action.kind === 'expand' && !activeLearnerProfile.value && !chatMode.value) {
+    openEducationAgentSetup()
+    return
+  }
   learningOverviewCollapsed.value = false
   try {
     window.localStorage.setItem(LEARNING_OVERVIEW_COLLAPSED_STORAGE_KEY, 'false')
@@ -1084,7 +1088,7 @@ function openEducationAgentSetup() {
 
 const learnerStateAction = computed(() => {
   if (!activeLearnerProfile.value) {
-    return { kind: 'profile', label: '填写学习信息' }
+    return { kind: 'profile', label: educationCourseJoinPrefill.value ? '确认课程信息' : '填写学习信息' }
   }
   if (!enrolledEducationCourses.value.length && !learnerLearningAssignmentCount.value) {
     return { kind: 'courses', label: '输入课程邀请码' }
@@ -2088,7 +2092,14 @@ const shouldShowLearningTaskWorkbench = computed(() => {
 // 推荐和课程资料阻断状态，避免用户看到“下一步”却还要再找一次入口。
 const learningOverviewNextAction = computed(() => {
   if (!activeLearnerProfile.value) {
-    return { kind: 'expand', label: '填写学习信息', detail: '先告诉系统你正在学习的课程和年级。' }
+    const courseTitle = educationCourseJoinPrefill.value?.title
+    return {
+      kind: 'expand',
+      label: courseTitle ? '确认课程信息' : '填写学习信息',
+      detail: courseTitle
+        ? `老师已把你加入“${courseTitle}”；确认学科、年级和教材版本后就能开始学习。`
+        : '先告诉系统你正在学习的课程和年级。',
+    }
   }
   if (educationSendBlockReason.value) {
     return { kind: 'setup', label: educationSetupActionLabel.value, detail: educationSendBlockReason.value }
@@ -2611,7 +2622,7 @@ const educationSendBlockReason = computed(() => {
 })
 const educationSetupActionLabel = computed(() => {
   if (educationWorkspaceMode.value === 'teacher' && !manageableEducationDocuments.value.length) return '上传课程资料'
-  if (!activeLearnerProfile.value) return '设置学习信息'
+  if (!activeLearnerProfile.value) return educationCourseJoinPrefill.value ? '确认课程信息' : '设置学习信息'
   if (isLearnerOnlyRole.value && !enrolledEducationCourses.value.length && !learnerLearningAssignmentCount.value) return '输入课程邀请码'
   const scope = currentEducationRetrievalScope.value
   const availability = courseSourceAvailability(scope)
@@ -2623,7 +2634,15 @@ const educationSetupActionLabel = computed(() => {
 })
 const studentQuickStartAction = computed(() => {
   if (!activeLearnerProfile.value) {
-    return { kind: 'profile', label: '设置学习信息', detail: '先填写你正在学习的学科、年级和课程版本。', section: 'education' }
+    const courseTitle = educationCourseJoinPrefill.value?.title
+    return {
+      kind: 'profile',
+      label: courseTitle ? '确认课程信息' : '设置学习信息',
+      detail: courseTitle
+        ? `老师已把你加入“${courseTitle}”；请确认课程信息后开始学习。`
+        : '先填写你正在学习的学科、年级和课程版本。',
+      section: 'education',
+    }
   }
   // 画像完成后，课程由教师发布并把学生加入名单。此时学生的下一步是
   // 查看课程入口/等待课程，而不是被“没有课程资料”误导去配置教师资源。
@@ -5579,6 +5598,15 @@ async function loadEducationData() {
       await refreshLearnerMastery(nextProfile.id)
     } else {
       learnerMastery.value = []
+      if (isLearnerOnlyRole.value) {
+        const enrolledCourse = enrolledEducationCourses.value.find((course) => course.status === 'ACTIVE')
+        if (enrolledCourse) {
+          prefillLearnerProfileFromCourse(enrolledCourse)
+        } else if (educationCourseJoinPrefill.value
+          && !educationCourses.value.some((course) => course.id === educationCourseJoinPrefill.value.id)) {
+          educationCourseJoinPrefill.value = null
+        }
+      }
     }
     const rememberedGoalId = form.education.learningGoalId || chatEducation.learningGoalId
     const nextGoal = goals.find((goal) => goal.id === rememberedGoalId)
@@ -5685,6 +5713,25 @@ async function selectEducationCourse(course) {
   noticeMessage.value = `已打开课程：${course.title}`
 }
 
+/**
+ * 教师加入学生后，课程三元组已经是可信的候选信息，但仍必须由学生确认保存，
+ * 不能静默写入个人学习档案。邀请码加入和教师直接加入共用这一条预填路径。
+ */
+function prefillLearnerProfileFromCourse(course) {
+  if (!course || !isLearnerOnlyRole.value || activeLearnerProfile.value) return false
+  const hasDraft = Boolean(
+    learnerProfileForm.subject.trim()
+    || learnerProfileForm.gradeLevel.trim()
+    || learnerProfileForm.curriculumVersion.trim(),
+  )
+  if (hasDraft && educationCourseJoinPrefill.value?.id !== course.id) return false
+  learnerProfileForm.subject = course.subject || ''
+  learnerProfileForm.gradeLevel = course.gradeLevel || ''
+  learnerProfileForm.curriculumVersion = course.curriculumVersion || ''
+  educationCourseJoinPrefill.value = course
+  return true
+}
+
 async function createEducationCourse() {
   if (educationCourseSaving.value
     || !educationCourseForm.title.trim()
@@ -5725,12 +5772,7 @@ async function joinEducationCourse() {
     educationCourseJoinForm.joinCode = ''
     educationCourses.value = [course, ...educationCourses.value.filter((item) => item.id !== course.id)]
     activeEducationCourseId.value = course.id
-    if (!activeLearnerProfile.value) {
-      learnerProfileForm.subject = course.subject || learnerProfileForm.subject
-      learnerProfileForm.gradeLevel = course.gradeLevel || learnerProfileForm.gradeLevel
-      learnerProfileForm.curriculumVersion = course.curriculumVersion || learnerProfileForm.curriculumVersion
-      educationCourseJoinPrefill.value = course
-    }
+    if (!activeLearnerProfile.value) prefillLearnerProfileFromCourse(course)
     await loadEducationData()
     noticeMessage.value = activeLearnerProfile.value
       ? `已加入课程“${course.title}”，下一步可以查看课程作业。`
@@ -10561,7 +10603,7 @@ onBeforeUnmount(() => {
               <div v-else class="context-preview-empty">组织内还没有配置课程知识源；请让教师上传资料并补充课程元数据。</div>
             </section>
             <details v-if="isLearnerOnlyRole" class="education-profile-setup" :open="!activeLearnerProfile">
-              <summary><span><strong>我的学习设置</strong><small>{{ activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel} · ${activeLearnerProfile.curriculumVersion}` : '填写学科、年级和教材版本' }}</small></span><em>{{ activeLearnerProfile ? '已设置' : '待设置' }}</em></summary>
+              <summary><span><strong>{{ educationCourseJoinPrefill ? '确认课程信息' : '我的学习设置' }}</strong><small>{{ activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel} · ${activeLearnerProfile.curriculumVersion}` : (educationCourseJoinPrefill ? `已带入“${educationCourseJoinPrefill.title}”的课程信息` : '填写学科、年级和教材版本') }}</small></span><em>{{ activeLearnerProfile ? '已设置' : (educationCourseJoinPrefill ? '待确认' : '待设置') }}</em></summary>
               <div class="education-profile-setup-content">
                 <div v-if="educationCourseJoinPrefill" class="education-profile-prefill">
                   <strong>已根据“{{ educationCourseJoinPrefill.title }}”填好课程信息</strong>
