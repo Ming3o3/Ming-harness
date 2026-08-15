@@ -79,6 +79,49 @@ class EducationRoleWebFlowTests {
     }
 
     @Test
+    void shouldLetTeacherAskCourseAssistantWithoutLearnerProfile() throws Exception {
+        HttpResponse<String> document = request("teacher-flow-key", "POST", "/api/context/documents",
+                "{\"title\":\"教师课程助手教材\",\"content\":\"函数定义域是使函数表达式有意义的自变量取值范围。分母不能为零。\","
+                        + "\"sensitivity\":\"INTERNAL\",\"allowedUsers\":\"" + TEACHER + "\"}");
+        assertEquals(201, document.statusCode(), document.body());
+        String documentId = json(document).path("id").asText();
+
+        HttpResponse<String> source = request("teacher-flow-key", "POST", "/api/education/sources",
+                sourceRequest(documentId));
+        assertEquals(201, source.statusCode(), source.body());
+
+        HttpResponse<String> course = request("teacher-flow-key", "POST", "/api/education/courses",
+                "{\"code\":\"teacher-assistant-flow\",\"title\":\"教师课程助手课程\",\"subject\":\"数学\","
+                        + "\"gradeLevel\":\"高中一年级\",\"curriculumVersion\":\"人教A版\"}");
+        assertEquals(201, course.statusCode(), course.body());
+        String courseId = json(course).path("id").asText();
+
+        HttpResponse<String> conversation = request("teacher-flow-key", "POST", "/api/conversations",
+                "{\"title\":\"新的课程问题\"}");
+        assertEquals(201, conversation.statusCode(), conversation.body());
+        String conversationId = json(conversation).path("conversation").path("id").asText();
+        assertFalse(conversationId.isBlank(), conversation.body());
+
+        HttpResponse<String> message = request("teacher-flow-key", "POST",
+                "/api/conversations/" + conversationId + "/messages",
+                "{\"content\":\"请梳理本章知识点\",\"maxTurns\":2,\"education\":{"
+                        + "\"enabled\":true,\"courseId\":\"" + courseId + "\","
+                        + "\"subject\":\"数学\",\"gradeLevel\":\"高中一年级\","
+                        + "\"curriculumVersion\":\"人教A版\",\"conceptKey\":\"函数定义域\","
+                        + "\"pedagogicalMode\":\"EXPLAIN\",\"retrievalStrategy\":\"FULL\"}}");
+        assertEquals(200, message.statusCode(), message.body());
+        String runId = json(message).path("messages").get(1).path("runId").asText();
+        assertFalse(runId.isBlank(), message.body());
+
+        HttpResponse<String> run = request("teacher-flow-key", "GET", "/api/runs/" + runId, null);
+        assertEquals(200, run.statusCode(), run.body());
+        JsonNode runJson = json(run);
+        assertEquals("SUCCEEDED", runJson.path("run").path("status").asText(), run.body());
+        assertEquals(courseId, runJson.path("run").path("educationCourseId").asText(), run.body());
+        assertEquals("", runJson.path("run").path("educationLearnerProfileId").asText(), run.body());
+    }
+
+    @Test
     void shouldCompleteTeacherStudentCourseBusinessLoopOverHttp() throws Exception {
         // 学生只消费课程，不能创建课程或维护课程资料。
         HttpResponse<String> studentCourseDenied = request("student-flow-key", "POST",

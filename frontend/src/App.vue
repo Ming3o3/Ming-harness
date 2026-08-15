@@ -649,6 +649,35 @@ const quickStartPrompts = [
     prompt: '请根据我的当前掌握度和课程版本，出一道难度合适的练习题。先不要直接给答案，按需要提供分层提示，并在我作答后帮我复盘。',
   },
 ]
+const teacherQuickStartPrompts = [
+  {
+    id: 'outline-lesson',
+    label: '梳理本章知识点',
+    description: '从当前课程资料提炼概念、前置知识和易错点。',
+    prompt: '请基于当前课程资料，梳理本章的核心知识点、前置知识和常见误区，并给出一份适合课堂使用的讲解顺序。',
+  },
+  {
+    id: 'design-practice',
+    label: '设计一份练习',
+    description: '围绕当前课程生成可直接布置的练习和参考要点。',
+    prompt: '请基于当前课程资料，设计一份围绕核心知识点的练习，包含题目、参考答案和评分要点。',
+  },
+  {
+    id: 'common-mistakes',
+    label: '整理常见误区',
+    description: '帮助定位学生容易出错的地方和追问方式。',
+    prompt: '请基于当前课程资料，整理学生在本章最容易出现的错误，并为每类错误给出一个诊断追问。',
+  },
+  {
+    id: 'lesson-activity',
+    label: '设计课堂活动',
+    description: '把课程目标转成一段可执行的课堂活动。',
+    prompt: '请基于当前课程资料，设计一段 15 分钟的课堂活动，写清目标、步骤、教师提示和学生产出。',
+  },
+]
+const chatQuickStartPrompts = computed(() => (
+  isTeacherOnlyRole.value ? teacherQuickStartPrompts : quickStartPrompts
+))
 const CHAT_DRAFT_STORAGE_KEY = 'mingHarnessChatDrafts'
 const ACTIVE_CONVERSATION_STORAGE_KEY = 'mingHarnessActiveConversation'
 const commandIconComponents = {
@@ -1712,8 +1741,16 @@ function openRoleWorkspaceEntry(entry) {
     }
   })
 }
-const activeChatCourse = computed(() => educationCourses.value
-  .find((course) => course.id === chatEducation.courseId) || null)
+const activeChatCourse = computed(() => {
+  const courseId = isTeacherOnlyRole.value
+    ? (activeEducationCourseId.value || chatEducation.courseId)
+    : chatEducation.courseId
+  return educationCourses.value.find((course) => course.id === courseId)
+    || (isTeacherOnlyRole.value
+      ? educationCourses.value.find((course) => course.id === activeEducationCourseId.value)
+      : null)
+    || null
+})
 const availableChatCourses = computed(() => {
   const profile = activeLearnerProfile.value
   if (!profile) return []
@@ -2609,10 +2646,11 @@ const currentChatLearningGoal = computed(() => {
 })
 const currentEducationRetrievalScope = computed(() => {
   const profile = activeLearnerProfile.value
-  if (!profile) {
+  const course = activeChatCourse.value
+    || (isTeacherOnlyRole.value ? activeEducationCourse.value : null)
+  if (!profile && !course) {
     return { configured: false, sourceCount: 0, courseSourceCount: 0, filterSummary: '' }
   }
-  const course = activeChatCourse.value
   let minDifficulty = normalizeEducationDifficulty(chatEducation.minDifficulty)
   let maxDifficulty = normalizeEducationDifficulty(chatEducation.maxDifficulty)
   if (minDifficulty !== null && maxDifficulty !== null && minDifficulty > maxDifficulty) {
@@ -2623,9 +2661,9 @@ const currentEducationRetrievalScope = computed(() => {
   const scope = {
     // 服务端同样以课程实例/学习者画像为权威来源。这里不再使用浏览器残留的可编辑
     // 字段，避免界面展示的检索范围与实际 Run 快照不一致。
-    subject: course?.subject || profile.subject,
-    gradeLevel: course?.gradeLevel || profile.gradeLevel,
-    curriculumVersion: course?.curriculumVersion || profile.curriculumVersion,
+    subject: course?.subject || profile?.subject,
+    gradeLevel: course?.gradeLevel || profile?.gradeLevel,
+    curriculumVersion: course?.curriculumVersion || profile?.curriculumVersion,
     conceptKey: currentChatLearningGoal.value?.conceptKey || String(chatEducation.conceptKey || '').trim(),
     minDifficulty,
     maxDifficulty,
@@ -2648,7 +2686,6 @@ const currentEducationRetrievalScope = computed(() => {
   }
 })
 const currentEducationSourceCount = computed(() => {
-  if (isTeacherRole.value && !activeLearnerProfile.value) return manageableEducationSources.value.length
   return currentEducationRetrievalScope.value.sourceCount
 })
 // 不只告诉学习者“有几份资料”，还把本轮实际允许 Agent 检索的课程条目摆到
@@ -2821,7 +2858,10 @@ const agentEvidenceRequest = computed(() => {
   }
 })
 const educationSendBlockReason = computed(() => {
-  if (!activeLearnerProfile.value) {
+  if (isTeacherOnlyRole.value && !activeChatCourse.value) {
+    return '请先在课程运营中选择一门进行中的课程。'
+  }
+  if (!activeLearnerProfile.value && !isTeacherOnlyRole.value) {
     return '还没有学习信息，请先填写学科、年级和课程版本。'
   }
   if (isLearnerOnlyRole.value && !enrolledEducationCourses.value.length && !learnerLearningAssignmentCount.value) {
@@ -2837,6 +2877,11 @@ const educationSendBlockReason = computed(() => {
   return ''
 })
 const educationSetupActionLabel = computed(() => {
+  if (isTeacherOnlyRole.value && !activeChatCourse.value) {
+    if (!manageableEducationDocuments.value.length) return '上传课程资料'
+    if (!teacherEducationCourses.value.length) return '创建课程'
+    return '选择课程'
+  }
   if (educationWorkspaceMode.value === 'teacher' && !manageableEducationDocuments.value.length) return '上传课程资料'
   if (!activeLearnerProfile.value) return educationCourseJoinPrefill.value ? '确认课程信息' : '设置学习信息'
   if (isLearnerOnlyRole.value && !enrolledEducationCourses.value.length && !learnerLearningAssignmentCount.value) return '输入课程邀请码'
@@ -2895,7 +2940,10 @@ const studentQuickStartAction = computed(() => {
 })
 const educationAgentReady = computed(() => !educationSendBlockReason.value)
 const educationComposerPlaceholder = computed(() => {
-  if (educationSendBlockReason.value) return '先补充课程资料，再开始学习…'
+  if (educationSendBlockReason.value) return isTeacherOnlyRole.value
+    ? '先选择课程，再向课程助手提问…'
+    : '先补充课程资料，再开始学习…'
+  if (isTeacherOnlyRole.value) return '输入要讲解的问题、知识点或教学任务…'
   if (activeLearningTask.value?.status === 'AWAITING_EVIDENCE') {
     return '补充本轮作答证据：写出解题过程、判断依据，或指出卡住的步骤…'
   }
@@ -2903,6 +2951,21 @@ const educationComposerPlaceholder = computed(() => {
     return `围绕「${activeLearningGoal.value.conceptKey}」完成本轮学习：写下你的理解、答案或推理…`
   }
   return '提交一个学习任务：题目、知识点、学习困难或目标…'
+})
+const educationComposerContextHint = computed(() => {
+  if (desktopWorkspaceDropping.value) return '正在导入知识材料…'
+  if (educationSendBlockReason.value) return educationSendBlockReason.value
+  if (isTeacherOnlyRole.value) {
+    return activeChatCourse.value
+      ? `当前课程为「${activeChatCourse.value.title}」；回答只参考当前课程资料`
+      : '请先选择课程，回答才会限定在对应课程资料内'
+  }
+  if (activeLearningGoal.value) {
+    return `本轮学习记录将归入「${activeLearningGoal.value.conceptKey}」；只有作答、推理或教师评分会改变学习进度`
+  }
+  return activeChatCourse.value
+    ? `当前课程为「${activeChatCourse.value.title}」；设置目标后可累计可追踪进度`
+    : '已应用学习信息与课程范围；设置目标后可累计可追踪进度'
 })
 const currentEducationSourceLabel = computed(() => {
   const scope = currentEducationRetrievalScope.value
@@ -4416,7 +4479,9 @@ function conversationLearningContext(conversation) {
 // 不修改历史记录，也避免让学习入口重新呈现为通用聊天产品。
 function learningConversationTitle(conversation) {
   const title = String(conversation?.title || '').trim()
-  return !title || title === '新的对话' || title === '新对话' ? '新的学习任务' : title
+  return !title || title === '新的对话' || title === '新对话' || (isTeacherOnlyRole.value && title === '新的学习任务')
+    ? (isTeacherOnlyRole.value ? '新的课程问题' : '新的学习任务')
+    : title
 }
 
 function learnerFriendlyConversationPreview(conversation) {
@@ -4932,7 +4997,7 @@ async function createChatConversation() {
 /** 新会话创建后工作区即冻结，避免用户后续切换项目时影响正在执行的 Agent。 */
 function newConversationPayload() {
   return {
-    title: '新的学习任务',
+    title: isTeacherOnlyRole.value ? '新的课程问题' : '新的学习任务',
     ...(newConversationWorkspaceId.value ? { workspaceId: newConversationWorkspaceId.value } : {}),
   }
 }
@@ -5407,7 +5472,7 @@ function scrollChatToBottom(force = false) {
 
 async function sendChatMessage() {
   if (!canSendChat.value) return
-  if (!chatEducation.learnerProfileId) {
+  if (!isTeacherOnlyRole.value && !chatEducation.learnerProfileId) {
     errorMessage.value = '课程学习需要先填写学习信息；请打开教育工作台完成设置。'
     return
   }
@@ -5478,16 +5543,21 @@ async function sendChatMessage() {
     }
     const educationProfile = activeLearnerProfile.value
     const educationCourse = activeChatCourse.value
-    const education = {
-      ...chatEducation,
+    const educationContext = {
       enabled: true,
+      courseId: educationCourse?.id || chatEducation.courseId || '',
       subject: educationCourse?.subject || educationProfile?.subject || '',
       gradeLevel: educationCourse?.gradeLevel || educationProfile?.gradeLevel || '',
       curriculumVersion: educationCourse?.curriculumVersion || educationProfile?.curriculumVersion || '',
+      conceptKey: String(chatEducation.conceptKey || '').trim(),
       minDifficulty: chatEducation.minDifficulty == null ? null : Number(chatEducation.minDifficulty),
       maxDifficulty: chatEducation.maxDifficulty == null ? null : Number(chatEducation.maxDifficulty),
+      pedagogicalMode: chatEducation.pedagogicalMode || 'AUTO',
       retrievalStrategy: chatEducation.retrievalStrategy || 'FULL',
     }
+    const education = isTeacherOnlyRole.value
+      ? educationContext
+      : { ...chatEducation, ...educationContext }
     const detail = await api.sendConversationMessage(conversationId, {
       content,
       maxTurns: chatMaxTurns.value,
@@ -9022,7 +9092,7 @@ onBeforeUnmount(() => {
       <header class="chat-topbar">
         <div class="chat-brand">
           <div class="brand-mark" aria-hidden="true"><Sparkles :size="17" :stroke-width="1.8" /></div>
-          <div><strong>学习助手</strong><span>YOUR LEARNING SPACE</span></div>
+          <div><strong>{{ isLearnerOnlyRole ? '学习助手' : (isTeacherRole ? '课程助手' : '工作台助手') }}</strong><span>{{ isLearnerOnlyRole ? '学习对话' : (isTeacherRole ? '课程对话' : '工作台对话') }}</span></div>
         </div>
         <div class="chat-topbar-actions">
           <button v-if="!isLearnerOnlyRole" class="command-palette-trigger" type="button" title="打开命令面板（⌘/Ctrl + K）" @click="openCommandPalette"><Command :size="14" /><span>⌘K</span><em>命令</em></button>
@@ -9050,12 +9120,12 @@ onBeforeUnmount(() => {
         <aside class="conversation-sidebar">
           <nav class="chat-primary-nav" aria-label="工作台导航">
             <button class="chat-primary-nav-item chat-primary-nav-item-primary" type="button" :disabled="chatLoading || chatSending || chatUploading" @click="createChatConversation">
-              <MessageSquarePlus :size="15" /><span>{{ isLearnerOnlyRole ? '开始新学习' : '新建学习对话' }}</span><kbd>⌘N</kbd>
+              <MessageSquarePlus :size="15" /><span>{{ isLearnerOnlyRole ? '开始新学习' : (isTeacherRole ? '向助手提问' : '新建学习对话') }}</span><kbd>⌘N</kbd>
             </button>
             <button v-if="isTeacherRole" class="chat-primary-nav-item chat-primary-nav-item-education" type="button" @click="openRoleWorkspaceEntry('teacher-course')">
               <Sparkles :size="15" /><span>课程运营</span>
             </button>
-            <button v-if="isTeacherRole" class="chat-primary-nav-item" type="button" @click="openRoleWorkspaceEntry('teacher-roster')">
+            <button v-if="isTeacherRole && teacherEducationCourses.length" class="chat-primary-nav-item" type="button" @click="openRoleWorkspaceEntry('teacher-roster')">
               <CircleDot :size="15" /><span>课程与学生</span>
             </button>
             <details v-if="isLearnerOnlyRole" class="chat-student-settings-nav">
@@ -9067,7 +9137,7 @@ onBeforeUnmount(() => {
                 <CircleDot :size="14" /><span>学习档案</span>
               </button>
             </details>
-            <button v-if="!isAdminRole" class="chat-primary-nav-item" type="button" @click="openRoleWorkspaceEntry(isTeacherRole ? 'teacher-review' : 'student-evidence')">
+            <button v-if="!isAdminRole && (!isTeacherRole || teacherAssignmentCount || learningEvaluationQueue.length)" class="chat-primary-nav-item" type="button" @click="openRoleWorkspaceEntry(isTeacherRole ? 'teacher-review' : 'student-evidence')">
               <Check :size="15" /><span>{{ isTeacherRole ? '作业复核' : '作业与反馈' }}</span>
             </button>
             <button v-if="isAdminRole" class="chat-primary-nav-item" type="button" @click="chatMode = false; navigateConsoleSection('runtime')">
@@ -9124,16 +9194,16 @@ onBeforeUnmount(() => {
             <button type="button" @click="chatMode = false; navigateConsoleSection('education')">打开教师工作台 <ArrowUp :size="13" /></button>
           </section>
           <div class="conversation-sidebar-heading">
-            <div><p class="eyebrow">学习记录</p><h2>学习记录</h2></div>
+            <div><p class="eyebrow">{{ isTeacherOnlyRole ? '课程对话' : '学习记录' }}</p><h2>{{ isTeacherOnlyRole ? '课程对话' : '学习记录' }}</h2></div>
           </div>
           <label class="conversation-search">
-            <span class="sr-only">搜索学习任务</span>
-            <input v-model="conversationQuery" type="search" placeholder="搜索学习任务…" aria-label="搜索学习任务" @keydown.esc="conversationQuery = ''" />
-            <button v-if="conversationQuery" type="button" aria-label="清除学习任务搜索" @click="conversationQuery = ''"><X :size="14" /></button>
+            <span class="sr-only">{{ isTeacherOnlyRole ? '搜索课程对话' : '搜索学习任务' }}</span>
+            <input v-model="conversationQuery" type="search" :placeholder="isTeacherOnlyRole ? '搜索课程对话…' : '搜索学习任务…'" :aria-label="isTeacherOnlyRole ? '搜索课程对话' : '搜索学习任务'" @keydown.esc="conversationQuery = ''" />
+            <button v-if="conversationQuery" type="button" :aria-label="isTeacherOnlyRole ? '清除课程对话搜索' : '清除学习任务搜索'" @click="conversationQuery = ''"><X :size="14" /></button>
           </label>
-          <div v-if="chatLoading && !learningConversations.length" class="chat-sidebar-empty">正在读取学习任务…</div>
-          <div v-else-if="!learningConversations.length" class="chat-sidebar-empty">还没有学习任务</div>
-          <div v-else-if="!filteredConversations.length" class="chat-sidebar-empty">没有匹配的学习任务<br /><small>试试标题、学习目标或知识点</small></div>
+          <div v-if="chatLoading && !learningConversations.length" class="chat-sidebar-empty">正在读取{{ isTeacherOnlyRole ? '课程对话' : '学习任务' }}…</div>
+          <div v-else-if="!learningConversations.length" class="chat-sidebar-empty">还没有{{ isTeacherOnlyRole ? '课程对话' : '学习任务' }}</div>
+          <div v-else-if="!filteredConversations.length" class="chat-sidebar-empty">没有匹配的{{ isTeacherOnlyRole ? '课程对话' : '学习任务' }}<br /><small>{{ isTeacherOnlyRole ? '试试标题、课程或知识点' : '试试标题、学习目标或知识点' }}</small></div>
           <div v-else class="conversation-list">
             <button
               v-for="conversation in filteredConversations"
@@ -9148,7 +9218,7 @@ onBeforeUnmount(() => {
               <span class="conversation-row-body">
                 <strong>{{ learningConversationTitle(conversation) }}</strong>
                 <small v-if="conversationLearningContext(conversation)" class="conversation-learning-context"><BookOpen :size="11" />{{ conversationLearningContext(conversation) }}</small>
-                <small>{{ learnerFriendlyConversationPreview(conversation) || '从一个学习问题开始' }}</small>
+                <small>{{ learnerFriendlyConversationPreview(conversation) || (isTeacherOnlyRole ? '从一个课程问题开始' : '从一个学习问题开始') }}</small>
                 <em>{{ conversation.messageCount }} 条消息 · {{ formatDate(conversation.updatedAt) }}</em>
               </span>
               <span v-if="conversation.activeRunId" class="conversation-running-dot" title="学习助手处理中"></span>
@@ -9179,19 +9249,19 @@ onBeforeUnmount(() => {
         <main class="chat-main">
           <div class="chat-heading">
             <div>
-              <p class="eyebrow">我的学习空间</p>
+              <p class="eyebrow">{{ isLearnerOnlyRole ? '我的学习空间' : (isTeacherRole ? '课程助手' : '工作台助手') }}</p>
               <form v-if="showConversationRename" class="conversation-rename-form" @submit.prevent="renameActiveConversation">
                 <input ref="conversationRenameInputRef" v-model="conversationRenameValue" maxlength="255" :disabled="conversationRenaming" aria-label="对话标题" @keydown.esc.prevent="cancelConversationRename" />
                 <button class="secondary-button" type="button" :disabled="conversationRenaming" @click="cancelConversationRename">取消</button>
                 <button class="primary-button" type="submit" :disabled="conversationRenaming">{{ conversationRenaming ? '保存中…' : '保存' }}</button>
               </form>
               <h1 v-else>{{ learningConversationTitle(activeConversation?.conversation) }}</h1>
-            <p class="chat-heading-meta">这是你的课程学习空间。系统会先参考课程资料，再结合你的学习情况安排讲解、练习或复习，并保存学习进度。</p>
+            <p class="chat-heading-meta">{{ isLearnerOnlyRole ? '这是你的课程学习空间。系统会先参考课程资料，再结合你的学习情况安排讲解、练习或复习，并保存学习进度。' : (isTeacherRole ? '这里可以向助手提问，系统会参考课程资料回答；课程、学生和作业管理请从“课程运营”进入。' : '这里可以向工作台助手提问，系统会结合当前工作区提供帮助。') }}</p>
             </div>
             <div class="chat-heading-actions">
-              <button class="chat-education-status-chip" type="button" title="打开学习设置" @click="chatMode = false; navigateConsoleSection('education')">
+              <button class="chat-education-status-chip" type="button" :title="isLearnerOnlyRole ? '打开学习设置' : '打开课程运营'" @click="chatMode = false; navigateConsoleSection('education')">
                 <Sparkles :size="14" />
-                <span><small>当前学习信息</small><strong>{{ activeChatCourse ? (isLearnerOnlyRole ? activeChatCourse.title : `${activeChatCourse.code} · ${activeChatCourse.title}`) : (activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` : '尚未设置') }}</strong></span>
+                <span><small>{{ isLearnerOnlyRole ? '当前学习信息' : (isTeacherRole ? '当前课程' : '当前工作区') }}</small><strong>{{ activeChatCourse ? (isLearnerOnlyRole ? activeChatCourse.title : `${activeChatCourse.code} · ${activeChatCourse.title}`) : (activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` : '尚未设置') }}</strong></span>
               </button>
               <span
                 v-if="runEventConnectionState !== 'idle' && !isTerminal(selectedStatus)"
@@ -9209,7 +9279,7 @@ onBeforeUnmount(() => {
           </div>
 
           <section class="chat-learning-overview" :class="{ 'is-collapsed': learningOverviewCollapsed && activeLearnerProfile }" aria-label="本轮学习概览">
-          <section v-if="activeLearnerProfile" v-show="!learningOverviewCollapsed" class="education-agent-context-strip" aria-label="当前学习情况">
+          <section v-if="isLearnerOnlyRole && activeLearnerProfile" v-show="!learningOverviewCollapsed" class="education-agent-context-strip" aria-label="当前学习情况">
             <div class="education-agent-context-heading">
               <div>
                 <p class="eyebrow">本次学习依据</p>
@@ -9231,7 +9301,7 @@ onBeforeUnmount(() => {
               </article>
             </div>
           </section>
-          <div v-if="activeLearnerProfile" class="learning-overview-collapse-bar">
+          <div v-if="isLearnerOnlyRole && activeLearnerProfile" class="learning-overview-collapse-bar">
             <div class="learning-overview-collapse-copy">
               <p class="eyebrow">当前学习计划</p>
               <strong>{{ activeLearningGoal?.title || '本轮学习计划' }}</strong>
@@ -9263,7 +9333,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div id="learning-overview-content" v-show="!learningOverviewCollapsed || !activeLearnerProfile" class="learning-overview-content">
-          <section v-if="!activeLearnerProfile" class="learning-onboarding" aria-label="开始学习">
+          <section v-if="isLearnerOnlyRole && !activeLearnerProfile" class="learning-onboarding" aria-label="开始学习">
             <div class="learning-onboarding-intro">
               <div class="learning-onboarding-mark" aria-hidden="true"><Sparkles :size="20" /></div>
               <div>
@@ -9324,7 +9394,7 @@ onBeforeUnmount(() => {
             </div>
           </section>
 
-          <section v-if="activeLearnerProfile" class="learning-agent-workbench" aria-label="当前学习计划">
+          <section v-if="isLearnerOnlyRole && activeLearnerProfile" class="learning-agent-workbench" aria-label="当前学习计划">
             <div class="learning-agent-workbench-heading">
               <div>
                 <p>学习计划</p>
@@ -9430,6 +9500,18 @@ onBeforeUnmount(() => {
             </div>
           </section>
 
+          <section v-if="isTeacherOnlyRole" class="learner-focus-card teacher-focus-card teacher-chat-focus-card" aria-label="课程助手说明">
+            <div class="learner-focus-copy">
+              <p class="eyebrow">课程助手</p>
+              <h4>{{ activeChatCourse ? `围绕“${activeChatCourse.title}”提问` : '先选择一门课程' }}</h4>
+              <p>{{ activeChatCourse ? (educationSendBlockReason || '可以提问、梳理知识点、设计练习；回答只会参考当前课程资料。') : '请先回到课程运营，选择一门进行中的课程。' }}</p>
+              <small>{{ activeChatCourse ? `${currentEducationSourceCount} 份课程资料可用` : '课程范围决定助手可以参考的资料' }}</small>
+            </div>
+            <button class="primary-button learner-focus-action" type="button" @click="educationSendBlockReason ? openEducationAgentSetup() : chatInputRef?.focus()">
+              {{ !activeChatCourse ? '选择课程' : (educationSendBlockReason ? educationSetupActionLabel : '开始提问') }} <ArrowRight :size="13" />
+            </button>
+          </section>
+
           <section v-if="chatCourseAssignment" class="chat-course-assignment-panel" aria-label="当前课程作业">
             <header class="chat-course-assignment-heading">
               <div>
@@ -9475,14 +9557,16 @@ onBeforeUnmount(() => {
 
           <div class="chat-messages" aria-live="polite" @scroll="updateChatFollowOutput">
             <div v-if="chatLoading && !chatMessages.length" class="chat-empty-state">正在加载会话…</div>
-            <div v-else-if="!chatMessages.length && !activeLearnerProfile" class="chat-empty-state chat-empty-state-preparing">
+            <div v-else-if="!chatMessages.length && !isTeacherOnlyRole && !activeLearnerProfile" class="chat-empty-state chat-empty-state-preparing">
               <span>完成上方的学习信息后，就可以开始学习对话。</span>
             </div>
             <div v-else-if="!chatMessages.length" class="chat-empty-state">
               <div class="chat-empty-mark" aria-hidden="true"><Sparkles :size="23" /></div>
-              <strong>从一个学习问题开始</strong>
-              <span>{{ activeLearnerProfile ? `当前学习信息：${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel} · ${activeLearnerProfile.curriculumVersion}${activeChatCourse ? ` · 课程：${activeChatCourse.title}` : ''}。${currentEducationSourceCount ? `已准备好 ${currentEducationSourceCount} 个匹配的课程资料，系统会按学习进度选择讲解、练习或诊断方式。` : '请先补充匹配的课程资料，避免系统给出脱离课程的通用答案。'}` : '先填写学习信息，系统才能按课程版本和学习状态给出分层回答。' }}</span>
-              <div class="chat-learning-context-card" aria-label="当前学习上下文">
+              <strong>{{ isTeacherOnlyRole ? '从一个课程问题开始' : '从一个学习问题开始' }}</strong>
+              <span>{{ isTeacherOnlyRole
+                ? (activeChatCourse ? `当前课程：${activeChatCourse.title}。${currentEducationSourceCount ? `已准备好 ${currentEducationSourceCount} 份课程资料，可以开始提问。` : '当前课程还没有可用资料，请先补充课程资料。'}` : '请先在课程运营中选择一门课程，课程助手会按课程资料回答。')
+                : (activeLearnerProfile ? `当前学习信息：${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel} · ${activeLearnerProfile.curriculumVersion}${activeChatCourse ? ` · 课程：${activeChatCourse.title}` : ''}。${currentEducationSourceCount ? `已准备好 ${currentEducationSourceCount} 个匹配的课程资料，系统会按学习进度选择讲解、练习或诊断方式。` : '请先补充匹配的课程资料，避免系统给出脱离课程的通用答案。'}` : '先填写学习信息，系统才能按课程版本和学习状态给出分层回答.') }}</span>
+              <div v-if="!isTeacherOnlyRole" class="chat-learning-context-card" aria-label="当前学习上下文">
                 <div class="chat-learning-context-heading"><span>学习上下文</span><button type="button" @click="chatMode = false; navigateConsoleSection('education')">{{ activeLearnerProfile ? '调整学习信息' : '填写学习信息' }}</button></div>
                 <div v-if="activeLearnerProfile" class="chat-learning-context-body">
                   <div class="chat-learning-profile-mark"><Sparkles :size="15" /></div>
@@ -9493,7 +9577,7 @@ onBeforeUnmount(() => {
               </div>
               <div class="chat-quick-start" aria-label="快速开始">
                 <button
-                  v-for="item in quickStartPrompts"
+                  v-for="item in chatQuickStartPrompts"
                   :key="item.id"
                   class="chat-quick-start-card"
                   type="button"
@@ -9518,7 +9602,7 @@ onBeforeUnmount(() => {
             >
               <div class="chat-avatar">{{ message.role === 'USER' ? '你' : 'MH' }}</div>
               <div class="chat-bubble-wrap">
-                <div class="chat-message-meta"><strong>{{ message.role === 'USER' ? '你' : 'Ming 学习助手' }}</strong><span>{{ formatDate(message.createdAt) }}</span></div>
+                <div class="chat-message-meta"><strong>{{ message.role === 'USER' ? '你' : (isLearnerOnlyRole ? 'Ming 学习助手' : (isTeacherRole ? 'Ming 课程助手' : 'Ming 工作台助手')) }}</strong><span>{{ formatDate(message.createdAt) }}</span></div>
                 <div class="chat-bubble" :class="messageStatusClass(message.status)">
                   <template v-if="message.role === 'ASSISTANT' && message.status === 'PENDING' && !message.content">
                     <span class="chat-thinking"><i></i><i></i><i></i>{{ chatRunActivity || messageStatusLabel(message.status) }}</span>
@@ -9679,11 +9763,11 @@ onBeforeUnmount(() => {
             <div class="chat-composer-footer">
               <span class="chat-composer-hint">
                 <span class="chat-composer-hint-primary"><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行<span v-if="canCancelChat"> · <kbd>Esc</kbd> 停止</span></span>
-                <span class="chat-composer-hint-context">{{ desktopWorkspaceDropping ? '正在导入知识材料…' : (educationSendBlockReason || (activeLearningGoal ? `本轮学习记录将归入「${activeLearningGoal.conceptKey}」；只有作答、推理或教师评分会改变学习进度` : (activeChatCourse ? `当前课程为「${activeChatCourse.title}」；设置目标后可累计可追踪进度` : '已应用学习信息与课程范围；设置目标后可累计可追踪进度'))) }}</span>
+                <span class="chat-composer-hint-context">{{ educationComposerContextHint }}</span>
               </span>
               <div class="chat-composer-actions">
-                <button v-if="activeConversationId && !educationSendBlockReason" class="secondary-button chat-agent-settings-button" type="button" :disabled="chatSending || chatUploading" @click="showChatAgentSettings = !showChatAgentSettings"><Settings2 :size="14" /><span>调整学习计划</span></button>
-                <button v-if="activeConversationId && !educationSendBlockReason" class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading" @click="openChatAttachmentPicker"><Paperclip :size="14" /><span>上传作答材料</span></button>
+                <button v-if="activeConversationId && !educationSendBlockReason && !isTeacherOnlyRole" class="secondary-button chat-agent-settings-button" type="button" :disabled="chatSending || chatUploading" @click="showChatAgentSettings = !showChatAgentSettings"><Settings2 :size="14" /><span>调整学习计划</span></button>
+                <button v-if="activeConversationId && !educationSendBlockReason" class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading" @click="openChatAttachmentPicker"><Paperclip :size="14" /><span>{{ isTeacherOnlyRole ? '上传参考材料' : '上传作答材料' }}</span></button>
                 <button v-if="canCancelChat" class="secondary-button chat-stop-button" type="button" :disabled="chatCancellingRunId === pendingChatMessage?.runId" @click="cancelChatRun"><Square :size="14" /><span>{{ chatCancellingRunId === pendingChatMessage?.runId ? '处理中…' : (chatRunStatus === 'WAITING_APPROVAL' ? '撤回审批' : '停止') }}</span></button>
                 <button class="primary-button chat-send-button" type="submit" :disabled="!canSendChat"><span class="chat-send-label">{{ chatUploading ? '导入中…' : chatSending ? '提交中…' : '发送' }}</span><Send :size="14" /></button>
               </div>
@@ -10031,7 +10115,7 @@ onBeforeUnmount(() => {
           </div>
           <button v-if="isAdminRole" class="secondary-button top-config-button" type="button" title="配置大语言模型" @click="showModelSettings = true"><Settings2 :size="15" />大语言模型</button>
           <button v-if="isAdminRole" class="secondary-button top-config-button" type="button" title="配置向量模型" @click="showEmbeddingSettings = true"><Settings2 :size="15" />向量模型</button>
-          <button v-if="isLearnerOnlyRole" class="secondary-button" type="button" title="打开学习对话" @click="chatMode = true"><MessageSquarePlus :size="15" />学习对话</button>
+          <button v-if="isLearnerOnlyRole || isTeacherOnlyRole" class="secondary-button" type="button" :title="isLearnerOnlyRole ? '打开学习对话' : '打开课程助手'" @click="chatMode = true"><MessageSquarePlus :size="15" />{{ isLearnerOnlyRole ? '学习对话' : '课程助手' }}</button>
         </div>
       </div>
     </header>

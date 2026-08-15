@@ -123,6 +123,11 @@ public class EducationRunConfigurationService {
         if (options == null || !options.isEnabled()) {
             return EducationRunConfiguration.disabled();
         }
+        EducationRunConfiguration teacherCourseConfiguration = resolveTeacherCourseConfiguration(
+                tenantId, userId, options);
+        if (teacherCourseConfiguration != null) {
+            return teacherCourseConfiguration;
+        }
         LearningReviewPlan reviewPlan = resolveReviewPlan(tenantId, userId, options.reviewPlanId());
         String requestedGoalId = options.learningGoalId();
         LearningAssignment assignment = resolveAssignment(tenantId, userId,
@@ -257,6 +262,69 @@ public class EducationRunConfigurationService {
         return configuration.withDependencyGraphSnapshot(EducationDependencyGraphSnapshotCodec.encode(graph));
     }
 
+    /**
+     * 教师课程助手不属于某个学习者，不应被迫创建虚假的学习者画像。它仍然必须
+     * 绑定教师自己拥有的进行中课程，并沿用同一套课程资料、版本和知识点边界。
+     */
+    private EducationRunConfiguration resolveTeacherCourseConfiguration(String tenantId, String userId,
+                                                                         EducationRunOptions options) {
+        if (courseRepository == null || options.courseId() == null || options.courseId().isBlank()
+                || hasLearnerBinding(options)) {
+            return null;
+        }
+        EducationCourse course = courseRepository.findByTenantIdAndId(tenantId, clean(options.courseId()))
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
+                        "EDUCATION_COURSE_NOT_FOUND", "课程实例不存在"));
+        if (!course.getOwnerUserId().equals(userId)) {
+            return null;
+        }
+        if (!course.isActive()) {
+            throw new BusinessException(HttpStatus.CONFLICT, "EDUCATION_COURSE_NOT_ACTIVE",
+                    "只有进行中的课程实例可以创建教育 Run");
+        }
+        if (!sameOrUnspecified(options.subject(), course.getSubject())
+                || !sameOrUnspecified(options.gradeLevel(), course.getGradeLevel())
+                || !sameOrUnspecified(options.curriculumVersion(), course.getCurriculumVersion())) {
+            throw new BusinessException(HttpStatus.CONFLICT, "EDUCATION_COURSE_CONTEXT_MISMATCH",
+                    "请求中的学科、年级或课程版本与当前课程不一致");
+        }
+        Integer minDifficulty = bound(options.minDifficulty());
+        Integer maxDifficulty = bound(options.maxDifficulty());
+        if (minDifficulty != null && maxDifficulty != null && minDifficulty > maxDifficulty) {
+            int temporary = minDifficulty;
+            minDifficulty = maxDifficulty;
+            maxDifficulty = temporary;
+        }
+        String pedagogicalMode = options.effectivePedagogicalMode();
+        if (!SUPPORTED_PEDAGOGICAL_MODES.contains(pedagogicalMode)) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "EDUCATION_PEDAGOGICAL_MODE_INVALID",
+                    "不支持的教学策略: " + pedagogicalMode);
+        }
+        String conceptKey = clean(options.conceptKey());
+        String retrievalStrategy = normalizeRetrievalStrategy(options.effectiveRetrievalStrategy());
+        EducationRunConfiguration configuration = new EducationRunConfiguration(
+                true, null, null, null, null, null, null, null, null,
+                0.0, 0.0, clean(course.getSubject()), clean(course.getGradeLevel()),
+                clean(course.getCurriculumVersion()), conceptKey, minDifficulty, maxDifficulty,
+                pedagogicalMode, "", course.getId(), course.getCode(), course.getTitle(), retrievalStrategy);
+        requireKnowledgeSource(tenantId, userId, configuration.retrievalFilter());
+        EducationDependencyGraph graph = knowledgeService == null
+                ? EducationDependencyGraph.empty(configuration.conceptKey())
+                : knowledgeService.resolveDependencyGraph(tenantId, configuration.retrievalFilter());
+        return configuration.withDependencyGraphSnapshot(EducationDependencyGraphSnapshotCodec.encode(graph));
+    }
+
+    private boolean hasLearnerBinding(EducationRunOptions options) {
+        return hasText(options.learnerProfileId())
+                || hasText(options.learningGoalId())
+                || hasText(options.learningAssignmentId())
+                || hasText(options.reviewPlanId());
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
     private String normalizeRetrievalStrategy(String value) {
         try {
             return EducationRetrievalStrategy.valueOf(value).name();
@@ -303,7 +371,8 @@ public class EducationRunConfigurationService {
             throw new BusinessException(HttpStatus.CONFLICT, "EDUCATION_COURSE_NOT_ACTIVE",
                     "只有进行中的课程实例可以创建教育 Run");
         }
-        if (!enrollmentRepository.existsByTenantIdAndCourseIdAndLearnerUserIdAndStatus(
+        if (!course.getOwnerUserId().equals(userId)
+                && !enrollmentRepository.existsByTenantIdAndCourseIdAndLearnerUserIdAndStatus(
                 tenantId, course.getId(), userId, EducationEnrollmentStatus.ACTIVE)) {
             throw new BusinessException(HttpStatus.FORBIDDEN, "EDUCATION_COURSE_ENROLLMENT_REQUIRED",
                     "学习者不是该课程的活跃名单成员");
