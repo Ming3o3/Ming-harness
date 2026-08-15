@@ -2522,7 +2522,9 @@ const currentEducationSourceLabel = computed(() => {
   const scope = currentEducationRetrievalScope.value
   if (!scope.configured) return '待配置学习上下文'
   if (isLearnerOnlyRole.value && !enrolledEducationCourses.value.length && !learnerLearningAssignmentCount.value) return '等待教师加入课程'
-  if (scope.sourceCount) return `${scope.sourceCount} 个当前可检索来源`
+  if (scope.sourceCount) return isLearnerOnlyRole.value
+    ? `${scope.sourceCount} 份课程资料可用`
+    : `${scope.sourceCount} 个当前可检索来源`
   return scope.conceptKey ? '当前知识点暂无匹配来源' : '当前约束下暂无匹配来源'
 })
 const currentEducationRetrievalDetail = computed(() => {
@@ -2532,6 +2534,11 @@ const currentEducationRetrievalDetail = computed(() => {
     return '学习信息已保存；教师加入课程后，系统会自动显示匹配的课程资料、作业和学习路径。'
   }
   const base = `${scope.subject} · ${scope.gradeLevel} · ${scope.curriculumVersion}`
+  if (isLearnerOnlyRole.value) {
+    if (scope.sourceCount) return `${base} · 已匹配 ${scope.sourceCount} 份课程资料`
+    if (scope.sameSubjectGradeSourceCount) return `${base} · 当前版本没有资料，可用版本：${scope.availableCurriculumVersions.join('、')}`
+    return `${base} · 当前课程版本还没有课程资料`
+  }
   const available = scope.courseSourceCount
     ? (scope.sourceCount === scope.courseSourceCount
       ? `当前版本下 ${scope.courseSourceCount} 个来源`
@@ -8974,7 +8981,7 @@ onBeforeUnmount(() => {
               </span>
             </div>
             <div v-if="showChatAgentSettings && activeConversationId" class="chat-agent-settings" aria-label="本轮学习设置">
-              <div class="chat-agent-settings-heading"><div><strong>调整本轮学习计划</strong><small>这些设置会确定课程检索范围和教学策略；本轮回答会继续回写到同一学习目标。</small></div><button type="button" aria-label="关闭本轮学习设置" @click="showChatAgentSettings = false"><X :size="14" /></button></div>
+              <div class="chat-agent-settings-heading"><div><strong>调整本轮学习计划</strong><small>这些设置会确定使用哪些课程资料、采用什么学习方式；本轮回答会继续记录到同一学习目标。</small></div><button type="button" aria-label="关闭本轮学习设置" @click="showChatAgentSettings = false"><X :size="14" /></button></div>
               <div class="chat-education-settings">
                 <div class="chat-education-toggle" role="status">
                   <span class="chat-education-toggle-state"><ShieldCheck :size="13" /></span>
