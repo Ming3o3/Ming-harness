@@ -520,6 +520,15 @@ h3 { margin: 0; font-size: 13px; }
 .education-agent-state-item p { display: -webkit-box; overflow: hidden; margin: 0; color: var(--muted); font: 8px/1.5 "DM Mono", monospace; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .education-agent-state-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid rgba(153,174,218,.14); padding-top: 9px; }
 .education-agent-state-footer > span { min-width: 0; overflow: hidden; color: var(--muted); font: 8px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.education-agent-state-details { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 11px; }
+.education-agent-state-details > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; list-style: none; }
+.education-agent-state-details > summary::-webkit-details-marker { display: none; }
+.education-agent-state-details > summary::before { content: '▸'; flex: 0 0 auto; color: var(--cyan); font-size: 12px; }
+.education-agent-state-details[open] > summary::before { content: '▾'; }
+.education-agent-state-details > summary > span { display: grid; min-width: 0; gap: 3px; }
+.education-agent-state-details > summary strong { color: var(--soft); font-size: 10px; }
+.education-agent-state-details > summary small { overflow: hidden; color: var(--muted); font: 8px/1.4 "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.education-agent-state-details > summary em { flex: 0 0 auto; border: 1px solid rgba(76,226,213,.22); border-radius: 5px; color: var(--cyan); padding: 4px 6px; font: 8px "DM Mono", monospace; font-style: normal; }
 .education-agent-loop { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; margin: 0; padding: 0; list-style: none; }
 .education-agent-loop li { position: relative; display: flex; align-items: flex-start; gap: 7px; min-width: 0; border: 1px solid rgba(153,174,218,.14); border-radius: 7px; background: var(--input-bg); padding: 8px; }
 .education-agent-loop li.is-ready { border-color: rgba(76,226,213,.25); background: rgba(76,226,213,.035); }

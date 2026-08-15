@@ -9777,29 +9777,32 @@ onBeforeUnmount(() => {
               <button v-if="isTeacherOnlyRole && !manageableEducationDocuments.length" class="secondary-button" type="button" @click="openEducationDocumentUpload">上传课程资料 <ArrowUp :size="12" /></button>
               <button v-else-if="isTeacherOnlyRole" class="secondary-button" type="button" @click="openEducationAgentSetup">补充课程信息 <ArrowUp :size="12" /></button>
             </section>
-            <section v-if="isTeacherOnlyRole" class="education-agent-state-card education-teacher-state-card" :class="{ ready: teacherAgentReady }" aria-label="教师课程运营状态">
-              <div class="education-agent-state-heading">
-                <div><p class="eyebrow">COURSE OVERVIEW</p><h4>课程运营概览</h4><span>看资料、名单、作业和反馈，按顺序处理即可。</span></div>
-                <span class="education-agent-state-pill"><i></i>{{ teacherAgentReady ? '课程资料已接入' : '等待课程配置' }}</span>
-              </div>
-              <div class="education-agent-state-grid">
-                <article class="education-agent-state-item">
-                  <small>01 · 课程资料</small><strong>{{ manageableEducationSources.length ? `${manageableEducationSources.length} 个来源已配置` : '尚未配置课程资料' }}</strong><p>{{ manageableEducationSources.length ? '资料准备好了，可以继续加入学生。' : '先上传 PDF/DOCX，再补充课程信息。' }}</p>
-                </article>
-                <article class="education-agent-state-item">
-                  <small>02 · 班级与学生</small><strong>{{ teacherEducationCourses.length }} 门课程 · {{ teacherActiveLearnerCount }} 名学生</strong><p>{{ teacherEducationCourses.length ? (teacherActiveLearnerCount ? '学生名单已建立，可以继续布置作业。' : '课程已创建，但还没有学生。') : '先创建课程，把资料变成一个可使用的课程空间。' }}</p>
-                </article>
-                <article class="education-agent-state-item">
-                  <small>03 · 下一步行动</small><strong>{{ teacherNextAction.label }}</strong><p>{{ teacherNextAction.detail }}</p>
-                </article>
-                <article class="education-agent-state-item">
-                  <small>04 · 待处理作业</small><strong>{{ teacherCoursePendingCount }} 项课程待办</strong><p>{{ teacherCoursePendingCount ? '查看学生提交和反馈，再确认或退回作业。' : '当前没有待处理作业，可以继续布置或查看课程进度。' }}</p>
-                </article>
-              </div>
-              <footer class="education-agent-state-footer">
-                <span>完成今天的优先事项后，课程状态会自动更新。</span>
-              </footer>
-            </section>
+            <details v-if="isTeacherOnlyRole" class="education-agent-state-details">
+              <summary><span><strong>课程状态概览</strong><small>{{ teacherEducationCourses.length }} 门课程 · {{ teacherActiveLearnerCount }} 名学生 · {{ teacherCoursePendingCount }} 项待处理</small></span><em>{{ teacherAgentReady ? '资料已接入' : '待配置' }}</em></summary>
+              <section class="education-agent-state-card education-teacher-state-card" :class="{ ready: teacherAgentReady }" aria-label="教师课程运营状态">
+                <div class="education-agent-state-heading">
+                  <div><p class="eyebrow">COURSE OVERVIEW</p><h4>课程运营概览</h4><span>看资料、名单、作业和反馈，按顺序处理即可。</span></div>
+                  <span class="education-agent-state-pill"><i></i>{{ teacherAgentReady ? '课程资料已接入' : '等待课程配置' }}</span>
+                </div>
+                <div class="education-agent-state-grid">
+                  <article class="education-agent-state-item">
+                    <small>01 · 课程资料</small><strong>{{ manageableEducationSources.length ? `${manageableEducationSources.length} 个来源已配置` : '尚未配置课程资料' }}</strong><p>{{ manageableEducationSources.length ? '资料准备好了，可以继续加入学生。' : '先上传 PDF/DOCX，再补充课程信息。' }}</p>
+                  </article>
+                  <article class="education-agent-state-item">
+                    <small>02 · 班级与学生</small><strong>{{ teacherEducationCourses.length }} 门课程 · {{ teacherActiveLearnerCount }} 名学生</strong><p>{{ teacherEducationCourses.length ? (teacherActiveLearnerCount ? '学生名单已建立，可以继续布置作业。' : '课程已创建，但还没有学生。') : '先创建课程，把资料变成一个可使用的课程空间。' }}</p>
+                  </article>
+                  <article class="education-agent-state-item">
+                    <small>03 · 下一步行动</small><strong>{{ teacherNextAction.label }}</strong><p>{{ teacherNextAction.detail }}</p>
+                  </article>
+                  <article class="education-agent-state-item">
+                    <small>04 · 待处理作业</small><strong>{{ teacherCoursePendingCount }} 项课程待办</strong><p>{{ teacherCoursePendingCount ? '查看学生提交和反馈，再确认或退回作业。' : '当前没有待处理作业，可以继续布置或查看课程进度。' }}</p>
+                  </article>
+                </div>
+                <footer class="education-agent-state-footer">
+                  <span>完成今天的优先事项后，课程状态会自动更新。</span>
+                </footer>
+              </section>
+            </details>
             <section v-else-if="isLearnerOnlyRole" class="education-agent-state-card" :class="{ ready: educationAgentReady }" aria-label="当前学习状态">
               <div class="education-agent-state-heading">
                 <div><p class="eyebrow">YOUR LEARNING STATE</p><h4>你的学习状态</h4><span>系统会根据课程资料和你的作答情况，安排下一步学习。</span></div>
