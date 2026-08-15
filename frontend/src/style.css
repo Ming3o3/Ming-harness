@@ -858,6 +858,13 @@ h3 { margin: 0; font-size: 13px; }
 .learning-assignment-action-hint svg { flex: 0 0 auto; margin-top: 1px; color: var(--cyan); }
 .learning-assignment-main p { margin: 5px 0 0; color: var(--soft); font-size: 9px; line-height: 1.45; }
 .learning-assignment-journey { display: grid; gap: 5px; margin-top: 8px; border-top: 1px solid color-mix(in srgb, var(--line) 72%, transparent); padding-top: 7px; }
+.learning-assignment-journey-summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 6px; color: var(--muted); cursor: pointer; list-style: none; }
+.learning-assignment-journey-summary::-webkit-details-marker { display: none; }
+.learning-assignment-journey-summary::before { content: '▸'; color: var(--cyan); font-size: 10px; }
+.learning-assignment-journey[open] .learning-assignment-journey-summary::before { content: '▾'; }
+.learning-assignment-journey-summary span { color: var(--soft); font-size: 9px; }
+.learning-assignment-journey-summary small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 8px/1.35 "DM Mono", monospace; }
+.learning-assignment-journey-summary em { color: var(--cyan); font: 8px "DM Mono", monospace; font-style: normal; white-space: nowrap; }
 .learning-assignment-journey-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
 .learning-assignment-journey-steps > span { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 3px; min-width: 0; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); padding: 4px; font: 7px/1.2 "DM Mono", monospace; }
 .learning-assignment-journey-steps > span i { color: var(--muted); font-style: normal; }

@@ -11185,12 +11185,13 @@ onBeforeUnmount(() => {
                     <small v-if="assignment.reviewStatus !== 'NOT_REQUIRED'" class="learning-assignment-progress">业务结果：{{ learningAssignmentReviewStatusLabel(assignment.reviewStatus) }}<span v-if="assignment.teacherReviewedAt"> · {{ formatDate(assignment.teacherReviewedAt) }}</span></small>
                     <p>{{ assignment.instructions }}</p>
                     <small v-if="learningAssignmentActionHint(assignment)" class="learning-assignment-action-hint"><ArrowRight :size="12" />{{ learningAssignmentActionHint(assignment) }}</small>
-                    <div v-if="isLearnerOnlyRole" class="learning-assignment-journey" aria-label="作业学习阶段">
+                    <details v-if="isLearnerOnlyRole" class="learning-assignment-journey" aria-label="作业学习阶段">
+                      <summary class="learning-assignment-journey-summary"><span>作业流程</span><small>{{ learningAssignmentJourney(assignment).currentDetail }}</small><em>查看流程</em></summary>
                       <div class="learning-assignment-journey-steps">
                         <span v-for="(step, index) in learningAssignmentJourney(assignment).steps" :key="step.id" :class="`is-${step.state}`"><i>{{ String(index + 1).padStart(2, '0') }}</i>{{ step.label }}</span>
                       </div>
                       <small class="learning-assignment-journey-current"><ArrowRight :size="11" /><strong>当前阶段</strong>{{ learningAssignmentJourney(assignment).currentDetail }}</small>
-                    </div>
+                    </details>
                     <div v-if="assignment.teacherReviewNote" class="learning-assignment-review-note" :class="{ revision: assignment.reviewStatus === 'REVISION_REQUIRED' }"><CircleAlert :size="13" /><div><strong>{{ learningAssignmentReviewNoteLabel(assignment) }}</strong><span>{{ assignment.teacherReviewNote }}</span></div></div>
                     <small v-if="!learningAssignmentDetailsLoaded(assignment.id)" class="learning-assignment-progress">正在加载作业详情…</small>
                     <small v-if="learningAssignmentProgressMap[assignment.id]" class="learning-assignment-progress">{{ isLearnerOnlyRole ? `当前学习进度 ${formatRate(learningAssignmentProgressMap[assignment.id].currentMastery)} · 目标完成度 ${formatRate(learningAssignmentProgressMap[assignment.id].masteryProgress)} · 已完成 ${learningAssignmentProgressMap[assignment.id].taskCompleted} 次练习` : `当前掌握度 ${formatRate(learningAssignmentProgressMap[assignment.id].currentMastery)} / 目标 ${formatRate(learningAssignmentProgressMap[assignment.id].targetMastery)} · 提升 ${learningAssignmentProgressMap[assignment.id].masteryGain >= 0 ? '+' : ''}${formatRate(learningAssignmentProgressMap[assignment.id].masteryGain)} · 目标进度 ${formatRate(learningAssignmentProgressMap[assignment.id].masteryProgress)} · 测评 ${learningAssignmentProgressMap[assignment.id].assessmentTotal} 次 · 任务 ${learningAssignmentProgressMap[assignment.id].taskCompleted} / ${learningAssignmentProgressMap[assignment.id].taskTotal}` }}</small>
