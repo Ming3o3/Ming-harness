@@ -10145,7 +10145,7 @@ onBeforeUnmount(() => {
                 <div><span>保持度正确率</span><strong>{{ formatRate(educationMetrics.reviewAssessmentAccuracyRate) }}</strong><small>平均掌握度提升 {{ formatRate(educationMetrics.averageMasteryGain) }}</small></div>
               </div>
             </details>
-            <details v-if="educationExperiment" class="education-operations-metrics education-experiment-panel" open>
+            <details v-if="isAdminWorkspace && educationExperiment" class="education-operations-metrics education-experiment-panel" open>
               <summary><span>EI 检索实验诊断</span><small>基线 · 消融 · 学习效果</small><button class="inline-summary-action" type="button" :disabled="educationExperimentDownloading" @click.prevent="downloadEducationExperimentCsv">{{ educationExperimentDownloading ? '导出中…' : '导出策略 CSV' }}</button><button class="inline-summary-action" type="button" :disabled="educationExperimentPairedDownloading" @click.prevent="downloadPairedEducationExperimentCsv">{{ educationExperimentPairedDownloading ? '导出中…' : '导出配对 CSV' }}</button><button class="inline-summary-action" type="button" :disabled="educationExperimentAllocationDownloading" @click.prevent="downloadEducationExperimentAllocationCsv">{{ educationExperimentAllocationDownloading ? '导出中…' : '导出分配 CSV' }}</button></summary>
               <p class="learning-task-help">结果按 Run 创建时冻结的检索策略聚合；每条证据来自实际步骤快照，测评和掌握度变化按 runId 对齐。效率指标用证据摘录字符数作为跨模型 token 成本的稳定代理。</p>
               <div class="education-experiment-overview">
