@@ -8978,8 +8978,8 @@ onBeforeUnmount(() => {
                 <span class="chat-composer-hint-context">{{ desktopWorkspaceDropping ? '正在导入知识材料…' : (educationSendBlockReason || (activeLearningGoal ? `本轮学习记录将归入「${activeLearningGoal.conceptKey}」；只有作答、推理或教师评分会改变学习进度` : (activeChatCourse ? `已锁定课程「${activeChatCourse.title}」；设定目标后可开始累积学习记录` : '已应用学习信息与课程范围；设定目标后可开始累积学习记录'))) }}</span>
               </span>
               <div class="chat-composer-actions">
-                <button class="secondary-button chat-agent-settings-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId" @click="showChatAgentSettings = !showChatAgentSettings"><Settings2 :size="14" /><span>调整学习计划</span></button>
-                <button class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading || !activeConversationId || Boolean(educationSendBlockReason)" @click="openChatAttachmentPicker"><Paperclip :size="14" /><span>上传作答材料</span></button>
+                <button v-if="activeConversationId && !educationSendBlockReason" class="secondary-button chat-agent-settings-button" type="button" :disabled="chatSending || chatUploading" @click="showChatAgentSettings = !showChatAgentSettings"><Settings2 :size="14" /><span>调整学习计划</span></button>
+                <button v-if="activeConversationId && !educationSendBlockReason" class="secondary-button chat-attachment-button" type="button" :disabled="chatSending || chatUploading" @click="openChatAttachmentPicker"><Paperclip :size="14" /><span>上传作答材料</span></button>
                 <button v-if="canCancelChat" class="secondary-button chat-stop-button" type="button" :disabled="chatCancellingRunId === pendingChatMessage?.runId" @click="cancelChatRun"><Square :size="14" /><span>{{ chatCancellingRunId === pendingChatMessage?.runId ? '处理中…' : (chatRunStatus === 'WAITING_APPROVAL' ? '撤回审批' : '停止') }}</span></button>
                 <button class="primary-button chat-send-button" type="submit" :disabled="!canSendChat"><span class="chat-send-label">{{ chatUploading ? '导入中…' : chatSending ? '提交中…' : '发送' }}</span><Send :size="14" /></button>
               </div>
