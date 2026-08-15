@@ -1474,6 +1474,12 @@ function openRoleWorkspaceEntry(entry) {
       }
       return
     }
+    if (entry === 'student-course') {
+      const join = document.querySelector('.education-course-join-entry')
+      if (join instanceof HTMLDetailsElement) join.open = true
+      join?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      return
+    }
     if (entry === 'student-plan') {
       document.querySelector('[aria-label="当前学习状态"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       return
@@ -8198,10 +8204,12 @@ onBeforeUnmount(() => {
                 </button>
               </section>
               <button type="button" @click="educationAgentReady ? (showChatAgentSettings = true) : openEducationAgentSetup()">{{ educationAgentReady ? '调整学习设置' : educationSetupActionLabel }} <ArrowUp :size="12" /></button>
+              <button v-if="!enrolledEducationCourses.length" type="button" @click="openRoleWorkspaceEntry('student-course')">输入课程邀请码 <ArrowUp :size="12" /></button>
             </template>
             <template v-else>
               <p class="learning-sidebar-contract-empty">先填写学科、年级和课程版本，系统才能为你安排合适的学习内容。</p>
               <button type="button" @click="openEducationAgentSetup">设置学习信息 <ArrowUp :size="12" /></button>
+              <button type="button" @click="openRoleWorkspaceEntry('student-course')">已有邀请码？直接加入 <ArrowUp :size="12" /></button>
             </template>
           </section>
           <section v-if="teacherEducationCourses.length" class="chat-teaching-brief" aria-label="教师课程待办">
