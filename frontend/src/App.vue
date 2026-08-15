@@ -1291,25 +1291,40 @@ const educationWorkspaceModeDetail = computed(() => {
   if (educationWorkspaceMode.value === 'learner') {
     return '先看课程边界、当前状态和下一步行动；教师管理入口按需展开。'
   }
-  return '先建立学习者画像或加入课程，Agent 才能把知识检索和学习证据串起来。'
+  return '先填写学习信息或加入课程，系统才能安排合适的学习内容。'
 })
-const learnerJourneySteps = computed(() => [
-  {
-    title: '建立学习画像',
-    detail: activeLearnerProfile.value ? '已完成' : '填写学科、年级和课程版本',
-    state: activeLearnerProfile.value ? 'ready' : 'current',
-  },
-  {
-    title: '加入课程',
-    detail: enrolledEducationCourses.value.length ? `${enrolledEducationCourses.value.length} 门课程` : '等待教师发布并加入',
-    state: enrolledEducationCourses.value.length ? 'ready' : (activeLearnerProfile.value ? 'current' : 'pending'),
-  },
-  {
-    title: '接受作业',
-    detail: learnerLearningAssignmentCount.value ? `${learnerLearningAssignmentCount.value} 份作业` : '课程作业会显示在下方',
-    state: learnerLearningAssignmentCount.value ? 'ready' : (enrolledEducationCourses.value.length ? 'current' : 'pending'),
-  },
-])
+const learnerJourneySteps = computed(() => {
+  const assignments = learnerCourseAssignments.value
+  const hasCourse = enrolledEducationCourses.value.length > 0
+  const hasAssignment = assignments.length > 0
+  const hasCompletedAssignment = assignments.some((assignment) => assignment.status === 'COMPLETED')
+  const waitingTeacherReview = assignments.some((assignment) =>
+    assignment.status === 'COMPLETED' && assignment.reviewStatus === 'PENDING')
+  const hasFeedback = assignments.some((assignment) =>
+    assignment.status === 'COMPLETED' && ['VERIFIED', 'NOT_REQUIRED'].includes(assignment.reviewStatus))
+  return [
+    {
+      title: '填写学习信息',
+      detail: activeLearnerProfile.value ? '已完成' : '填写学科、年级和课程版本',
+      state: activeLearnerProfile.value ? 'ready' : 'current',
+    },
+    {
+      title: '加入课程',
+      detail: hasCourse ? `${enrolledEducationCourses.value.length} 门课程` : '等待老师发布并加入',
+      state: hasCourse ? 'ready' : (activeLearnerProfile.value ? 'current' : 'pending'),
+    },
+    {
+      title: '完成作业',
+      detail: hasCompletedAssignment ? `${assignments.filter((assignment) => assignment.status === 'COMPLETED').length} 份已完成` : (hasAssignment ? '接受作业后开始学习' : '课程作业会显示在下方'),
+      state: hasCompletedAssignment ? 'ready' : (hasAssignment ? 'current' : 'pending'),
+    },
+    {
+      title: '查看反馈',
+      detail: hasFeedback ? '已有教师确认结果' : (waitingTeacherReview ? '等待教师确认' : '完成作业后查看'),
+      state: hasFeedback ? 'ready' : (waitingTeacherReview ? 'current' : 'pending'),
+    },
+  ]
+})
 const educationAssignmentsForView = computed(() => ['admin', 'teacher'].includes(educationWorkspaceMode.value)
   ? learningAssignments.value
   : learningAssignments.value.filter((assignment) => assignment.learnerUserId === form.userId))
@@ -9990,14 +10005,14 @@ onBeforeUnmount(() => {
               <div v-else class="context-preview-empty">组织内还没有配置课程知识源；请让教师上传资料并补充课程元数据。</div>
             </section>
             <details v-if="isLearnerOnlyRole" class="education-profile-setup" :open="!activeLearnerProfile">
-              <summary><span><strong>学习者画像与目标</strong><small>{{ activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel} · ${activeLearnerProfile.curriculumVersion}` : '建立 Agent 可持续读取的学习上下文' }}</small></span><em>{{ activeLearnerProfile ? '已绑定' : '待建立' }}</em></summary>
+              <summary><span><strong>学习信息与目标</strong><small>{{ activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel} · ${activeLearnerProfile.curriculumVersion}` : '填写学科、年级和课程版本' }}</small></span><em>{{ activeLearnerProfile ? '已设置' : '待设置' }}</em></summary>
               <div class="education-profile-setup-content">
                 <form class="education-profile-form" @submit.prevent="saveLearnerProfile">
                   <label class="field"><span>学科</span><input v-model="learnerProfileForm.subject" required maxlength="128" /></label>
                   <label class="field"><span>年级</span><input v-model="learnerProfileForm.gradeLevel" required maxlength="128" /></label>
                   <label class="field"><span>课程版本</span><input v-model="learnerProfileForm.curriculumVersion" required maxlength="128" /></label>
                   <label class="field"><span>学习目标</span><input v-model="learnerProfileForm.learningGoal" maxlength="512" placeholder="例如：掌握函数基础并能独立完成练习" /></label>
-                  <button class="secondary-button" type="submit" :disabled="educationLoading">{{ educationLoading ? '保存中…' : '保存学习者画像' }}</button>
+                  <button class="secondary-button" type="submit" :disabled="educationLoading">{{ educationLoading ? '保存中…' : '保存学习信息' }}</button>
                 </form>
                 <p class="education-profile-next-step"><strong>保存后怎么继续？</strong> 教师会把你加入课程并发布作业；课程和作业会自动出现在下方，你不需要自己上传课程资料。</p>
                 <div v-if="learnerProfiles.length" class="education-profile-list">
@@ -10015,7 +10030,7 @@ onBeforeUnmount(() => {
                 <div><h4>{{ isAdminWorkspace ? '课程实例概览' : (educationWorkspaceMode === 'teacher' ? '课程运营工作台' : '我的课程与学习路径') }}</h4><span>{{ isAdminWorkspace ? `${educationCourses.length} 门组织课程 · ${learningAssignments.length} 份课程作业` : `${teacherEducationCourses.length} 个我创建 · ${enrolledEducationCourses.length} 个已加入` }}</span></div>
                 <span v-if="activeEducationCourse" class="context-mode-chip">{{ educationCourseStatusLabel(activeEducationCourse.status) }}</span>
               </div>
-              <p class="learning-task-help">{{ isAdminWorkspace ? '管理员在这里查看组织课程和作业规模；课程资料、名单、布置与复核由教师负责。' : '课程约束决定学习范围；Agent 会结合每次作业、提交物和对话证据更新学习状态。' }}{{ educationWorkspaceMode === 'teacher' ? '班级进度、名单和布置动作只在课程负责人入口中展开；学生画像由学生本人维护。' : (!isAdminWorkspace ? '你只需要关注自己的课程行动、证据和结课结果。' : '') }}</p>
+              <p class="learning-task-help">{{ isAdminWorkspace ? '管理员在这里查看组织课程和作业规模；课程资料、名单、布置与复核由教师负责。' : (educationWorkspaceMode === 'teacher' ? '课程资料决定教学范围；请在下方依次维护名单、布置作业和查看反馈。' : '课程资料决定学习范围；系统会结合你的作业、提交内容和学习对话更新进度。') }}{{ educationWorkspaceMode === 'teacher' ? '班级进度、名单和布置动作只在课程负责人入口中展开；学生学习信息由学生本人维护。' : (!isAdminWorkspace ? '你只需要关注自己的课程行动、提交和反馈。' : '') }}</p>
               <details v-if="canManageEducationOperations" class="education-teacher-entry" :open="educationWorkspaceMode === 'teacher'">
                 <summary><span><strong>课程负责人入口</strong><small>创建课程、维护名单、批量布置作业</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '管理模式' : '需要教师 / 组织权限' }}</em></summary>
                 <p class="education-teacher-entry-help">这是课程管理操作，不会改变学习者的 Agent 状态；提交后仍由 Runtime 做最终权限校验。</p>
@@ -10160,9 +10175,9 @@ onBeforeUnmount(() => {
                   <span class="context-mode-chip">我的学习状态</span>
                 </div>
                 <div v-if="educationCourseResult" class="education-course-progress education-course-result education-course-learner-result">
-                  <div class="subsection-title"><div><h4>我的结课结果</h4><span>{{ formatDate(educationCourseResult.completedAt) }}</span></div><span class="context-mode-chip">不可被后续复习改写</span></div>
+                  <div class="subsection-title"><div><h4>我的结课结果</h4><span>{{ formatDate(educationCourseResult.completedAt) }}</span></div><span class="context-mode-chip">结果已保存</span></div>
                   <template v-if="activeEducationCourseLearnerResult">
-                    <p class="learning-task-help">这是 Agent 在结课时固化的个人学习事实，后续复习会更新当前状态，但不会改写这份结果。</p>
+                    <p class="learning-task-help">这是系统在结课时保存的个人学习结果，后续复习会更新当前状态，但不会改写这份结课记录。</p>
                     <div class="education-course-summary-grid education-course-learner-summary-grid">
                       <div><span>有效作业</span><strong>{{ activeEducationCourseLearnerResult.assignmentCompleted }} / {{ activeEducationCourseLearnerResult.effectiveAssignmentTotal }}</strong><small>已完成的课程作业</small></div>
                       <div><span>教师确认</span><strong>{{ activeEducationCourseLearnerResult.assignmentVerified }} / {{ activeEducationCourseLearnerResult.effectiveAssignmentTotal }}</strong><small>通过业务复核</small></div>
@@ -10171,10 +10186,10 @@ onBeforeUnmount(() => {
                     </div>
                     <small class="education-course-learner-activity">{{ activeEducationCourseLearnerResult.lastActivityAt ? `最后学习活动：${formatDate(activeEducationCourseLearnerResult.lastActivityAt)}` : '结课时没有记录到个人学习活动。' }}</small>
                   </template>
-                  <div v-else class="context-preview-empty">课程已形成结课快照，但其中没有当前账号的个人学习记录。</div>
+                  <div v-else class="context-preview-empty">课程已经结课，但没有找到当前账号的学习记录。</div>
                 </div>
                 <div v-else class="education-course-learner-state">
-                  <div><strong>{{ activeEducationCourse.status === 'ACTIVE' ? '课程进行中' : '结课结果尚未读取' }}</strong><small>{{ activeEducationCourse.status === 'ACTIVE' ? 'Agent 正在依据你的作业、提交物与对话证据更新学习状态；结课后这里会出现个人结果。' : '请刷新课程工作台；若仍不可用，请联系课程负责人确认结课快照。' }}</small></div>
+                  <div><strong>{{ activeEducationCourse.status === 'ACTIVE' ? '课程进行中' : '结课结果尚未读取' }}</strong><small>{{ activeEducationCourse.status === 'ACTIVE' ? '系统会根据你的作业、提交内容和学习对话更新进度；结课后这里会出现个人结果。' : '请刷新课程工作台；若仍不可用，请联系课程负责人确认结课记录。' }}</small></div>
                   <div v-if="activeEducationCourse.status === 'ACTIVE' && activeEducationCourseLearnerProgress" class="education-course-learner-live">
                     <div><small>课程作业</small><strong>{{ activeEducationCourseLearnerProgress.completed }} / {{ activeEducationCourseLearnerProgress.total }} 已完成</strong></div>
                     <div><small>待处理</small><strong>{{ activeEducationCourseLearnerProgress.attention }} 项</strong><span v-if="activeEducationCourseLearnerProgress.nextAction?.detail">{{ activeEducationCourseLearnerProgress.nextAction.detail }}</span></div>
@@ -10255,7 +10270,7 @@ onBeforeUnmount(() => {
                   </div>
                 </article>
               </div>
-              <div v-else class="context-preview-empty">{{ educationAssignmentsForView.length ? '当前筛选范围没有作业。' : (isAdminWorkspace ? '暂无课程作业；教师发布作业后，组织概览会在这里显示状态。' : (educationWorkspaceMode === 'teacher' ? '还没有课程作业；可在教师布置入口创建。' : '暂无课程作业；接受课程作业后，Agent 会在这里展示行动与证据。')) }}</div>
+              <div v-else class="context-preview-empty">{{ educationAssignmentsForView.length ? '当前筛选范围没有作业。' : (isAdminWorkspace ? '暂无课程作业；教师发布作业后，组织概览会在这里显示状态。' : (educationWorkspaceMode === 'teacher' ? '还没有课程作业；可在教师布置入口创建。' : '暂无课程作业；老师发布后，你可以在这里接受作业并查看下一步。')) }}</div>
               <form v-if="learningAssignmentFeedbackForm.assignmentId" class="learning-assignment-feedback-form" @submit.prevent="submitLearningAssignmentFeedback">
                 <div class="subsection-title"><h4>教师反馈</h4><button class="text-button" type="button" @click="closeLearningAssignmentFeedback">关闭</button></div>
                 <label class="field"><span>反馈动作</span><select v-model="learningAssignmentFeedbackForm.action"><option value="COMMENT">教师反馈</option><option value="REQUEST_EVIDENCE">要求补充证据</option><option value="RECOMMEND_RETRY">建议重新学习</option><option value="RESCHEDULE">重新安排截止时间</option></select></label>

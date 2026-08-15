@@ -564,7 +564,7 @@ h3 { margin: 0; font-size: 13px; }
 .teacher-advanced-details[open] > summary::before { content: '▾'; }
 .teacher-advanced-details > summary small { margin-left: auto; color: var(--muted); font: 8px "DM Mono", monospace; }
 .teacher-advanced-details .education-agent-loop { margin-top: 10px; }
-.learner-journey-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 0 0 10px; padding: 0; list-style: none; }
+.learner-journey-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; margin: 0 0 10px; padding: 0; list-style: none; }
 .learner-journey-steps > li { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 6px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-soft); padding: 7px; }
 .learner-journey-steps > li > span { color: var(--muted); font: 8px "DM Mono", monospace; }
 .learner-journey-steps > li > div { display: grid; min-width: 0; gap: 2px; }
