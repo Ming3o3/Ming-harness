@@ -8641,7 +8641,7 @@ onBeforeUnmount(() => {
               <aside class="learning-onboarding-existing">
                 <div class="learning-onboarding-section-heading">
                   <div><span>继续学习</span><strong>已有学习信息</strong></div>
-                  <button type="button" @click="chatMode = false; navigateConsoleSection('education')">课程与资料 <ArrowUp :size="13" /></button>
+                  <button type="button" @click="openRoleWorkspaceEntry(enrolledEducationCourses.length ? 'student-plan' : 'student-course')">{{ enrolledEducationCourses.length ? '课程与资料' : '输入课程邀请码' }} <ArrowUp :size="13" /></button>
                 </div>
                 <div v-if="learnerProfiles.length" class="learning-onboarding-profile-list">
                   <div v-for="profile in learnerProfiles.slice(0, 4)" :key="profile.id" class="learning-onboarding-profile-item">
