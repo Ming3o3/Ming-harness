@@ -2459,6 +2459,15 @@ const teacherOperationsTrace = computed(() => [
     state: teacherCoursePendingCount.value ? 'attention' : 'ready',
   },
 ])
+const teacherOnboardingCurrentIndex = computed(() => {
+  const index = teacherOperationsTrace.value.findIndex((step) => ['pending', 'attention'].includes(step.state))
+  return index === -1 ? teacherOperationsTrace.value.length : index
+})
+function teacherOnboardingStepStatus(step, index) {
+  if (step.state === 'attention') return '待处理'
+  if (step.state === 'ready') return '已完成'
+  return index === teacherOnboardingCurrentIndex.value ? '下一步' : '待完成'
+}
 const adminOperationsTrace = computed(() => [
   {
     id: 'sources',
@@ -9760,6 +9769,15 @@ onBeforeUnmount(() => {
               <button class="primary-button learner-focus-action" type="button" @click="runTeacherNextAction">
                 {{ teacherNextAction.label }} <ArrowRight :size="13" />
               </button>
+            </section>
+            <section v-if="isTeacherOnlyRole" class="teacher-onboarding-progress" aria-label="教师开课路径">
+              <div class="teacher-onboarding-progress-heading"><div><p class="eyebrow">COURSE SETUP PATH</p><strong>开课路径</strong></div><span>第 {{ Math.min(teacherOnboardingCurrentIndex + 1, teacherOperationsTrace.length) }} / {{ teacherOperationsTrace.length }} 步</span></div>
+              <ol class="teacher-onboarding-progress-list">
+                <li v-for="(step, index) in teacherOperationsTrace" :key="step.id" :class="[`is-${step.state}`, { current: index === teacherOnboardingCurrentIndex }]">
+                  <span>{{ String(index + 1).padStart(2, '0') }}</span>
+                  <div><strong>{{ step.label }}</strong><small>{{ teacherOnboardingStepStatus(step, index) }}</small></div>
+                </li>
+              </ol>
             </section>
             <ol v-if="isLearnerOnlyRole" class="learner-journey-steps" aria-label="学生使用路径">
               <li v-for="(step, index) in learnerJourneySteps" :key="step.title" :class="`is-${step.state}`">
