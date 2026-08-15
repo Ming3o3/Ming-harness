@@ -8932,7 +8932,7 @@ onBeforeUnmount(() => {
               </div>
               <label><span>目标名称</span><input v-model="learningGoalForm.title" required maxlength="255" placeholder="例如：掌握函数定义域" /></label>
               <label><span>目标知识点</span><input v-model="learningGoalForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
-              <label><span>目标掌握度（填写百分比）</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
+              <label><span>{{ isLearnerOnlyRole ? '目标进度（填写百分比）' : '目标掌握度（填写百分比）' }}</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
               <button class="primary-button" type="submit" :disabled="educationLoading">{{ educationLoading ? '保存中…' : '保存学习目标' }}</button>
             </form>
             <div v-if="learnerMasteryPreview.length" class="learning-agent-mastery-strip" aria-label="需要关注的知识点">
@@ -10249,10 +10249,10 @@ onBeforeUnmount(() => {
                   <small>02 · {{ isLearnerOnlyRole ? '当前学习进度' : '当前掌握情况' }}</small><strong>{{ learnerStateDiagnosis.title }}</strong><p>{{ learnerStateDiagnosis.detail }}</p>
                 </article>
                 <article class="education-agent-state-item">
-                  <small>03 · 推荐下一步</small><strong>{{ agentTeachingAction.title }}</strong><p>{{ agentTeachingAction.detail }}</p>
+                  <small>03 · 下一步学习</small><strong>{{ agentTeachingAction.title }}</strong><p>{{ agentTeachingAction.detail }}</p>
                 </article>
                 <article class="education-agent-state-item">
-                  <small>04 · 完成标准</small><strong>{{ agentEvidenceRequest.title }}</strong><p>{{ agentEvidenceRequest.detail }}</p>
+                  <small>04 · 作答后会更新</small><strong>{{ agentEvidenceRequest.title }}</strong><p>{{ agentEvidenceRequest.detail }}</p>
                 </article>
               </div>
               <footer class="education-agent-state-footer">
@@ -10811,7 +10811,7 @@ onBeforeUnmount(() => {
                     <label class="field"><span>学习信息</span><select v-model="learningGoalForm.learnerProfileId" required><option value="">请选择学习信息</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>
                     <label class="field"><span>目标名称</span><input v-model="learningGoalForm.title" required maxlength="255" placeholder="例如：掌握函数定义域" /></label>
                     <label class="field"><span>知识点</span><input v-model="learningGoalForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
-                    <label class="field"><span>目标掌握度（填写百分比）</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
+                    <label class="field"><span>{{ isLearnerOnlyRole ? '目标进度（填写百分比）' : '目标掌握度（填写百分比）' }}</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
                     <button class="secondary-button" type="submit" :disabled="educationLoading || !learnerProfiles.length">保存目标</button>
                   </form>
                   <div v-if="learningGoals.length" class="learning-goal-list">
@@ -10829,12 +10829,12 @@ onBeforeUnmount(() => {
                   </div>
                   <div v-if="activeLearningGoal" class="learning-dependency-card">
                     <div class="learning-dependency-heading">
-                      <div><span>知识依赖图</span><strong>{{ educationDependencyGraph?.targetConcept || activeLearningGoal.conceptKey }}</strong></div>
+                      <div><span>{{ isLearnerOnlyRole ? '前置知识' : '知识依赖图' }}</span><strong>{{ educationDependencyGraph?.targetConcept || activeLearningGoal.conceptKey }}</strong></div>
                       <small v-if="educationDependencyGraphLoading">计算中…</small>
                       <small v-else-if="educationDependencyGraph?.truncated">已按安全上限截断</small>
-                      <small v-else>{{ educationDependencyGraph?.prerequisites?.length || 0 }} 个前置节点</small>
+                      <small v-else>{{ educationDependencyGraph?.prerequisites?.length || 0 }} {{ isLearnerOnlyRole ? '个前置知识点' : '个前置节点' }}</small>
                     </div>
-                    <p v-if="!educationDependencyGraph?.prerequisites?.length">当前目标还没有维护可追踪的前置知识关系。</p>
+                    <p v-if="!educationDependencyGraph?.prerequisites?.length">{{ isLearnerOnlyRole ? '当前目标暂时没有需要先学习的知识点。' : '当前目标还没有维护可追踪的前置知识关系。' }}</p>
                     <div v-else class="learning-dependency-list">
                       <div v-for="path in educationDependencyGraph.prerequisites" :key="`${path.conceptKey}-${path.depth}`" class="learning-dependency-row">
                         <span class="learning-dependency-depth">L{{ path.depth }}</span>
@@ -10843,7 +10843,7 @@ onBeforeUnmount(() => {
                         <span class="learning-dependency-gap" :class="{ 'is-gap': path.deficit >= 0.5 }">{{ path.deficit >= 0.5 ? '需补强' : '已覆盖' }}</span>
                       </div>
                     </div>
-                    <small class="learning-dependency-note">系统会优先补足进度不足的前置知识。</small>
+                    <small class="learning-dependency-note">{{ isLearnerOnlyRole ? '如果前置知识还不熟，系统会优先安排补充练习。' : '系统会优先补足进度不足的前置知识。' }}</small>
                   </div>
                 </div>
               </details>
