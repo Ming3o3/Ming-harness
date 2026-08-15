@@ -2989,6 +2989,19 @@ const chatRunStatus = computed(() => {
   if (runId && selectedRun.value?.run?.id === runId) return selectedRun.value.run.status
   return pendingChatMessage.value ? 'RUNNING' : ''
 })
+function chatStatusLabel(status) {
+  if (!isLearnerOnlyRole.value) return statusLabel(status)
+  return {
+    QUEUED: '等待开始',
+    RUNNING: '学习助手处理中',
+    SUCCEEDED: '已完成',
+    FAILED: '本次学习未完成',
+    CANCELLED: '已停止',
+    TIMED_OUT: '等待时间过长',
+    WAITING_APPROVAL: '等待确认',
+    REJECTED: '正在调整学习方式',
+  }[status] || statusLabel(status)
+}
 const chatRunActivity = computed(() => {
   const runId = pendingChatMessage.value?.runId
   if (!runId) return ''
@@ -3134,12 +3147,22 @@ const filteredCommandPaletteItems = computed(() => {
   if (!query) return commandPaletteItems.value
   return commandPaletteItems.value.filter((command) => `${command.label} ${command.description} ${command.keywords}`.toLowerCase().includes(query))
 })
-const runEventStatusLabel = computed(() => ({
-  connecting: '正在连接实时流…',
-  connected: '实时执行',
-  reconnecting: '实时流重连中…',
-  offline: '网络已断开，等待恢复…',
-}[runEventConnectionState.value] || ''))
+const runEventStatusLabel = computed(() => {
+  const labels = isLearnerOnlyRole.value
+    ? {
+      connecting: '正在准备学习内容…',
+      connected: '学习助手在线',
+      reconnecting: '正在重新连接…',
+      offline: '网络已断开，等待恢复…',
+    }
+    : {
+      connecting: '正在连接实时流…',
+      connected: '实时执行',
+      reconnecting: '实时流重连中…',
+      offline: '网络已断开，等待恢复…',
+    }
+  return labels[runEventConnectionState.value] || ''
+})
 // 变更预览只读取已经持久化到 Step 的工具参数，不向后端额外发送代码正文。
 const workspaceChangePreviews = computed(() => (selectedRun.value?.steps || [])
   .map(workspaceChangePreview)
@@ -8512,9 +8535,9 @@ onBeforeUnmount(() => {
                 :class="`chat-live-${runEventConnectionState}`"
                 role="status"
                 aria-live="polite"
-                :title="!networkOnline ? '浏览器已离线；网络恢复后会自动续接当前 Run' : runEventStreaming ? '当前 Run 正通过 SSE 推送状态，HTTP 轮询仍作为兜底' : '实时流暂时中断，HTTP 轮询仍会继续更新状态'"
+                :title="!networkOnline ? '浏览器已离线；网络恢复后会自动继续当前学习' : isLearnerOnlyRole ? '学习助手会自动更新当前学习状态' : (runEventStreaming ? '当前 Run 正通过 SSE 推送状态，HTTP 轮询仍作为兜底' : '实时流暂时中断，HTTP 轮询仍会继续更新状态')"
               ><i></i>{{ runEventStatusLabel }}</span>
-              <span v-if="pendingChatMessage" class="chat-run-pill" :class="statusClass(chatRunStatus)"><i></i>{{ statusLabel(chatRunStatus) }}</span>
+              <span v-if="pendingChatMessage" class="chat-run-pill" :class="statusClass(chatRunStatus)"><i></i>{{ chatStatusLabel(chatRunStatus) }}</span>
               <span v-if="pendingChatMessage && chatRunActivity" class="chat-activity-pill" role="status" aria-live="polite">{{ chatRunActivity }}</span>
               <button v-if="activeLearnerProfile" class="secondary-button chat-agent-trace-button" type="button" :class="{ active: showLearningTrace }" @click="toggleLearningTrace"><Brain :size="14" />{{ showLearningTrace ? '收起说明' : '为什么这样安排' }}</button>
               <button v-if="activeConversationId && !showConversationRename" class="secondary-button" type="button" :disabled="conversationRenaming" @click="beginConversationRename">重命名</button>
