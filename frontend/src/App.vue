@@ -1534,7 +1534,7 @@ function learningAssignmentNextAction(assignment) {
     return {
       label: learningAssignmentFeedbackContinueLabel(openFeedback),
       detail: openFeedback.action === 'REQUEST_EVIDENCE'
-        ? '教师要求补充可验证的作答记录。确认反馈后会直接启动下一轮。'
+        ? (isLearnerOnlyRole.value ? '老师要求补充作答内容；确认反馈后会直接启动下一轮。' : '请确认反馈后启动下一轮学习。')
         : '教师建议重新学习。确认反馈后会直接启动下一轮。',
       issue: 'intervention',
       actionable: true,
@@ -1552,7 +1552,11 @@ function learningAssignmentNextAction(assignment) {
     return { label: '接受并开始', detail: '按课程范围启动第一轮学习。', issue: 'assigned', actionable: true }
   }
   if (assignment.status === 'AWAITING_EVIDENCE') {
-    return { label: '补充作答并继续', detail: '上一轮已结束，但还缺少可验证的作答记录。', issue: 'evidence', actionable: true }
+    return {
+      label: '补充作答并继续',
+      detail: isLearnerOnlyRole.value ? '上一轮已结束，还缺少作答内容。' : '上一轮已结束，请查看并处理缺少的学习记录。',
+      issue: 'evidence', actionable: true,
+    }
   }
   if (assignment.status === 'RETRY_REQUIRED') {
     return assignment.reviewStatus === 'REVISION_REQUIRED'
@@ -1753,7 +1757,9 @@ function learningAssignmentJourney(assignment) {
     currentDetail = '继续课程对话，完成讲解、练习或诊断。'
   } else if (assignment.status === 'AWAITING_EVIDENCE') {
     current = 'evidence'
-    currentDetail = '补充作答、推理过程或评分依据，才能更新学习状态。'
+    currentDetail = isLearnerOnlyRole.value
+      ? '补充解题过程或答案，系统才能更新你的学习进度。'
+      : '补充作答、推理过程或学习记录，才能更新学习状态。'
   } else if (reviewPending && !hasSubmission) {
     current = 'evidence'
     currentDetail = '先提交可追溯的作答内容，教师才能完成确认。'
@@ -2241,7 +2247,27 @@ function learningTaskActionLabel(task, starting = false) {
 
 function learnerFriendlyNotificationTitle(notification) {
   const title = String(notification?.title || '')
+  if (isTeacherOnlyRole.value) {
+    if (notification?.notificationType === 'EVIDENCE_REQUIRED') return '有作业需要补充学习记录'
+    if (['RETRY_REQUIRED', 'REVISION_REQUIRED'].includes(notification?.notificationType)) {
+      return '有作业需要处理'
+    }
+    if (notification?.notificationType === 'REVIEW_REQUIRED') return '有作业等待教师确认'
+    if (notification?.notificationType === 'SUBMISSION_RECEIVED') return '收到新的作业提交'
+    return title
+  }
+  if (isAdminWorkspace.value) {
+    if (notification?.notificationType === 'EVIDENCE_REQUIRED') return '有作业缺少学习记录'
+    if (['RETRY_REQUIRED', 'REVISION_REQUIRED'].includes(notification?.notificationType)) {
+      return '有作业需要关注'
+    }
+    return title
+  }
   if (!isLearnerOnlyRole.value) return title
+  if (notification?.notificationType === 'EVIDENCE_REQUIRED'
+    || /补证据|测评证据/.test(title)) {
+    return '需要补充作答'
+  }
   if (['RETRY_REQUIRED', 'FAILED'].includes(notification?.notificationType) || /重试|失败/.test(title)) {
     return '作业需要重新开始'
   }
@@ -2253,8 +2279,36 @@ function learnerFriendlyNotificationTitle(notification) {
 
 function learnerFriendlyNotificationBody(notification) {
   const body = String(notification?.body || '')
+  if (isTeacherOnlyRole.value) {
+    if (notification?.notificationType === 'EVIDENCE_REQUIRED') {
+      return '学生上一轮学习已经结束，但还没有足够的作答或评分记录；请打开作业查看并处理。'
+    }
+    if (['RETRY_REQUIRED', 'REVISION_REQUIRED'].includes(notification?.notificationType)) {
+      return '学生上一轮学习没有完成；请打开作业查看原因，并决定是否需要提醒或重新安排。'
+    }
+    if (notification?.notificationType === 'REVIEW_REQUIRED') {
+      return '学生已经提交作业，等待你根据作答内容和学习记录完成确认。'
+    }
+    if (notification?.notificationType === 'SUBMISSION_RECEIVED') {
+      return '学生提交了新的作业内容，请打开作业查看并完成确认。'
+    }
+    return body.replaceAll('Run', '学习任务')
+  }
+  if (isAdminWorkspace.value) {
+    if (notification?.notificationType === 'EVIDENCE_REQUIRED') {
+      return '这份作业已结束，但还没有足够的作答或评分记录。'
+    }
+    if (['RETRY_REQUIRED', 'REVISION_REQUIRED'].includes(notification?.notificationType)) {
+      return '这份作业上一轮学习没有完成，当前需要教师处理。'
+    }
+    return body.replaceAll('Run', '学习任务')
+  }
   if (!isLearnerOnlyRole.value) return body
   const title = String(notification?.title || '')
+  if (notification?.notificationType === 'EVIDENCE_REQUIRED'
+    || /补证据|测评证据/.test(`${title} ${body}`)) {
+    return '上一轮学习已经结束，但还缺少作答记录；请补充解题过程或答案并继续。'
+  }
   if (notification?.notificationType === 'FEEDBACK' || title.includes('反馈')) {
     return '老师留下了反馈，请查看后按提示继续。'
   }
@@ -2368,8 +2422,10 @@ const learnerStateDiagnosis = computed(() => {
   if (!activeLearningGoal.value) {
     return {
       state: 'pending',
-      title: '尚未定义本轮达标标准',
-      detail: '可以先问问题，但没有学习目标时，系统无法判断何时达标或安排复习。',
+      title: isLearnerOnlyRole.value ? '尚未设置学习目标' : '尚未定义本轮达标标准',
+      detail: isLearnerOnlyRole.value
+        ? '先设定学习目标，系统才能记录进度并安排复习。'
+        : '可以先问问题，但没有学习目标时，系统无法判断何时达标或安排复习。',
       currentMastery: null,
       targetMastery: null,
     }
@@ -2387,7 +2443,9 @@ const learnerStateDiagnosis = computed(() => {
         : (gap > 0.01 ? `距离目标还差 ${formatRate(gap)}` : (isLearnerOnlyRole.value ? '当前学习进度已达到目标' : '当前证据已达到目标')),
       detail: evidenceCount
         ? `围绕「${activeLearningGoal.value.conceptKey}」已有 ${evidenceCount} 次学习记录；系统会按此状态调整难度与动作。`
-        : '还没有可验证的学习记录；完成一次作答后，系统会更准确地判断当前进度。',
+        : (isLearnerOnlyRole.value
+          ? '完成一次作答后，系统会更准确地判断当前进度。'
+          : '还没有可验证的学习记录；完成一次作答后，系统会更准确地判断当前进度。'),
       currentMastery,
       targetMastery,
     }
@@ -2556,7 +2614,7 @@ const studentQuickStartAction = computed(() => {
     return { kind: 'assignment', label: assignmentAction.label, detail: assignmentAction.detail, section: 'education' }
   }
   if (!activeLearningGoal.value) {
-    return { kind: 'goal', label: '设定学习目标', detail: '设定知识点和达成标准，后续练习才会计入学习进度。', section: 'education' }
+    return { kind: 'goal', label: '设定学习目标', detail: '设定知识点和目标进度，后续练习才会计入学习进度。', section: 'education' }
   }
   return { kind: 'education', label: '进入我的学习', detail: '查看课程边界、学习状态和下一步行动。', section: 'education' }
 })
@@ -2698,7 +2756,7 @@ const teacherOperationsTrace = computed(() => [
     id: 'review',
     label: '复核与反馈',
     value: teacherCoursePendingCount.value ? `${teacherCoursePendingCount.value} 项待处理` : '暂无待办',
-    detail: teacherCoursePendingCount.value ? '依据提交物和测评证据确认、退回或反馈。' : '新的学生提交后会出现在这里。',
+    detail: teacherCoursePendingCount.value ? '依据学生提交内容和学习记录确认、退回或反馈。' : '新的学生提交后会出现在这里。',
     state: teacherCoursePendingCount.value ? 'attention' : 'ready',
   },
 ])
@@ -5823,12 +5881,12 @@ function courseLearnerAttentionCount(learner) {
 
 function courseLearnerNextAction(learner) {
   if (!learner) return { label: '查看作业', issue: '' }
-  if (Number(learner.assigned || 0)) return { label: '看待接受', issue: 'assigned' }
-  if (Number(learner.awaitingEvidence || 0)) return { label: '补作答', issue: 'evidence' }
-  if (Number(learner.revisionRequired || 0)) return { label: '看返工', issue: 'revision' }
-  if (Number(learner.retryRequired || 0)) return { label: '看重试', issue: 'retry' }
-  if (Number(learner.openInterventionCount || 0)) return { label: '看干预', issue: 'intervention' }
-  if (Number(learner.submissionMissing || 0)) return { label: '看提交物', issue: 'submission' }
+  if (Number(learner.assigned || 0)) return { label: '查看待接受', issue: 'assigned' }
+  if (Number(learner.awaitingEvidence || 0)) return { label: '查看待补记录', issue: 'evidence' }
+  if (Number(learner.revisionRequired || 0)) return { label: '查看返工作业', issue: 'revision' }
+  if (Number(learner.retryRequired || 0)) return { label: '查看待重试', issue: 'retry' }
+  if (Number(learner.openInterventionCount || 0)) return { label: '查看待处理', issue: 'intervention' }
+  if (Number(learner.submissionMissing || 0)) return { label: '查看缺交作业', issue: 'submission' }
   if (Number(learner.reviewPending || 0)) return { label: '去确认', issue: 'review' }
   if (Number(learner.overdue || 0)) return { label: '看逾期', issue: 'overdue' }
   return { label: '查看作业', issue: '' }
@@ -6076,9 +6134,18 @@ function learningAssignmentFeedbackStatusLabel(feedback) {
 
 function learningAssignmentNotificationActionLabel(notification) {
   if (!notification) return '查看作业'
+  if (isTeacherOnlyRole.value) {
+    if (notification.notificationType === 'EVIDENCE_REQUIRED') return '查看待补记录'
+    if (['RETRY_REQUIRED', 'REVISION_REQUIRED'].includes(notification.notificationType)) return '处理作业'
+    if (notification.notificationType === 'REVIEW_REQUIRED') return '去确认作业'
+    if (notification.notificationType === 'SUBMISSION_RECEIVED') return '查看提交'
+    if (notification.notificationType === 'ASSIGNED') return '查看作业安排'
+    return notification.notificationType === 'OVERDUE' ? '查看逾期作业' : '查看作业'
+  }
+  if (isAdminWorkspace.value) return '查看作业详情'
   if (notification.notificationType === 'ASSIGNED') return '接受并开始'
   if (notification.notificationType === 'EVIDENCE_REQUIRED') {
-    return notification.assignmentStatus === 'AWAITING_EVIDENCE' ? '补作答并继续' : '查看补作答'
+    return notification.assignmentStatus === 'AWAITING_EVIDENCE' ? '补充作答并继续' : '查看待补记录'
   }
   if (['RETRY_REQUIRED', 'REVISION_REQUIRED'].includes(notification.notificationType)) {
     return '重试/返工作业'
@@ -6141,7 +6208,9 @@ function learningAssignmentActionHint(assignment) {
   if (assignment.status === 'ASSIGNED') return '先接受作业，学习助手会按课程范围启动第一轮学习。'
   if (assignment.status === 'ACCEPTED') return '继续当前学习对话；完成后再提交作业内容。'
   if (assignment.status === 'AWAITING_EVIDENCE') {
-    return '上一轮已完成，但还缺少可验证的作答记录；先补作答并继续。'
+    return isLearnerOnlyRole.value
+      ? '上一轮已完成，但还缺少作答内容；先补充解题过程或答案。'
+      : '上一轮已完成，但还缺少学习记录；请打开作业查看并处理。'
   }
   if (assignment.status === 'RETRY_REQUIRED') {
     return assignment.reviewStatus === 'REVISION_REQUIRED'
@@ -8855,7 +8924,7 @@ onBeforeUnmount(() => {
               </div>
               <label><span>目标名称</span><input v-model="learningGoalForm.title" required maxlength="255" placeholder="例如：掌握函数定义域" /></label>
               <label><span>目标知识点</span><input v-model="learningGoalForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
-              <label><span>达成标准</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required /></label>
+              <label><span>目标掌握度（0.8 表示 80%）</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required placeholder="例如：0.8" title="请输入 0 到 1 之间的小数，例如 0.8 表示 80%" /></label>
               <button class="primary-button" type="submit" :disabled="educationLoading">{{ educationLoading ? '保存中…' : '保存学习目标' }}</button>
             </form>
             <div v-if="learnerMasteryPreview.length" class="learning-agent-mastery-strip" aria-label="需要关注的知识点">
@@ -10508,7 +10577,7 @@ onBeforeUnmount(() => {
                     <form v-if="activeEducationCourseIsOwner" class="education-course-assignment-form" @submit.prevent="assignEducationCourse">
                       <label class="field"><span>作业标题</span><input v-model="educationCourseAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域练习" /></label>
                       <label class="field"><span>目标知识点</span><input v-model="educationCourseAssignmentForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
-                      <label class="field"><span>达成标准</span><input v-model="educationCourseAssignmentForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required placeholder="例如：0.8" title="0.8 表示希望学生达到 80% 的掌握度" /></label>
+                      <label class="field"><span>目标掌握度（0.8 表示 80%）</span><input v-model="educationCourseAssignmentForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required placeholder="例如：0.8" title="请输入 0 到 1 之间的小数，例如 0.8 表示 80%" /></label>
                       <label class="field"><span>截止时间（可选）</span><input v-model="educationCourseAssignmentForm.dueAt" type="datetime-local" /></label>
                       <label class="field education-course-wide"><span>作业说明</span><textarea v-model="educationCourseAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作答范围、提交要求或迁移任务"></textarea></label>
                       <button class="secondary-button" type="submit" :disabled="educationCourseAssignmentSaving || !educationCourseEnrollments.some((item) => item.status === 'ACTIVE')">{{ educationCourseAssignmentSaving ? '布置中…' : '向活跃名单布置' }}</button>
@@ -10530,7 +10599,7 @@ onBeforeUnmount(() => {
                   </div>
                   <section v-if="!educationCourseProgress.readyToComplete" class="education-course-completion-blockers" aria-label="结课阻塞清单">
                     <header>
-                      <div><strong>结课阻塞清单</strong><span>Agent 不会绕过未完成的作业、证据或名单覆盖直接结课。</span></div>
+                      <div><strong>结课阻塞清单</strong><span>系统不会跳过未完成的作业、学习记录或名单要求直接结课。</span></div>
                       <em>{{ Number(educationCourseProgress.completionBlockerCount || 0) + Number(educationCourseProgress.submissionBlockerCount || 0) + Number(educationCourseProgress.rosterCoverageBlockerCount || 0) }} 项待处理</em>
                     </header>
                     <div class="education-course-completion-blocker-list">
@@ -10651,7 +10720,7 @@ onBeforeUnmount(() => {
                   <label class="field"><span>年级</span><input v-model="learningAssignmentForm.gradeLevel" required maxlength="128" placeholder="高中一年级" /></label>
                   <label class="field"><span>课程版本</span><input v-model="learningAssignmentForm.curriculumVersion" required maxlength="128" placeholder="人教A版" /></label>
                   <label class="field"><span>目标知识点</span><input v-model="learningAssignmentForm.conceptKey" required maxlength="255" placeholder="函数定义域" /></label>
-                  <label class="field"><span>达成标准</span><input v-model="learningAssignmentForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required placeholder="例如：0.8" title="0.8 表示希望学生达到 80% 的掌握度" /></label>
+                  <label class="field"><span>目标掌握度（0.8 表示 80%）</span><input v-model="learningAssignmentForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required placeholder="例如：0.8" title="请输入 0 到 1 之间的小数，例如 0.8 表示 80%" /></label>
                   <label class="field"><span>截止时间（可选）</span><input v-model="learningAssignmentForm.dueAt" type="datetime-local" /></label>
                   <label class="field learning-assignment-wide"><span>作业说明</span><textarea v-model="learningAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作业要求、作答范围或迁移任务"></textarea></label>
                   <button class="secondary-button learning-assignment-submit" type="submit" :disabled="learningAssignmentSaving">{{ learningAssignmentSaving ? '补发中…' : '单独补发作业' }}</button>
@@ -10734,7 +10803,7 @@ onBeforeUnmount(() => {
                     <label class="field"><span>学习信息</span><select v-model="learningGoalForm.learnerProfileId" required><option value="">请选择学习信息</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>
                     <label class="field"><span>目标名称</span><input v-model="learningGoalForm.title" required maxlength="255" placeholder="例如：掌握函数定义域" /></label>
                     <label class="field"><span>知识点</span><input v-model="learningGoalForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
-                    <label class="field"><span>达成标准</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required placeholder="例如：0.8" title="0.8 表示希望达到 80% 的目标进度" /></label>
+                    <label class="field"><span>目标掌握度（0.8 表示 80%）</span><input v-model.number="learningGoalForm.targetMastery" type="number" min="0.01" max="1" step="0.05" required placeholder="例如：0.8" title="请输入 0 到 1 之间的小数，例如 0.8 表示 80%" /></label>
                     <button class="secondary-button" type="submit" :disabled="educationLoading || !learnerProfiles.length">保存目标</button>
                   </form>
                   <div v-if="learningGoals.length" class="learning-goal-list">

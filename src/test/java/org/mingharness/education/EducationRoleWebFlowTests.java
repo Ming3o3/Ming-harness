@@ -158,14 +158,54 @@ class EducationRoleWebFlowTests {
         String stepId = runJson.path("steps").get(0).path("id").asText();
         assertFalse(stepId.isBlank(), run.body());
 
-        // 教育 Agent 的状态更新必须绑定已成功 Run 和真实步骤；一次观察即可达到本测试目标阈值。
+        // 教师可以在第一轮缺少作答记录时提出明确要求；学生确认后，作业入口应直接续开下一轮学习。
+        HttpResponse<String> awaitingEvidence = request("student-flow-key", "GET",
+                "/api/education/assignments/" + assignmentId, null);
+        assertEquals(200, awaitingEvidence.statusCode(), awaitingEvidence.body());
+        assertEquals("AWAITING_EVIDENCE", json(awaitingEvidence).path("status").asText(), awaitingEvidence.body());
+
+        HttpResponse<String> feedback = request("teacher-flow-key", "POST",
+                "/api/education/assignments/" + assignmentId + "/feedback",
+                "{\"action\":\"REQUEST_EVIDENCE\",\"message\":\"请补充定义域判定依据\"}");
+        assertEquals(200, feedback.statusCode(), feedback.body());
+        String feedbackId = json(feedback).path("id").asText();
+        assertFalse(feedbackId.isBlank(), feedback.body());
+        assertEquals("OPEN", json(feedback).path("status").asText(), feedback.body());
+
+        HttpResponse<String> acknowledged = request("student-flow-key", "POST",
+                "/api/education/assignments/" + assignmentId + "/feedback/" + feedbackId + "/acknowledge", null);
+        assertEquals(200, acknowledged.statusCode(), acknowledged.body());
+        assertEquals("ACKNOWLEDGED", json(acknowledged).path("status").asText(), acknowledged.body());
+
+        HttpResponse<String> resumed = request("student-flow-key", "POST",
+                "/api/education/assignments/" + assignmentId + "/start",
+                "{\"maxTurns\":2,\"courseId\":\"" + courseId + "\"}",
+                "flow-assignment-evidence-retry");
+        assertEquals(200, resumed.statusCode(), resumed.body());
+        String resumedRunId = json(resumed).path("conversation").path("messages").get(1).path("runId").asText();
+        assertFalse(resumedRunId.isBlank(), resumed.body());
+        assertTrue(!runId.equals(resumedRunId), resumed.body());
+
+        HttpResponse<String> resumedRun = request("student-flow-key", "GET", "/api/runs/" + resumedRunId, null);
+        assertEquals(200, resumedRun.statusCode(), resumedRun.body());
+        JsonNode resumedRunJson = json(resumedRun);
+        assertEquals("SUCCEEDED", resumedRunJson.path("run").path("status").asText(), resumedRun.body());
+        String resumedStepId = resumedRunJson.path("steps").get(0).path("id").asText();
+        assertFalse(resumedStepId.isBlank(), resumedRun.body());
+
+        // 教育 Agent 的状态更新必须绑定已成功 Run 和真实步骤；新一轮证据写入后应解决教师反馈。
         HttpResponse<String> assessment = request("student-flow-key", "POST",
                 "/api/education/goals/" + goalId + "/assessments",
-                "{\"runId\":\"" + runId + "\",\"stepId\":\"" + stepId
+                "{\"runId\":\"" + resumedRunId + "\",\"stepId\":\"" + resumedStepId
                         + "\",\"conceptKey\":\"函数定义域\",\"correct\":true,\"observedMastery\":1.0,"
                         + "\"evidenceText\":\"学生写出分母不为零的判定依据\",\"feedback\":\"依据完整\"}");
         assertEquals(201, assessment.statusCode(), assessment.body());
         assertTrue(json(assessment).path("masteryAfter").asDouble() >= 0.3, assessment.body());
+
+        HttpResponse<String> feedbackAfterEvidence = request("student-flow-key", "GET",
+                "/api/education/assignments/" + assignmentId + "/feedback", null);
+        assertEquals(200, feedbackAfterEvidence.statusCode(), feedbackAfterEvidence.body());
+        assertEquals("RESOLVED", json(feedbackAfterEvidence).get(0).path("status").asText(), feedbackAfterEvidence.body());
 
         HttpResponse<String> completedAssignment = request("student-flow-key", "GET",
                 "/api/education/assignments/" + assignmentId, null);
