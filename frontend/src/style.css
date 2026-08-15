@@ -616,6 +616,12 @@ h3 { margin: 0; font-size: 13px; }
 .education-teacher-entry > summary em { color: #f1b85b; }
 .education-teacher-entry-help { margin: 9px 0 0; color: var(--muted); font: 8px/1.5 "DM Mono", monospace; }
 .education-teacher-entry > form { margin-top: 9px; padding-bottom: 2px; }
+.education-course-prefill-note { display: grid; gap: 3px; margin: 0; border-left: 2px solid var(--cyan); background: rgba(76,226,213,.055); color: var(--muted); padding: 7px 9px; font-size: 9px; line-height: 1.45; }
+.education-course-prefill-note strong { color: var(--soft); font-weight: 600; }
+.education-course-prefill-note span { color: var(--cyan); font: 8px "DM Mono", monospace; }
+.education-course-prefill-note small { color: var(--muted); font: 8px/1.45 "DM Mono", monospace; }
+.education-course-prefill-note.is-warning { border-left-color: var(--orange); background: rgba(241,184,91,.055); }
+.education-course-prefill-note.is-warning span { color: var(--orange); }
 .education-assignment-entry { margin-top: 2px; }
 .education-operations-metrics { display: grid; gap: 9px; border-top: 1px solid var(--line); padding-top: 10px; }
 .education-operations-metrics > summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--soft); cursor: pointer; font-size: 10px; list-style: none; }

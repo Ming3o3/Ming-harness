@@ -147,9 +147,14 @@ const learningAssignmentForm = reactive({
 const educationCourseForm = reactive({
   code: '',
   title: '',
-  subject: '数学',
-  gradeLevel: '高中一年级',
-  curriculumVersion: '人教A版',
+  subject: '',
+  gradeLevel: '',
+  curriculumVersion: '',
+})
+const educationCourseFormMetadataTouched = reactive({
+  subject: false,
+  gradeLevel: false,
+  curriculumVersion: false,
 })
 const educationCourseEnrollmentForm = reactive({
   learnerUserId: '',
@@ -1388,6 +1393,37 @@ const manageableEducationSources = computed(() => educationSources.value
   .filter((source) => manageableEducationDocuments.value.some(
     (document) => document.id === source.documentId,
   )))
+// 建课所需的学科、年级和课程版本已经在“课程资料设置”中确认过，
+// 这里优先复用一致的资料元数据，避免教师再次抄写；出现不同版本时不擅自替教师选值。
+const teacherCourseMetadata = computed(() => {
+  const candidates = manageableEducationSources.value
+    .map((source) => ({
+      subject: String(source.subject || '').trim(),
+      gradeLevel: String(source.gradeLevel || '').trim(),
+      curriculumVersion: String(source.curriculumVersion || '').trim(),
+    }))
+    .filter((item) => item.subject && item.gradeLevel && item.curriculumVersion)
+  if (!candidates.length) return null
+  const groups = new Map()
+  candidates.forEach((item) => {
+    const key = `${item.subject}\u0000${item.gradeLevel}\u0000${item.curriculumVersion}`
+    const group = groups.get(key) || { ...item, sourceCount: 0 }
+    group.sourceCount += 1
+    groups.set(key, group)
+  })
+  const variants = [...groups.values()].sort((left, right) => right.sourceCount - left.sourceCount)
+  return {
+    ...variants[0],
+    variantCount: variants.length,
+    conflict: variants.length > 1,
+  }
+})
+const teacherCourseMetadataSuggestion = computed(() => (
+  teacherCourseMetadata.value?.conflict ? null : teacherCourseMetadata.value
+))
+const teacherCourseMetadataConflict = computed(() => (
+  teacherCourseMetadata.value?.conflict ? teacherCourseMetadata.value : null
+))
 const teacherActiveLearnerCount = computed(() => teacherEducationCourses.value
   .reduce((total, course) => total + Number(course.activeEnrollmentCount || 0), 0))
 const teacherAssignmentCount = computed(() => learningAssignments.value
@@ -5535,6 +5571,7 @@ async function loadEducationData() {
       api.getEducationEvidenceImpact().catch(() => null),
     ])
     educationSources.value = sources
+    prefillEducationCourseFormFromSources()
     learnerProfiles.value = profiles
     learningGoals.value = goals
     learningTasks.value = tasks
@@ -7901,6 +7938,7 @@ async function saveEducationSource() {
       difficultyLevel: Number(educationSourceForm.difficultyLevel) || 3,
     })
     educationSources.value = [source, ...educationSources.value.filter((item) => item.documentId !== source.documentId)]
+    prefillEducationCourseFormFromSources()
     noticeMessage.value = '课程信息已保存；下一步可以创建课程。'
     educationError.value = ''
     await nextTick()
@@ -7915,6 +7953,24 @@ async function saveEducationSource() {
 function selectEducationDocument(document) {
   if (!document) return
   educationSourceForm.documentId = document.id
+}
+
+function markEducationCourseMetadataTouched(field) {
+  if (Object.prototype.hasOwnProperty.call(educationCourseFormMetadataTouched, field)) {
+    educationCourseFormMetadataTouched[field] = true
+  }
+}
+
+function prefillEducationCourseFormFromSources() {
+  const suggestion = teacherCourseMetadataSuggestion.value
+  if (!suggestion) return false
+  let changed = false
+  for (const field of ['subject', 'gradeLevel', 'curriculumVersion']) {
+    if (educationCourseFormMetadataTouched[field] || educationCourseForm[field].trim()) continue
+    educationCourseForm[field] = suggestion[field]
+    changed = true
+  }
+  return changed
 }
 
 async function createMemory() {
@@ -10668,9 +10724,11 @@ onBeforeUnmount(() => {
                 <p class="education-teacher-entry-help">这是教师的课程设置区域；完成后，学生会自动看到课程和作业。</p>
                 <form class="education-course-form" @submit.prevent="createEducationCourse">
                   <label class="field"><span>课程名称</span><input v-model="educationCourseForm.title" required maxlength="255" placeholder="例如：高中数学函数基础" /></label>
-                  <label class="field"><span>学科</span><input v-model="educationCourseForm.subject" required maxlength="128" placeholder="例如：数学" /></label>
-                  <label class="field"><span>年级</span><input v-model="educationCourseForm.gradeLevel" required maxlength="128" placeholder="例如：高中一年级" /></label>
-                  <label class="field"><span>课程版本</span><input v-model="educationCourseForm.curriculumVersion" required maxlength="128" placeholder="例如：人教A版" title="要与课程资料中的版本保持一致" /></label>
+                  <p v-if="teacherCourseMetadataSuggestion" class="education-course-prefill-note education-course-wide"><strong>已根据课程资料填入课程信息</strong><span>{{ teacherCourseMetadataSuggestion.subject }} · {{ teacherCourseMetadataSuggestion.gradeLevel }} · {{ teacherCourseMetadataSuggestion.curriculumVersion }}（{{ teacherCourseMetadataSuggestion.sourceCount }} 份资料）</span><small>这些内容可以修改；建议与课程资料保持一致。</small></p>
+                  <p v-else-if="teacherCourseMetadataConflict" class="education-course-prefill-note education-course-wide is-warning"><strong>课程资料信息不一致</strong><span>已整理资料中有 {{ teacherCourseMetadataConflict.variantCount }} 组不同的学科、年级或教材版本。</span><small>请先统一资料信息，或在下方手动确认本课程使用的范围。</small></p>
+                  <label class="field"><span>学科</span><input v-model="educationCourseForm.subject" required maxlength="128" placeholder="例如：数学" @input="markEducationCourseMetadataTouched('subject')" /></label>
+                  <label class="field"><span>年级</span><input v-model="educationCourseForm.gradeLevel" required maxlength="128" placeholder="例如：高中一年级" @input="markEducationCourseMetadataTouched('gradeLevel')" /></label>
+                  <label class="field"><span>教材版本</span><input v-model="educationCourseForm.curriculumVersion" required maxlength="128" placeholder="例如：人教A版" title="建议与课程资料中的版本保持一致" @input="markEducationCourseMetadataTouched('curriculumVersion')" /></label>
                   <label class="field"><span>课程编号（可选）</span><input v-model="educationCourseForm.code" maxlength="128" placeholder="留空，由系统自动生成" /></label>
                   <button class="secondary-button" type="submit" :disabled="educationCourseSaving">{{ educationCourseSaving ? '创建中…' : '创建课程' }}</button>
                 </form>
