@@ -3,9 +3,8 @@ package org.mingharness.education.api;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
-/** 教师创建可运营课程实例时提交的稳定课程约束。 */
+/** 教师创建课程时提交的教学信息；课程编号可留空，由系统自动生成。 */
 public record EducationCourseRequest(
-        @NotBlank(message = "课程代码不能为空")
         @Size(max = 128, message = "课程代码长度不能超过 128 个字符") String code,
         @NotBlank(message = "课程名称不能为空")
         @Size(max = 255, message = "课程名称长度不能超过 255 个字符") String title,

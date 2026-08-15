@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * 管理课程实例和名单边界。课程是批量布置与教师汇总的稳定聚合根，
@@ -40,6 +41,9 @@ public class EducationCourseService {
     public EducationCourseView create(String tenantId, String ownerUserId,
                                       EducationCourseRequest request) {
         String code = clean(request.code());
+        if (code.isBlank()) {
+            code = generatedCourseCode(tenantId);
+        }
         if (courseRepository.findByTenantIdAndCode(tenantId, code).isPresent()) {
             throw new BusinessException(HttpStatus.CONFLICT, "EDUCATION_COURSE_CODE_EXISTS",
                     "该课程代码已存在");
@@ -48,6 +52,18 @@ public class EducationCourseService {
                 tenantId, ownerUserId, code, clean(request.title()), clean(request.subject()),
                 clean(request.gradeLevel()), clean(request.curriculumVersion())));
         return view(saved);
+    }
+
+    private String generatedCourseCode(String tenantId) {
+        for (int attempt = 0; attempt < 5; attempt++) {
+            String candidate = "COURSE-" + UUID.randomUUID().toString()
+                    .replace("-", "").substring(0, 8).toUpperCase(java.util.Locale.ROOT);
+            if (courseRepository.findByTenantIdAndCode(tenantId, candidate).isEmpty()) {
+                return candidate;
+            }
+        }
+        throw new BusinessException(HttpStatus.CONFLICT, "EDUCATION_COURSE_CODE_GENERATION_FAILED",
+                "课程编号生成失败，请稍后重试");
     }
 
     @Transactional(readOnly = true)

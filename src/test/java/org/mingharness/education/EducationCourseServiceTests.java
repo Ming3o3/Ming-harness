@@ -11,6 +11,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -44,6 +45,24 @@ class EducationCourseServiceTests {
         assertEquals("student-1", enrolled.learnerUserId());
         assertEquals(1L, service.getForParticipant("tenant-a", "teacher-1", course.id())
                 .activeEnrollmentCount());
+    }
+
+    @Test
+    void shouldGenerateCourseCodeWhenTeacherLeavesItBlank() {
+        EducationCourseRepository courses = mock(EducationCourseRepository.class);
+        EducationEnrollmentRepository enrollments = mock(EducationEnrollmentRepository.class);
+        when(courses.findByTenantIdAndCode(any(), any())).thenReturn(Optional.empty());
+        when(courses.save(any(EducationCourse.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(enrollments.countByTenantIdAndCourseIdAndStatus(
+                any(), any(), eq(EducationEnrollmentStatus.ACTIVE))).thenReturn(0L);
+
+        var course = new EducationCourseService(courses, enrollments, new SensitiveDataSanitizer())
+                .create("tenant-a", "teacher-1",
+                        new EducationCourseRequest(null, "高一数学", "数学", "高中一年级", "人教A版"));
+
+        assertEquals(15, course.code().length());
+        assertTrue(course.code().startsWith("COURSE-"));
     }
 
     @Test

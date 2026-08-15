@@ -5240,7 +5240,6 @@ async function selectEducationCourse(course) {
 
 async function createEducationCourse() {
   if (educationCourseSaving.value
-    || !educationCourseForm.code.trim()
     || !educationCourseForm.title.trim()
     || !educationCourseForm.subject.trim()
     || !educationCourseForm.gradeLevel.trim()
@@ -5249,7 +5248,7 @@ async function createEducationCourse() {
   educationCourseSaving.value = true
   try {
     const course = await api.createEducationCourse({
-      code: educationCourseForm.code.trim(),
+      code: educationCourseForm.code.trim() || undefined,
       title: educationCourseForm.title.trim(),
       subject: educationCourseForm.subject.trim(),
       gradeLevel: educationCourseForm.gradeLevel.trim(),
@@ -6269,10 +6268,10 @@ async function selectChatCourse() {
     const created = await createChatConversation()
     if (!created) return
     setChatInput(draft)
-    noticeMessage.value = `已锁定课程约束：${course.code} · ${course.title}；已创建独立学习对话。`
+    noticeMessage.value = `已进入课程“${course.title}”；已创建独立学习对话。`
     return
   }
-  noticeMessage.value = `已锁定课程约束：${course.code} · ${course.title}`
+  noticeMessage.value = `已切换到课程“${course.title}”`
 }
 
 async function selectLearnerProfile(profile, notify = true) {
@@ -8736,7 +8735,7 @@ onBeforeUnmount(() => {
                 </div>
                 <div class="chat-education-grid">
                   <label><span>学习信息</span><select v-model="chatEducation.learnerProfileId" :disabled="chatSending || chatUploading" @change="selectChatLearnerProfile"><option value="">请选择学习信息</option><option v-for="profile in learnerProfiles" :key="profile.id" :value="profile.id">{{ profile.subject }} · {{ profile.gradeLevel }}</option></select></label>
-                  <label><span>当前课程</span><select v-model="chatEducation.courseId" :disabled="chatSending || chatUploading || !chatEducation.learnerProfileId" @change="selectChatCourse"><option value="">仅使用当前学习信息</option><option v-for="course in availableChatCourses" :key="course.id" :value="course.id">{{ course.code }} · {{ course.title }}</option></select></label>
+                  <label><span>当前课程</span><select v-model="chatEducation.courseId" :disabled="chatSending || chatUploading || !chatEducation.learnerProfileId" @change="selectChatCourse"><option value="">仅使用当前学习信息</option><option v-for="course in availableChatCourses" :key="course.id" :value="course.id">{{ course.title }} · {{ course.subject }} · {{ course.gradeLevel }}</option></select></label>
                   <label><span>学习目标</span><select v-model="chatEducation.learningGoalId" :disabled="chatSending || chatUploading" @change="selectLearningGoal(learningGoals.find((goal) => goal.id === chatEducation.learningGoalId), false)"><option value="">不绑定目标</option><option v-for="goal in learningGoals.filter((item) => item.status === 'ACTIVE')" :key="goal.id" :value="goal.id">{{ goal.title }} · {{ goal.conceptKey }}</option></select></label>
                   <label><span>教学策略</span><select v-model="chatEducation.pedagogicalMode" :disabled="chatSending || chatUploading"><option value="AUTO">自动选择</option><option value="EXPLAIN">概念讲解</option><option value="SOCRATIC">启发式引导</option><option value="PRACTICE">练习优先</option><option value="DIAGNOSE">错误诊断</option></select></label>
                   <label><span>检索策略</span><select v-model="chatEducation.retrievalStrategy" :disabled="chatSending || chatUploading"><option value="FULL">完整方法</option><option value="ADAPTIVE">状态自适应（历史学习结果）</option><option value="BALANCED_EXPERIMENT">均衡实验分配（按状态）</option><option value="VECTOR_ONLY">向量基线</option><option value="KEYWORD_ONLY">关键词基线</option><option value="NO_LEARNER_STATE">去学习状态消融</option><option value="NO_DEPENDENCY_GRAPH">去知识依赖图消融</option><option value="STATIC_WEIGHT">固定权重消融</option><option value="CALIBRATED">教师校准</option></select></label>
@@ -10088,11 +10087,11 @@ onBeforeUnmount(() => {
                 <summary><span><strong>课程负责人入口</strong><small>创建课程、维护名单、批量布置作业</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '管理模式' : '需要教师 / 组织权限' }}</em></summary>
                 <p class="education-teacher-entry-help">这是课程管理操作，不会改变学生的学习状态；提交后仍由系统做最终权限校验。</p>
                 <form class="education-course-form" @submit.prevent="createEducationCourse">
-                  <label class="field"><span>课程代码</span><input v-model="educationCourseForm.code" required maxlength="128" placeholder="例如：MATH-G1-2026" /></label>
                   <label class="field"><span>课程名称</span><input v-model="educationCourseForm.title" required maxlength="255" placeholder="例如：高中数学函数基础" /></label>
                   <label class="field"><span>学科</span><input v-model="educationCourseForm.subject" required maxlength="128" /></label>
                   <label class="field"><span>年级</span><input v-model="educationCourseForm.gradeLevel" required maxlength="128" /></label>
                   <label class="field"><span>课程版本</span><input v-model="educationCourseForm.curriculumVersion" required maxlength="128" /></label>
+                  <label class="field"><span>课程编号（可选）</span><input v-model="educationCourseForm.code" maxlength="128" placeholder="留空，由系统自动生成" /></label>
                   <button class="secondary-button" type="submit" :disabled="educationCourseSaving">{{ educationCourseSaving ? '创建中…' : '创建课程' }}</button>
                 </form>
               </details>
@@ -10106,7 +10105,7 @@ onBeforeUnmount(() => {
               </details>
               <div v-if="educationCourses.length" class="education-course-list">
                 <button v-for="course in educationCourses" :key="course.id" type="button" class="education-course-chip" :class="{ active: course.id === activeEducationCourseId }" @click="selectEducationCourse(course)">
-                  <span><strong>{{ course.title }}</strong><small>{{ course.code }} · {{ course.subject }} · {{ course.gradeLevel }} · {{ course.curriculumVersion }}</small></span>
+                  <span><strong>{{ course.title }}</strong><small>{{ isLearnerOnlyRole ? `${course.subject} · ${course.gradeLevel}` : `${course.code} · ${course.subject} · ${course.gradeLevel} · ${course.curriculumVersion}` }}</small></span>
                   <em>{{ isAdminWorkspace ? `组织课程 · ${course.activeEnrollmentCount} 人` : (course.ownerUserId === form.userId ? `我的课程 · ${course.activeEnrollmentCount} 人` : '已加入') }}</em>
                 </button>
               </div>
@@ -10120,7 +10119,7 @@ onBeforeUnmount(() => {
               </div>
               <div v-if="activeEducationCourse && (activeEducationCourseIsOwner || isAdminWorkspace)" class="education-course-detail">
                 <div class="education-course-detail-heading">
-                  <div><strong>{{ activeEducationCourse.title }}</strong><small>{{ activeEducationCourse.code }} · 课程负责人 {{ activeEducationCourse.ownerUserId }}</small></div>
+                  <div><strong>{{ activeEducationCourse.title }}</strong><small>课程负责人 {{ activeEducationCourse.ownerUserId }}</small></div>
                   <span v-if="isAdminWorkspace" class="context-mode-chip">管理员只读</span>
                   <div class="education-course-detail-actions">
                     <div v-if="activeEducationCourseIsOwner && activeEducationCourse.joinCode" class="education-course-join-code"><span>邀请码</span><strong>{{ activeEducationCourse.joinCode }}</strong><button class="text-button" type="button" @click="copyEducationCourseJoinCode(activeEducationCourse)">复制</button></div>
@@ -10234,7 +10233,7 @@ onBeforeUnmount(() => {
               </div>
               <div v-else-if="activeEducationCourse && isLearnerOnlyRole" class="education-course-detail education-course-learner-detail">
                 <div class="education-course-detail-heading">
-                  <div><strong>{{ activeEducationCourse.title }}</strong><small>{{ activeEducationCourse.code }} · 课程负责人 {{ activeEducationCourse.ownerUserId }}</small></div>
+                  <div><strong>{{ activeEducationCourse.title }}</strong><small>课程负责人 {{ activeEducationCourse.ownerUserId }}</small></div>
                   <span class="context-mode-chip">我的学习状态</span>
                 </div>
                 <div v-if="educationCourseResult" class="education-course-progress education-course-result education-course-learner-result">
