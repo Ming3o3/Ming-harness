@@ -1394,6 +1394,19 @@ const manageableEducationSources = computed(() => educationSources.value
   .filter((source) => manageableEducationDocuments.value.some(
     (document) => document.id === source.documentId,
   )))
+const activeEducationCourseConceptSuggestions = computed(() => {
+  const course = activeEducationCourse.value
+  if (!course) return []
+  const concepts = manageableEducationSources.value
+    .filter((source) => normalizeEducationFilterValue(source.subject) === normalizeEducationFilterValue(course.subject)
+      && normalizeEducationFilterValue(source.gradeLevel) === normalizeEducationFilterValue(course.gradeLevel)
+      && normalizeEducationFilterValue(source.curriculumVersion) === normalizeEducationFilterValue(course.curriculumVersion))
+    .flatMap((source) => String(source.conceptTags || '')
+      .split(/[,，;；\n]/)
+      .map((item) => item.trim())
+      .filter(Boolean))
+  return [...new Set(concepts)].slice(0, 8)
+})
 // 建课所需的学科、年级和课程版本已经在“课程资料设置”中确认过，
 // 这里优先复用一致的资料元数据，避免教师再次抄写；出现不同版本时不擅自替教师选值。
 const teacherCourseMetadata = computed(() => {
@@ -5765,6 +5778,15 @@ async function selectEducationCourse(course) {
   learningAssignmentForm.curriculumVersion = course.curriculumVersion || learningAssignmentForm.curriculumVersion
   await loadEducationCourseWorkspace(course.id)
   noticeMessage.value = `已打开课程：${course.title}`
+}
+
+function selectEducationCourseConcept(concept) {
+  const normalized = String(concept || '').trim()
+  if (!normalized) return
+  educationCourseAssignmentForm.conceptKey = normalized
+  if (!educationCourseAssignmentForm.title.trim()) {
+    educationCourseAssignmentForm.title = `${normalized}练习`
+  }
 }
 
 /**
@@ -10847,6 +10869,10 @@ onBeforeUnmount(() => {
                     <form v-if="activeEducationCourseIsOwner" class="education-course-assignment-form" @submit.prevent="assignEducationCourse">
                       <label class="field"><span>作业标题</span><input v-model="educationCourseAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域练习" /></label>
                       <label class="field"><span>这次主要学什么</span><input v-model="educationCourseAssignmentForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
+                      <div v-if="activeEducationCourseConceptSuggestions.length" class="education-course-assignment-suggestions education-course-wide">
+                        <span>可以直接选择课程资料里的主题：</span>
+                        <button v-for="concept in activeEducationCourseConceptSuggestions" :key="concept" type="button" :class="{ active: educationCourseAssignmentForm.conceptKey === concept }" @click="selectEducationCourseConcept(concept)">{{ concept }}</button>
+                      </div>
                       <label class="field"><span>希望学生达到的程度 <small class="field-label-hint">例如 80 表示掌握八成</small></span><input v-model="educationCourseAssignmentForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
                       <label class="field"><span>截止时间（可选）</span><input v-model="educationCourseAssignmentForm.dueAt" type="datetime-local" /></label>
                       <label class="field education-course-wide"><span>作业说明</span><textarea v-model="educationCourseAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作答范围、提交要求或迁移任务"></textarea></label>
