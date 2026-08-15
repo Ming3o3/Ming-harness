@@ -5272,7 +5272,7 @@ async function enrollEducationLearner() {
     educationCourseEnrollmentForm.learnerUserId = ''
     await loadEducationCourseWorkspace(course.id)
     await loadEducationData()
-    noticeMessage.value = `已将 ${learnerUserId} 加入课程名单。`
+    noticeMessage.value = `已将学生账号 ${learnerUserId} 加入课程。`
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
@@ -10070,13 +10070,14 @@ onBeforeUnmount(() => {
                   <div id="education-course-roster" class="education-course-roster">
                     <div class="subsection-title"><div><h4>活跃名单</h4><span>{{ educationCourseEnrollments.filter((item) => item.status === 'ACTIVE').length }} 人</span></div></div>
                     <form v-if="activeEducationCourseIsOwner" class="education-course-enrollment-form" @submit.prevent="enrollEducationLearner">
-                      <label class="field"><span>学习者 ID</span><input v-model="educationCourseEnrollmentForm.learnerUserId" required maxlength="255" placeholder="例如：student-1" /></label>
+                      <label class="field"><span>学生账号</span><input v-model="educationCourseEnrollmentForm.learnerUserId" required maxlength="255" placeholder="例如：student-demo" /></label>
                       <button class="secondary-button" type="submit" :disabled="educationCourseRosterSaving || activeEducationCourse.status !== 'ACTIVE'">{{ educationCourseRosterSaving ? '加入中…' : '加入名单' }}</button>
                     </form>
+                    <p v-if="activeEducationCourseIsOwner" class="learning-task-help">填写学生登录系统时使用的账号名；加入后，学生会自动看到这门课程和后续作业。</p>
                     <p v-else class="learning-task-help">管理员只读查看名单；加入或移除学习者由课程教师执行。</p>
                     <div v-if="educationCourseEnrollments.length" class="education-course-roster-list">
                       <div v-for="enrollment in educationCourseEnrollments" :key="enrollment.id" class="education-course-roster-row" :class="{ inactive: enrollment.status !== 'ACTIVE' }">
-                        <span><strong>{{ enrollment.learnerUserId }}</strong><small>{{ enrollment.status === 'ACTIVE' ? '活跃成员' : '已移除' }} · {{ formatDate(enrollment.enrolledAt) }}</small></span>
+                        <span><strong>{{ enrollment.learnerUserId }}</strong><small>{{ enrollment.status === 'ACTIVE' ? '学生账号 · 已加入' : '已移除' }} · {{ formatDate(enrollment.enrolledAt) }}</small></span>
                         <button v-if="activeEducationCourseIsOwner && enrollment.status === 'ACTIVE' && activeEducationCourse.status === 'ACTIVE'" class="text-button" type="button" :disabled="educationCourseActionId === enrollment.learnerUserId" @click="removeEducationLearner(enrollment)">{{ educationCourseActionId === enrollment.learnerUserId ? '处理中…' : '移除' }}</button>
                       </div>
                     </div>
@@ -10224,7 +10225,7 @@ onBeforeUnmount(() => {
                 <summary><span><strong>单独补发作业</strong><small>无课程时，或只给一名学生补发一份作业</small></span><em>{{ educationWorkspaceMode === 'teacher' ? '次要入口' : '需要教师 / 组织权限' }}</em></summary>
                 <p class="education-teacher-entry-help">正常课程作业请回到上方选中课程后，使用“课程批量布置作业”。这里不会自动加入课程名单，适合临时补发、个别学生或尚未建立课程实例的作业。</p>
                 <form class="learning-assignment-form" @submit.prevent="createLearningAssignment">
-                  <label class="field"><span>学习者 ID</span><input v-model="learningAssignmentForm.learnerUserId" required maxlength="255" placeholder="例如：student-1" /></label>
+                  <label class="field"><span>学生账号</span><input v-model="learningAssignmentForm.learnerUserId" required maxlength="255" placeholder="例如：student-demo" /></label>
                   <label class="field"><span>作业标题</span><input v-model="learningAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域作业" /></label>
                   <label class="field"><span>学科</span><input v-model="learningAssignmentForm.subject" required maxlength="128" placeholder="数学" /></label>
                   <label class="field"><span>年级</span><input v-model="learningAssignmentForm.gradeLevel" required maxlength="128" placeholder="高中一年级" /></label>
