@@ -4298,6 +4298,12 @@ function errorText(error) {
     return '这项内容暂时不存在或已被移除，请刷新页面后再试。'
   }
 
+  if (/幂等键已经用于其他对话消息|IDEMPOTENCY_KEY_REUSED/i.test(rawMessage)) {
+    return isLearnerOnlyRole.value
+      ? '这次学习已经开始过；请刷新作业状态后再继续。'
+      : '这次操作已经提交过；请刷新页面确认当前状态。'
+  }
+
   if (!rawMessage) return '暂时无法完成请求，请稍后再试。'
   return error.traceId && !isLearnerOnlyRole.value
     ? `${rawMessage}（错误编号：${error.traceId}）`
@@ -7372,7 +7378,9 @@ async function startLearningAssignment(assignment) {
   learningAssignmentAcceptingId.value = assignment.id
   clearMessages()
   try {
-    const assignmentAttemptKey = `learning-assignment-${assignment.id}-${assignment.updatedAt || assignment.createdAt || assignment.status}`
+    // 作业的每次开始/重试都是独立 Run；不能用作业更新时间作为幂等键，
+    // 否则第一次开始后再次补作答会被误判为“同一条消息重复提交”。
+    const assignmentAttemptKey = `learning-assignment-${assignment.id}-${Date.now()}-${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`
     const started = await api.startLearningAssignment(
       assignment.id,
       { maxTurns: chatMaxTurns.value },
