@@ -2865,7 +2865,9 @@ const educationRuntimeDiagnostic = computed(() => {
   const currentHealth = health.value
   if (!currentHealth || currentHealth.error) return ''
   if (currentHealth.education?.courseBoundRunsEnabled === true) return ''
-  return '当前学习功能还没有连接到最新课程服务；请使用 npm run desktop:dev 启动当前源码。'
+  return isLearnerOnlyRole.value
+    ? '学习服务暂时还没有准备好，请稍后再试；如果一直出现，请联系老师或管理员。'
+    : '当前学习功能还没有连接到最新课程服务；请使用 npm run desktop:dev 启动当前源码。'
 })
 const infraLabel = computed(() => {
   if (!currentUserHasPermission('ops.read')) return '平台状态由管理员维护'
@@ -5403,7 +5405,9 @@ async function educationLoadErrorText(error) {
   if (currentHealth && !currentHealth.error
     && currentHealth.education?.courseBoundRunsEnabled !== true) {
     return educationRuntimeDiagnostic.value
-      || '当前学习功能还没有连接到最新课程服务；请使用 npm run desktop:dev 启动当前源码。'
+      || (isLearnerOnlyRole.value
+        ? '学习服务暂时还没有准备好，请稍后再试；如果一直出现，请联系老师或管理员。'
+        : '当前学习功能还没有连接到最新课程服务；请使用 npm run desktop:dev 启动当前源码。')
   }
   return errorText(error)
 }
