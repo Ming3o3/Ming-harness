@@ -8679,7 +8679,7 @@ onBeforeUnmount(() => {
                   <header><span><BookOpen :size="16" /></span><div><small>01 · 课程资料</small><strong>这次会参考的资料</strong></div><em :class="{ ready: currentEducationSourceCount }">{{ currentEducationSourceCount ? `${currentEducationSourceCount} 份可用` : '尚未准备好' }}</em></header>
                   <p :title="currentEducationRetrievalDetail">{{ currentEducationRetrievalDetail }}</p>
                   <div v-if="currentEducationSourcePreview.length" class="learning-agent-source-list" aria-label="当前可检索课程来源">
-                    <span v-for="source in currentEducationSourcePreview" :key="source.id" :title="`${source.documentId} · ${source.conceptTags || '未标注知识点'}`"><BookOpen :size="11" /><b>{{ educationSourceLabel(source) }}</b><small>{{ source.sourceType || 'TEXTBOOK' }} · 难度 {{ source.difficultyLevel || 3 }}</small></span>
+                    <span v-for="source in currentEducationSourcePreview" :key="source.id" :title="isLearnerOnlyRole ? (source.conceptTags || educationSourceLabel(source)) : `${source.documentId} · ${source.conceptTags || '未标注知识点'}`"><BookOpen :size="11" /><b>{{ educationSourceLabel(source) }}</b><small v-if="isLearnerOnlyRole">已匹配当前课程</small><small v-else>{{ source.sourceType || 'TEXTBOOK' }} · 难度 {{ source.difficultyLevel || 3 }}</small></span>
                   </div>
                   <div v-else class="learning-agent-source-empty"><ShieldCheck :size="13" /><span>系统不会使用不属于本课程的资料。</span></div>
                   <footer><b>{{ currentEducationSourceCount ? '资料范围已确定' : '需先补充课程资料' }}</b><button type="button" @click="openEducationAgentSetup">管理课程资料 <ArrowUp :size="12" /></button></footer>
@@ -8839,13 +8839,13 @@ onBeforeUnmount(() => {
                             <span class="chat-source-kind" :class="{ 'is-runtime': source.runtimeEvidence }">{{ source.provenanceLabel }}</span>
                             <strong>{{ source.title }}</strong>
                           </div>
-                          <code v-if="source.citation">{{ source.citation }}</code>
+                          <code v-if="source.citation && !isLearnerOnlyRole">{{ source.citation }}</code>
                           <p v-if="source.excerpt">{{ source.excerpt }}</p>
                           <div v-if="source.runtimeEvidence && (source.rankingReason || source.prerequisiteGaps?.length)" class="chat-source-explanation">
                             <span>选择理由</span><strong>{{ source.rankingReason || '已符合当前课程范围' }}</strong>
-                            <small v-if="source.prerequisiteGaps?.length">前置缺口：{{ source.prerequisiteGaps.join('、') }}</small>
+                            <small v-if="source.prerequisiteGaps?.length">{{ isLearnerOnlyRole ? '还需要先会：' : '前置缺口：' }}{{ source.prerequisiteGaps.join('、') }}</small>
                           </div>
-                          <small v-if="source.runtimeEvidence">系统已从该来源读取本轮摘录{{ source.stepName ? ` · ${source.stepName}` : '' }}</small>
+                          <small v-if="source.runtimeEvidence">系统已从该来源读取本轮摘录<span v-if="source.stepName && !isLearnerOnlyRole"> · {{ source.stepName }}</span></small>
                           <small v-else-if="source.updatedAt">更新于 {{ formatDate(source.updatedAt) }}</small>
                         </article>
                       </div>
