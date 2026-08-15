@@ -9113,7 +9113,7 @@ onBeforeUnmount(() => {
           </section>
           <section v-if="teacherEducationCourses.length" class="chat-teaching-brief" aria-label="教师课程待办">
             <div class="chat-teaching-brief-heading">
-              <div><p class="eyebrow">TEACHER WORKSPACE</p><strong>教师课程待办</strong></div>
+              <div><p class="eyebrow">教师工作台</p><strong>教师课程待办</strong></div>
               <span>{{ teacherEducationCourses.length }} 门课程</span>
             </div>
             <div class="chat-teaching-brief-stats">
@@ -10658,7 +10658,7 @@ onBeforeUnmount(() => {
             </div>
             <p class="context-workbench-help">{{ educationWorkspaceModeDetail }}<template v-if="isAdminWorkspace">教育数据用于治理观察，不改变教师课程所有权或学生学习状态。</template><template v-else-if="isTeacherOnlyRole">按课程资料、作业和反馈推进，系统会自动记录学生进度。</template><template v-else>你只需要完成下面的下一步，系统会自动根据课程和作答情况安排学习。</template></p>
             <details v-if="!isAdminRole" class="education-term-glossary">
-              <summary><span><strong>第一次使用？先看懂这些词</strong><small>不用记专业名词，按“下一步行动”操作就可以</small></span><em>查看说明</em></summary>
+              <summary><span><strong>不懂这些词？点这里看懂</strong><small>不用记专业名词，按“下一步行动”操作就可以</small></span><em>查看说明</em></summary>
               <div class="education-term-grid">
                 <article><strong>课程资料</strong><p>老师上传的课本、讲义或大纲，系统会优先根据这些内容回答。</p></article>
                 <article><strong>学习信息</strong><p>你正在学习的学科、年级和教材版本，用来匹配正确的课程。</p></article>
@@ -10722,7 +10722,7 @@ onBeforeUnmount(() => {
               <summary><span><strong>课程状态概览</strong><small>{{ teacherEducationCourses.length }} 门课程 · {{ teacherActiveLearnerCount }} 名学生 · {{ activeTeacherCoursePendingCount }} 项当前课程待办</small></span><em>{{ teacherAgentReady ? '资料已接入' : '待配置' }}</em></summary>
               <section class="education-agent-state-card education-teacher-state-card" :class="{ ready: teacherAgentReady }" aria-label="教师课程运营状态">
                 <div class="education-agent-state-heading">
-                  <div><p class="eyebrow">COURSE OVERVIEW</p><h4>课程运营概览</h4><span>看资料、名单、作业和反馈，按顺序处理即可。</span></div>
+                  <div><p class="eyebrow">课程概览</p><h4>课程运营概览</h4><span>看资料、名单、作业和反馈，按顺序处理即可。</span></div>
                   <span class="education-agent-state-pill"><i></i>{{ teacherAgentReady ? '课程资料已接入' : '等待课程配置' }}</span>
                 </div>
                 <div class="education-agent-state-grid">
