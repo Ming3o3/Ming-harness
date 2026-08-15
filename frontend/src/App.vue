@@ -935,7 +935,7 @@ async function runLearningOverviewNextAction() {
     return
   }
   if (action.kind === 'assignment') {
-    await takeLearnerCourseNextAction()
+    await runLearningAssignmentPrimaryAction(nextLearnerCourseAssignment.value)
     return
   }
   if (action.kind === 'recommendation') {
@@ -1533,6 +1533,14 @@ function learningAssignmentNextAction(assignment) {
       actionable: true,
     }
   }
+  if (openFeedback) {
+    return {
+      label: learningAssignmentFeedbackContinueLabel(openFeedback),
+      detail: '教师留下了反馈；确认后再继续下一步。',
+      issue: 'feedback',
+      actionable: true,
+    }
+  }
   if (assignment.status === 'ASSIGNED') {
     return { label: '接受并开始', detail: '按课程约束启动第一轮学习。', issue: 'assigned', actionable: true }
   }
@@ -1557,6 +1565,145 @@ function learningAssignmentNextAction(assignment) {
     return { label: '继续课程作业', detail: '继续当前学习对话，完成后再提交作业内容。', issue: 'accepted', actionable: true }
   }
   return { label: '查看完整记录', detail: '当前没有需要立即处理的动作。', issue: '', actionable: false }
+}
+
+// 作业入口只保留一个“现在最该做什么”的按钮。具体状态仍保留在
+// learningAssignmentNextAction 中，这里负责把学生、教师和只读查看者的动作
+// 统一翻译成同一种按钮行为，避免聊天页和教育工作台各自维护一套分支。
+function learningAssignmentPrimaryAction(assignment) {
+  if (!assignment) return {
+    kind: 'view', label: '查看作业', detail: '', issue: '', actionable: false,
+  }
+
+  const isLearner = assignment.learnerUserId === form.userId
+  const canTeacherAct = educationWorkspaceMode.value === 'teacher'
+    && assignment.teacherUserId === form.userId
+
+  if (isLearner) {
+    const openFeedback = learningAssignmentOpenFeedback(assignment)
+    const sourceBlockReason = learningAssignmentSourceBlockReason(assignment)
+    if (openFeedback && ['REQUEST_EVIDENCE', 'RECOMMEND_RETRY'].includes(openFeedback.action)
+      && sourceBlockReason) {
+      return {
+        kind: 'setup',
+        label: educationSetupActionLabel.value,
+        detail: `${sourceBlockReason}；补充后才能按教师反馈继续。`,
+        issue: 'setup',
+        actionable: true,
+      }
+    }
+    if (openFeedback) {
+      return {
+        kind: 'feedback',
+        label: learningAssignmentFeedbackContinueLabel(openFeedback),
+        detail: '确认教师反馈后，系统会把你带到这份作业的下一步。',
+        issue: 'feedback',
+        actionable: true,
+        feedbackId: openFeedback.id,
+      }
+    }
+
+    const nextAction = learningAssignmentNextAction(assignment)
+    if (nextAction.issue === 'submission'
+      || (assignment.status === 'OVERDUE' && learningAssignmentSubmissionOpen(assignment))) {
+      return {
+        kind: 'submission',
+        label: assignment.status === 'OVERDUE' ? '补交作业内容' : '提交作业内容',
+        detail: nextAction.detail || '把本轮解题过程、答案或实践结果提交给教师。',
+        issue: 'submission',
+        actionable: true,
+      }
+    }
+    if (nextAction.actionable) {
+      if (sourceBlockReason) {
+        return {
+          kind: 'setup',
+          label: educationSetupActionLabel.value,
+          detail: sourceBlockReason,
+          issue: 'setup',
+          actionable: true,
+        }
+      }
+      return { kind: 'start', ...nextAction }
+    }
+    return { kind: 'view', ...nextAction, actionable: false }
+  }
+
+  if (canTeacherAct && assignment.status === 'COMPLETED'
+    && assignment.reviewStatus === 'PENDING') {
+    return {
+      kind: 'verify',
+      label: '确认作业结果',
+      detail: '查看学生提交物和学习记录后，确认结果或退回返工。',
+      issue: 'review',
+      actionable: true,
+    }
+  }
+
+  return {
+    kind: 'view',
+    label: canTeacherAct ? '查看作业详情' : '查看完整记录',
+    detail: '当前没有需要立即处理的动作。',
+    issue: '',
+    actionable: false,
+  }
+}
+
+function learningAssignmentPrimaryActionBusy(assignment) {
+  if (!assignment?.id) return false
+  if (learningAssignmentAcceptingId.value === assignment.id
+    || learningAssignmentSubmissionSavingId.value === assignment.id
+    || learningAssignmentReviewSavingId.value === assignment.id) return true
+  if (learningAssignmentFeedbackAcknowledgingId.value
+    && (learningAssignmentFeedbackMap.value[assignment.id] || [])
+      .some((feedback) => feedback.id === learningAssignmentFeedbackAcknowledgingId.value)) return true
+  const action = learningAssignmentPrimaryAction(assignment)
+  if (action.kind === 'feedback') {
+    return learningAssignmentFeedbackAcknowledgingId.value === action.feedbackId
+  }
+  return false
+}
+
+function learningAssignmentPrimaryActionLabel(assignment, fromChat = false) {
+  const action = learningAssignmentPrimaryAction(assignment)
+  if (learningAssignmentPrimaryActionBusy(assignment)) {
+    if (action.kind === 'verify') return '确认中…'
+    if (action.kind === 'submission') return '提交中…'
+    return '处理中…'
+  }
+  if (fromChat && action.kind === 'submission'
+    && learningAssignmentSubmissionForm.assignmentId === assignment?.id) {
+    return '正在填写提交物'
+  }
+  return action.label
+}
+
+async function runLearningAssignmentPrimaryAction(assignment, fromChat = false) {
+  const action = learningAssignmentPrimaryAction(assignment)
+  if (!assignment?.id) return
+  if (action.kind === 'setup') {
+    openEducationAgentSetup()
+    return
+  }
+  if (action.kind === 'feedback') {
+    const feedback = learningAssignmentOpenFeedback(assignment)
+    if (feedback) await acknowledgeLearningAssignmentFeedback(assignment, feedback)
+    return
+  }
+  if (action.kind === 'start') {
+    await startLearningAssignment(assignment)
+    return
+  }
+  if (action.kind === 'submission') {
+    if (fromChat) await openChatLearningAssignmentSubmission(assignment)
+    else startLearningAssignmentSubmission(assignment)
+    return
+  }
+  if (action.kind === 'verify') {
+    await verifyLearningAssignment(assignment)
+    return
+  }
+  focusLearnerCourseAssignment(assignment)
 }
 
 // 学生不需要记住后端状态枚举；作业卡片把同一条业务链路翻译成四个阶段，
@@ -5533,21 +5680,7 @@ async function takeLearnerCourseNextAction() {
     focusMyCourseAssignments()
     return
   }
-  const openFeedback = learningAssignmentOpenFeedback(assignment)
-  if (['REQUEST_EVIDENCE', 'RECOMMEND_RETRY'].includes(openFeedback?.action)) {
-    await acknowledgeLearningAssignmentFeedback(assignment, openFeedback)
-    return
-  }
-  if (['ASSIGNED', 'ACCEPTED', 'AWAITING_EVIDENCE', 'RETRY_REQUIRED'].includes(assignment.status)) {
-    await startLearningAssignment(assignment)
-    return
-  }
-  if (learningAssignmentSubmissionOpen(assignment)) {
-    startLearningAssignmentSubmission(assignment)
-    focusMyCourseAssignments()
-    return
-  }
-  focusLearnerCourseAssignment(assignment)
+  await runLearningAssignmentPrimaryAction(assignment)
 }
 
 function focusMyCourseAssignments() {
@@ -5813,6 +5946,12 @@ async function focusLearningAssignmentNotificationAssignment(assignment, issue =
 
 function learningAssignmentActionHint(assignment) {
   if (!assignment) return ''
+  const openFeedback = learningAssignmentOpenFeedback(assignment)
+  if (openFeedback) {
+    return ['REQUEST_EVIDENCE', 'RECOMMEND_RETRY'].includes(openFeedback.action)
+      ? '教师已留下下一步要求；确认反馈后继续。'
+      : '教师已留下反馈；确认后再继续处理这份作业。'
+  }
   if (assignment.status === 'ASSIGNED') return '先接受作业，学习助手会按课程范围启动第一轮学习。'
   if (assignment.status === 'ACCEPTED') return '继续当前学习对话；完成后再提交作业内容。'
   if (assignment.status === 'AWAITING_EVIDENCE') {
@@ -8509,11 +8648,8 @@ onBeforeUnmount(() => {
             <div v-if="nextLearnerCourseAssignment" class="learning-agent-assignment-inline">
               <span><BookOpen :size="14" /></span>
               <div><small>课程作业</small><strong>{{ nextLearnerCourseAssignment.title }}</strong><p>{{ learningAssignmentStatusLabel(nextLearnerCourseAssignment.status) }} · {{ nextLearnerCourseAssignment.conceptKey }}<span v-if="nextLearnerCourseAssignment.dueAt"> · 截止 {{ formatDate(nextLearnerCourseAssignment.dueAt) }}</span></p><p v-if="nextLearnerCourseAssignment.teacherReviewNote" class="learning-agent-assignment-review-note"><b>{{ learningAssignmentReviewNoteLabel(nextLearnerCourseAssignment) }}：</b>{{ nextLearnerCourseAssignment.teacherReviewNote }}</p></div>
-              <button v-if="['ASSIGNED', 'RETRY_REQUIRED'].includes(nextLearnerCourseAssignment.status) && !learningAssignmentHasExecutableFeedback(nextLearnerCourseAssignment)" class="secondary-button" type="button" :title="learningAssignmentSourceBlockReason(nextLearnerCourseAssignment)" :disabled="learningAssignmentAcceptingId === nextLearnerCourseAssignment.id || chatSending || chatUploading || Boolean(learningAssignmentSourceBlockReason(nextLearnerCourseAssignment))" @click="startLearningAssignment(nextLearnerCourseAssignment)">{{ learningAssignmentSourceBlockReason(nextLearnerCourseAssignment) ? '需课程资料' : learningAssignmentStartLabel(nextLearnerCourseAssignment, learningAssignmentAcceptingId === nextLearnerCourseAssignment.id) }}</button>
-              <button v-else-if="nextLearnerCourseAssignmentOpenFeedback" class="secondary-button" type="button" :disabled="learningAssignmentFeedbackAcknowledgingId === nextLearnerCourseAssignmentOpenFeedback.id || learningAssignmentAcceptingId === nextLearnerCourseAssignment.id" @click="acknowledgeLearningAssignmentFeedback(nextLearnerCourseAssignment, nextLearnerCourseAssignmentOpenFeedback)">{{ learningAssignmentFeedbackAcknowledgingId === nextLearnerCourseAssignmentOpenFeedback.id || learningAssignmentAcceptingId === nextLearnerCourseAssignment.id ? '处理中…' : learningAssignmentFeedbackContinueLabel(nextLearnerCourseAssignmentOpenFeedback) }}</button>
-              <button v-else-if="nextLearnerCourseAssignment.status === 'AWAITING_EVIDENCE' && !learningAssignmentHasExecutableFeedback(nextLearnerCourseAssignment)" class="secondary-button" type="button" :title="learningAssignmentSourceBlockReason(nextLearnerCourseAssignment)" :disabled="learningAssignmentAcceptingId === nextLearnerCourseAssignment.id || chatSending || chatUploading || Boolean(learningAssignmentSourceBlockReason(nextLearnerCourseAssignment))" @click="startLearningAssignment(nextLearnerCourseAssignment)">{{ learningAssignmentSourceBlockReason(nextLearnerCourseAssignment) ? '需课程资料' : learningAssignmentStartLabel(nextLearnerCourseAssignment, learningAssignmentAcceptingId === nextLearnerCourseAssignment.id) }}</button>
-              <button v-else-if="learningAssignmentSubmissionOpen(nextLearnerCourseAssignment) && !learningAssignmentHasExecutableFeedback(nextLearnerCourseAssignment)" class="secondary-button" type="button" @click="openChatLearningAssignmentSubmission(nextLearnerCourseAssignment)">提交作业内容</button>
-              <button v-else class="text-button" type="button" @click="focusLearnerCourseAssignment(nextLearnerCourseAssignment)">{{ nextLearnerCourseAssignment.status === 'COMPLETED' && nextLearnerCourseAssignment.reviewStatus === 'PENDING' ? '查看教师确认' : '查看完整记录' }}</button>
+              <button :class="learningAssignmentPrimaryAction(nextLearnerCourseAssignment).kind === 'view' || learningAssignmentPrimaryAction(nextLearnerCourseAssignment).kind === 'setup' ? 'secondary-button' : 'primary-button'" type="button" :title="learningAssignmentPrimaryAction(nextLearnerCourseAssignment).detail" :disabled="learningAssignmentPrimaryActionBusy(nextLearnerCourseAssignment) || chatSending || chatUploading" @click="runLearningAssignmentPrimaryAction(nextLearnerCourseAssignment, true)">{{ learningAssignmentPrimaryActionLabel(nextLearnerCourseAssignment, true) }}</button>
+              <button v-if="learningAssignmentPrimaryAction(nextLearnerCourseAssignment).kind !== 'view'" class="text-button" type="button" @click="focusLearnerCourseAssignment(nextLearnerCourseAssignment)">查看完整记录</button>
             </div>
             <form v-if="showQuickLearningGoalForm && !activeLearningGoal" class="learning-goal-quick-form" @submit.prevent="createLearningGoal">
               <div class="learning-goal-quick-form-heading">
@@ -8555,13 +8691,10 @@ onBeforeUnmount(() => {
             <div v-if="chatCourseAssignmentOpenFeedback" class="chat-course-assignment-feedback">
               <span class="chat-course-assignment-feedback-icon"><CircleAlert :size="15" /></span>
               <div><strong>{{ learningAssignmentFeedbackActionLabel(chatCourseAssignmentOpenFeedback.action) }}</strong><p>{{ chatCourseAssignmentOpenFeedback.message }}</p><small v-if="chatCourseAssignmentOpenFeedback.suggestedDueAt">建议截止：{{ formatDate(chatCourseAssignmentOpenFeedback.suggestedDueAt) }}</small></div>
-              <button class="secondary-button" type="button" :disabled="learningAssignmentFeedbackAcknowledgingId === chatCourseAssignmentOpenFeedback.id || learningAssignmentAcceptingId === chatCourseAssignment.id" @click="acknowledgeLearningAssignmentFeedback(chatCourseAssignment, chatCourseAssignmentOpenFeedback)">{{ learningAssignmentFeedbackAcknowledgingId === chatCourseAssignmentOpenFeedback.id || learningAssignmentAcceptingId === chatCourseAssignment.id ? '处理中…' : learningAssignmentFeedbackContinueLabel(chatCourseAssignmentOpenFeedback) }}</button>
             </div>
             <div class="chat-course-assignment-actions">
-              <button v-if="['ASSIGNED', 'RETRY_REQUIRED', 'AWAITING_EVIDENCE'].includes(chatCourseAssignment.status) && !learningAssignmentHasExecutableFeedback(chatCourseAssignment)" class="primary-button" type="button" :title="learningAssignmentSourceBlockReason(chatCourseAssignment)" :disabled="learningAssignmentAcceptingId === chatCourseAssignment.id || chatSending || chatUploading || Boolean(learningAssignmentSourceBlockReason(chatCourseAssignment))" @click="startLearningAssignment(chatCourseAssignment)">{{ learningAssignmentSourceBlockReason(chatCourseAssignment) ? '需课程资料' : learningAssignmentStartLabel(chatCourseAssignment, learningAssignmentAcceptingId === chatCourseAssignment.id) }}</button>
-              <button v-if="learningAssignmentSourceBlockReason(chatCourseAssignment)" class="secondary-button" type="button" @click="openEducationAgentSetup">{{ educationSetupActionLabel }}</button>
-              <button v-if="learningAssignmentSubmissionOpen(chatCourseAssignment) && !learningAssignmentHasExecutableFeedback(chatCourseAssignment)" class="secondary-button" type="button" @click="openChatLearningAssignmentSubmission(chatCourseAssignment)">{{ learningAssignmentSubmissionForm.assignmentId === chatCourseAssignment.id ? '正在填写提交物' : '提交作业内容' }}</button>
-              <button class="text-button" type="button" @click="focusLearnerCourseAssignment(chatCourseAssignment)">查看完整学习记录</button>
+              <button :class="learningAssignmentPrimaryAction(chatCourseAssignment).kind === 'view' || learningAssignmentPrimaryAction(chatCourseAssignment).kind === 'setup' ? 'secondary-button' : 'primary-button'" type="button" :title="learningAssignmentPrimaryAction(chatCourseAssignment).detail" :disabled="learningAssignmentPrimaryActionBusy(chatCourseAssignment) || chatSending || chatUploading" @click="runLearningAssignmentPrimaryAction(chatCourseAssignment, true)">{{ learningAssignmentPrimaryActionLabel(chatCourseAssignment, true) }}</button>
+              <button v-if="learningAssignmentPrimaryAction(chatCourseAssignment).kind !== 'view'" class="text-button" type="button" @click="focusLearnerCourseAssignment(chatCourseAssignment)">查看完整学习记录</button>
             </div>
             <form v-if="learningAssignmentSubmissionForm.assignmentId === chatCourseAssignment.id" class="chat-course-assignment-submission" @submit.prevent="submitLearningAssignmentSubmission">
               <div><strong>提交作业内容</strong><small>提交物会绑定本次课程作业与最近一次学习记录，供教师结合学习记录审核。</small></div>
@@ -10351,10 +10484,7 @@ onBeforeUnmount(() => {
                     <details v-if="learningAssignmentEvaluationMap[assignment.id]?.length" class="learning-assessment-history"><summary>{{ isLearnerOnlyRole ? '教师评分细节' : '教师量规评价' }}（{{ learningAssignmentEvaluationMap[assignment.id].length }}）</summary><div v-for="evaluation in learningAssignmentEvaluationMap[assignment.id].slice(0, 5)" :key="evaluation.id"><span>{{ evaluation.decision === 'VERIFY' ? '确认' : '退回' }} · {{ evaluation.rubricVersion }}</span><span>内容 {{ evaluation.contentCorrectnessScore }} / 5 · 证据 {{ evaluation.evidenceQualityScore }} / 5 · 迁移 {{ evaluation.transferReadinessScore }} / 5</span><small>{{ evaluation.evaluatorUserId }} · {{ formatDate(evaluation.createdAt) }}<span v-if="evaluation.note"> · {{ evaluation.note }}</span></small></div></details>
                   </div>
                   <div class="learning-assignment-actions">
-                    <button v-if="assignment.learnerUserId === form.userId && (assignment.status === 'ASSIGNED' || assignment.status === 'AWAITING_EVIDENCE' || assignment.status === 'RETRY_REQUIRED' || (['ACCEPTED', 'OVERDUE'].includes(assignment.status) && learningAssignmentHasOpenIntervention(assignment))) && !learningAssignmentHasExecutableFeedback(assignment)" class="secondary-button" type="button" :title="learningAssignmentSourceBlockReason(assignment)" :disabled="learningAssignmentAcceptingId === assignment.id || Boolean(learningAssignmentSourceBlockReason(assignment))" @click="startLearningAssignment(assignment)">{{ learningAssignmentSourceBlockReason(assignment) ? '需课程资料' : learningAssignmentStartLabel(assignment, learningAssignmentAcceptingId === assignment.id) }}</button>
-                    <button v-if="assignment.learnerUserId === form.userId && learningAssignmentSourceBlockReason(assignment)" class="text-button" type="button" @click="openEducationAgentSetup">{{ educationSetupActionLabel }}</button>
-                    <button v-if="learningAssignmentSubmissionOpen(assignment) && !learningAssignmentHasExecutableFeedback(assignment)" class="secondary-button" type="button" @click="startLearningAssignmentSubmission(assignment)">提交作业内容</button>
-                    <button v-if="educationWorkspaceMode === 'teacher' && assignment.teacherUserId === form.userId && assignment.status === 'COMPLETED' && assignment.reviewStatus === 'PENDING'" class="secondary-button" type="button" :disabled="learningAssignmentReviewSavingId === assignment.id" @click="verifyLearningAssignment(assignment)">{{ learningAssignmentReviewSavingId === assignment.id ? '确认中…' : '确认作业结果' }}</button>
+                    <button :class="learningAssignmentPrimaryAction(assignment).kind === 'view' || learningAssignmentPrimaryAction(assignment).kind === 'setup' ? 'secondary-button' : 'primary-button'" type="button" :title="learningAssignmentPrimaryAction(assignment).detail" :disabled="learningAssignmentPrimaryActionBusy(assignment)" @click="runLearningAssignmentPrimaryAction(assignment)">{{ learningAssignmentPrimaryActionLabel(assignment) }}</button>
                     <button v-if="educationWorkspaceMode === 'teacher' && assignment.teacherUserId === form.userId && assignment.status === 'COMPLETED' && assignment.reviewStatus === 'PENDING'" class="text-button" type="button" :disabled="learningAssignmentReviewSavingId === assignment.id" @click="returnLearningAssignmentForRevision(assignment)">{{ learningAssignmentReviewSavingId === assignment.id ? '处理中…' : '退回返工' }}</button>
                     <button v-if="educationWorkspaceMode === 'teacher' && assignment.teacherUserId === form.userId && assignment.status !== 'CANCELLED'" class="text-button" type="button" @click="startLearningAssignmentFeedback(assignment)">写教师反馈</button>
                     <button v-if="educationWorkspaceMode === 'teacher' && assignment.teacherUserId === form.userId && ['ASSIGNED', 'ACCEPTED', 'RETRY_REQUIRED', 'OVERDUE'].includes(assignment.status)" class="text-button" type="button" @click="cancelLearningAssignment(assignment)">取消作业</button>
