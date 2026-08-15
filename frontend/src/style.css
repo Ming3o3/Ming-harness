@@ -540,6 +540,8 @@ h3 { margin: 0; font-size: 13px; }
 .education-profile-setup > summary em, .education-teacher-entry > summary em { flex: 0 0 auto; color: var(--cyan); font: 8px "DM Mono", monospace; font-style: normal; }
 .education-profile-setup[open] > summary, .education-teacher-entry[open] > summary { border-bottom: 1px solid rgba(153,174,218,.14); }
 .education-profile-setup-content { display: grid; gap: 10px; padding: 10px 0 2px; }
+.education-profile-prefill { display: grid; gap: 3px; border-left: 2px solid var(--cyan); background: rgba(76,226,213,.06); color: var(--muted); padding: 7px 9px; font-size: 9px; line-height: 1.5; }
+.education-profile-prefill strong { color: var(--soft); font-weight: 600; }
 .education-profile-next-step { margin: 0; border-left: 2px solid color-mix(in srgb, var(--cyan) 45%, var(--line)); background: color-mix(in srgb, var(--cyan) 5%, transparent); color: var(--muted); padding: 7px 9px; font-size: 9px; line-height: 1.5; }
 .education-profile-next-step strong { color: var(--soft); font-weight: 600; }
 .learner-focus-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 0 10px; border: 1px solid color-mix(in srgb, var(--cyan) 42%, var(--line)); border-radius: 10px; background: linear-gradient(135deg, color-mix(in srgb, var(--cyan) 10%, var(--panel)), var(--panel-soft)); padding: 13px 14px; }

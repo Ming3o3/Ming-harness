@@ -156,6 +156,9 @@ const educationCourseEnrollmentForm = reactive({
 const educationCourseJoinForm = reactive({
   joinCode: '',
 })
+// 学生通过邀请码加入后，先把课程的学科、年级和版本带入表单；
+// 学习信息仍需学生确认保存，避免课程邀请码替用户写入个人学习档案。
+const educationCourseJoinPrefill = ref(null)
 const educationCourseAssignmentForm = reactive({
   title: '',
   instructions: '',
@@ -5274,8 +5277,16 @@ async function joinEducationCourse() {
     educationCourseJoinForm.joinCode = ''
     educationCourses.value = [course, ...educationCourses.value.filter((item) => item.id !== course.id)]
     activeEducationCourseId.value = course.id
+    if (!activeLearnerProfile.value) {
+      learnerProfileForm.subject = course.subject || learnerProfileForm.subject
+      learnerProfileForm.gradeLevel = course.gradeLevel || learnerProfileForm.gradeLevel
+      learnerProfileForm.curriculumVersion = course.curriculumVersion || learnerProfileForm.curriculumVersion
+      educationCourseJoinPrefill.value = course
+    }
     await loadEducationData()
-    noticeMessage.value = `已加入课程“${course.title}”，下一步可以查看课程作业。`
+    noticeMessage.value = activeLearnerProfile.value
+      ? `已加入课程“${course.title}”，下一步可以查看课程作业。`
+      : `已加入课程“${course.title}”；课程信息已带入，请确认保存后开始学习。`
   } catch (error) {
     educationError.value = errorText(error)
   } finally {
@@ -7264,6 +7275,7 @@ async function saveLearnerProfile() {
   clearMessages()
   educationLoading.value = true
   try {
+    const joinedCourseTitle = educationCourseJoinPrefill.value?.title || ''
     const profile = await api.saveLearnerProfile({
       subject: learnerProfileForm.subject.trim(),
       gradeLevel: learnerProfileForm.gradeLevel.trim(),
@@ -7276,7 +7288,10 @@ async function saveLearnerProfile() {
     applyLearnerProfileToEducationRun(profile)
     chatEducation.enabled = true
     await refreshLearnerMastery(profile.id)
-    noticeMessage.value = '学习信息已保存；系统会按你的课程和学习进度安排内容。'
+    educationCourseJoinPrefill.value = null
+    noticeMessage.value = joinedCourseTitle
+      ? `已确认“${joinedCourseTitle}”的学习信息；现在可以开始课程学习。`
+      : '学习信息已保存；系统会按你的课程和学习进度安排内容。'
     educationError.value = ''
   } catch (error) {
     educationError.value = errorText(error)
@@ -10040,14 +10055,19 @@ onBeforeUnmount(() => {
             <details v-if="isLearnerOnlyRole" class="education-profile-setup" :open="!activeLearnerProfile">
               <summary><span><strong>学习信息与目标</strong><small>{{ activeLearnerProfile ? `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel} · ${activeLearnerProfile.curriculumVersion}` : '填写学科、年级和课程版本' }}</small></span><em>{{ activeLearnerProfile ? '已设置' : '待设置' }}</em></summary>
               <div class="education-profile-setup-content">
+                <div v-if="educationCourseJoinPrefill" class="education-profile-prefill">
+                  <strong>已根据“{{ educationCourseJoinPrefill.title }}”填好课程信息</strong>
+                  <span>请确认学科、年级和课程版本；保存后系统就能安排这门课的学习内容。</span>
+                </div>
                 <form class="education-profile-form" @submit.prevent="saveLearnerProfile">
                   <label class="field"><span>学科</span><input v-model="learnerProfileForm.subject" required maxlength="128" /></label>
                   <label class="field"><span>年级</span><input v-model="learnerProfileForm.gradeLevel" required maxlength="128" /></label>
                   <label class="field"><span>课程版本</span><input v-model="learnerProfileForm.curriculumVersion" required maxlength="128" /></label>
                   <label class="field"><span>学习目标</span><input v-model="learnerProfileForm.learningGoal" maxlength="512" placeholder="例如：掌握函数基础并能独立完成练习" /></label>
-                  <button class="secondary-button" type="submit" :disabled="educationLoading">{{ educationLoading ? '保存中…' : '保存学习信息' }}</button>
+                  <button class="secondary-button" type="submit" :disabled="educationLoading">{{ educationLoading ? '保存中…' : (educationCourseJoinPrefill ? '确认并保存学习信息' : '保存学习信息') }}</button>
                 </form>
-                <p class="education-profile-next-step"><strong>保存后怎么继续？</strong> 教师会把你加入课程并发布作业；课程和作业会自动出现在下方，你不需要自己上传课程资料。</p>
+                <p v-if="educationCourseJoinPrefill" class="education-profile-next-step"><strong>保存后怎么继续？</strong> 你已经加入课程；保存后课程作业会自动出现在下方，不需要自己上传资料。</p>
+                <p v-else class="education-profile-next-step"><strong>保存后怎么继续？</strong> 教师会把你加入课程并发布作业；课程和作业会自动出现在下方，你不需要自己上传课程资料。</p>
                 <div v-if="learnerProfiles.length" class="education-profile-list">
                   <div v-for="profile in learnerProfiles" :key="profile.id" class="education-profile-chip" :class="{ active: profile.id === activeLearnerProfile?.id }">
                     <button type="button" class="education-profile-select" @click="selectLearnerProfile(profile)">
