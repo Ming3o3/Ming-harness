@@ -2056,6 +2056,13 @@ const activeLearningTask = computed(() => {
     .filter((task) => task.learningGoalId === goalId && activeStatuses.has(task.status))
     .sort((left, right) => new Date(left.scheduledAt || left.createdAt) - new Date(right.scheduledAt || right.createdAt))[0] || null
 })
+const actionableLearningTasks = computed(() => {
+  const activeStatuses = new Set(['OPEN', 'IN_PROGRESS', 'AWAITING_EVIDENCE', 'DEFERRED', 'FAILED'])
+  return learningTasks.value.filter((task) => activeStatuses.has(task.status))
+})
+const shouldShowLearningTaskWorkbench = computed(() => {
+  return actionableLearningTasks.value.length > 0 || learningNotifications.value.length > 0
+})
 // 折叠学习概览时仍保留一条可执行的主路径；按钮复用展开面板使用的任务、
 // 推荐和课程资料阻断状态，避免用户看到“下一步”却还要再找一次入口。
 const learningOverviewNextAction = computed(() => {
@@ -10513,7 +10520,12 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </details>
-            <section class="education-course-workbench" aria-label="课程工作台">
+            <component :is="isLearnerOnlyRole ? 'details' : 'div'" class="education-course-workbench-shell" :open="isLearnerOnlyRole ? !enrolledEducationCourses.length : undefined">
+              <summary v-if="isLearnerOnlyRole" class="education-course-workbench-summary">
+                <span><strong>课程与加入信息</strong><small>{{ enrolledEducationCourses.length ? `已加入 ${enrolledEducationCourses.length} 门课程；需要时可查看课程和邀请码` : '还没有加入课程；从这里开始' }}</small></span>
+                <em>{{ enrolledEducationCourses.length ? '按需查看' : '开始设置' }}</em>
+              </summary>
+              <section class="education-course-workbench" aria-label="课程与加入信息">
               <div class="subsection-title education-course-heading">
                 <div><h4>{{ isAdminWorkspace ? '课程概览' : (educationWorkspaceMode === 'teacher' ? '课程运营工作台' : '我的课程与学习路径') }}</h4><span>{{ isAdminWorkspace ? `${educationCourses.length} 门课程 · ${learningAssignments.length} 份课程作业` : (educationWorkspaceMode === 'teacher' ? `${teacherEducationCourses.length} 个我创建 · ${enrolledEducationCourses.length} 个已加入` : (enrolledEducationCourses.length ? `已加入 ${enrolledEducationCourses.length} 门课程` : '还没有加入课程')) }}</span></div>
                 <span v-if="activeEducationCourse" class="context-mode-chip">{{ educationCourseStatusLabel(activeEducationCourse.status) }}</span>
@@ -10693,11 +10705,12 @@ onBeforeUnmount(() => {
                     <div><small>待处理</small><strong>{{ activeEducationCourseLearnerProgress.attention }} 项</strong><span v-if="activeEducationCourseLearnerProgress.nextAction?.detail">{{ activeEducationCourseLearnerProgress.nextAction.detail }}</span></div>
                     <div><small>目标进度</small><strong>{{ activeEducationCourseLearnerProgress.averageMasteryProgress === null ? '待测评' : formatRate(activeEducationCourseLearnerProgress.averageMasteryProgress) }}</strong></div>
                   </div>
-                  <button v-if="activeEducationCourse.status === 'ACTIVE'" class="text-button" type="button" @click="focusLearnerCourseAssignmentList">查看作业列表 <ArrowUp :size="12" /></button>
+                  <button v-if="activeEducationCourse.status === 'ACTIVE'" class="text-button" type="button" @click="focusLearnerCourseAssignmentList">查看我的作业 <ArrowUp :size="12" /></button>
                   <button v-else class="text-button" type="button" :disabled="educationCourseLoading" @click="loadEducationCourseWorkspace(activeEducationCourse.id)">{{ educationCourseLoading ? '刷新中…' : '刷新结果' }}</button>
                 </div>
               </div>
-            </section>
+              </section>
+            </component>
             <section v-if="isTeacherOnlyRole && learningEvaluationQueue.length" class="learning-assignment-workbench" aria-label="独立评价队列">
               <div class="subsection-title"><div><h4>第二位教师评分</h4><span>{{ learningEvaluationQueue.length }} 份已完成作业待第二位教师评价</span></div><span class="context-mode-chip">协作复核</span></div>
               <p class="learning-task-help">独立评价不会改变教师确认状态；系统会将两个评分者的三维分数用于共识判定和实验审计。</p>
@@ -10708,10 +10721,10 @@ onBeforeUnmount(() => {
                 </article>
               </div>
             </section>
-            <section class="learning-assignment-workbench" aria-label="课程作业入口">
-              <div class="subsection-title"><h4>{{ isAdminWorkspace ? '课程作业概览' : (educationWorkspaceMode === 'teacher' ? '课程作业与复核' : '我的课程作业与反馈') }}</h4><div><span v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter || learningAssignmentIssueFilter">{{ learningAssignmentIssueFilter ? `正在处理：${learningAssignmentIssueLabel}` : '当前已筛选' }}</span><button v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter || learningAssignmentIssueFilter" class="text-button" type="button" @click="clearLearningAssignmentFilter">清除筛选</button><button v-else-if="isLearnerOnlyRole && learningAssignmentHistoryCount && learningAssignmentActionableCount" class="text-button" type="button" @click="toggleLearningAssignmentHistory">{{ learningAssignmentHistoryExpanded ? '只看待处理' : `查看已完成记录（${learningAssignmentHistoryCount}）` }}</button><span v-else>{{ isLearnerOnlyRole && learningAssignmentActionableCount ? `${learningAssignmentActionableCount} 个待处理` : `${educationAssignmentsForView.length} 个作业` }}</span></div></div>
+            <section class="learning-assignment-workbench" aria-label="我的作业">
+              <div class="subsection-title"><h4>{{ isAdminWorkspace ? '课程作业概览' : (educationWorkspaceMode === 'teacher' ? '课程作业与复核' : '我的作业与反馈') }}</h4><div><span v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter || learningAssignmentIssueFilter">{{ learningAssignmentIssueFilter ? `正在处理：${learningAssignmentIssueLabel}` : '当前已筛选' }}</span><button v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter || learningAssignmentIssueFilter" class="text-button" type="button" @click="clearLearningAssignmentFilter">清除筛选</button><button v-else-if="isLearnerOnlyRole && learningAssignmentHistoryCount && learningAssignmentActionableCount" class="text-button" type="button" @click="toggleLearningAssignmentHistory">{{ learningAssignmentHistoryExpanded ? '只看待处理' : `查看已完成记录（${learningAssignmentHistoryCount}）` }}</button><span v-else>{{ isLearnerOnlyRole && learningAssignmentActionableCount ? `${learningAssignmentActionableCount} 个待处理` : `${educationAssignmentsForView.length} 个作业` }}</span></div></div>
               <p class="learning-task-help">{{ isAdminWorkspace ? '管理员只读查看作业状态与学习记录；确认、返工和反馈由课程教师执行。' : (educationWorkspaceMode === 'teacher' ? '围绕课程资料布置作业，并根据学生提交和反馈决定确认、返工或重试。' : (learningAssignmentActionableCount ? '先处理需要行动的作业；已完成记录可以按需展开。' : '当前没有待处理作业，可以查看已完成记录或等待老师发布下一份作业。')) }}</p>
-              <div v-if="!isAdminWorkspace" class="subsection-title learning-task-heading"><div><h4>作业通知</h4><span>{{ learningAssignmentNotificationsForView.length }} 条</span></div><div class="learning-notification-heading-actions"><span>{{ learningAssignmentNotificationUnreadCountForView }} 条未读</span><button v-if="learningAssignmentNotificationUnreadCountForView" class="text-button" type="button" @click="markAllLearningAssignmentNotificationsRead">全部已读</button></div></div>
+              <div v-if="!isAdminWorkspace && learningAssignmentNotificationsForView.length" class="subsection-title learning-task-heading"><div><h4>作业通知</h4><span>{{ learningAssignmentNotificationsForView.length }} 条</span></div><div class="learning-notification-heading-actions"><span>{{ learningAssignmentNotificationUnreadCountForView }} 条未读</span><button v-if="learningAssignmentNotificationUnreadCountForView" class="text-button" type="button" @click="markAllLearningAssignmentNotificationsRead">全部已读</button></div></div>
               <div v-if="!isAdminWorkspace && learningAssignmentNotificationsForView.length" class="learning-notification-list" aria-label="课程作业通知">
                 <article v-for="notification in learningAssignmentNotificationsForView.slice(0, 5)" :key="notification.id" class="learning-notification-row" :class="{ unread: notification.unread }">
                   <div class="learning-notification-main"><div class="learning-notification-meta"><strong>{{ learnerFriendlyNotificationTitle(notification) }}</strong><small>{{ formatDate(notification.createdAt) }}</small></div><p>{{ learnerFriendlyNotificationBody(notification) }}</p></div>
@@ -10782,17 +10795,17 @@ onBeforeUnmount(() => {
               </form>
             </section>
             <div v-if="isLearnerOnlyRole" class="learning-goal-workbench">
-              <div class="learning-task-workbench">
-                <div class="subsection-title learning-task-heading"><div><h4>待处理学习任务</h4><span>{{ learningTasks.filter((task) => ['OPEN', 'IN_PROGRESS', 'AWAITING_EVIDENCE', 'DEFERRED', 'FAILED'].includes(task.status)).length }} 条</span></div><div class="learning-notification-heading-actions"><span>{{ learningNotificationUnreadCount }} 条未读</span><button v-if="learningNotificationUnreadCount" class="text-button" type="button" @click="markAllLearningNotificationsRead">全部已读</button></div></div>
-                <p class="learning-task-help">系统会在需要复习时提醒你；练习失败可以重新开始，尚未完成的学习检查会出现在这里。</p>
+              <div v-if="shouldShowLearningTaskWorkbench" class="learning-task-workbench">
+                <div class="subsection-title learning-task-heading"><div><h4>学习提醒</h4><span>{{ actionableLearningTasks.length }} 条</span></div><div class="learning-notification-heading-actions"><span>{{ learningNotificationUnreadCount }} 条未读</span><button v-if="learningNotificationUnreadCount" class="text-button" type="button" @click="markAllLearningNotificationsRead">全部已读</button></div></div>
+                <p class="learning-task-help">需要复习或补充回答时，提醒会出现在这里；没有提醒时无需额外处理。</p>
                 <div v-if="learningNotifications.length" class="learning-notification-list" aria-label="学习任务通知">
                   <article v-for="notification in learningNotifications.slice(0, 5)" :key="notification.id" class="learning-notification-row" :class="{ unread: notification.unread }">
                     <div class="learning-notification-main"><div class="learning-notification-meta"><strong>{{ learnerFriendlyNotificationTitle(notification) }}</strong><small>{{ formatDate(notification.createdAt) }}</small></div><p>{{ learningNotificationBody(notification) }}</p></div>
                     <div class="learning-notification-actions"><button class="secondary-button" type="button" @click="openLearningNotification(notification)">{{ notification.notificationType === 'EVIDENCE_REQUIRED' ? '补充作答' : (notification.notificationType === 'FAILED' ? '重试任务' : (notification.taskStatus === 'DEFERRED' ? '查看复习安排' : '打开任务')) }}</button><button v-if="notification.unread" class="text-button" type="button" @click="markLearningNotificationRead(notification)">标记已读</button></div>
                   </article>
                 </div>
-                <div v-if="learningTasks.length" class="learning-task-list">
-                  <article v-for="task in learningTasks.filter((item) => ['OPEN', 'IN_PROGRESS', 'AWAITING_EVIDENCE', 'DEFERRED', 'FAILED'].includes(item.status)).slice(0, 8)" :id="`learning-task-${task.id}`" :key="task.id" class="learning-task-row">
+                <div v-if="actionableLearningTasks.length" class="learning-task-list">
+                  <article v-for="task in actionableLearningTasks.slice(0, 8)" :id="`learning-task-${task.id}`" :key="task.id" class="learning-task-row">
                     <div class="learning-task-main"><strong>{{ task.title }}</strong><small>{{ task.status === 'IN_PROGRESS' ? '进行中' : (task.status === 'AWAITING_EVIDENCE' ? '待补充答案' : (task.status === 'FAILED' ? `执行失败${task.failureReason ? `：${task.failureReason}` : ''}` : (task.status === 'DEFERRED' ? `延期至 ${formatDate(task.scheduledAt)}` : `到期 ${formatDate(task.scheduledAt)}`))) }} · 第 {{ task.reviewSequence + 1 }} 次复习</small><p>{{ task.prompt }}</p></div>
                     <div class="learning-task-actions">
                     <button class="secondary-button" type="button" :title="learningTaskIsScheduled(task) ? `任务将在 ${formatDate(task.scheduledAt)} 开放` : learningTaskSourceBlockReason(task)" :disabled="learningTaskStartingId === task.id || learningTaskDeferringId === task.id || Boolean(learningTaskSourceBlockReason(task))" @click="learningTaskIsScheduled(task) ? focusLearningTask(task) : startLearningTask(task)">{{ learningTaskSourceBlockReason(task) ? '需课程资料' : learningTaskActionLabel(task, learningTaskStartingId === task.id) }}</button>
@@ -10801,7 +10814,7 @@ onBeforeUnmount(() => {
                     </div>
                   </article>
                 </div>
-                <div v-else class="context-preview-empty">暂无待处理任务；完成学习目标后，系统会在合适时间提醒你复习。</div>
+                <div v-else-if="!learningNotifications.length" class="context-preview-empty">暂无学习提醒。</div>
               </div>
               <details class="learning-goal-settings" :open="!learningGoals.length">
                 <summary><span><strong>学习目标与进度设置</strong><small>{{ learningGoals.length ? `${learningGoals.length} 个目标 · 当前${activeLearningGoal ? `：${activeLearningGoal.title}` : '未选择目标'}` : '可选；设置后系统会持续记录进度' }}</small></span><em>{{ learningGoals.length ? '查看进度' : '建议设置' }}</em></summary>

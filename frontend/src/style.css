@@ -651,6 +651,15 @@ h3 { margin: 0; font-size: 13px; }
 .education-calibration-slice strong { overflow: hidden; color: var(--soft); text-overflow: ellipsis; white-space: nowrap; }
 .education-calibration-slice small { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
 .education-course-workbench { display: grid; gap: 10px; border: 1px solid rgba(141,124,255,.28); border-radius: 8px; background: rgba(141,124,255,.045); padding: 11px; }
+.education-course-workbench-shell { display: grid; gap: 10px; }
+.education-course-workbench-shell > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid rgba(141,124,255,.28); border-radius: 8px; background: rgba(141,124,255,.045); cursor: pointer; list-style: none; padding: 10px 11px; }
+.education-course-workbench-shell > summary::-webkit-details-marker { display: none; }
+.education-course-workbench-shell > summary::before { content: '▸'; flex: 0 0 auto; color: var(--accent-light); font-size: 12px; }
+.education-course-workbench-shell[open] > summary::before { content: '▾'; }
+.education-course-workbench-shell > summary > span { display: grid; min-width: 0; gap: 3px; }
+.education-course-workbench-shell > summary strong { color: var(--soft); font-size: 10px; }
+.education-course-workbench-shell > summary small { overflow: hidden; color: var(--muted); font: 8px/1.4 "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.education-course-workbench-shell > summary em { flex: 0 0 auto; border: 1px solid rgba(141,124,255,.35); border-radius: 5px; color: var(--accent-light); padding: 4px 6px; font: 8px "DM Mono", monospace; font-style: normal; }
 .education-course-heading { align-items: center; }
 .education-course-heading > div, .education-course-detail-heading > div, .education-course-progress .subsection-title > div { display: flex; align-items: baseline; gap: 8px; }
 .education-course-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; align-items: end; }
