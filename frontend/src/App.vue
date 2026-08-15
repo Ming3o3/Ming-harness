@@ -107,6 +107,7 @@ const educationCourseActionId = ref('')
 const learningAssignmentCourseFilter = ref('')
 const learningAssignmentLearnerFilter = ref('')
 const learningAssignmentIssueFilter = ref('')
+const learningAssignmentHistoryExpanded = ref(false)
 const educationMetrics = ref(null)
 const educationExperiment = ref(null)
 const educationRetrievalCalibration = ref(null)
@@ -1822,7 +1823,36 @@ const visibleLearningAssignments = computed(() => {
   if (learningAssignmentIssueFilter.value) {
     entries = entries.filter((assignment) => learningAssignmentMatchesIssue(assignment, learningAssignmentIssueFilter.value))
   }
+  // 学生首屏只显示仍需要处理的作业；已完成、已确认的记录仍保留，
+  // 通过“查看已完成记录”展开，避免课程作业越积越多后淹没下一步行动。
+  if (isLearnerOnlyRole.value
+    && !learningAssignmentHistoryExpanded.value
+    && !learningAssignmentCourseFilter.value
+    && !learningAssignmentLearnerFilter.value
+    && !learningAssignmentIssueFilter.value) {
+    const actionableEntries = entries.filter((assignment) => learningAssignmentPrimaryAction(assignment).kind !== 'view')
+    if (actionableEntries.length) entries = actionableEntries
+  }
   return entries.slice(0, 8)
+})
+
+const learningAssignmentHistoryCount = computed(() => {
+  if (!isLearnerOnlyRole.value
+    || learningAssignmentCourseFilter.value
+    || learningAssignmentLearnerFilter.value
+    || learningAssignmentIssueFilter.value) return 0
+  return educationAssignmentsForView.value
+    .filter((assignment) => learningAssignmentPrimaryAction(assignment).kind === 'view')
+    .length
+})
+const learningAssignmentActionableCount = computed(() => {
+  if (!isLearnerOnlyRole.value
+    || learningAssignmentCourseFilter.value
+    || learningAssignmentLearnerFilter.value
+    || learningAssignmentIssueFilter.value) return 0
+  return educationAssignmentsForView.value
+    .filter((assignment) => learningAssignmentPrimaryAction(assignment).kind !== 'view')
+    .length
 })
 
 function learningAssignmentDetailsLoaded(assignmentId) {
@@ -5696,6 +5726,10 @@ function clearLearningAssignmentFilter() {
   learningAssignmentCourseFilter.value = ''
   learningAssignmentLearnerFilter.value = ''
   learningAssignmentIssueFilter.value = ''
+}
+
+function toggleLearningAssignmentHistory() {
+  learningAssignmentHistoryExpanded.value = !learningAssignmentHistoryExpanded.value
 }
 
 function focusCourseBlocker(issue) {
@@ -10435,8 +10469,8 @@ onBeforeUnmount(() => {
               </div>
             </section>
             <section class="learning-assignment-workbench" aria-label="课程作业入口">
-              <div class="subsection-title"><h4>{{ isAdminWorkspace ? '课程作业概览' : (educationWorkspaceMode === 'teacher' ? '课程作业与复核' : '我的课程作业与反馈') }}</h4><div><span v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter || learningAssignmentIssueFilter">{{ learningAssignmentIssueFilter ? `正在处理：${learningAssignmentIssueLabel}` : '当前已筛选' }}</span><button v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter || learningAssignmentIssueFilter" class="text-button" type="button" @click="clearLearningAssignmentFilter">清除筛选</button><span v-else>{{ educationAssignmentsForView.length }} 个作业</span></div></div>
-              <p class="learning-task-help">{{ isAdminWorkspace ? '管理员只读查看作业状态与学习记录；确认、返工和反馈由课程教师执行。' : (educationWorkspaceMode === 'teacher' ? '围绕课程资料布置作业，并根据学生提交和反馈决定确认、返工或重试。' : '接受课程作业后，系统会根据课程资料、目标知识点和你的当前进度安排下一步。') }}</p>
+              <div class="subsection-title"><h4>{{ isAdminWorkspace ? '课程作业概览' : (educationWorkspaceMode === 'teacher' ? '课程作业与复核' : '我的课程作业与反馈') }}</h4><div><span v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter || learningAssignmentIssueFilter">{{ learningAssignmentIssueFilter ? `正在处理：${learningAssignmentIssueLabel}` : '当前已筛选' }}</span><button v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter || learningAssignmentIssueFilter" class="text-button" type="button" @click="clearLearningAssignmentFilter">清除筛选</button><button v-else-if="isLearnerOnlyRole && learningAssignmentHistoryCount && learningAssignmentActionableCount" class="text-button" type="button" @click="toggleLearningAssignmentHistory">{{ learningAssignmentHistoryExpanded ? '只看待处理' : `查看已完成记录（${learningAssignmentHistoryCount}）` }}</button><span v-else>{{ isLearnerOnlyRole && learningAssignmentActionableCount ? `${learningAssignmentActionableCount} 个待处理` : `${educationAssignmentsForView.length} 个作业` }}</span></div></div>
+              <p class="learning-task-help">{{ isAdminWorkspace ? '管理员只读查看作业状态与学习记录；确认、返工和反馈由课程教师执行。' : (educationWorkspaceMode === 'teacher' ? '围绕课程资料布置作业，并根据学生提交和反馈决定确认、返工或重试。' : (learningAssignmentActionableCount ? '先处理需要行动的作业；已完成记录可以按需展开。' : '当前没有待处理作业，可以查看已完成记录或等待老师发布下一份作业。')) }}</p>
               <div v-if="!isAdminWorkspace" class="subsection-title learning-task-heading"><div><h4>作业通知</h4><span>{{ learningAssignmentNotificationsForView.length }} 条</span></div><div class="learning-notification-heading-actions"><span>{{ learningAssignmentNotificationUnreadCountForView }} 条未读</span><button v-if="learningAssignmentNotificationUnreadCountForView" class="text-button" type="button" @click="markAllLearningAssignmentNotificationsRead">全部已读</button></div></div>
               <div v-if="!isAdminWorkspace && learningAssignmentNotificationsForView.length" class="learning-notification-list" aria-label="课程作业通知">
                 <article v-for="notification in learningAssignmentNotificationsForView.slice(0, 5)" :key="notification.id" class="learning-notification-row" :class="{ unread: notification.unread }">
