@@ -10570,7 +10570,7 @@ onBeforeUnmount(() => {
                 </div>
               </div>
             </details>
-            <component :is="isLearnerOnlyRole ? 'details' : 'div'" class="education-course-workbench-shell" :open="isLearnerOnlyRole ? !enrolledEducationCourses.length : undefined">
+            <component v-if="!isTeacherOnlyRole || manageableEducationSources.length || teacherEducationCourses.length" :is="isLearnerOnlyRole ? 'details' : 'div'" class="education-course-workbench-shell" :open="isLearnerOnlyRole ? !enrolledEducationCourses.length : undefined">
               <summary v-if="isLearnerOnlyRole" class="education-course-workbench-summary">
                 <span><strong>我的课程</strong><small>{{ enrolledEducationCourses.length ? `已加入 ${enrolledEducationCourses.length} 门课程；需要时可查看课程和邀请码` : '还没有加入课程；从这里开始' }}</small></span>
                 <em>{{ enrolledEducationCourses.length ? '查看' : '开始设置' }}</em>
@@ -10771,7 +10771,7 @@ onBeforeUnmount(() => {
                 </article>
               </div>
             </section>
-            <section class="learning-assignment-workbench" aria-label="我的作业">
+            <section v-if="!isTeacherOnlyRole || teacherEducationCourses.length || educationAssignmentsForView.length || learningAssignmentNotificationsForView.length || learningEvaluationQueue.length" class="learning-assignment-workbench" aria-label="我的作业">
               <div class="subsection-title"><h4>{{ isAdminWorkspace ? '课程作业概览' : (educationWorkspaceMode === 'teacher' ? '作业与反馈' : '我的作业与反馈') }}</h4><div><span v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter || learningAssignmentIssueFilter">{{ learningAssignmentIssueFilter ? `正在处理：${learningAssignmentIssueLabel}` : '当前已筛选' }}</span><button v-if="learningAssignmentCourseFilter || learningAssignmentLearnerFilter || learningAssignmentIssueFilter" class="text-button" type="button" @click="clearLearningAssignmentFilter">清除筛选</button><button v-else-if="isLearnerOnlyRole && learningAssignmentHistoryCount && learningAssignmentActionableCount" class="text-button" type="button" @click="toggleLearningAssignmentHistory">{{ learningAssignmentHistoryExpanded ? '只看待处理' : `查看已完成记录（${learningAssignmentHistoryCount}）` }}</button><span v-else>{{ isLearnerOnlyRole && learningAssignmentActionableCount ? `${learningAssignmentActionableCount} 个待处理` : `${educationAssignmentsForView.length} 个作业` }}</span></div></div>
               <p class="learning-task-help">{{ isAdminWorkspace ? '管理员只读查看作业状态与学习记录；确认、返工和反馈由课程教师执行。' : (educationWorkspaceMode === 'teacher' ? '查看学生提交和反馈，再决定确认、返工或重试。' : (learningAssignmentActionableCount ? '先处理需要行动的作业；已完成记录可以按需展开。' : '当前没有待处理作业，可以查看已完成记录或等待老师发布下一份作业。')) }}</p>
               <div v-if="!isAdminWorkspace && learningAssignmentNotificationsForView.length" class="subsection-title learning-task-heading"><div><h4>作业通知</h4><span>{{ learningAssignmentNotificationsForView.length }} 条</span></div><div class="learning-notification-heading-actions"><span>{{ learningAssignmentNotificationUnreadCountForView }} 条未读</span><button v-if="learningAssignmentNotificationUnreadCountForView" class="text-button" type="button" @click="markAllLearningAssignmentNotificationsRead">全部已读</button></div></div>
@@ -10911,7 +10911,7 @@ onBeforeUnmount(() => {
                 </div>
               </details>
             </div>
-            <details v-if="canManageEducationOperations" class="education-source-editor education-teacher-entry" :open="educationWorkspaceMode === 'teacher' && !manageableEducationDocuments.length">
+            <details v-if="canManageEducationOperations && (manageableEducationDocuments.length || educationSources.length)" class="education-source-editor education-teacher-entry" :open="educationWorkspaceMode === 'teacher' && manageableEducationDocuments.length > 0 && !educationSources.length">
               <summary><span><strong>课程资料设置</strong><small>为课程文件补充学科、版本、章节和知识点范围</small></span><em>{{ educationSources.length }} 个课程来源</em></summary>
               <form v-if="manageableEducationDocuments.length" class="education-source-form" @submit.prevent="saveEducationSource">
                 <label class="field field-wide"><span>课程文件</span><select v-model="educationSourceForm.documentId" required><option value="">选择可用的课程文件</option><option v-for="document in manageableEducationDocuments" :key="document.id" :value="document.id">{{ document.title }}{{ document.ownerUserId !== form.userId ? ' · 组织共享' : '' }}</option></select></label>
