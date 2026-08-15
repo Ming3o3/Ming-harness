@@ -233,6 +233,8 @@ class ConversationServiceTests {
         conversationService.send(created.conversation().id(), "tenant-chat", "operator",
                 new SendConversationMessageRequest("请给我第一题", null, 2, List.of(), assignmentContext),
                 "chat-assignment-first", "run.create,run.execute,education.read,education.write");
+        assertEquals(assignment.getId(), conversationService.list("tenant-chat", "operator").get(0)
+                .educationLearningAssignmentId());
 
         // 模拟旧客户端后续只提交学习者画像；服务端必须继承上一轮的作业 ID。
         EducationRunOptions followUpContext = new EducationRunOptions(

@@ -886,6 +886,7 @@ public class ConversationService {
                 educationRun == null ? null : educationRun.getEducationCurriculumVersion(),
                 educationRun == null ? null : educationRun.getEducationLearningGoalTitle(),
                 educationRun == null ? null : educationRun.getEducationConceptKey(),
-                educationRun == null ? null : educationRun.getEducationLearningAssignmentTitle());
+                educationRun == null ? null : educationRun.getEducationLearningAssignmentTitle(),
+                educationRun == null ? null : educationRun.getEducationLearningAssignmentId());
     }
 }

@@ -586,6 +586,9 @@ const chatMode = ref(true)
 const activeConsoleSection = ref('runtime')
 const conversations = ref([])
 const conversationQuery = ref('')
+// 同一份课程作业的每次重试都会保留独立会话，学生默认只看最近一次；
+// 展开后仍可访问完整历史，避免审计证据和普通用户的首屏同时变得拥挤。
+const learningConversationHistoryExpanded = ref(false)
 const activeConversation = ref(null)
 const showConversationRename = ref(false)
 const conversationRenameValue = ref('')
@@ -3480,6 +3483,44 @@ const filteredConversations = computed(() => {
   ]
     .some((value) => String(value || '').toLowerCase().includes(query)))
 })
+function learningConversationHistoryKey(conversation) {
+  if (!conversation?.educationMode) return ''
+  const assignmentId = String(conversation.educationLearningAssignmentId || '').trim()
+  if (assignmentId) return `assignment:${assignmentId}`
+  // 兼容旧版摘要没有作业 ID 的历史会话；只有明确带有作业标题时才回退合并，
+  // 避免把普通学习对话或不同目标误认为同一份作业。
+  const assignmentTitle = String(conversation.educationLearningAssignmentTitle || '').trim()
+  if (!assignmentTitle) return ''
+  return `assignment:${conversation.educationCourseTitle || ''}:${assignmentTitle}`
+}
+const learnerConversationHistoryHiddenCount = computed(() => {
+  if (!isLearnerOnlyRole.value || conversationQuery.value.trim()) return 0
+  const seen = new Set()
+  return learningConversations.value.reduce((count, conversation) => {
+    const key = learningConversationHistoryKey(conversation)
+    if (!key || !seen.has(key)) {
+      if (key) seen.add(key)
+      return count
+    }
+    return count + 1
+  }, 0)
+})
+const visibleConversationRows = computed(() => {
+  const source = filteredConversations.value
+  if (!isLearnerOnlyRole.value
+    || learningConversationHistoryExpanded.value
+    || conversationQuery.value.trim()) return source
+  const seen = new Set()
+  const visible = []
+  source.forEach((conversation) => {
+    const key = learningConversationHistoryKey(conversation)
+    if (!key || !seen.has(key) || conversation.id === activeConversationId.value) {
+      visible.push(conversation)
+      if (key) seen.add(key)
+    }
+  })
+  return visible
+})
 const pendingChatMessage = computed(() => chatMessages.value
   .slice().reverse()
   .find((message) => message.role === 'ASSISTANT' && message.status === 'PENDING'))
@@ -4514,6 +4555,9 @@ function conversationLearningContext(conversation) {
 // 不修改历史记录，也避免让学习入口重新呈现为通用聊天产品。
 function learningConversationTitle(conversation) {
   const title = String(conversation?.title || '').trim()
+  if (isLearnerOnlyRole.value && conversation?.educationLearningAssignmentTitle) {
+    return `课程作业：${conversation.educationLearningAssignmentTitle}`
+  }
   return !title || title === '新的对话' || title === '新对话' || (isTeacherOnlyRole.value && title === '新的学习任务')
     ? (isTeacherOnlyRole.value ? '新的课程问题' : '新的学习任务')
     : title
@@ -9242,9 +9286,13 @@ onBeforeUnmount(() => {
           <div v-if="chatLoading && !learningConversations.length" class="chat-sidebar-empty">正在读取{{ isTeacherOnlyRole ? '课程对话' : '学习任务' }}…</div>
           <div v-else-if="!learningConversations.length" class="chat-sidebar-empty">还没有{{ isTeacherOnlyRole ? '课程对话' : '学习任务' }}</div>
           <div v-else-if="!filteredConversations.length" class="chat-sidebar-empty">没有匹配的{{ isTeacherOnlyRole ? '课程对话' : '学习任务' }}<br /><small>{{ isTeacherOnlyRole ? '试试标题、课程或知识点' : '试试标题、学习目标或知识点' }}</small></div>
-          <div v-else class="conversation-list">
+          <div v-if="isLearnerOnlyRole && learnerConversationHistoryHiddenCount && !conversationQuery.trim()" class="conversation-history-toggle">
+            <span><strong>{{ learningConversationHistoryExpanded ? '正在查看全部学习记录' : '旧学习记录已收起' }}</strong><small>{{ learningConversationHistoryExpanded ? '同一份课程作业的历史会话已全部展开' : `同一份课程作业保留了 ${learnerConversationHistoryHiddenCount} 条历史会话` }}</small></span>
+            <button type="button" @click="learningConversationHistoryExpanded = !learningConversationHistoryExpanded">{{ learningConversationHistoryExpanded ? '收起' : '查看全部' }}</button>
+          </div>
+          <div v-if="filteredConversations.length" class="conversation-list">
             <button
-              v-for="conversation in filteredConversations"
+              v-for="conversation in visibleConversationRows"
               :key="conversation.id"
               class="conversation-row"
               :class="{ active: conversation.id === activeConversationId }"

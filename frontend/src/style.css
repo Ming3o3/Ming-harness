@@ -1160,6 +1160,13 @@ h3 { margin: 0; font-size: 13px; }
 .conversation-search input::placeholder { color: var(--muted); }
 .conversation-search button { width: 18px; height: 18px; border: 0; border-radius: 50%; background: transparent; color: var(--muted); padding: 0; font-size: 14px; line-height: 1; }
 .conversation-search button:hover { background: rgba(141,124,255,.14); color: var(--accent-light); }
+.conversation-history-toggle { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 5px 7px; border: 1px solid rgba(141,124,255,.18); border-radius: 8px; background: rgba(141,124,255,.055); padding: 8px 9px; }
+.conversation-history-toggle span { min-width: 0; }
+.conversation-history-toggle strong, .conversation-history-toggle small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-history-toggle strong { color: var(--soft); font-size: 9px; font-weight: 600; }
+.conversation-history-toggle small { margin-top: 3px; color: var(--muted); font-size: 8px; }
+.conversation-history-toggle button { flex: 0 0 auto; border: 0; border-radius: 6px; background: transparent; color: var(--accent-light); padding: 4px 5px; font-size: 9px; white-space: nowrap; }
+.conversation-history-toggle button:hover { background: rgba(141,124,255,.14); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 .conversation-list {
   display: grid;

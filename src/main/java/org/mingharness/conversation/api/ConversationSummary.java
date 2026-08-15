@@ -21,7 +21,8 @@ public record ConversationSummary(
         String educationCurriculumVersion,
         String educationLearningGoalTitle,
         String educationConceptKey,
-        String educationLearningAssignmentTitle
+        String educationLearningAssignmentTitle,
+        String educationLearningAssignmentId
 ) {
 
     /** 保持服务层测试和旧扩展调用方可用；教育上下文在未关联教育 Run 时为空。 */
@@ -30,6 +31,6 @@ public record ConversationSummary(
                                int messageCount, String lastMessagePreview, String activeRunId) {
         this(id, tenantId, userId, title, workspaceId, createdAt, updatedAt, messageCount,
                 lastMessagePreview, activeRunId, false, null, null, null, null, null,
-                null, null, null);
+                null, null, null, null);
     }
 }
