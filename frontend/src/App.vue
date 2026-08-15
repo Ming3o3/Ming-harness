@@ -610,6 +610,9 @@ const showLearningTrace = ref(false)
 // 学习概览默认折叠，避免课程契约和决策板挤占连续对话；用户的选择会保存在当前浏览器中。
 const LEARNING_OVERVIEW_COLLAPSED_STORAGE_KEY = 'mingHarnessLearningOverviewCollapsed'
 const learningOverviewCollapsed = ref(readLearningOverviewCollapsed())
+// 学习目标是可选配置；只有用户明确点击“设定学习目标”时才展开，避免新用户
+// 刚加入课程就被一整组高级表单拦住。
+const learningGoalSettingsOpen = ref(false)
 const showRejectDialog = ref(false)
 const rejectReason = ref('')
 const rejectReasonInputRef = ref(null)
@@ -954,6 +957,17 @@ async function runLearningOverviewNextAction() {
   const action = learningOverviewNextAction.value
   if (action.kind === 'setup') {
     openEducationAgentSetup()
+    return
+  }
+  if (action.kind === 'goal-settings') {
+    // 学习目标设置位于教育工作台；从聊天页点击时直接带用户到唯一设置入口，
+    // 避免先展开学习概览、再在页面中寻找同一组表单。
+    chatMode.value = false
+    showGovernance.value = true
+    navigateConsoleSection('education')
+    learningGoalSettingsOpen.value = true
+    await nextTick()
+    scrollConsoleTargetIntoView(document.querySelector('#learning-goal-settings'))
     return
   }
   if (action.kind === 'task') {
@@ -2225,7 +2239,7 @@ const learningOverviewNextAction = computed(() => {
     return { kind: 'assignment', label: assignmentAction.label, detail: assignmentAction.detail }
   }
   if (!activeLearningGoal.value) {
-    return { kind: 'expand', label: '设定学习目标', detail: '设定知识点和达标标准，后续作答才能形成学习证据。' }
+    return { kind: 'goal-settings', label: '设定学习目标', detail: '可选：告诉系统你想学会什么，后续进度会记录得更准确。' }
   }
   if (activeLearningTask.value) {
     const scheduled = activeLearningTask.value.status === 'DEFERRED'
@@ -11221,7 +11235,7 @@ onBeforeUnmount(() => {
                 </div>
                 <div v-else-if="!learningNotifications.length" class="context-preview-empty">暂无学习提醒。</div>
               </div>
-              <details class="learning-goal-settings" :open="!learningGoals.length && Boolean(enrolledEducationCourses.length || learnerLearningAssignmentCount)">
+              <details id="learning-goal-settings" class="learning-goal-settings" :open="learningGoalSettingsOpen" @toggle="learningGoalSettingsOpen = $event.currentTarget.open">
                 <summary><span><strong>学习目标与进度设置</strong><small>{{ learningGoals.length ? `${learningGoals.length} 个目标 · 当前${activeLearningGoal ? `：${activeLearningGoal.title}` : '未选择目标'}` : '可选；设置后系统会持续记录进度' }}</small></span><em>{{ learningGoals.length ? '查看进度' : '建议设置' }}</em></summary>
                 <div class="learning-goal-settings-content">
                   <div class="subsection-title"><h4>我的学习目标</h4><span>{{ learningGoals.length }} 个目标</span></div>
