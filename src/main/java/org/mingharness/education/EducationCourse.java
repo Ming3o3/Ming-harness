@@ -9,6 +9,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 import java.time.Instant;
+import java.security.SecureRandom;
 import java.util.UUID;
 
 /**
@@ -16,9 +17,14 @@ import java.util.UUID;
  * 作业只允许引用同一课程实例的元数据，避免批量布置时出现课程约束漂移。
  */
 @Entity
-@Table(name = "harness_education_courses", uniqueConstraints = @UniqueConstraint(
-        name = "uk_harness_education_course_code", columnNames = {"tenant_id", "code"}))
+@Table(name = "harness_education_courses", uniqueConstraints = {
+        @UniqueConstraint(name = "uk_harness_education_course_code", columnNames = {"tenant_id", "code"}),
+        @UniqueConstraint(name = "uk_harness_education_course_join_code", columnNames = {"tenant_id", "join_code"})
+})
 public class EducationCourse {
+
+    private static final SecureRandom JOIN_CODE_RANDOM = new SecureRandom();
+    private static final char[] JOIN_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".toCharArray();
 
     @Id
     private String id;
@@ -28,6 +34,9 @@ public class EducationCourse {
     private String ownerUserId;
     @Column(nullable = false, length = 128)
     private String code;
+    /** 面向学生分享的短邀请码；不替代课程 ID，只用于低门槛加入课程。 */
+    @Column(nullable = false, length = 12)
+    private String joinCode;
     @Column(nullable = false, length = 255)
     private String title;
     @Column(nullable = false, length = 128)
@@ -54,10 +63,17 @@ public class EducationCourse {
 
     public EducationCourse(String tenantId, String ownerUserId, String code, String title,
                            String subject, String gradeLevel, String curriculumVersion) {
+        this(tenantId, ownerUserId, code, title, subject, gradeLevel, curriculumVersion, newJoinCode());
+    }
+
+    public EducationCourse(String tenantId, String ownerUserId, String code, String title,
+                           String subject, String gradeLevel, String curriculumVersion,
+                           String joinCode) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = required(tenantId, "tenantId");
         this.ownerUserId = required(ownerUserId, "ownerUserId");
         this.code = required(code, "code");
+        this.joinCode = normalizeJoinCode(joinCode);
         this.title = required(title, "title");
         this.subject = required(subject, "subject");
         this.gradeLevel = required(gradeLevel, "gradeLevel");
@@ -96,10 +112,27 @@ public class EducationCourse {
         return normalized;
     }
 
+    private static String normalizeJoinCode(String value) {
+        String normalized = required(value, "joinCode").toUpperCase(java.util.Locale.ROOT);
+        if (!normalized.matches("[A-Z0-9]{6,12}")) {
+            throw new IllegalArgumentException("joinCode 格式不合法");
+        }
+        return normalized;
+    }
+
+    private static String newJoinCode() {
+        char[] code = new char[8];
+        for (int index = 0; index < code.length; index++) {
+            code[index] = JOIN_CODE_ALPHABET[JOIN_CODE_RANDOM.nextInt(JOIN_CODE_ALPHABET.length)];
+        }
+        return new String(code);
+    }
+
     public String getId() { return id; }
     public String getTenantId() { return tenantId; }
     public String getOwnerUserId() { return ownerUserId; }
     public String getCode() { return code; }
+    public String getJoinCode() { return joinCode; }
     public String getTitle() { return title; }
     public String getSubject() { return subject; }
     public String getGradeLevel() { return gradeLevel; }

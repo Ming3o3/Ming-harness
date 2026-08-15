@@ -3,6 +3,7 @@ package org.mingharness.education;
 import org.mingharness.common.BusinessException;
 import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.education.api.EducationCourseRequest;
+import org.mingharness.education.api.EducationCourseJoinRequest;
 import org.mingharness.education.api.EducationCourseView;
 import org.mingharness.education.api.EducationEnrollmentRequest;
 import org.mingharness.education.api.EducationEnrollmentView;
@@ -99,18 +100,50 @@ public class EducationCourseService {
                                           EducationEnrollmentRequest request) {
         EducationCourse course = find(tenantId, courseId);
         ensureOwner(course, ownerUserId);
-        ensureActive(course);
-        String learnerUserId = clean(request.learnerUserId());
+        return enrollLearner(course, tenantId, clean(request.learnerUserId()));
+    }
+
+    /** 学生使用邀请码自助加入；名单成员始终取自认证身份，避免请求体伪造他人账号。 */
+    @Transactional
+    public EducationCourseView joinByCode(String tenantId, String learnerUserId,
+                                          EducationCourseJoinRequest request) {
+        String joinCode = normalizeJoinCode(request.joinCode());
+        EducationCourse course = courseRepository.findByTenantIdAndJoinCode(tenantId, joinCode)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND,
+                        "EDUCATION_COURSE_JOIN_CODE_NOT_FOUND", "课程邀请码无效，请向课程负责人确认"));
         EducationEnrollment enrollment = enrollmentRepository
-                .findByTenantIdAndCourseIdAndLearnerUserId(tenantId, courseId, learnerUserId)
+                .findByTenantIdAndCourseIdAndLearnerUserId(tenantId, course.getId(), clean(learnerUserId))
+                .orElse(null);
+        if (enrollment == null || enrollment.getStatus() != EducationEnrollmentStatus.ACTIVE) {
+            enrollLearner(course, tenantId, clean(learnerUserId));
+        } else {
+            ensureActive(course);
+        }
+        return view(course);
+    }
+
+    private EducationEnrollmentView enrollLearner(EducationCourse course, String tenantId,
+                                                   String learnerUserId) {
+        ensureActive(course);
+        EducationEnrollment enrollment = enrollmentRepository
+                .findByTenantIdAndCourseIdAndLearnerUserId(tenantId, course.getId(), learnerUserId)
                 .map(existing -> {
                     if (existing.getStatus() == EducationEnrollmentStatus.REMOVED) {
                         existing.reactivate(Instant.now());
                     }
                     return existing;
                 })
-                .orElseGet(() -> new EducationEnrollment(tenantId, courseId, learnerUserId, Instant.now()));
+                .orElseGet(() -> new EducationEnrollment(tenantId, course.getId(), learnerUserId, Instant.now()));
         return EducationEnrollmentView.from(enrollmentRepository.save(enrollment));
+    }
+
+    private String normalizeJoinCode(String value) {
+        String normalized = clean(value).toUpperCase(java.util.Locale.ROOT);
+        if (!normalized.matches("[A-Z0-9]{6,12}")) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "EDUCATION_COURSE_JOIN_CODE_INVALID",
+                    "课程邀请码格式不合法");
+        }
+        return normalized;
     }
 
     @Transactional

@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.mingharness.common.BusinessException;
 import org.mingharness.common.SensitiveDataSanitizer;
 import org.mingharness.education.api.EducationCourseRequest;
+import org.mingharness.education.api.EducationCourseJoinRequest;
 import org.mingharness.education.api.EducationEnrollmentRequest;
 
 import java.util.Optional;
@@ -106,5 +107,47 @@ class EducationCourseServiceTests {
                                 new EducationEnrollmentRequest("student-1")));
 
         assertEquals("EDUCATION_COURSE_COMPLETED", exception.getCode());
+    }
+
+    @Test
+    void shouldLetLearnerJoinByCodeAndMakeRepeatedJoinIdempotent() {
+        EducationCourseRepository courses = mock(EducationCourseRepository.class);
+        EducationEnrollmentRepository enrollments = mock(EducationEnrollmentRepository.class);
+        EducationCourse course = new EducationCourse(
+                "tenant-a", "teacher-1", "math-g1", "高一数学", "数学", "高中一年级", "人教A版", "AB12CD34");
+        when(courses.findByTenantIdAndJoinCode("tenant-a", "AB12CD34")).thenReturn(Optional.of(course));
+        when(enrollments.findByTenantIdAndCourseIdAndLearnerUserId(
+                "tenant-a", course.getId(), "student-1")).thenReturn(Optional.empty());
+        when(enrollments.save(any(EducationEnrollment.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(enrollments.countByTenantIdAndCourseIdAndStatus(
+                "tenant-a", course.getId(), EducationEnrollmentStatus.ACTIVE)).thenReturn(1L);
+
+        EducationCourseService service = new EducationCourseService(
+                courses, enrollments, new SensitiveDataSanitizer());
+        var joined = service.joinByCode("tenant-a", "student-1",
+                new EducationCourseJoinRequest(" ab12cd34 "));
+
+        assertEquals(course.getId(), joined.id());
+        assertEquals("AB12CD34", joined.joinCode());
+        assertEquals(1L, joined.activeEnrollmentCount());
+    }
+
+    @Test
+    void shouldRejectUnknownOrMalformedCourseJoinCode() {
+        EducationCourseRepository courses = mock(EducationCourseRepository.class);
+        EducationEnrollmentRepository enrollments = mock(EducationEnrollmentRepository.class);
+        EducationCourseService service = new EducationCourseService(
+                courses, enrollments, new SensitiveDataSanitizer());
+
+        when(courses.findByTenantIdAndJoinCode("tenant-a", "NOTFOUND"))
+                .thenReturn(Optional.empty());
+        BusinessException unknown = assertThrows(BusinessException.class, () -> service.joinByCode(
+                "tenant-a", "student-1", new EducationCourseJoinRequest("NOTFOUND")));
+        assertEquals("EDUCATION_COURSE_JOIN_CODE_NOT_FOUND", unknown.getCode());
+
+        BusinessException malformed = assertThrows(BusinessException.class, () -> service.joinByCode(
+                "tenant-a", "student-1", new EducationCourseJoinRequest("bad code")));
+        assertEquals("EDUCATION_COURSE_JOIN_CODE_INVALID", malformed.getCode());
     }
 }

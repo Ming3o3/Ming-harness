@@ -9,6 +9,7 @@ public record EducationCourseView(
         String id,
         String ownerUserId,
         String code,
+        String joinCode,
         String title,
         String subject,
         String gradeLevel,
@@ -22,7 +23,7 @@ public record EducationCourseView(
         Instant updatedAt
 ) {
     public static EducationCourseView from(EducationCourse course, long activeEnrollmentCount) {
-        return new EducationCourseView(course.getId(), course.getOwnerUserId(), course.getCode(),
+        return new EducationCourseView(course.getId(), course.getOwnerUserId(), course.getCode(), course.getJoinCode(),
                 course.getTitle(), course.getSubject(), course.getGradeLevel(),
                 course.getCurriculumVersion(), course.getStatus().name(), activeEnrollmentCount,
                 course.getCompletedAt(), course.getCompletedByUserId(), course.getCompletionNote(),

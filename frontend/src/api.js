@@ -479,6 +479,10 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(payload),
   }),
+  joinEducationCourse: (payload) => request('/education/courses/join', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  }),
   getEducationCourse: (courseId) => request(`/education/courses/${encodeURIComponent(courseId)}`),
   listEducationCourseEnrollments: (courseId) => request(
     `/education/courses/${encodeURIComponent(courseId)}/enrollments`),

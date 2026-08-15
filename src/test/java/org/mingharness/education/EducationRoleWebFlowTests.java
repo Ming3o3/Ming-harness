@@ -201,6 +201,31 @@ class EducationRoleWebFlowTests {
     }
 
     @Test
+    void shouldLetStudentJoinTeacherCourseWithSharedCode() throws Exception {
+        HttpResponse<String> course = request("teacher-flow-key", "POST", "/api/education/courses",
+                "{\"code\":\"math-join-flow\",\"title\":\"邀请码课程\","
+                        + "\"subject\":\"数学\",\"gradeLevel\":\"高中一年级\",\"curriculumVersion\":\"人教A版\"}");
+        assertEquals(201, course.statusCode(), course.body());
+        String joinCode = json(course).path("joinCode").asText();
+        assertTrue(joinCode.matches("[A-Z0-9]{8}"), course.body());
+
+        HttpResponse<String> joined = request("student-flow-key", "POST", "/api/education/courses/join",
+                "{\"joinCode\":\" " + joinCode.toLowerCase() + " \"}");
+        assertEquals(200, joined.statusCode(), joined.body());
+        assertEquals("math-join-flow", json(joined).path("code").asText(), joined.body());
+        assertEquals(1, json(joined).path("activeEnrollmentCount").asInt(), joined.body());
+
+        HttpResponse<String> teacherJoinDenied = request("teacher-flow-key", "POST", "/api/education/courses/join",
+                "{\"joinCode\":\"" + joinCode + "\"}");
+        assertError(teacherJoinDenied, 403, "EDUCATION_STUDENT_ONLY");
+
+        HttpResponse<String> repeated = request("student-flow-key", "POST", "/api/education/courses/join",
+                "{\"joinCode\":\"" + joinCode + "\"}");
+        assertEquals(200, repeated.statusCode(), repeated.body());
+        assertEquals(1, json(repeated).path("activeEnrollmentCount").asInt(), repeated.body());
+    }
+
+    @Test
     void shouldKeepAdminEducationWorkspaceReadOnly() throws Exception {
         HttpResponse<String> course = request("teacher-flow-key", "POST", "/api/education/courses",
                 "{\"code\":\"admin-read-only-flow\",\"title\":\"管理员只读验收课程\",\"subject\":\"数学\","

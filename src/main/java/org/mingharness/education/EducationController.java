@@ -36,6 +36,7 @@ import org.mingharness.education.api.LearningAssignmentSubmissionView;
 import org.mingharness.education.api.EducationMetricsView;
 import org.mingharness.education.api.EducationExperimentView;
 import org.mingharness.education.api.EducationCourseRequest;
+import org.mingharness.education.api.EducationCourseJoinRequest;
 import org.mingharness.education.api.EducationCourseCompletionRequest;
 import org.mingharness.education.api.EducationCourseView;
 import org.mingharness.education.api.EducationEnrollmentRequest;
@@ -509,6 +510,16 @@ public class EducationController {
         HarnessIdentity identity = identity();
         requireEducationOperator(identity);
         return courseService.enroll(identity.tenantId(), identity.userId(), courseId, request);
+    }
+
+    @PostMapping("/courses/join")
+    public EducationCourseView joinCourse(@Valid @RequestBody EducationCourseJoinRequest request) {
+        HarnessIdentity identity = identity();
+        if (identity.hasPermission("ops.read") || identity.hasPermission("education.assign")) {
+            throw new org.mingharness.common.BusinessException(HttpStatus.FORBIDDEN,
+                    "EDUCATION_STUDENT_ONLY", "课程邀请码加入仅面向学生身份；教师请在课程名单中添加学生");
+        }
+        return courseService.joinByCode(identity.tenantId(), identity.userId(), request);
     }
 
     @GetMapping("/courses/{courseId}/enrollments")

@@ -101,6 +101,7 @@ const educationCourseResult = ref(null)
 const educationCourseLoading = ref(false)
 const educationCourseSaving = ref(false)
 const educationCourseRosterSaving = ref(false)
+const educationCourseJoinSaving = ref(false)
 const educationCourseAssignmentSaving = ref(false)
 const educationCourseActionId = ref('')
 const learningAssignmentCourseFilter = ref('')
@@ -151,6 +152,9 @@ const educationCourseForm = reactive({
 })
 const educationCourseEnrollmentForm = reactive({
   learnerUserId: '',
+})
+const educationCourseJoinForm = reactive({
+  joinCode: '',
 })
 const educationCourseAssignmentForm = reactive({
   title: '',
@@ -5252,11 +5256,40 @@ async function createEducationCourse() {
     educationCourseForm.code = ''
     educationCourseForm.title = ''
     await loadEducationCourseWorkspace(course.id)
-    noticeMessage.value = `课程“${course.title}”已创建，可以开始维护名单。`
+    noticeMessage.value = `课程“${course.title}”已创建，可以把邀请码发给学生。`
   } catch (error) {
     errorMessage.value = errorText(error)
   } finally {
     educationCourseSaving.value = false
+  }
+}
+
+async function joinEducationCourse() {
+  const joinCode = educationCourseJoinForm.joinCode.trim().toUpperCase()
+  if (!joinCode || educationCourseJoinSaving.value || !isLearnerOnlyRole.value) return
+  clearMessages()
+  educationCourseJoinSaving.value = true
+  try {
+    const course = await api.joinEducationCourse({ joinCode })
+    educationCourseJoinForm.joinCode = ''
+    educationCourses.value = [course, ...educationCourses.value.filter((item) => item.id !== course.id)]
+    activeEducationCourseId.value = course.id
+    await loadEducationData()
+    noticeMessage.value = `已加入课程“${course.title}”，下一步可以查看课程作业。`
+  } catch (error) {
+    educationError.value = errorText(error)
+  } finally {
+    educationCourseJoinSaving.value = false
+  }
+}
+
+async function copyEducationCourseJoinCode(course) {
+  if (!course?.joinCode) return
+  try {
+    await navigator.clipboard.writeText(course.joinCode)
+    noticeMessage.value = '课程邀请码已复制，可以发给学生。'
+  } catch {
+    errorMessage.value = '复制失败，请手动选中邀请码复制。'
   }
 }
 
@@ -10027,7 +10060,7 @@ onBeforeUnmount(() => {
             </details>
             <section class="education-course-workbench" aria-label="课程工作台">
               <div class="subsection-title education-course-heading">
-                <div><h4>{{ isAdminWorkspace ? '课程实例概览' : (educationWorkspaceMode === 'teacher' ? '课程运营工作台' : '我的课程与学习路径') }}</h4><span>{{ isAdminWorkspace ? `${educationCourses.length} 门组织课程 · ${learningAssignments.length} 份课程作业` : `${teacherEducationCourses.length} 个我创建 · ${enrolledEducationCourses.length} 个已加入` }}</span></div>
+                <div><h4>{{ isAdminWorkspace ? '课程概览' : (educationWorkspaceMode === 'teacher' ? '课程运营工作台' : '我的课程与学习路径') }}</h4><span>{{ isAdminWorkspace ? `${educationCourses.length} 门课程 · ${learningAssignments.length} 份课程作业` : `${teacherEducationCourses.length} 个我创建 · ${enrolledEducationCourses.length} 个已加入` }}</span></div>
                 <span v-if="activeEducationCourse" class="context-mode-chip">{{ educationCourseStatusLabel(activeEducationCourse.status) }}</span>
               </div>
               <p class="learning-task-help">{{ isAdminWorkspace ? '管理员在这里查看组织课程和作业规模；课程资料、名单、布置与复核由教师负责。' : (educationWorkspaceMode === 'teacher' ? '课程资料决定教学范围；请在下方依次维护名单、布置作业和查看反馈。' : '课程资料决定学习范围；系统会结合你的作业、提交内容和学习对话更新进度。') }}{{ educationWorkspaceMode === 'teacher' ? '班级进度、名单和布置动作只在课程负责人入口中展开；学生学习信息由学生本人维护。' : (!isAdminWorkspace ? '你只需要关注自己的课程行动、提交和反馈。' : '') }}</p>
@@ -10040,8 +10073,16 @@ onBeforeUnmount(() => {
                   <label class="field"><span>学科</span><input v-model="educationCourseForm.subject" required maxlength="128" /></label>
                   <label class="field"><span>年级</span><input v-model="educationCourseForm.gradeLevel" required maxlength="128" /></label>
                   <label class="field"><span>课程版本</span><input v-model="educationCourseForm.curriculumVersion" required maxlength="128" /></label>
-                  <button class="secondary-button" type="submit" :disabled="educationCourseSaving">{{ educationCourseSaving ? '创建中…' : '创建课程实例' }}</button>
+                  <button class="secondary-button" type="submit" :disabled="educationCourseSaving">{{ educationCourseSaving ? '创建中…' : '创建课程' }}</button>
                 </form>
+              </details>
+              <details v-if="isLearnerOnlyRole" class="education-course-join-entry" :open="!enrolledEducationCourses.length">
+                <summary><span><strong>已有课程邀请码？</strong><small>输入老师分享的 8 位邀请码，马上加入课程</small></span><em>{{ enrolledEducationCourses.length ? '加入其他课程' : '从这里开始' }}</em></summary>
+                <form class="education-course-join-form" @submit.prevent="joinEducationCourse">
+                  <label class="field"><span>课程邀请码</span><input v-model="educationCourseJoinForm.joinCode" required maxlength="12" autocomplete="off" placeholder="例如：AB12CD34" /></label>
+                  <button class="secondary-button" type="submit" :disabled="educationCourseJoinSaving">{{ educationCourseJoinSaving ? '加入中…' : '加入课程' }}</button>
+                </form>
+                <p class="learning-task-help">邀请码只用于找到课程；系统会自动使用当前学生账号加入，不需要你填写别人账号。</p>
               </details>
               <div v-if="educationCourses.length" class="education-course-list">
                 <button v-for="course in educationCourses" :key="course.id" type="button" class="education-course-chip" :class="{ active: course.id === activeEducationCourseId }" @click="selectEducationCourse(course)">
@@ -10062,6 +10103,7 @@ onBeforeUnmount(() => {
                   <div><strong>{{ activeEducationCourse.title }}</strong><small>{{ activeEducationCourse.code }} · 课程负责人 {{ activeEducationCourse.ownerUserId }}</small></div>
                   <span v-if="isAdminWorkspace" class="context-mode-chip">管理员只读</span>
                   <div class="education-course-detail-actions">
+                    <div v-if="activeEducationCourseIsOwner && activeEducationCourse.joinCode" class="education-course-join-code"><span>邀请码</span><strong>{{ activeEducationCourse.joinCode }}</strong><button class="text-button" type="button" @click="copyEducationCourseJoinCode(activeEducationCourse)">复制</button></div>
                     <button v-if="activeEducationCourseIsOwner && activeEducationCourse.status === 'ACTIVE'" class="secondary-button" type="button" :title="educationCourseProgress?.readyToComplete ? '结课结果会固化当前课程证据快照' : '请先处理下方结课阻塞清单；Runtime 仍会在提交时做最终校验'" :disabled="educationCourseActionId === activeEducationCourse.id || !educationCourseProgress?.readyToComplete" @click="completeEducationCourse(activeEducationCourse)">{{ educationCourseActionId === activeEducationCourse.id ? '结课中…' : '完成结课' }}</button>
                     <button v-if="activeEducationCourseIsOwner && ['ACTIVE', 'COMPLETED'].includes(activeEducationCourse.status)" class="text-button" type="button" :disabled="educationCourseActionId === activeEducationCourse.id" @click="archiveEducationCourse(activeEducationCourse)">{{ educationCourseActionId === activeEducationCourse.id ? '处理中…' : '归档课程' }}</button>
                   </div>
