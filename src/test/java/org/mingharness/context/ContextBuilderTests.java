@@ -577,7 +577,9 @@ class ContextBuilderTests {
                 new ContextRetrievalProperties(20, 5, 1, 0.2), sourceRepository, graphService);
         EducationRetrievalFilter filter = new EducationRetrievalFilter(
                 "数学", "高中一年级", "人教A版", "函数", null, null,
-                Map.of("函数", 0.2, "集合", 0.1));
+                Map.of("函数", 0.2, "集合", 0.1), null,
+                Map.of("函数", new org.mingharness.education.LearnerStateEvidence(0.2, 2, 0),
+                        "集合", new org.mingharness.education.LearnerStateEvidence(0.1, 1, 0)));
         when(vectorRetriever.retrieve("tenant-a", "student", "函数", 2_000, filter))
                 .thenReturn(new ContextResult("vector", List.of(new ContextEvidence(
                         document.getId(), "函数讲解", "document:" + document.getId(), "基础"))));
@@ -590,6 +592,8 @@ class ContextBuilderTests {
         assertEquals(1, result.evidences().size());
         assertEquals("LOW_MASTERY_GAP_FIRST",
                 result.evidences().get(0).rankingBreakdown().weights().conditioning());
+        assertTrue(result.evidences().get(0).rankingBreakdown().learnerStateUncertainty() > 0.0);
+        assertTrue(result.evidences().get(0).rankingReason().contains("状态不确定性"));
         assertEquals(0.0, result.evidences().get(0).rankingBreakdown().graphCoverage());
         verifyNoInteractions(graphService);
     }

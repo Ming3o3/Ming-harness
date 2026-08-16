@@ -32,13 +32,14 @@ class ContextEvidenceCodecTests {
         ContextEvidence source = new ContextEvidence("document-1", "函数前置", "document:document-1",
                 "集合", 0.8, "状态权重=LOW_MASTERY_GAP_FIRST", List.of("集合"),
                 new EducationRankingBreakdown(0.8, 0.0, 0.9, 0.8, 0.7,
-                        1.0, 0.0, 0.84, weights));
+                        0.62, 1.0, 0.0, 0.84, weights));
 
         ContextEvidence decoded = ContextEvidenceCodec.decode(ContextEvidenceCodec.encode(List.of(source)))
                 .get(0);
 
         assertEquals("LOW_MASTERY_GAP_FIRST", decoded.rankingBreakdown().weights().conditioning());
         assertEquals(weights.graphCoverage(), decoded.rankingBreakdown().weights().graphCoverage(), 0.000001);
+        assertEquals(0.62, decoded.rankingBreakdown().learnerStateUncertainty(), 0.000001);
     }
 
     @Test

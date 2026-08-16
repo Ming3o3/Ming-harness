@@ -13,6 +13,7 @@ public record EducationRankingBreakdown(
         double prerequisiteGap,
         double graphCoverage,
         double difficultyFit,
+        double learnerStateUncertainty,
         double marginalCoverageScore,
         double redundancyPenalty,
         double finalScore,
@@ -25,8 +26,18 @@ public record EducationRankingBreakdown(
                                      double difficultyFit, double marginalCoverageScore,
                                      double redundancyPenalty, double finalScore) {
         this(retrievalRelevance, targetConceptMatch, prerequisiteGap, graphCoverage,
-                difficultyFit, marginalCoverageScore, redundancyPenalty, finalScore,
+                difficultyFit, 0.0, marginalCoverageScore, redundancyPenalty, finalScore,
                 EducationRankingWeights.fixed());
+    }
+
+    /** 兼容带权重的旧版排序快照；不确定性字段在旧数据中默认为 0。 */
+    public EducationRankingBreakdown(double retrievalRelevance, double targetConceptMatch,
+                                     double prerequisiteGap, double graphCoverage,
+                                     double difficultyFit, double marginalCoverageScore,
+                                     double redundancyPenalty, double finalScore,
+                                     EducationRankingWeights weights) {
+        this(retrievalRelevance, targetConceptMatch, prerequisiteGap, graphCoverage,
+                difficultyFit, 0.0, marginalCoverageScore, redundancyPenalty, finalScore, weights);
     }
 
     public EducationRankingBreakdown {
@@ -35,6 +46,7 @@ public record EducationRankingBreakdown(
         prerequisiteGap = bounded(prerequisiteGap);
         graphCoverage = bounded(graphCoverage);
         difficultyFit = bounded(difficultyFit);
+        learnerStateUncertainty = bounded(learnerStateUncertainty);
         marginalCoverageScore = bounded(marginalCoverageScore);
         redundancyPenalty = bounded(redundancyPenalty);
         finalScore = Double.isFinite(finalScore) ? Math.max(0.0, Math.min(1.0, finalScore)) : 0.0;
@@ -56,7 +68,7 @@ public record EducationRankingBreakdown(
                                                    double redundancy,
                                                    double selectionScore) {
         return new EducationRankingBreakdown(retrievalRelevance, targetConceptMatch,
-                prerequisiteGap, graphCoverage, difficultyFit, marginalCoverage,
+                prerequisiteGap, graphCoverage, difficultyFit, learnerStateUncertainty, marginalCoverage,
                 redundancy, selectionScore, weights);
     }
 

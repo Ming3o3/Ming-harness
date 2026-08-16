@@ -145,13 +145,20 @@ public record EducationRetrievalFilter(
         return new LearnerStateEvidence(masteryFor(normalized), 0, 0);
     }
 
-    /** 使用置信下界驱动教育检索，避免少量证据造成过度自信。 */
+    /** 使用置信下界驱动新 Run；历史 Run 没有计数时保留其摘要分数语义。 */
     public double conservativeMasteryFor(String concept) {
-        return masteryEvidenceFor(concept).conservativeMastery();
+        String normalized = concept == null ? null : normalizeConcept(concept);
+        // 旧 Run 只有摘要分数，没有观测计数；保留历史排序语义，同时通过
+        // uncertaintyFor 显式标记高不确定性。新 Run 严格使用 Wilson 下界。
+        return normalized != null && masteryEvidence.containsKey(normalized)
+                ? masteryEvidence.get(normalized).conservativeMastery()
+                : masteryFor(normalized);
     }
 
     public double uncertaintyFor(String concept) {
-        return masteryEvidenceFor(concept).uncertainty();
+        String normalized = concept == null ? null : normalizeConcept(concept);
+        LearnerStateEvidence evidence = normalized == null ? null : masteryEvidence.get(normalized);
+        return evidence == null ? 1.0 : evidence.uncertainty();
     }
 
     private static boolean equalsOrUnconstrained(String expected, String actual) {

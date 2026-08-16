@@ -87,7 +87,8 @@ public final class ContextEvidenceSnapshotCodec {
         return new EducationRankingBreakdown(
                 number(value, "retrievalRelevance"), number(value, "targetConceptMatch"),
                 number(value, "prerequisiteGap"), number(value, "graphCoverage"),
-                number(value, "difficultyFit"), number(value, "marginalCoverageScore"),
+                number(value, "difficultyFit"), number(value, "learnerStateUncertainty"),
+                number(value, "marginalCoverageScore"),
                 number(value, "redundancyPenalty"), number(value, "finalScore"), weights(value));
     }
 

@@ -379,6 +379,15 @@ public class ContextBuilder {
         double graphCoverage = graphGaps.isEmpty() ? 0.0
                 : weightedCoverage(graphGaps, sourceConcepts, dependencyGraph);
         double targetMastery = filter.conservativeMasteryFor(filter.conceptKeyOrNull());
+        double targetUncertainty = targetConcept == null ? 0.0 : filter.uncertaintyFor(targetConcept);
+        double prerequisiteUncertainty = java.util.Arrays.stream(prerequisites)
+                .mapToDouble(filter::uncertaintyFor)
+                .average().orElse(0.0);
+        double learnerStateUncertainty = targetConcept == null
+                ? prerequisiteUncertainty
+                : prerequisites.length == 0
+                ? targetUncertainty
+                : Math.min(1.0, (targetUncertainty + prerequisiteUncertainty) / 2.0);
         double preferredDifficulty = targetMastery < 0.35 ? 2.0
                 : targetMastery < 0.70 ? 3.0 : 4.0;
         double difficultyFit = 1.0 - Math.min(1.0,
@@ -393,7 +402,8 @@ public class ContextBuilder {
                 ? EducationRankingWeights.conditioned(targetMastery, deficit, !graphGaps.isEmpty())
                 : EducationRankingWeights.fixed();
         return new EducationRankingBreakdown(retrievalRelevance, targetConceptMatch,
-                prerequisiteGap, graphCoverage, difficultyFit, 0.0, 0.0, 0.0, weights);
+                prerequisiteGap, graphCoverage, difficultyFit, learnerStateUncertainty,
+                0.0, 0.0, 0.0, weights);
     }
 
     private Set<String> coveredGapSet(String tenantId, ContextEvidence evidence,
@@ -481,6 +491,10 @@ public class ContextBuilder {
         reasons.add(String.format(Locale.ROOT, "相关性 %.2f", breakdown.retrievalRelevance()));
         if (breakdown.targetConceptMatch() >= 0.5) reasons.add("匹配目标知识点");
         if (breakdown.difficultyFit() >= 0.75) reasons.add("难度适配");
+        if (breakdown.learnerStateUncertainty() >= 0.25) {
+            reasons.add(String.format(Locale.ROOT, "状态不确定性 %.2f，采用保守掌握度",
+                    breakdown.learnerStateUncertainty()));
+        }
         if (!displayGaps.isEmpty()) reasons.add("覆盖前置缺口：" + String.join("、", displayGaps));
         reasons.add("状态权重=" + breakdown.weights().conditioning());
         String reason = "满足课程硬约束" + (reasons.isEmpty() ? "" : "；" + String.join("；", reasons));
