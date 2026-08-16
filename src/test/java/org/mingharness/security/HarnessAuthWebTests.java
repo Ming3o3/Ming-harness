@@ -136,7 +136,7 @@ class HarnessAuthWebTests {
     }
 
     @Test
-    void shouldSaveUserModelConfigWithoutReturningApiKey() throws Exception {
+    void shouldSaveTenantModelConfigWithoutReturningApiKey() throws Exception {
         HttpResponse<String> saved = httpClient.send(
                 HttpRequest.newBuilder(URI.create(baseUrl() + "/api/model-config"))
                         .header("Authorization", "Bearer web-test-key")
@@ -146,7 +146,7 @@ class HarnessAuthWebTests {
                         .build(),
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(200, saved.statusCode(), saved.body());
-        assertTrue(saved.body().contains("\"source\":\"user\""), saved.body());
+        assertTrue(saved.body().contains("\"source\":\"tenant\""), saved.body());
         assertTrue(saved.body().contains("••••odel"), saved.body());
         assertFalse(saved.body().contains("secret-web-model"), saved.body());
 

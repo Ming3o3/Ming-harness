@@ -23,8 +23,11 @@ public class ModelProviderConfigSnapshot {
     @Column(name = "tenant_id", nullable = false, length = 128)
     private String tenantId;
 
-    @Column(name = "user_id", nullable = false, length = 128)
+    @Column(name = "user_id", length = 128)
     private String userId;
+
+    @Column(name = "scope", nullable = false, length = 16)
+    private String scope;
 
     @Column(nullable = false)
     private boolean enabled;
@@ -48,6 +51,19 @@ public class ModelProviderConfigSnapshot {
         this.id = UUID.randomUUID().toString();
         this.tenantId = config.getTenantId();
         this.userId = config.getUserId();
+        this.scope = "USER";
+        this.enabled = config.isEnabled();
+        this.baseUrl = config.getBaseUrl();
+        this.modelName = config.getModelName();
+        this.apiKeyCiphertext = config.getApiKeyCiphertext();
+        this.createdAt = Instant.now();
+    }
+
+    public ModelProviderConfigSnapshot(TenantModelProviderConfig config) {
+        this.id = UUID.randomUUID().toString();
+        this.tenantId = config.getTenantId();
+        this.userId = null;
+        this.scope = "TENANT";
         this.enabled = config.isEnabled();
         this.baseUrl = config.getBaseUrl();
         this.modelName = config.getModelName();
@@ -58,6 +74,7 @@ public class ModelProviderConfigSnapshot {
     public String getId() { return id; }
     public String getTenantId() { return tenantId; }
     public String getUserId() { return userId; }
+    public String getScope() { return scope; }
     public boolean isEnabled() { return enabled; }
     public String getBaseUrl() { return baseUrl; }
     public String getModelName() { return modelName; }

@@ -46,6 +46,11 @@ public class ModelConnectionTester {
             return new ModelConnectionTestView(true, "DISABLED",
                     "当前已关闭外部模型，未发起网络请求。", candidate.modelName(), 0);
         }
+        if (candidate.apiKey() == null || candidate.apiKey().isBlank()) {
+            return new ModelConnectionTestView(false, "CONFIGURATION_INVALID",
+                    "连接失败：外部模型已启用，但 API Key 尚未配置。",
+                    candidate.modelName(), 0, ModelErrorCode.CONFIGURATION_INVALID.name());
+        }
         long startedAt = System.nanoTime();
         try {
             ModelConfig config = new ModelConfig(true, candidate.baseUrl(), candidate.apiKey(),

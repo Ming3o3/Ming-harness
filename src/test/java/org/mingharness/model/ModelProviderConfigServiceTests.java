@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 验证用户模型配置的隔离、密钥掩码和 AES-GCM 密文不会回到 API。 */
+/** 验证模型配置的个人隔离、租户默认回退、密钥掩码和 AES-GCM 密文不会回到 API。 */
 @SpringBootTest
 class ModelProviderConfigServiceTests {
 
@@ -23,12 +23,15 @@ class ModelProviderConfigServiceTests {
     @Autowired
     private ModelProviderConfigRepository repository;
     @Autowired
+    private TenantModelProviderConfigRepository tenantRepository;
+    @Autowired
     private ModelProviderConfigSnapshotRepository snapshotRepository;
 
     @BeforeEach
     void clean() {
-        repository.deleteAll();
         snapshotRepository.deleteAll();
+        tenantRepository.deleteAll();
+        repository.deleteAll();
     }
 
     @Test
@@ -124,6 +127,45 @@ class ModelProviderConfigServiceTests {
         assertEquals("first-model", resolved.modelName());
         assertEquals("first-secret", resolved.apiKey());
         assertEquals("https://second.example/v1", service.resolve("tenant-model", "operator").baseUrl());
+    }
+
+    @Test
+    void shouldUseTenantDefaultForUsersWithoutPersonalOverride() {
+        ModelProviderConfigView saved = service.updateTenantDefault("tenant-shared", "admin-demo",
+                new UpdateModelProviderConfigRequest(true, "https://shared.example/v1",
+                        "shared-model", "shared-secret", false));
+
+        assertEquals("tenant", saved.source());
+        assertEquals("shared-secret", service.resolve("tenant-shared", "student-demo").apiKey());
+        assertEquals("https://shared.example/v1", service.viewTenantDefault("tenant-shared", "admin-demo")
+                .baseUrl());
+
+        ModelProviderConfigService.CapturedModelConfig first = service.captureForRun("tenant-shared", "student-demo");
+        service.updateTenantDefault("tenant-shared", "admin-demo",
+                new UpdateModelProviderConfigRequest(true, "https://second.example/v1",
+                        "second-model", "second-secret", false));
+
+        ModelProviderConfigService.ResolvedModelConfig old = service.resolveForRun(
+                "tenant-shared", "student-demo", first.snapshotId());
+        assertEquals("https://shared.example/v1", old.baseUrl());
+        assertEquals("shared-model", old.modelName());
+        assertEquals("shared-secret", old.apiKey());
+        assertEquals("https://second.example/v1", service.resolve("tenant-shared", "student-demo").baseUrl());
+    }
+
+    @Test
+    void shouldPromoteLegacyAdminConfigToTenantDefaultOnSave() {
+        service.update("tenant-shared", "admin-demo",
+                new UpdateModelProviderConfigRequest(true, "https://legacy.example/v1",
+                        "legacy-model", "legacy-secret", false));
+
+        ModelProviderConfigView saved = service.updateTenantDefault("tenant-shared", "admin-demo",
+                new UpdateModelProviderConfigRequest(true, "https://legacy.example/v1",
+                        "legacy-model", "", false));
+
+        assertEquals("tenant", saved.source());
+        assertEquals("legacy-secret", service.resolve("tenant-shared", "student-demo").apiKey());
+        assertTrue(repository.findByTenantIdAndUserId("tenant-shared", "admin-demo").isEmpty());
     }
 
     @Test

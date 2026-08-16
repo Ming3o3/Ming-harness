@@ -7,4 +7,6 @@ import java.util.Optional;
 public interface ModelProviderConfigSnapshotRepository extends JpaRepository<ModelProviderConfigSnapshot, String> {
 
     Optional<ModelProviderConfigSnapshot> findByIdAndTenantIdAndUserId(String id, String tenantId, String userId);
+
+    Optional<ModelProviderConfigSnapshot> findByIdAndTenantId(String id, String tenantId);
 }

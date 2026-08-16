@@ -61,6 +61,108 @@ class EducationAssessmentServiceTests {
     }
 
     @Test
+    void shouldCanonicalizeLegacyGoalTitleStoredAsRunConcept() {
+        AssessmentAttemptRepository attempts = mock(AssessmentAttemptRepository.class);
+        RunRepository runs = mock(RunRepository.class);
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        EducationLearnerService learnerService = mock(EducationLearnerService.class);
+
+        Run run = new Run("tenant-a", "student-1", "二次函数学习",
+                "我的作答：二次函数的一般形式是 y=ax^2+bx+c。",
+                BigDecimal.ONE, "demo-model", "prompt-v1", "policy-v1", null,
+                "education.read,education.write", true, 4);
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", "profile-1",
+                "理解二次函数的概念及一般形式", "二次函数", 0.2, 0.9);
+        run.attachEducationConfiguration(new EducationRunConfiguration(true, "profile-1", goal.getId(),
+                goal.getTitle(), 0.2, 0.9, "数学", "高中一年级", "人教A版", goal.getTitle(),
+                null, null, "PRACTICE", "二次函数=0.20"));
+        LearnerMastery updated = new LearnerMastery("tenant-a", "profile-1", "二次函数", 0.55, 2, 1);
+
+        when(runs.findById(run.getId())).thenReturn(Optional.of(run));
+        when(goals.findByIdAndTenantIdAndUserId(goal.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(goal));
+        when(mastery.findByTenantIdAndLearnerProfileIdAndConceptKey(
+                "tenant-a", "profile-1", "二次函数")).thenReturn(Optional.empty());
+        when(learnerService.recordObservedMastery(any(), any(), any(), any())).thenReturn(updated);
+        when(attempts.save(any(AssessmentAttempt.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        EducationAssessmentService service = new EducationAssessmentService(attempts, runs, goals, mastery,
+                learnerService, new SensitiveDataSanitizer());
+        AssessmentAttempt result = service.record("tenant-a", "student-1", run.getId(), "step-1",
+                "profile-1", "二次函数", true, 0.8, "MODEL_TOOL",
+                "学生写出了二次函数的一般形式", "二次函数的一般形式是 y=ax^2+bx+c", "答题正确");
+
+        assertEquals("二次函数", result.getConceptKey());
+    }
+
+    @Test
+    void shouldRejectAConceptThatDiffersFromTheGoalEvenWhenTheGoalHasADetailedTitle() {
+        AssessmentAttemptRepository attempts = mock(AssessmentAttemptRepository.class);
+        RunRepository runs = mock(RunRepository.class);
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        EducationLearnerService learnerService = mock(EducationLearnerService.class);
+
+        Run run = new Run("tenant-a", "student-1", "二次函数学习", "我的作答：一次函数。",
+                BigDecimal.ONE, "demo-model", "prompt-v1", "policy-v1", null,
+                "education.read,education.write", true, 4);
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", "profile-1",
+                "理解二次函数的概念及一般形式", "二次函数", 0.2, 0.9);
+        run.attachEducationConfiguration(new EducationRunConfiguration(true, "profile-1", goal.getId(),
+                goal.getTitle(), 0.2, 0.9, "数学", "高中一年级", "人教A版", "一次函数",
+                null, null, "PRACTICE", "一次函数=0.20"));
+        when(runs.findById(run.getId())).thenReturn(Optional.of(run));
+        when(goals.findByIdAndTenantIdAndUserId(goal.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(goal));
+
+        EducationAssessmentService service = new EducationAssessmentService(attempts, runs, goals, mastery,
+                learnerService, new SensitiveDataSanitizer());
+        var error = assertThrows(org.mingharness.common.BusinessException.class, () -> service.record(
+                "tenant-a", "student-1", run.getId(), "step-1", "profile-1", "二次函数", true,
+                0.8, "MODEL_TOOL", "学生回答了一次函数", "一次函数", "答题错误"));
+
+        assertEquals("ASSESSMENT_CONCEPT_MISMATCH", error.getCode());
+    }
+
+    @Test
+    void shouldMatchShortCourseConceptToDetailedGoalConcept() {
+        AssessmentAttemptRepository attempts = mock(AssessmentAttemptRepository.class);
+        RunRepository runs = mock(RunRepository.class);
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        EducationLearnerService learnerService = mock(EducationLearnerService.class);
+
+        Run run = new Run("tenant-a", "student-1", "学习目标：二次函数",
+                "我的作答：二次函数的一般形式是 y=ax^2+bx+c。",
+                BigDecimal.ONE, "demo-model", "prompt-v1", "policy-v1", null,
+                "education.read,education.write", true, 4);
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", "profile-1",
+                "二次函数", "理解二次函数的概念及一般形式", 0.2, 0.9);
+        run.attachEducationConfiguration(new EducationRunConfiguration(true, "profile-1", goal.getId(),
+                goal.getTitle(), 0.2, 0.9, "数学", "九年级", "人教版", goal.getConceptKey(),
+                null, null, "PRACTICE", "理解二次函数的概念及一般形式=0.20"));
+        LearnerMastery updated = new LearnerMastery("tenant-a", "profile-1",
+                goal.getConceptKey(), 0.55, 2, 1);
+
+        when(runs.findById(run.getId())).thenReturn(Optional.of(run));
+        when(goals.findByIdAndTenantIdAndUserId(goal.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(goal));
+        when(mastery.findByTenantIdAndLearnerProfileIdAndConceptKey(
+                "tenant-a", "profile-1", goal.getConceptKey())).thenReturn(Optional.empty());
+        when(learnerService.recordObservedMastery(any(), any(), any(), any())).thenReturn(updated);
+        when(attempts.save(any(AssessmentAttempt.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        EducationAssessmentService service = new EducationAssessmentService(attempts, runs, goals, mastery,
+                learnerService, new SensitiveDataSanitizer());
+        AssessmentAttempt result = service.record("tenant-a", "student-1", run.getId(), "step-1",
+                "profile-1", "二次函数", true, 0.8, "MODEL_TOOL",
+                "学生写出了二次函数的一般形式", "二次函数的一般形式是 y=ax^2+bx+c", "答题正确");
+
+        assertEquals(goal.getConceptKey(), result.getConceptKey());
+    }
+
+    @Test
     void shouldRejectModelAssessmentWithoutLearnerEvidence() {
         AssessmentAttemptRepository attempts = mock(AssessmentAttemptRepository.class);
         RunRepository runs = mock(RunRepository.class);

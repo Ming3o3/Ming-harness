@@ -11,22 +11,25 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Optional;
 
-/** 管理按用户隔离的模型供应商配置，并把密钥生命周期限制在后端。 */
+/** 管理个人覆盖和租户级默认模型配置，并把密钥生命周期限制在后端。 */
 @Service
 public class ModelProviderConfigService {
 
     private static final int MAX_API_KEY_LENGTH = 1000;
 
     private final ModelProviderConfigRepository repository;
+    private final TenantModelProviderConfigRepository tenantRepository;
     private final ModelProviderConfigSnapshotRepository snapshotRepository;
     private final ModelSecretCipher secretCipher;
     private final ModelConfig defaultConfig;
 
     public ModelProviderConfigService(ModelProviderConfigRepository repository,
+                                      TenantModelProviderConfigRepository tenantRepository,
                                       ModelProviderConfigSnapshotRepository snapshotRepository,
                                       ModelSecretCipher secretCipher,
                                       ModelConfig defaultConfig) {
         this.repository = repository;
+        this.tenantRepository = tenantRepository;
         this.snapshotRepository = snapshotRepository;
         this.secretCipher = secretCipher;
         this.defaultConfig = defaultConfig;
@@ -37,6 +40,16 @@ public class ModelProviderConfigService {
         return repository.findByTenantIdAndUserId(tenantId, userId)
                 .map(this::toUserView)
                 .orElseGet(this::toDefaultView);
+    }
+
+    /** 管理员工作台读取租户默认配置；旧版本的管理员个人配置可在首次保存时平滑迁移。 */
+    @Transactional(readOnly = true)
+    public ModelProviderConfigView viewTenantDefault(String tenantId, String legacyAdminUserId) {
+        return tenantRepository.findById(tenantId)
+                .map(this::toTenantView)
+                .orElseGet(() -> repository.findByTenantIdAndUserId(tenantId, legacyAdminUserId)
+                        .map(this::toUserView)
+                        .orElseGet(this::toDefaultView));
     }
 
     @Transactional
@@ -66,24 +79,82 @@ public class ModelProviderConfigService {
         return toUserView(repository.save(saved));
     }
 
+    /** 保存租户默认配置；个人配置不会被复制给每个用户，运行时统一按租户回退。 */
+    @Transactional
+    public ModelProviderConfigView updateTenantDefault(String tenantId, String legacyAdminUserId,
+                                                       UpdateModelProviderConfigRequest request) {
+        NormalizedModelConfig normalized = normalize(request);
+        TenantModelProviderConfig existing = tenantRepository.findById(tenantId).orElse(null);
+        ModelProviderConfig legacy = existing == null
+                ? repository.findByTenantIdAndUserId(tenantId, legacyAdminUserId).orElse(null)
+                : null;
+        String ciphertext = existing == null ? legacy == null ? null : legacy.getApiKeyCiphertext()
+                : existing.getApiKeyCiphertext();
+        String hint = existing == null ? legacy == null ? null : legacy.getApiKeyHint()
+                : existing.getApiKeyHint();
+        if (normalized.clearApiKey()) {
+            ciphertext = null;
+            hint = null;
+        } else if (!normalized.suppliedApiKey().isBlank()) {
+            ciphertext = secretCipher.encrypt(normalized.suppliedApiKey());
+            hint = maskApiKey(normalized.suppliedApiKey());
+        }
+
+        if (existing == null) {
+            existing = new TenantModelProviderConfig(tenantId, normalized.enabled(), normalized.baseUrl(),
+                    normalized.modelName(), ciphertext, hint);
+        } else {
+            existing.update(normalized.enabled(), normalized.baseUrl(), normalized.modelName(), ciphertext, hint);
+        }
+        TenantModelProviderConfig saved = tenantRepository.save(existing);
+        ModelProviderConfigSnapshot snapshot = snapshotRepository.save(new ModelProviderConfigSnapshot(saved));
+        saved.attachSnapshot(snapshot.getId());
+        tenantRepository.save(saved);
+
+        // 旧版本管理员配置已经被提升为租户默认配置，删除旧覆盖避免管理员自己继续走旧值。
+        if (legacy != null) repository.delete(legacy);
+        return toTenantView(saved);
+    }
+
     /** 原子捕获创建 Run 时的模型配置，避免模型名和连接配置在并发更新中错配。 */
     @Transactional
     public CapturedModelConfig captureForRun(String tenantId, String userId) {
         ModelProviderConfig existing = repository.findByTenantIdAndUserId(tenantId, userId).orElse(null);
-        if (existing == null) {
-            return new CapturedModelConfig(null, new ResolvedModelConfig(defaultConfig.enabled(), defaultConfig.baseUrl(),
-                    defaultConfig.apiKey(), defaultConfig.name(), "environment"));
-        }
-        if (existing.getActiveSnapshotId() != null && !existing.getActiveSnapshotId().isBlank()) {
+        if (existing != null) return captureUserConfig(tenantId, userId, existing);
+
+        TenantModelProviderConfig tenantDefault = tenantRepository.findById(tenantId).orElse(null);
+        if (tenantDefault != null) return captureTenantConfig(tenantId, tenantDefault);
+
+        return new CapturedModelConfig(null, new ResolvedModelConfig(defaultConfig.enabled(), defaultConfig.baseUrl(),
+                defaultConfig.apiKey(), defaultConfig.name(), "environment"));
+    }
+
+    private CapturedModelConfig captureUserConfig(String tenantId, String userId,
+                                                  ModelProviderConfig config) {
+        if (config.getActiveSnapshotId() != null && !config.getActiveSnapshotId().isBlank()) {
             Optional<ModelProviderConfigSnapshot> active = snapshotRepository.findByIdAndTenantIdAndUserId(
-                    existing.getActiveSnapshotId(), tenantId, userId);
+                    config.getActiveSnapshotId(), tenantId, userId);
             if (active.isPresent()) {
                 return new CapturedModelConfig(active.get().getId(), toResolvedSnapshot(active.get()));
             }
         }
-        ModelProviderConfigSnapshot snapshot = snapshotRepository.save(new ModelProviderConfigSnapshot(existing));
-        existing.attachSnapshot(snapshot.getId());
-        repository.save(existing);
+        ModelProviderConfigSnapshot snapshot = snapshotRepository.save(new ModelProviderConfigSnapshot(config));
+        config.attachSnapshot(snapshot.getId());
+        repository.save(config);
+        return new CapturedModelConfig(snapshot.getId(), toResolvedSnapshot(snapshot));
+    }
+
+    private CapturedModelConfig captureTenantConfig(String tenantId, TenantModelProviderConfig config) {
+        if (config.getActiveSnapshotId() != null && !config.getActiveSnapshotId().isBlank()) {
+            Optional<ModelProviderConfigSnapshot> active = snapshotRepository.findByIdAndTenantId(
+                    config.getActiveSnapshotId(), tenantId);
+            if (active.isPresent()) {
+                return new CapturedModelConfig(active.get().getId(), toResolvedSnapshot(active.get()));
+            }
+        }
+        ModelProviderConfigSnapshot snapshot = snapshotRepository.save(new ModelProviderConfigSnapshot(config));
+        config.attachSnapshot(snapshot.getId());
+        tenantRepository.save(config);
         return new CapturedModelConfig(snapshot.getId(), toResolvedSnapshot(snapshot));
     }
 
@@ -102,9 +173,35 @@ public class ModelProviderConfigService {
                 normalized.modelName(), "preview");
     }
 
+    /** 预览租户默认配置；保留旧管理员配置中的密钥以支持无感迁移。 */
+    @Transactional(readOnly = true)
+    public ResolvedModelConfig previewTenantDefault(String tenantId, String legacyAdminUserId,
+                                                     UpdateModelProviderConfigRequest request) {
+        NormalizedModelConfig normalized = normalize(request);
+        TenantModelProviderConfig tenantDefault = tenantRepository.findById(tenantId).orElse(null);
+        ModelProviderConfig legacy = tenantDefault == null
+                ? repository.findByTenantIdAndUserId(tenantId, legacyAdminUserId).orElse(null)
+                : null;
+        String apiKey = normalized.clearApiKey() ? "" : normalized.suppliedApiKey();
+        if (!normalized.clearApiKey() && apiKey.isBlank()) {
+            String ciphertext = tenantDefault == null
+                    ? legacy == null ? null : legacy.getApiKeyCiphertext()
+                    : tenantDefault.getApiKeyCiphertext();
+            if (ciphertext != null) apiKey = secretCipher.decrypt(ciphertext);
+        }
+        return new ResolvedModelConfig(normalized.enabled(), normalized.baseUrl(), apiKey,
+                normalized.modelName(), "preview");
+    }
+
     @Transactional
     public ModelProviderConfigView reset(String tenantId, String userId) {
         repository.findByTenantIdAndUserId(tenantId, userId).ifPresent(repository::delete);
+        return toDefaultView();
+    }
+
+    @Transactional
+    public ModelProviderConfigView resetTenantDefault(String tenantId) {
+        tenantRepository.deleteById(tenantId);
         return toDefaultView();
     }
 
@@ -112,14 +209,21 @@ public class ModelProviderConfigService {
     @Transactional(readOnly = true)
     public ResolvedModelConfig resolve(String tenantId, String userId) {
         Optional<ModelProviderConfig> configured = repository.findByTenantIdAndUserId(tenantId, userId);
-        if (configured.isEmpty()) {
-            return new ResolvedModelConfig(defaultConfig.enabled(), defaultConfig.baseUrl(),
-                    defaultConfig.apiKey(), defaultConfig.name(), "environment");
+        if (configured.isPresent()) {
+            ModelProviderConfig value = configured.get();
+            return new ResolvedModelConfig(value.isEnabled(), value.getBaseUrl(),
+                    secretCipher.decrypt(value.getApiKeyCiphertext()), value.getModelName(),
+                    "user:" + value.getUpdatedAt());
         }
-        ModelProviderConfig value = configured.get();
-        return new ResolvedModelConfig(value.isEnabled(), value.getBaseUrl(),
-                secretCipher.decrypt(value.getApiKeyCiphertext()), value.getModelName(),
-                value.getUpdatedAt().toString());
+        Optional<TenantModelProviderConfig> tenantDefault = tenantRepository.findById(tenantId);
+        if (tenantDefault.isPresent()) {
+            TenantModelProviderConfig value = tenantDefault.get();
+            return new ResolvedModelConfig(value.isEnabled(), value.getBaseUrl(),
+                    secretCipher.decrypt(value.getApiKeyCiphertext()), value.getModelName(),
+                    "tenant:" + value.getUpdatedAt());
+        }
+        return new ResolvedModelConfig(defaultConfig.enabled(), defaultConfig.baseUrl(),
+                defaultConfig.apiKey(), defaultConfig.name(), "environment");
     }
 
     /** 按 Run 创建时固化的快照解析模型配置；找不到快照时兼容旧 Run 的当前配置行为。 */
@@ -128,7 +232,7 @@ public class ModelProviderConfigService {
         if (snapshotId == null || snapshotId.isBlank()) {
             return resolve(tenantId, userId);
         }
-        return snapshotRepository.findByIdAndTenantIdAndUserId(snapshotId, tenantId, userId)
+        return snapshotRepository.findByIdAndTenantId(snapshotId, tenantId)
                 .map(this::toResolvedSnapshot)
                 .orElseGet(() -> resolve(tenantId, userId));
     }
@@ -146,6 +250,12 @@ public class ModelProviderConfigService {
 
     private ModelProviderConfigView toUserView(ModelProviderConfig value) {
         return new ModelProviderConfigView(true, value.isEnabled(), "user", value.getBaseUrl(),
+                value.getModelName(), value.getApiKeyCiphertext() != null,
+                value.getApiKeyHint(), value.getUpdatedAt());
+    }
+
+    private ModelProviderConfigView toTenantView(TenantModelProviderConfig value) {
+        return new ModelProviderConfigView(true, value.isEnabled(), "tenant", value.getBaseUrl(),
                 value.getModelName(), value.getApiKeyCiphertext() != null,
                 value.getApiKeyHint(), value.getUpdatedAt());
     }

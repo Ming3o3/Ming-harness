@@ -226,21 +226,24 @@ public class EducationAssessmentService {
                     "只有进行中的学习目标可以记录形成性测评");
         }
         String normalizedConcept = clean(conceptKey);
-        if (!goal.getConceptKey().equalsIgnoreCase(normalizedConcept)
-                || !goal.getConceptKey().equalsIgnoreCase(run.getEducationConceptKey())) {
+        if (!conceptMatchesGoal(normalizedConcept, goal)
+                || !conceptMatchesGoal(run.getEducationConceptKey(), goal)) {
             throw new BusinessException(HttpStatus.CONFLICT, "ASSESSMENT_CONCEPT_MISMATCH",
                     "测评知识点与学习目标不一致");
         }
+        // 即使请求使用了课程短标签或历史 Run 使用了目标标题，新写入的测评记录也必须
+        // 回到目标的 canonical concept_key，避免掌握度被拆成两条记录。
+        String assessmentConcept = clean(goal.getConceptKey());
 
         double before = masteryRepository
-                .findByTenantIdAndLearnerProfileIdAndConceptKey(tenantId, profileId, normalizedConcept)
+                .findByTenantIdAndLearnerProfileIdAndConceptKey(tenantId, profileId, assessmentConcept)
                 .map(LearnerMastery::getMasteryScore)
                 .orElse(0.0);
         double boundedObserved = clamp(observedMastery);
         LearnerMastery updated = learnerService.recordObservedMastery(tenantId, userId, profileId,
-                new MasteryUpdateRequest(normalizedConcept, boundedObserved, correct, null, null));
+                new MasteryUpdateRequest(assessmentConcept, boundedObserved, correct, null, null));
         AssessmentAttempt attempt = new AssessmentAttempt(tenantId, userId, runId, stepId,
-                goal.getId(), profileId, normalizedConcept, correct, boundedObserved, before,
+                goal.getId(), profileId, assessmentConcept, correct, boundedObserved, before,
                 updated.getMasteryScore(), attemptType, reviewPlanId, normalizedEvidenceSource,
                 normalizedEvidenceText,
                 cleanFeedback(feedback), run.getEducationLearningAssignmentId(),
@@ -286,6 +289,31 @@ public class EducationAssessmentService {
 
     private String clean(String value) {
         return sanitizer.sanitize(value == null ? "" : value.trim());
+    }
+
+    /**
+     * 新数据要求请求、目标和 Run 都使用同一个 canonical concept_key。历史数据可能把目标标题
+     * 写入 Run 的知识点字段，或把课程短标签与详细目标文本混用；这里只允许精确匹配、足够具体
+     * 的长短知识点关系，或候选值等于绑定目标标题，避免把“函数”和“二次函数”等任意混淆。
+     */
+    private boolean conceptMatchesGoal(String candidate, LearningGoal goal) {
+        String normalizedCandidate = normalizeConcept(candidate);
+        String normalizedGoal = normalizeConcept(goal == null ? null : goal.getConceptKey());
+        if (normalizedCandidate == null || normalizedGoal == null) return false;
+        if (normalizedGoal.equals(normalizedCandidate)) return true;
+        // 课程标签可能是“二次函数”，学习目标知识点可能带教学语义，例如
+        // “理解二次函数的概念及一般形式”。只允许足够具体的词组互相包含。
+        if (EducationRetrievalFilter.conceptsMatch(normalizedGoal, normalizedCandidate)) return true;
+        String normalizedTitle = normalizeConcept(goal.getTitle());
+        return normalizedTitle != null
+                && normalizedCandidate.equals(normalizedTitle)
+                && normalizedTitle.contains(normalizedGoal);
+    }
+
+    private String normalizeConcept(String value) {
+        String normalized = clean(value).toLowerCase(java.util.Locale.ROOT);
+        if (normalized.isBlank()) return null;
+        return normalized.replaceAll("\\s+", "");
     }
 
     private String cleanFeedback(String value) {

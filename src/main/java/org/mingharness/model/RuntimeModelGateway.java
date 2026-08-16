@@ -11,8 +11,8 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.function.Consumer;
 
 /**
- * 按 Run 所属用户动态选择演示模型或用户配置的 OpenAI 兼容供应商。
- * 默认配置仍来自环境变量，控制台保存的配置只影响该组织/用户的新执行。
+ * 按 Run 所属用户动态选择演示模型或租户/个人配置的 OpenAI 兼容供应商。
+ * 租户默认配置供所有没有个人覆盖的用户使用，配置快照保证新旧 Run 语义稳定。
  */
 @Component
 public class RuntimeModelGateway implements ModelGateway {
@@ -56,6 +56,10 @@ public class RuntimeModelGateway implements ModelGateway {
         ModelProviderConfigService.ResolvedModelConfig resolved = configService.resolveForRun(
                 tenantId, userId, request == null ? null : request.modelConfigSnapshotId());
         if (!resolved.enabled()) return demoGateway;
+        if (resolved.apiKey() == null || resolved.apiKey().isBlank()) {
+            throw new ModelGatewayException("configuration", ModelErrorCode.CONFIGURATION_INVALID, false,
+                    "外部模型已启用但 API Key 未配置，请联系管理员完成模型配置");
+        }
 
         String owner = tenantId + "\u0000" + userId;
         CachedGateway cached = externalGateways.get(owner);

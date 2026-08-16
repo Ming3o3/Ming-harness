@@ -618,6 +618,10 @@ const showLearningTrace = ref(false)
 // 学习概览默认折叠，避免课程契约和决策板挤占连续对话；用户的选择会保存在当前浏览器中。
 const LEARNING_OVERVIEW_COLLAPSED_STORAGE_KEY = 'mingHarnessLearningOverviewCollapsed'
 const learningOverviewCollapsed = ref(readLearningOverviewCollapsed())
+// 左侧栏的学习计划默认展开，但用户收起后会在当前浏览器中保留选择，
+// 这样学习记录列表不会再次被同一张卡片挤到首屏之外。
+const LEARNING_SIDEBAR_COLLAPSED_STORAGE_KEY = 'mingHarnessLearningSidebarCollapsed'
+const learningSidebarCollapsed = ref(readLearningSidebarCollapsed())
 // 学习目标是可选配置；只有用户明确点击“设定学习目标”时才展开，避免新用户
 // 刚加入课程就被一整组高级表单拦住。
 const learningGoalSettingsOpen = ref(false)
@@ -978,6 +982,24 @@ function readLearningOverviewCollapsed() {
     return stored == null ? true : stored === 'true'
   } catch {
     return true
+  }
+}
+
+function readLearningSidebarCollapsed() {
+  if (typeof window === 'undefined') return false
+  try {
+    return window.localStorage.getItem(LEARNING_SIDEBAR_COLLAPSED_STORAGE_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function toggleLearningSidebar() {
+  learningSidebarCollapsed.value = !learningSidebarCollapsed.value
+  try {
+    window.localStorage.setItem(LEARNING_SIDEBAR_COLLAPSED_STORAGE_KEY, String(learningSidebarCollapsed.value))
+  } catch {
+    // 浏览器禁用本地存储时仍允许当前页面内折叠和展开。
   }
 }
 
@@ -7782,7 +7804,7 @@ async function saveModelConfig() {
     modelConfig.value = value
     modelConfigForm.apiKey = ''
     modelConfigForm.clearApiKey = false
-    noticeMessage.value = '模型连接设置已保存；后续新 Run 会使用该配置，正在执行的 Run 保持不变。'
+    noticeMessage.value = '全组织模型连接已保存；所有用户后续新 Run 会使用该配置，正在执行的 Run 保持不变。'
     showModelSettings.value = false
   } catch (error) {
     modelConfigError.value = errorText(error)
@@ -7821,7 +7843,7 @@ async function testModelConfig() {
 async function resetModelConfig() {
   if (modelConfigSaving.value) return
   if (typeof window !== 'undefined'
-    && !window.confirm('恢复环境默认模型吗？当前用户保存的模型地址和密钥会被删除。')) return
+    && !window.confirm('恢复环境默认模型吗？当前组织共享的模型地址和密钥会被删除。')) return
   clearMessages()
   modelConfigSaving.value = true
   modelConfigError.value = ''
@@ -9252,11 +9274,27 @@ onBeforeUnmount(() => {
               <ShieldCheck :size="15" /><span>系统治理与审计</span>
             </button>
           </nav>
-          <section v-if="isLearnerOnlyRole" class="learning-sidebar-contract" :class="{ ready: educationAgentReady }" aria-label="当前学习计划">
+          <section v-if="isLearnerOnlyRole" class="learning-sidebar-contract" :class="{ ready: educationAgentReady, 'is-collapsed': learningSidebarCollapsed }" aria-label="当前学习计划">
             <div class="learning-sidebar-contract-heading">
               <div><p class="eyebrow">当前学习计划</p><strong>当前学习计划</strong></div>
-              <span><i></i>{{ educationAgentReady ? '已准备好' : '待补充' }}</span>
+              <div class="learning-sidebar-contract-heading-actions">
+                <span><i></i>{{ educationAgentReady ? '已准备好' : '待补充' }}</span>
+                <button
+                  class="learning-sidebar-contract-toggle"
+                  type="button"
+                  aria-controls="learning-sidebar-contract-content"
+                  :aria-expanded="!learningSidebarCollapsed"
+                  :aria-label="learningSidebarCollapsed ? '展开当前学习计划' : '收起当前学习计划'"
+                  :title="learningSidebarCollapsed ? '展开学习计划' : '收起学习计划'"
+                  @click="toggleLearningSidebar"
+                >
+                  {{ learningSidebarCollapsed ? '展开' : '收起' }}
+                  <ArrowDown v-if="learningSidebarCollapsed" :size="11" aria-hidden="true" />
+                  <ArrowUp v-else :size="11" aria-hidden="true" />
+                </button>
+              </div>
             </div>
+            <div id="learning-sidebar-contract-content" v-show="!learningSidebarCollapsed" class="learning-sidebar-contract-content">
             <template v-if="activeLearnerProfile">
               <strong class="learning-sidebar-contract-course">{{ activeChatCourse?.title || `${activeLearnerProfile.subject} · ${activeLearnerProfile.gradeLevel}` }}</strong>
               <p>{{ activeLearnerProfile.curriculumVersion }}</p>
@@ -9288,6 +9326,7 @@ onBeforeUnmount(() => {
               <button type="button" @click="openEducationAgentSetup">设置学习信息 <ArrowUp :size="12" /></button>
               <button type="button" @click="openRoleWorkspaceEntry('student-course')">已有邀请码？直接加入 <ArrowUp :size="12" /></button>
             </template>
+            </div>
           </section>
           <section v-if="teacherCurrentEducationCourses.length" class="chat-teaching-brief" aria-label="教师课程待办">
             <div class="chat-teaching-brief-heading">
@@ -11833,13 +11872,13 @@ onBeforeUnmount(() => {
         <div>
           <p class="eyebrow">MODEL CONNECTION</p>
           <h2 id="model-settings-title">模型连接设置</h2>
-          <span>{{ modelConfig?.source === 'user' ? '当前用户覆盖' : '环境默认配置' }}</span>
+          <span>{{ modelConfig?.source === 'tenant' ? '全组织共享配置' : modelConfig?.source === 'user' ? '旧版个人配置' : '环境默认配置' }}</span>
         </div>
         <button class="icon-button" type="button" aria-label="关闭模型设置" @click="showModelSettings = false">×</button>
       </header>
       <div v-if="modelConfigLoading" class="model-settings-state">正在读取当前模型配置…</div>
       <template v-else>
-        <p class="model-settings-help">支持 OpenAI 兼容的 Chat Completions 地址。可先选择常见服务预设自动填充，也可以改成任意兼容地址；API Key 只会提交给当前 Runtime，服务端加密保存，刷新页面不会回填明文。</p>
+        <p class="model-settings-help">支持 OpenAI 兼容的 Chat Completions 地址。可先选择常见服务预设自动填充，也可以改成任意兼容地址；管理员保存后，未设置个人覆盖的教师和学生都会使用此配置。API Key 只提交给当前 Runtime，服务端加密保存，刷新页面不会回填明文。</p>
         <label class="check-field model-settings-toggle">
           <input v-model="modelConfigForm.enabled" type="checkbox" :disabled="!modelConfigEditable" />
           <span>使用外部模型，不使用本地演示模型</span>

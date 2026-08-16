@@ -224,7 +224,8 @@ public class EducationRunConfigurationService {
                     "不支持的教学策略: " + pedagogicalMode);
         }
         String requestedConcept = clean(options.conceptKey());
-        if (goal != null && requestedConcept != null && !requestedConcept.equalsIgnoreCase(goal.getConceptKey())) {
+        if (goal != null && requestedConcept != null
+                && !EducationRetrievalFilter.conceptsMatch(requestedConcept, goal.getConceptKey())) {
             throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_GOAL_CONCEPT_MISMATCH",
                     "学习目标知识点与本次 Run 的目标知识点不一致");
         }
