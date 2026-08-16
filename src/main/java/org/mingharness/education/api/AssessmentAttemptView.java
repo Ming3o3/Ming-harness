@@ -27,6 +27,11 @@ public record AssessmentAttemptView(
         String learnerEvidenceQuote,
         String feedback,
         List<AssessmentEvidenceReference> retrievalEvidence,
+        int difficultyLevel,
+        String knowledgePointScoresJson,
+        boolean hintUsed,
+        boolean independentEvidence,
+        String questionType,
         Instant createdAt
 ) {
 
@@ -41,6 +46,8 @@ public record AssessmentAttemptView(
                 attempt.getLearnerEvidenceQuote(),
                 attempt.getFeedback(),
                 EducationRetrievalEvidence.decode(attempt.getRetrievalEvidenceJson()),
+                attempt.getDifficultyLevel(), attempt.getKnowledgePointScoresJson(),
+                attempt.isHintUsed(), attempt.isIndependentEvidence(), attempt.getQuestionType(),
                 attempt.getCreatedAt());
     }
 }

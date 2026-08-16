@@ -328,7 +328,9 @@ public class EducationController {
         LearningGoal goal = learningGoalService.get(identity.tenantId(), identity.userId(), goalId);
         AssessmentAttempt attempt = assessmentService.recordForGoal(identity.tenantId(), identity.userId(),
                 goalId, request.runId(), request.stepId(), goal.getLearnerProfileId(), request.conceptKey(),
-                Boolean.TRUE.equals(request.correct()), request.effectiveObservedMastery(),
+                new AssessmentObservation(Boolean.TRUE.equals(request.correct()), request.effectiveObservedMastery(),
+                        request.effectiveDifficultyLevel(), List.of(), request.isHintUsed(),
+                        request.isIndependent(), request.questionType()),
                 "MANUAL_REVIEW", request.evidenceText(), request.feedback());
         return AssessmentAttemptView.from(attempt);
     }

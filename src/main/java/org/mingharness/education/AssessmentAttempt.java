@@ -57,6 +57,18 @@ public class AssessmentAttempt {
     private String feedback;
     @Column(name = "retrieval_evidence_json", columnDefinition = "text")
     private String retrievalEvidenceJson;
+    /** 本题难度快照；难度属于题目证据的一部分，不能随着后续题库调整而漂移。 */
+    @Column(name = "difficulty_level", nullable = false)
+    private int difficultyLevel;
+    /** 每个知识点的权重、得分和正确性，供回放和教师解释使用。 */
+    @Column(name = "knowledge_point_scores_json", columnDefinition = "text")
+    private String knowledgePointScoresJson;
+    @Column(name = "hint_used", nullable = false)
+    private boolean hintUsed;
+    @Column(name = "independent_evidence", nullable = false)
+    private boolean independentEvidence;
+    @Column(name = "question_type", length = 64)
+    private String questionType;
     @Column(nullable = false)
     private Instant createdAt;
 
@@ -147,7 +159,22 @@ public class AssessmentAttempt {
         this.feedback = feedback == null || feedback.isBlank() ? null : feedback.trim();
         this.retrievalEvidenceJson = retrievalEvidenceJson == null || retrievalEvidenceJson.isBlank()
                 ? "[]" : retrievalEvidenceJson.trim();
+        this.difficultyLevel = 3;
+        this.knowledgePointScoresJson = "[]";
+        this.hintUsed = false;
+        this.independentEvidence = true;
         this.createdAt = Instant.now();
+    }
+
+    public void setStructuredEvidence(int difficultyLevel, String knowledgePointScoresJson,
+                                      boolean hintUsed, boolean independentEvidence,
+                                      String questionType) {
+        this.difficultyLevel = Math.max(1, Math.min(5, difficultyLevel));
+        this.knowledgePointScoresJson = knowledgePointScoresJson == null || knowledgePointScoresJson.isBlank()
+                ? "[]" : knowledgePointScoresJson.trim();
+        this.hintUsed = hintUsed;
+        this.independentEvidence = independentEvidence;
+        this.questionType = questionType == null || questionType.isBlank() ? null : questionType.trim();
     }
 
     private static String required(String value, String name) {
@@ -181,5 +208,10 @@ public class AssessmentAttempt {
     public String getLearnerEvidenceQuote() { return learnerEvidenceQuote; }
     public String getFeedback() { return feedback; }
     public String getRetrievalEvidenceJson() { return retrievalEvidenceJson; }
+    public int getDifficultyLevel() { return difficultyLevel; }
+    public String getKnowledgePointScoresJson() { return knowledgePointScoresJson; }
+    public boolean isHintUsed() { return hintUsed; }
+    public boolean isIndependentEvidence() { return independentEvidence; }
+    public String getQuestionType() { return questionType; }
     public Instant getCreatedAt() { return createdAt; }
 }

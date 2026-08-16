@@ -2,6 +2,7 @@ package org.mingharness.tool;
 
 import org.junit.jupiter.api.Test;
 import org.mingharness.education.AssessmentAttempt;
+import org.mingharness.education.AssessmentObservation;
 import org.mingharness.education.EducationAssessmentService;
 import org.mingharness.common.BusinessException;
 import tools.jackson.databind.ObjectMapper;
@@ -82,5 +83,35 @@ class EducationAssessmentToolTests {
         assertTrue(output.contains("\"ok\":false"));
         assertTrue(output.contains("\"recoverable\":true"));
         assertTrue(output.contains("ASSESSMENT_LEARNER_EVIDENCE_QUOTE_REQUIRED"));
+    }
+
+    @Test
+    void shouldParseStructuredKnowledgePointEvidenceAndDifficulty() {
+        EducationAssessmentService assessmentService = mock(EducationAssessmentService.class);
+        when(assessmentService.record(any(), any(), any(), any(), any(), any(),
+                org.mockito.ArgumentMatchers.any(AssessmentObservation.class),
+                any(), any(), any(), any())).thenAnswer(invocation -> {
+            AssessmentObservation observation = invocation.getArgument(6);
+            assertTrue(observation.hasStructuredKnowledgePoints());
+            assertTrue(observation.difficultyLevel() == 4);
+            AssessmentAttempt attempt = new AssessmentAttempt("tenant-a", "student-1", "run-1", "step-1", "goal-1",
+                    "profile-1", "二次函数", true, observation.aggregateObservedMastery(), 0.2, 0.45,
+                    "结构化评价");
+            attempt.setStructuredEvidence(observation.difficultyLevel(), "[{\"conceptKey\":\"概念\"}]",
+                    observation.hintUsed(), observation.independent(), observation.questionType());
+            return attempt;
+        });
+        EducationAssessmentTool tool = new EducationAssessmentTool(assessmentService, new ObjectMapper());
+
+        String output = tool.execute("{\"conceptKey\":\"二次函数\",\"correct\":true,"
+                        + "\"difficultyLevel\":4,\"questionType\":\"开放题\","
+                        + "\"knowledgePoints\":[{\"conceptKey\":\"概念\",\"correct\":true,\"score\":1,\"weight\":0.4},"
+                        + "{\"conceptKey\":\"一般形式\",\"correct\":false,\"score\":0,\"weight\":0.6}],"
+                        + "\"evidenceText\":\"学生写出定义\",\"learnerEvidenceQuote\":\"我的答案\"}",
+                new ToolExecutionContext("run-1", "step-1", "tenant-a", "student-1", null,
+                        "idempotency", "profile-1"));
+
+        assertTrue(output.contains("\"difficultyLevel\":4"));
+        assertTrue(output.contains("knowledgePointScores"));
     }
 }

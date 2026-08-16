@@ -13,13 +13,15 @@ public record LearnerMasteryView(
         int attempts,
         int correctAttempts,
         Instant lastAssessedAt,
-        Instant updatedAt
+        Instant updatedAt,
+        double confidenceLower,
+        double confidenceUpper
 ) {
 
     public static LearnerMasteryView from(LearnerMastery mastery) {
         return new LearnerMasteryView(mastery.getId(), mastery.getTenantId(),
                 mastery.getLearnerProfileId(), mastery.getConceptKey(), mastery.getMasteryScore(),
                 mastery.getAttempts(), mastery.getCorrectAttempts(), mastery.getLastAssessedAt(),
-                mastery.getUpdatedAt());
+                mastery.getUpdatedAt(), mastery.getConfidenceLower(), mastery.getConfidenceUpper());
     }
 }

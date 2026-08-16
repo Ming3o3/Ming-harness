@@ -10,7 +10,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /** 将测评、掌握度变化和学习目标状态放在同一个可追踪事务中。 */
 @Service
@@ -102,7 +105,7 @@ public class EducationAssessmentService {
                                     String profileId, String conceptKey, boolean correct,
                                     double observedMastery, String feedback) {
         return recordInternal(tenantId, userId, runId, stepId, null, profileId, conceptKey,
-                correct, observedMastery, "MODEL_TOOL", null, null, feedback);
+                AssessmentObservation.legacy(correct, observedMastery), "MODEL_TOOL", null, null, feedback);
     }
 
     @Transactional
@@ -111,7 +114,7 @@ public class EducationAssessmentService {
                                     double observedMastery, String evidenceSource,
                                     String evidenceText, String feedback) {
         return recordInternal(tenantId, userId, runId, stepId, null, profileId, conceptKey,
-                correct, observedMastery, evidenceSource, evidenceText, null, feedback);
+                AssessmentObservation.legacy(correct, observedMastery), evidenceSource, evidenceText, null, feedback);
     }
 
     /**
@@ -124,7 +127,18 @@ public class EducationAssessmentService {
                                     double observedMastery, String evidenceSource,
                                     String evidenceText, String learnerEvidenceQuote, String feedback) {
         return recordInternal(tenantId, userId, runId, stepId, null, profileId, conceptKey,
-                correct, observedMastery, evidenceSource, evidenceText, learnerEvidenceQuote, feedback);
+                AssessmentObservation.legacy(correct, observedMastery), evidenceSource, evidenceText,
+                learnerEvidenceQuote, feedback);
+    }
+
+    /** 新版结构化测评入口：一个题目可以同时评价多个知识点。 */
+    @Transactional
+    public AssessmentAttempt record(String tenantId, String userId, String runId, String stepId,
+                                    String profileId, String conceptKey, AssessmentObservation observation,
+                                    String evidenceSource, String evidenceText,
+                                    String learnerEvidenceQuote, String feedback) {
+        return recordInternal(tenantId, userId, runId, stepId, null, profileId, conceptKey,
+                observation, evidenceSource, evidenceText, learnerEvidenceQuote, feedback);
     }
 
     /** 由路径绑定的目标提交复核，防止请求体里的 Run 与 URL 目标交叉写入。 */
@@ -134,12 +148,21 @@ public class EducationAssessmentService {
                                            String conceptKey, boolean correct, double observedMastery,
                                            String evidenceSource, String evidenceText, String feedback) {
         return recordInternal(tenantId, userId, runId, stepId, expectedGoalId, profileId, conceptKey,
-                correct, observedMastery, evidenceSource, evidenceText, null, feedback);
+                AssessmentObservation.legacy(correct, observedMastery), evidenceSource, evidenceText, null, feedback);
+    }
+
+    @Transactional
+    public AssessmentAttempt recordForGoal(String tenantId, String userId, String expectedGoalId,
+                                           String runId, String stepId, String profileId,
+                                           String conceptKey, AssessmentObservation observation,
+                                           String evidenceSource, String evidenceText, String feedback) {
+        return recordInternal(tenantId, userId, runId, stepId, expectedGoalId, profileId, conceptKey,
+                observation, evidenceSource, evidenceText, null, feedback);
     }
 
     private AssessmentAttempt recordInternal(String tenantId, String userId, String runId, String stepId,
                                              String expectedGoalId, String profileId, String conceptKey,
-                                             boolean correct, double observedMastery, String evidenceSource,
+                                             AssessmentObservation observation, String evidenceSource,
                                              String evidenceText, String learnerEvidenceQuote,
                                              String feedback) {
         Run run = runRepository.findById(runId)
@@ -235,19 +258,50 @@ public class EducationAssessmentService {
         // 回到目标的 canonical concept_key，避免掌握度被拆成两条记录。
         String assessmentConcept = clean(goal.getConceptKey());
 
+        AssessmentObservation effectiveObservation = observation == null
+                ? AssessmentObservation.legacy(false, 0.0) : observation;
+        double boundedObserved = clamp(effectiveObservation.aggregateObservedMastery());
+        // 结构化题目的总体正确性由知识点加权结果派生，避免模型把“部分正确”提交为整体正确。
+        boolean effectiveCorrect = effectiveObservation.hasStructuredKnowledgePoints()
+                ? boundedObserved >= 0.80 : effectiveObservation.correct();
+        AssessmentObservation targetObservation = effectiveObservation.hasStructuredKnowledgePoints()
+                ? new AssessmentObservation(effectiveCorrect, boundedObserved, effectiveObservation.difficultyLevel(),
+                effectiveObservation.knowledgePoints(), effectiveObservation.hintUsed(),
+                effectiveObservation.independent(), effectiveObservation.questionType())
+                : effectiveObservation;
         double before = masteryRepository
                 .findByTenantIdAndLearnerProfileIdAndConceptKey(tenantId, profileId, assessmentConcept)
                 .map(LearnerMastery::getMasteryScore)
                 .orElse(0.0);
-        double boundedObserved = clamp(observedMastery);
-        LearnerMastery updated = learnerService.recordObservedMastery(tenantId, userId, profileId,
-                new MasteryUpdateRequest(assessmentConcept, boundedObserved, correct, null, null));
+        LearnerMastery updated = updateMasteryForObservation(tenantId, userId, profileId, assessmentConcept,
+                targetObservation, boundedObserved);
+
+        List<KnowledgePointAssessment> points = effectiveObservation.knowledgePoints();
+        List<LearnerMastery> updatedKnowledgePoints = new ArrayList<>();
+        if (effectiveObservation.hasStructuredKnowledgePoints()) {
+            for (KnowledgePointAssessment point : deduplicate(points)) {
+                String pointConcept = clean(point.conceptKey());
+                if (pointConcept.isBlank()) continue;
+                if (pointConcept.equalsIgnoreCase(assessmentConcept)) {
+                    updatedKnowledgePoints.add(updated);
+                    continue;
+                }
+                LearnerMastery pointMastery = updateMasteryForObservation(tenantId, userId, profileId, pointConcept,
+                        new AssessmentObservation(point.correct(), point.score(), effectiveObservation.difficultyLevel(),
+                                List.of(), effectiveObservation.hintUsed(), effectiveObservation.independent(),
+                                effectiveObservation.questionType()), point.score());
+                if (pointMastery != null) updatedKnowledgePoints.add(pointMastery);
+            }
+        }
+
         AssessmentAttempt attempt = new AssessmentAttempt(tenantId, userId, runId, stepId,
-                goal.getId(), profileId, assessmentConcept, correct, boundedObserved, before,
+                goal.getId(), profileId, assessmentConcept, effectiveCorrect, boundedObserved, before,
                 updated.getMasteryScore(), attemptType, reviewPlanId, normalizedEvidenceSource,
                 normalizedEvidenceText,
                 cleanFeedback(feedback), run.getEducationLearningAssignmentId(),
                 EducationRetrievalEvidence.snapshot(run), normalizedLearnerEvidenceQuote);
+        attempt.setStructuredEvidence(effectiveObservation.difficultyLevel(), encodeKnowledgePoints(points),
+                effectiveObservation.hintUsed(), effectiveObservation.independent(), effectiveObservation.questionType());
         AssessmentAttempt saved = attemptRepository.save(attempt);
         if (attemptType == AssessmentAttemptType.FORMATIVE && assignmentCompletionService != null) {
             assignmentCompletionService.resumeAfterEvidenceForGoal(
@@ -261,10 +315,11 @@ public class EducationAssessmentService {
         }
         if (attemptType == AssessmentAttemptType.REVIEW) {
             if (taskCompletionService != null) {
-                taskCompletionService.completeForReview(tenantId, userId, runId, correct, java.time.Instant.now());
+                taskCompletionService.completeForReview(tenantId, userId, runId, effectiveCorrect, java.time.Instant.now());
             }
-            reviewPlanService.recordReview(tenantId, userId, reviewPlanId, correct, java.time.Instant.now());
-        } else if (updated.getMasteryScore() >= goal.getTargetMastery()) {
+            reviewPlanService.recordReview(tenantId, userId, reviewPlanId, effectiveCorrect, java.time.Instant.now());
+        } else if (updated.getMasteryScore() >= goal.getTargetMastery()
+                && canCompleteGoal(goal, effectiveObservation, saved, updatedKnowledgePoints)) {
             goal.changeStatus(LearningGoalStatus.COMPLETED);
             if (reviewPlanService != null) {
                 reviewPlanService.ensureForCompletedGoal(goal);
@@ -276,6 +331,79 @@ public class EducationAssessmentService {
             }
         }
         return saved;
+    }
+
+    private LearnerMastery updateMasteryForObservation(String tenantId, String userId, String profileId,
+                                                        String conceptKey, AssessmentObservation observation,
+                                                        double observedMastery) {
+        MasteryUpdateRequest request = new MasteryUpdateRequest(conceptKey, observedMastery,
+                observation.correct(), null, null, observation.difficultyLevel(),
+                observation.effectiveEvidenceWeight(), observation.hintUsed(), observation.independent());
+        if (observation.hasStructuredKnowledgePoints()) {
+            LearnerMastery updated = learnerService.recordObservedMasteryWithoutGoalCompletion(
+                    tenantId, userId, profileId, request);
+            // 兼容只 mock 旧接口的组件测试和旧扩展实现。
+            return updated == null
+                    ? learnerService.recordObservedMastery(tenantId, userId, profileId, request)
+                    : updated;
+        }
+        return learnerService.recordObservedMastery(tenantId, userId, profileId, request);
+    }
+
+    private List<KnowledgePointAssessment> deduplicate(List<KnowledgePointAssessment> points) {
+        Map<String, KnowledgePointAssessment> result = new LinkedHashMap<>();
+        for (KnowledgePointAssessment point : points == null ? List.<KnowledgePointAssessment>of() : points) {
+            if (point == null) continue;
+            result.putIfAbsent(normalizeConcept(point.conceptKey()), point);
+        }
+        return new ArrayList<>(result.values());
+    }
+
+    private String encodeKnowledgePoints(List<KnowledgePointAssessment> points) {
+        if (points == null || points.isEmpty()) return "[]";
+        StringBuilder json = new StringBuilder("[");
+        boolean first = true;
+        for (KnowledgePointAssessment point : deduplicate(points)) {
+            if (!first) json.append(',');
+            first = false;
+            json.append("{\"conceptKey\":\"").append(jsonEscape(point.conceptKey()))
+                    .append("\",\"correct\":").append(point.correct())
+                    .append(",\"score\":").append(point.score())
+                    .append(",\"weight\":").append(point.weight());
+            if (point.evidenceText() != null) {
+                json.append(",\"evidenceText\":\"").append(jsonEscape(point.evidenceText())).append('"');
+            }
+            json.append('}');
+        }
+        return json.append(']').toString();
+    }
+
+    private String jsonEscape(String value) {
+        return value == null ? "" : value.replace("\\", "\\\\")
+                .replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r");
+    }
+
+    /** 结构化新流程要求多次、跨类型、至少一次独立证据后才完成目标。 */
+    private boolean canCompleteGoal(LearningGoal goal, AssessmentObservation observation,
+                                    AssessmentAttempt current, List<LearnerMastery> updatedKnowledgePoints) {
+        if (!observation.hasStructuredKnowledgePoints()) return true;
+        if (updatedKnowledgePoints == null || updatedKnowledgePoints.isEmpty()
+                || updatedKnowledgePoints.stream().anyMatch(item -> item.getMasteryScore() < goal.getTargetMastery())) {
+            return false;
+        }
+        List<AssessmentAttempt> history = attemptRepository
+                .findByTenantIdAndUserIdAndLearningGoalIdOrderByCreatedAtAsc(
+                        current.getTenantId(), current.getUserId(), goal.getId());
+        List<AssessmentAttempt> all = new ArrayList<>(history == null ? List.of() : history);
+        if (all.stream().noneMatch(item -> item.getId().equals(current.getId()))) all.add(current);
+        long valid = all.stream().filter(item -> item.getAssessmentType() == AssessmentAttemptType.FORMATIVE).count();
+        long independent = all.stream().filter(AssessmentAttempt::isIndependentEvidence).count();
+        long questionTypes = all.stream().map(AssessmentAttempt::getQuestionType)
+                .filter(type -> type != null && !type.isBlank()).distinct().count();
+        long runs = all.stream().map(AssessmentAttempt::getRunId).distinct().count();
+        if (valid < 3 || independent < 1 || (questionTypes < 2 && runs < 2)) return false;
+        int size = all.size();
+        return size < 2 || (all.get(size - 1).isCorrect() && all.get(size - 2).isCorrect());
     }
 
     @Transactional(readOnly = true)

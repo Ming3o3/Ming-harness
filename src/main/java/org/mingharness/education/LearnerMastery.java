@@ -52,10 +52,20 @@ public class LearnerMastery {
     }
 
     public void recordAssessment(boolean correct, double observedMastery) {
+        recordAssessment(correct, observedMastery, 3, 1.0, false);
+    }
+
+    /** 使用简化 BKT 更新单个知识点的掌握概率。 */
+    public void recordAssessment(boolean correct, double observedMastery, int difficultyLevel,
+                                 double evidenceWeight, boolean hintUsed) {
         attempts = Math.min(Integer.MAX_VALUE, attempts + 1);
         if (correct) correctAttempts = Math.min(attempts, correctAttempts + 1);
-        // 指数平滑保留历史表现，同时让近期小测能逐步改变画像。
-        masteryScore = clamp(0.7 * masteryScore + 0.3 * observedMastery);
+        // observedMastery 只作为旧数据兼容的软证据；新流程的主更新由 BKT 的 correct、
+        // 难度、提示和证据权重共同决定，避免模型直接伪造最终掌握度。
+        double bktScore = BktMasteryCalculator.update(masteryScore, correct, difficultyLevel,
+                evidenceWeight, hintUsed).nextMastery();
+        double observed = clamp(observedMastery);
+        masteryScore = clamp(0.80 * bktScore + 0.20 * observed);
         lastAssessedAt = Instant.now();
         updatedAt = lastAssessedAt;
     }
@@ -88,4 +98,16 @@ public class LearnerMastery {
     public int getCorrectAttempts() { return correctAttempts; }
     public Instant getLastAssessedAt() { return lastAssessedAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+
+    /** 近似 95% 可信范围；证据越少区间越宽，供页面解释而不是替代 BKT 状态。 */
+    public double getConfidenceLower() { return confidenceInterval()[0]; }
+    public double getConfidenceUpper() { return confidenceInterval()[1]; }
+
+    private double[] confidenceInterval() {
+        if (attempts <= 0) return new double[]{0.0, 1.0};
+        double n = Math.max(1.0, attempts);
+        double standardError = Math.sqrt(Math.max(0.0, masteryScore * (1.0 - masteryScore) / n));
+        return new double[]{clamp(masteryScore - 1.96 * standardError),
+                clamp(masteryScore + 1.96 * standardError)};
+    }
 }

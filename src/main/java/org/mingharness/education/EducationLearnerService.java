@@ -143,6 +143,23 @@ public class EducationLearnerService {
     @Transactional
     public LearnerMastery recordObservedMastery(String tenantId, String userId, String profileId,
                                                 MasteryUpdateRequest request) {
+        return recordObservedMastery(tenantId, userId, profileId, request, true);
+    }
+
+    /**
+     * 结构化多知识点测评先更新各知识点，再由测评服务统一执行“多次证据确认”。
+     * 该入口只禁止本次写入直接完成目标，不会绕过 Run/证据校验。
+     */
+    @Transactional
+    public LearnerMastery recordObservedMasteryWithoutGoalCompletion(String tenantId, String userId,
+                                                                       String profileId,
+                                                                       MasteryUpdateRequest request) {
+        return recordObservedMastery(tenantId, userId, profileId, request, false);
+    }
+
+    private LearnerMastery recordObservedMastery(String tenantId, String userId, String profileId,
+                                                 MasteryUpdateRequest request,
+                                                 boolean allowGoalCompletion) {
         if (request == null || !request.isObservation()) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "MASTERY_OBSERVATION_REQUIRED",
                     "形成性测评必须提供答题观察结果");
@@ -155,9 +172,12 @@ public class EducationLearnerService {
                 .findByTenantIdAndLearnerProfileIdAndConceptKey(tenantId, profile.getId(), conceptKey)
                 .orElseGet(() -> new LearnerMastery(tenantId, profile.getId(), conceptKey,
                         0.0, 0, 0));
-        mastery.recordAssessment(Boolean.TRUE.equals(request.correct()), request.effectiveMasteryScore());
+        mastery.recordAssessment(Boolean.TRUE.equals(request.correct()), request.effectiveMasteryScore(),
+                request.effectiveDifficultyLevel(), request.effectiveEvidenceWeight(), request.isHintUsed());
         LearnerMastery saved = masteryRepository.save(mastery);
-        completeEligibleGoals(tenantId, userId, profile.getId(), conceptKey, saved.getMasteryScore());
+        if (allowGoalCompletion) {
+            completeEligibleGoals(tenantId, userId, profile.getId(), conceptKey, saved.getMasteryScore());
+        }
         return saved;
     }
 

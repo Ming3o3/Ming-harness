@@ -2,12 +2,15 @@ package org.mingharness.tool;
 
 import org.mingharness.education.EducationAssessmentService;
 import org.mingharness.education.AssessmentAttempt;
+import org.mingharness.education.AssessmentObservation;
+import org.mingharness.education.KnowledgePointAssessment;
 import org.mingharness.common.BusinessException;
 import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,7 +36,7 @@ public class EducationAssessmentTool implements HarnessTool {
     public ToolDefinition definition() {
         return new ToolDefinition(
                 "education.record_assessment",
-                "记录学生对一个知识点的形成性评价结果并更新掌握度",
+                "记录按知识点拆分、结合题目难度和学习证据的形成性评价，并更新掌握度",
                 false,
                 "LOW",
                 false,
@@ -43,13 +46,29 @@ public class EducationAssessmentTool implements HarnessTool {
                         // schema 层直接终止整个教育 Run。
                         "required", List.of("conceptKey", "correct"),
                         "additionalProperties", false,
-                        "properties", Map.of(
-                                "conceptKey", Map.of("type", "string", "minLength", 1, "maxLength", 255),
-                                "correct", Map.of("type", "boolean"),
-                                "observedMastery", Map.of("type", "number", "minimum", 0, "maximum", 1),
-                                "evidenceText", Map.of("type", "string", "maxLength", 4000),
-                                "learnerEvidenceQuote", Map.of("type", "string", "maxLength", 2000),
-                                "feedback", Map.of("type", "string", "maxLength", 1000)
+                        "properties", Map.ofEntries(
+                                Map.entry("conceptKey", Map.of("type", "string", "minLength", 1, "maxLength", 255)),
+                                Map.entry("correct", Map.of("type", "boolean")),
+                                Map.entry("observedMastery", Map.of("type", "number", "minimum", 0, "maximum", 1)),
+                                Map.entry("difficultyLevel", Map.of("type", "integer", "minimum", 1, "maximum", 5)),
+                                Map.entry("hintUsed", Map.of("type", "boolean")),
+                                Map.entry("independent", Map.of("type", "boolean")),
+                                Map.entry("questionType", Map.of("type", "string", "maxLength", 64)),
+                                Map.entry("knowledgePoints", Map.of(
+                                        "type", "array", "maxItems", 20,
+                                        "items", Map.of(
+                                                "type", "object", "additionalProperties", false,
+                                                "required", List.of("conceptKey", "correct"),
+                                                "properties", Map.of(
+                                                        "conceptKey", Map.of("type", "string", "minLength", 1, "maxLength", 255),
+                                                        "correct", Map.of("type", "boolean"),
+                                                        "score", Map.of("type", "number", "minimum", 0, "maximum", 1),
+                                                        "weight", Map.of("type", "number", "exclusiveMinimum", 0, "maximum", 1),
+                                                        "evidenceText", Map.of("type", "string", "maxLength", 4000)
+                                                )))),
+                                Map.entry("evidenceText", Map.of("type", "string", "maxLength", 4000)),
+                                Map.entry("learnerEvidenceQuote", Map.of("type", "string", "maxLength", 2000)),
+                                Map.entry("feedback", Map.of("type", "string", "maxLength", 1000))
                         )
                 ),
                 Set.of("education.write"),
@@ -113,17 +132,40 @@ public class EducationAssessmentTool implements HarnessTool {
             boolean correct = request.get("correct").asBoolean();
             double observedMastery = request.get("observedMastery") == null
                     ? (correct ? 1.0 : 0.0) : request.get("observedMastery").asDouble();
-            AssessmentAttempt attempt = assessmentService.record(
-                    context.tenantId(), context.userId(), context.runId(), context.stepId(),
-                    context.educationLearnerProfileId(), conceptKey, correct, observedMastery,
-                    "MODEL_TOOL", evidenceText, learnerEvidenceQuote,
-                    request.get("feedback") == null ? null : request.get("feedback").asText(""));
+            int difficultyLevel = request.get("difficultyLevel") == null
+                    ? 3 : Math.max(1, Math.min(5, request.get("difficultyLevel").asInt()));
+            boolean hintUsed = request.get("hintUsed") != null && request.get("hintUsed").asBoolean();
+            boolean independent = request.get("independent") == null || request.get("independent").asBoolean();
+            String questionType = request.get("questionType") == null
+                    ? null : request.get("questionType").asText("").trim();
+            List<KnowledgePointAssessment> knowledgePoints = parseKnowledgePoints(request.get("knowledgePoints"));
+            AssessmentObservation observation = knowledgePoints.isEmpty()
+                    ? AssessmentObservation.legacy(correct, observedMastery)
+                    : AssessmentObservation.structured(correct, difficultyLevel, knowledgePoints,
+                    hintUsed, independent, questionType);
+            AssessmentAttempt attempt;
+            if (knowledgePoints.isEmpty()) {
+                // 旧模型和旧组件测试仍只提供单知识点结果，继续走原方法签名。
+                attempt = assessmentService.record(
+                        context.tenantId(), context.userId(), context.runId(), context.stepId(),
+                        context.educationLearnerProfileId(), conceptKey, correct, observedMastery,
+                        "MODEL_TOOL", evidenceText, learnerEvidenceQuote,
+                        request.get("feedback") == null ? null : request.get("feedback").asText(""));
+            } else {
+                attempt = assessmentService.record(
+                        context.tenantId(), context.userId(), context.runId(), context.stepId(),
+                        context.educationLearnerProfileId(), conceptKey, observation,
+                        "MODEL_TOOL", evidenceText, learnerEvidenceQuote,
+                        request.get("feedback") == null ? null : request.get("feedback").asText(""));
+            }
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("ok", true);
             result.put("attemptId", attempt.getId());
             result.put("conceptKey", attempt.getConceptKey());
             result.put("masteryBefore", attempt.getMasteryBefore());
             result.put("masteryScore", attempt.getMasteryAfter());
+            result.put("difficultyLevel", attempt.getDifficultyLevel());
+            result.put("knowledgePointScores", attempt.getKnowledgePointScoresJson());
             result.put("evidenceSource", attempt.getEvidenceSource());
             result.put("feedback", attempt.getFeedback());
             return objectMapper.writeValueAsString(result);
@@ -138,6 +180,27 @@ public class EducationAssessmentTool implements HarnessTool {
         } catch (JacksonException exception) {
             throw new IllegalArgumentException("形成性评价输入不是有效 JSON", exception);
         }
+    }
+
+    private List<KnowledgePointAssessment> parseKnowledgePoints(JsonNode node) {
+        if (node == null || !node.isArray()) return List.of();
+        List<KnowledgePointAssessment> result = new ArrayList<>();
+        for (JsonNode item : node) {
+            if (item == null || !item.isObject() || item.get("conceptKey") == null
+                    || item.get("correct") == null || !item.get("correct").isBoolean()) continue;
+            String pointConcept = item.get("conceptKey").asText("").trim();
+            if (pointConcept.isBlank()) continue;
+            boolean pointCorrect = item.get("correct").asBoolean();
+            double pointScore = item.get("score") == null
+                    ? (pointCorrect ? 1.0 : 0.0) : item.get("score").asDouble();
+            double pointWeight = item.get("weight") == null ? 1.0 : item.get("weight").asDouble();
+            String pointEvidence = item.get("evidenceText") == null
+                    ? null : item.get("evidenceText").asText("").trim();
+            result.add(new KnowledgePointAssessment(pointConcept, pointCorrect, pointScore,
+                    pointWeight, pointEvidence));
+            if (result.size() >= 20) break;
+        }
+        return List.copyOf(result);
     }
 
     private boolean isRecoverableEvidenceError(BusinessException exception) {
