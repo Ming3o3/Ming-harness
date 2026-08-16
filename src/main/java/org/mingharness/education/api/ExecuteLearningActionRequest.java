@@ -11,7 +11,8 @@ public record ExecuteLearningActionRequest(
         @Min(value = 1, message = "Agent 最大轮数必须至少为 1")
         @Max(value = 1000, message = "Agent 最大轮数不能超过 1000") Integer maxTurns,
         @Size(max = 128, message = "课程作业 ID 长度不能超过 128 个字符") String learningAssignmentId,
-        @Size(max = 128, message = "课程实例 ID 长度不能超过 128 个字符") String courseId
+        @Size(max = 128, message = "课程实例 ID 长度不能超过 128 个字符") String courseId,
+        @Size(max = 64, message = "编程语言长度不能超过 64 个字符") String programmingLanguage
 ) {
 
     /** 兼容只指定会话、模型和最大轮数的旧调用方。 */
@@ -23,6 +24,12 @@ public record ExecuteLearningActionRequest(
     public ExecuteLearningActionRequest(String conversationId, String modelName, Integer maxTurns,
                                         String learningAssignmentId) {
         this(conversationId, modelName, maxTurns, learningAssignmentId, null);
+    }
+
+    /** 兼容增加编程语言上下文前的五参数构造方式。 */
+    public ExecuteLearningActionRequest(String conversationId, String modelName, Integer maxTurns,
+                                        String learningAssignmentId, String courseId) {
+        this(conversationId, modelName, maxTurns, learningAssignmentId, courseId, null);
     }
 
     public int effectiveMaxTurns() {

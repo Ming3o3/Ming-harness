@@ -81,7 +81,7 @@ public class LearningAssignmentBatchService {
                         new LearningAssignmentRequest(enrollment.getLearnerUserId(),
                                 clean(request.title()), clean(request.instructions()), course.getSubject(),
                                 course.getGradeLevel(), course.getCurriculumVersion(), clean(request.conceptKey()),
-                                request.targetMastery(), request.dueAt(), course.getId()),
+                                request.targetMastery(), request.dueAt(), course.getId(), request.programmingLanguage()),
                         batchId, requestHash))
                 .toList();
         return view(course.getId(), batchId, false, created);
@@ -106,6 +106,10 @@ public class LearningAssignmentBatchService {
                 clean(request.conceptKey()),
                 Double.toString(request.effectiveTargetMastery()),
                 request.dueAt() == null ? "" : request.dueAt().toString());
+        String programmingLanguage = clean(request.programmingLanguage());
+        if (!programmingLanguage.isBlank()) {
+            canonical += "\n" + programmingLanguage.toUpperCase(java.util.Locale.ROOT);
+        }
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
                     .digest(canonical.getBytes(StandardCharsets.UTF_8));

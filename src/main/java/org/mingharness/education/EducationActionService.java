@@ -89,7 +89,8 @@ public class EducationActionService {
                 profile.getSubject(), profile.getGradeLevel(),
                 profile.getCurriculumVersion(), goal.getConceptKey(), null, null,
                 pedagogicalMode(recommendation.nextActionType()),
-                normalize(request == null ? null : request.courseId()));
+                normalize(request == null ? null : request.courseId()), null,
+                normalize(request == null ? null : request.programmingLanguage()));
         SendConversationMessageRequest message = new SendConversationMessageRequest(
                 recommendation.nextActionPrompt(), normalize(request == null ? null : request.modelName()),
                 request == null ? 1_000 : request.effectiveMaxTurns(), List.of(), education);

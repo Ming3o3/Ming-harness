@@ -12,6 +12,7 @@ import {
   CircleAlert,
   Check,
   CircleDot,
+  Code2,
   Command,
   FolderGit2,
   FolderOpen,
@@ -143,6 +144,7 @@ const learningAssignmentForm = reactive({
   gradeLevel: '',
   curriculumVersion: '',
   conceptKey: '',
+  programmingLanguage: '',
   targetMastery: '80',
   dueAt: '',
 })
@@ -171,6 +173,7 @@ const educationCourseAssignmentForm = reactive({
   title: '',
   instructions: '',
   conceptKey: '',
+  programmingLanguage: '',
   targetMastery: '80',
   dueAt: '',
 })
@@ -2474,6 +2477,9 @@ function sourceMatchesEducationScope(source, scope) {
   return normalizeEducationFilterValue(source.subject) === normalizeEducationFilterValue(scope.subject)
     && normalizeEducationFilterValue(source.gradeLevel) === normalizeEducationFilterValue(scope.gradeLevel)
     && normalizeEducationFilterValue(source.curriculumVersion) === normalizeEducationFilterValue(scope.curriculumVersion)
+    && (!scope.programmingLanguage
+      || normalizeEducationFilterValue(source.programmingLanguage)
+        === normalizeEducationFilterValue(scope.programmingLanguage))
     && sourceHasConcept(source, scope.conceptKey)
     && (scope.minDifficulty === null || Number(source.difficultyLevel) >= scope.minDifficulty)
     && (scope.maxDifficulty === null || Number(source.difficultyLevel) <= scope.maxDifficulty)
@@ -2688,6 +2694,7 @@ function learningAssignmentSourceBlockReason(assignment) {
     gradeLevel: assignment.gradeLevel,
     curriculumVersion: assignment.curriculumVersion,
     conceptKey: assignment.conceptKey,
+    programmingLanguage: assignment.programmingLanguage,
     minDifficulty: null,
     maxDifficulty: null,
   })
@@ -2724,12 +2731,14 @@ const currentEducationRetrievalScope = computed(() => {
     gradeLevel: course?.gradeLevel || profile?.gradeLevel,
     curriculumVersion: course?.curriculumVersion || profile?.curriculumVersion,
     conceptKey: currentChatLearningGoal.value?.conceptKey || String(chatEducation.conceptKey || '').trim(),
+    programmingLanguage: String(chatEducation.programmingLanguage || '').trim(),
     minDifficulty,
     maxDifficulty,
   }
   const availability = courseSourceAvailability(scope)
   const filters = []
   if (scope.conceptKey) filters.push(`知识点「${scope.conceptKey}」`)
+  if (scope.programmingLanguage) filters.push(`语言 ${scope.programmingLanguage}`)
   if (scope.minDifficulty !== null && scope.maxDifficulty !== null) {
     filters.push(`难度 ${scope.minDifficulty}–${scope.maxDifficulty}`)
   } else if (scope.minDifficulty !== null) {
@@ -6382,6 +6391,7 @@ async function assignEducationCourse() {
       title: educationCourseAssignmentForm.title.trim(),
       instructions: educationCourseAssignmentForm.instructions.trim(),
       conceptKey: educationCourseAssignmentForm.conceptKey.trim(),
+      programmingLanguage: educationCourseAssignmentForm.programmingLanguage.trim() || null,
       targetMastery: targetMasteryFromPercent(educationCourseAssignmentForm.targetMastery),
       dueAt: educationCourseAssignmentForm.dueAt
         ? new Date(educationCourseAssignmentForm.dueAt).toISOString() : null,
@@ -6389,6 +6399,7 @@ async function assignEducationCourse() {
     educationCourseAssignmentForm.title = ''
     educationCourseAssignmentForm.instructions = ''
     educationCourseAssignmentForm.conceptKey = ''
+    educationCourseAssignmentForm.programmingLanguage = ''
     await loadEducationData()
     await loadEducationCourseWorkspace(course.id)
     noticeMessage.value = `已向课程活跃名单布置 ${result.assignmentCount} 份作业。`
@@ -6538,6 +6549,7 @@ function focusCourseMakeupAssignment() {
     if (!learningAssignmentForm.title.trim()) learningAssignmentForm.title = referenceAssignment.title || ''
     if (!learningAssignmentForm.instructions.trim()) learningAssignmentForm.instructions = referenceAssignment.instructions || ''
     if (!learningAssignmentForm.conceptKey.trim()) learningAssignmentForm.conceptKey = referenceAssignment.conceptKey || ''
+    if (!learningAssignmentForm.programmingLanguage.trim()) learningAssignmentForm.programmingLanguage = referenceAssignment.programmingLanguage || ''
     if (learningAssignmentForm.targetMastery === '80' && Number.isFinite(Number(referenceAssignment.targetMastery))) {
       learningAssignmentForm.targetMastery = String(Math.round(Number(referenceAssignment.targetMastery) * 100))
     }
@@ -7396,6 +7408,7 @@ async function createLearningAssignment() {
       gradeLevel: learningAssignmentForm.gradeLevel.trim(),
       curriculumVersion: learningAssignmentForm.curriculumVersion.trim(),
       conceptKey,
+      programmingLanguage: learningAssignmentForm.programmingLanguage.trim() || null,
       targetMastery: targetMasteryFromPercent(learningAssignmentForm.targetMastery),
       dueAt: learningAssignmentForm.dueAt
         ? new Date(learningAssignmentForm.dueAt).toISOString() : null,
@@ -7404,6 +7417,7 @@ async function createLearningAssignment() {
     learningAssignmentForm.title = ''
     learningAssignmentForm.instructions = ''
     learningAssignmentForm.conceptKey = ''
+    learningAssignmentForm.programmingLanguage = ''
     await loadEducationData()
     if (course) await loadEducationCourseWorkspace(course.id)
     noticeMessage.value = course
@@ -7462,6 +7476,7 @@ async function bindLearningAssignmentToChat(assignment) {
   chatEducation.gradeLevel = assignment.gradeLevel || ''
   chatEducation.curriculumVersion = assignment.curriculumVersion || ''
   chatEducation.conceptKey = assignment.conceptKey || ''
+  chatEducation.programmingLanguage = assignment.programmingLanguage || ''
   form.education.learnerProfileId = chatEducation.learnerProfileId
   form.education.learningGoalId = chatEducation.learningGoalId
   form.education.courseId = chatEducation.courseId
@@ -9689,6 +9704,7 @@ onBeforeUnmount(() => {
             </header>
             <div class="chat-course-assignment-meta">
               <span><BookOpen :size="13" />{{ chatCourseAssignment.courseTitle || chatCourseAssignment.subject }} · {{ chatCourseAssignment.gradeLevel }} · {{ chatCourseAssignment.curriculumVersion }}</span>
+              <span v-if="chatCourseAssignment.programmingLanguage"><Code2 :size="13" />{{ chatCourseAssignment.programmingLanguage }}</span>
               <span><Target :size="13" />{{ chatCourseAssignment.conceptKey }} · 目标进度 {{ formatRate(chatCourseAssignment.targetMastery) }}</span>
               <span v-if="chatCourseAssignment.dueAt"><CalendarClock :size="13" />截止 {{ formatDate(chatCourseAssignment.dueAt) }}</span>
             </div>
@@ -11378,6 +11394,7 @@ onBeforeUnmount(() => {
                       <label class="field"><span>作业标题</span><input v-model="educationCourseAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域练习" /></label>
                       <label class="field"><span>目标知识点</span><select v-model="educationCourseAssignmentForm.conceptKey" required :disabled="!activeEducationCourseConceptSuggestions.length" @change="selectEducationCourseConcept(educationCourseAssignmentForm.conceptKey)"><option value="">请选择课程资料中的知识点</option><option v-for="concept in activeEducationCourseConceptSuggestions" :key="concept" :value="concept">{{ concept }}</option></select></label>
                       <p v-if="!activeEducationCourseConceptSuggestions.length" class="policy-error education-course-wide">请先在“课程材料设置”中补充知识点，再布置作业。</p>
+                      <label class="field"><span>编程语言（可选）</span><input v-model="educationCourseAssignmentForm.programmingLanguage" maxlength="64" placeholder="例如：Python、Java" /></label>
                       <label class="field"><span>希望学生达到的程度 <small class="field-label-hint">例如 80 表示掌握八成</small></span><input v-model="educationCourseAssignmentForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
                       <label class="field"><span>截止时间（可选）</span><input v-model="educationCourseAssignmentForm.dueAt" type="datetime-local" /></label>
                       <label class="field education-course-wide"><span>作业说明</span><textarea v-model="educationCourseAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作答范围、提交要求或迁移任务"></textarea></label>
@@ -11540,6 +11557,7 @@ onBeforeUnmount(() => {
                   <datalist v-if="learningAssignmentScopeCourse" id="learning-assignment-course-learners"><option v-for="enrollment in learningAssignmentScopeLearners" :key="enrollment.id" :value="enrollment.learnerUserId" /></datalist>
                   <label class="field"><span>作业标题</span><input v-model="learningAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域练习" /></label>
                   <label class="field"><span>这次主要学什么</span><input v-model="learningAssignmentForm.conceptKey" required maxlength="255" placeholder="函数定义域" /></label>
+                  <label class="field"><span>编程语言（可选）</span><input v-model="learningAssignmentForm.programmingLanguage" maxlength="64" placeholder="例如：Python、Java" /></label>
                   <label class="field learning-assignment-wide"><span>作业说明</span><textarea v-model="learningAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作业要求、作答范围或迁移任务"></textarea></label>
                   <details v-if="!learningAssignmentScopeCourse" class="learning-assignment-context-details learning-assignment-wide" open>
                     <summary><span><strong>补充临时作业的课程信息</strong><small>临时作业不会加入课程，请填写学习范围</small></span></summary>
@@ -11563,8 +11581,8 @@ onBeforeUnmount(() => {
                 <article v-for="assignment in visibleLearningAssignments" :id="`learning-assignment-${assignment.id}`" :key="assignment.id" class="learning-assignment-row">
                   <div class="learning-assignment-main">
                     <div class="learning-assignment-meta"><strong>{{ assignment.title }}</strong><span>{{ learningAssignmentStatusLabel(assignment.status) }}</span></div>
-                    <small v-if="isLearnerOnlyRole">学习内容：{{ assignment.subject }} · {{ assignment.gradeLevel }} · {{ assignment.curriculumVersion }}</small>
-                    <small v-else>教师：{{ assignment.teacherUserId }} · 学习者：{{ assignment.learnerUserId }} · 课程范围：{{ assignment.subject }} · {{ assignment.gradeLevel }} · {{ assignment.curriculumVersion }}</small>
+                    <small v-if="isLearnerOnlyRole">学习内容：{{ assignment.subject }} · {{ assignment.gradeLevel }} · {{ assignment.curriculumVersion }}<template v-if="assignment.programmingLanguage"> · {{ assignment.programmingLanguage }}</template></small>
+                    <small v-else>教师：{{ assignment.teacherUserId }} · 学习者：{{ assignment.learnerUserId }} · 课程范围：{{ assignment.subject }} · {{ assignment.gradeLevel }} · {{ assignment.curriculumVersion }}<template v-if="assignment.programmingLanguage"> · {{ assignment.programmingLanguage }}</template></small>
                     <small v-if="assignment.reviewStatus !== 'NOT_REQUIRED'" class="learning-assignment-progress">业务结果：{{ learningAssignmentReviewStatusLabel(assignment.reviewStatus) }}<span v-if="assignment.teacherReviewedAt"> · {{ formatDate(assignment.teacherReviewedAt) }}</span></small>
                     <p>{{ assignment.instructions }}</p>
                     <small v-if="learningAssignmentActionHint(assignment)" class="learning-assignment-action-hint"><ArrowRight :size="12" />{{ learningAssignmentActionHint(assignment) }}</small>

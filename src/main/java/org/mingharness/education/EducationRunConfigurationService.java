@@ -224,7 +224,16 @@ public class EducationRunConfigurationService {
                     "不支持的教学策略: " + pedagogicalMode);
         }
         String requestedConcept = clean(options.conceptKey());
-        String programmingLanguage = clean(options.programmingLanguage());
+        String requestedProgrammingLanguage = clean(options.programmingLanguage());
+        String assignmentProgrammingLanguage = assignment == null ? null
+                : clean(assignment.getProgrammingLanguage());
+        if (assignment != null && requestedProgrammingLanguage != null
+                && !sameContext(requestedProgrammingLanguage, assignmentProgrammingLanguage)) {
+            throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_ASSIGNMENT_LANGUAGE_MISMATCH",
+                    "课程作业与请求中的编程语言不一致");
+        }
+        String programmingLanguage = assignment == null
+                ? requestedProgrammingLanguage : assignmentProgrammingLanguage;
         if (goal != null && requestedConcept != null
                 && !EducationRetrievalFilter.conceptsMatch(requestedConcept, goal.getConceptKey())) {
             throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_GOAL_CONCEPT_MISMATCH",

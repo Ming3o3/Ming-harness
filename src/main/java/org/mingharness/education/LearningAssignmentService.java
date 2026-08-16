@@ -131,7 +131,8 @@ public class LearningAssignmentService {
                 clean(request.title()), clean(request.instructions()), clean(request.subject()),
                 clean(request.gradeLevel()), clean(request.curriculumVersion()),
                 clean(request.conceptKey()), request.effectiveTargetMastery(), request.dueAt(),
-                course == null ? null : course.getId(), clean(batchId), clean(batchRequestHash)));
+                course == null ? null : course.getId(), clean(batchId), clean(batchRequestHash),
+                clean(request.programmingLanguage())));
         notifyState(saved);
         return saved;
     }
@@ -312,7 +313,7 @@ public class LearningAssignmentService {
         if (knowledgeService == null) return;
         EducationRetrievalFilter filter = new EducationRetrievalFilter(
                 request.subject(), request.gradeLevel(), request.curriculumVersion(),
-                request.conceptKey(), null, null);
+                request.conceptKey(), request.programmingLanguage(), null, null);
         if (knowledgeService.hasVisibleMatchingSource(tenantId, learnerUserId, filter)) return;
         throw new BusinessException(HttpStatus.CONFLICT, "EDUCATION_ASSIGNMENT_SOURCE_UNAVAILABLE",
                 "无法布置作业：学习者没有可访问的课程资料覆盖目标知识点「"

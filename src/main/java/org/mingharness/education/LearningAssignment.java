@@ -46,6 +46,9 @@ public class LearningAssignment {
     private String conceptKey;
     @Column(nullable = false)
     private double targetMastery;
+    /** 作业建立时冻结的编程语言；为空表示通用编程资料。 */
+    @Column(length = 64)
+    private String programmingLanguage;
     private Instant dueAt;
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
@@ -99,6 +102,16 @@ public class LearningAssignment {
                               String gradeLevel, String curriculumVersion, String conceptKey,
                               double targetMastery, Instant dueAt, String courseId, String batchId,
                               String batchRequestHash) {
+        this(tenantId, teacherUserId, learnerUserId, title, instructions, subject, gradeLevel,
+                curriculumVersion, conceptKey, targetMastery, dueAt, courseId, batchId,
+                batchRequestHash, null);
+    }
+
+    public LearningAssignment(String tenantId, String teacherUserId, String learnerUserId,
+                              String title, String instructions, String subject,
+                              String gradeLevel, String curriculumVersion, String conceptKey,
+                              double targetMastery, Instant dueAt, String courseId, String batchId,
+                              String batchRequestHash, String programmingLanguage) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = required(tenantId, "tenantId");
         this.teacherUserId = required(teacherUserId, "teacherUserId");
@@ -106,6 +119,7 @@ public class LearningAssignment {
         this.courseId = optional(courseId);
         this.batchId = optional(batchId);
         this.batchRequestHash = optional(batchRequestHash);
+        this.programmingLanguage = normalizeProgrammingLanguage(programmingLanguage);
         this.title = required(title, "title");
         this.instructions = required(instructions, "instructions");
         this.subject = required(subject, "subject");
@@ -262,6 +276,11 @@ public class LearningAssignment {
         return normalized.isBlank() ? null : normalized;
     }
 
+    private static String normalizeProgrammingLanguage(String value) {
+        String normalized = optional(value);
+        return normalized == null ? null : normalized.toUpperCase(java.util.Locale.ROOT);
+    }
+
     public String getId() { return id; }
     public String getTenantId() { return tenantId; }
     public String getTeacherUserId() { return teacherUserId; }
@@ -276,6 +295,7 @@ public class LearningAssignment {
     public String getCurriculumVersion() { return curriculumVersion; }
     public String getConceptKey() { return conceptKey; }
     public double getTargetMastery() { return targetMastery; }
+    public String getProgrammingLanguage() { return programmingLanguage; }
     public Instant getDueAt() { return dueAt; }
     public LearningAssignmentStatus getStatus() { return status; }
     public LearningAssignmentReviewStatus getReviewStatus() { return reviewStatus; }

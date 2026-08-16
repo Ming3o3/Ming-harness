@@ -17,8 +17,15 @@ public record EducationCourseAssignmentRequest(
         @Size(max = 255, message = "目标知识点长度不能超过 255 个字符") String conceptKey,
         @DecimalMin(value = "0.01", message = "目标掌握度必须大于 0")
         @DecimalMax(value = "1.0", message = "目标掌握度不能大于 1") Double targetMastery,
-        Instant dueAt
+        Instant dueAt,
+        @Size(max = 64, message = "编程语言长度不能超过 64 个字符") String programmingLanguage
 ) {
+    /** 兼容增加编程语言上下文前的课程批量布置请求。 */
+    public EducationCourseAssignmentRequest(String title, String instructions, String conceptKey,
+                                            Double targetMastery, Instant dueAt) {
+        this(title, instructions, conceptKey, targetMastery, dueAt, null);
+    }
+
     public double effectiveTargetMastery() {
         return targetMastery == null ? 0.8 : targetMastery;
     }

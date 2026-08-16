@@ -25,6 +25,15 @@ class LearningAssignmentTests {
     }
 
     @Test
+    void shouldNormalizeProgrammingLanguageWhenAssignmentIsCreated() {
+        LearningAssignment assignment = new LearningAssignment("tenant-a", "teacher-1", "student-1",
+                "Python 作业", "完成练习", "编程", "大一", "课程版", "函数",
+                0.8, null, null, null, null, " python ");
+
+        assertEquals("PYTHON", assignment.getProgrammingLanguage());
+    }
+
+    @Test
     void shouldAllowAnAcceptedAssignmentToBecomeOverdueAndStillCompleteWithEvidence() {
         Instant dueAt = Instant.parse("2026-08-01T00:00:00Z");
         LearningAssignment assignment = new LearningAssignment("tenant-a", "teacher-1", "student-1",

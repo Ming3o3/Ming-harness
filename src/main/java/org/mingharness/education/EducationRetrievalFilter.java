@@ -41,6 +41,14 @@ public record EducationRetrievalFilter(
                 masteryScores, null, Map.of());
     }
 
+    /** 绑定可选编程语言的轻量构造方式。 */
+    public EducationRetrievalFilter(String subject, String gradeLevel, String curriculumVersion,
+                                    String conceptKey, String programmingLanguage,
+                                    Integer minDifficulty, Integer maxDifficulty) {
+        this(subject, gradeLevel, curriculumVersion, conceptKey, programmingLanguage,
+                minDifficulty, maxDifficulty, Map.of(), null, Map.of());
+    }
+
     /** 携带 Run 创建时冻结的掌握度证据与依赖图。 */
     public EducationRetrievalFilter(String subject, String gradeLevel, String curriculumVersion,
                                     String conceptKey, Integer minDifficulty, Integer maxDifficulty,

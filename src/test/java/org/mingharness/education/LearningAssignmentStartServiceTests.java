@@ -51,6 +51,51 @@ class LearningAssignmentStartServiceTests {
     }
 
     @Test
+    void shouldPropagateFrozenProgrammingLanguageToAssignmentRun() {
+        LearningAssignmentService assignments = mock(LearningAssignmentService.class);
+        EducationActionService actions = mock(EducationActionService.class);
+        LearningAssignment assignment = new LearningAssignment("tenant-a", "teacher-1", "student-1",
+                "Python 作业", "完成练习", "编程", "大一", "课程版", "函数",
+                0.8, Instant.now().plusSeconds(3600), null, null, null, "python");
+        assignment.accept("profile-1", "goal-1", Instant.now());
+        when(assignments.getForParticipant("tenant-a", "student-1", assignment.getId()))
+                .thenReturn(assignment);
+        when(actions.execute(eq("tenant-a"), eq("student-1"), eq("goal-1"), any(),
+                eq("education.read,education.write"), eq("assignment-start-language")))
+                .thenReturn(detail("conversation-language"));
+
+        new LearningAssignmentStartService(assignments, actions).start(
+                "tenant-a", "student-1", assignment.getId(), null,
+                "education.read,education.write", "assignment-start-language");
+
+        var requestCaptor = org.mockito.ArgumentCaptor.forClass(ExecuteLearningActionRequest.class);
+        verify(actions).execute(eq("tenant-a"), eq("student-1"), eq("goal-1"), requestCaptor.capture(),
+                eq("education.read,education.write"), eq("assignment-start-language"));
+        assertEquals("PYTHON", requestCaptor.getValue().programmingLanguage());
+    }
+
+    @Test
+    void shouldRejectClientLanguageOverrideForAssignmentStart() {
+        LearningAssignmentService assignments = mock(LearningAssignmentService.class);
+        EducationActionService actions = mock(EducationActionService.class);
+        LearningAssignment assignment = new LearningAssignment("tenant-a", "teacher-1", "student-1",
+                "Python 作业", "完成练习", "编程", "大一", "课程版", "函数",
+                0.8, Instant.now().plusSeconds(3600), null, null, null, "python");
+        assignment.accept("profile-1", "goal-1", Instant.now());
+        when(assignments.getForParticipant("tenant-a", "student-1", assignment.getId()))
+                .thenReturn(assignment);
+
+        BusinessException exception = assertThrows(BusinessException.class, () ->
+                new LearningAssignmentStartService(assignments, actions).start(
+                        "tenant-a", "student-1", assignment.getId(),
+                        new ExecuteLearningActionRequest(null, null, 4, null, null, "java"),
+                        "education.read,education.write", "assignment-start-language-conflict"));
+
+        assertEquals("LEARNING_ASSIGNMENT_LANGUAGE_MISMATCH", exception.getCode());
+        verifyNoInteractions(actions);
+    }
+
+    @Test
     void shouldRejectTeacherStartingAnotherLearnersAssignment() {
         LearningAssignmentService assignments = mock(LearningAssignmentService.class);
         EducationActionService actions = mock(EducationActionService.class);

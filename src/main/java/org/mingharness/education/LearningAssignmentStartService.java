@@ -68,10 +68,16 @@ public class LearningAssignmentStartService {
             throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_ASSIGNMENT_GOAL_REQUIRED",
                     "课程作业尚未建立学习目标");
         }
+        String requestedLanguage = request == null ? null : normalize(request.programmingLanguage());
+        String assignmentLanguage = normalize(assignment.getProgrammingLanguage());
+        if (requestedLanguage != null && !requestedLanguage.equalsIgnoreCase(assignmentLanguage == null ? "" : assignmentLanguage)) {
+            throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_ASSIGNMENT_LANGUAGE_MISMATCH",
+                    "作业启动请求中的编程语言不能覆盖教师布置作业时冻结的语言上下文");
+        }
         ExecuteLearningActionRequest effectiveRequest = request == null
-                ? new ExecuteLearningActionRequest(null, null, null, assignment.getId(), assignment.getCourseId())
+                ? new ExecuteLearningActionRequest(null, null, null, assignment.getId(), assignment.getCourseId(), assignmentLanguage)
                 : new ExecuteLearningActionRequest(request.conversationId(), request.modelName(),
-                        request.maxTurns(), assignment.getId(), assignment.getCourseId());
+                        request.maxTurns(), assignment.getId(), assignment.getCourseId(), assignmentLanguage);
         ConversationDetail conversation = actionService.execute(
                 tenantId, learnerUserId, assignment.getLearningGoalId(), effectiveRequest,
                 permissions, idempotencyKey);
@@ -92,5 +98,9 @@ public class LearningAssignmentStartService {
                         || feedback.getStatus() == LearningAssignmentFeedbackStatus.ACKNOWLEDGED)
                         && (feedback.getAction() == LearningAssignmentFeedbackAction.RECOMMEND_RETRY
                         || feedback.getAction() == LearningAssignmentFeedbackAction.REQUEST_EVIDENCE));
+    }
+
+    private String normalize(String value) {
+        return value == null || value.isBlank() ? null : value.trim().toUpperCase(java.util.Locale.ROOT);
     }
 }
