@@ -79,6 +79,8 @@ public class Run {
     private String educationCurriculumVersion;
     @Column(name = "education_concept_key", length = 255)
     private String educationConceptKey;
+    @Column(name = "education_programming_language", length = 64)
+    private String educationProgrammingLanguage;
     @Column(name = "education_min_difficulty")
     private Integer educationMinDifficulty;
     @Column(name = "education_max_difficulty")
@@ -234,6 +236,7 @@ public class Run {
         this.educationGradeLevel = value.gradeLevel();
         this.educationCurriculumVersion = value.curriculumVersion();
         this.educationConceptKey = value.conceptKey();
+        this.educationProgrammingLanguage = value.programmingLanguage();
         this.educationMinDifficulty = value.minDifficulty();
         this.educationMaxDifficulty = value.maxDifficulty();
         this.educationPedagogicalMode = value.pedagogicalMode();
@@ -267,7 +270,7 @@ public class Run {
                 educationLearnerState == null ? "" : educationLearnerState,
                 educationCourseId, educationCourseCode, educationCourseTitle,
                 educationRetrievalStrategy == null ? "FULL" : educationRetrievalStrategy,
-                educationDependencyGraph, educationLearnerStateSnapshot);
+                educationDependencyGraph, educationLearnerStateSnapshot, educationProgrammingLanguage);
     }
 
     /** Worker 成功获取执行锁后建立租约。 */
@@ -418,6 +421,7 @@ public class Run {
     public String getEducationGradeLevel() { return educationGradeLevel; }
     public String getEducationCurriculumVersion() { return educationCurriculumVersion; }
     public String getEducationConceptKey() { return educationConceptKey; }
+    public String getEducationProgrammingLanguage() { return educationProgrammingLanguage; }
     public Integer getEducationMinDifficulty() { return educationMinDifficulty; }
     public Integer getEducationMaxDifficulty() { return educationMaxDifficulty; }
     public String getEducationPedagogicalMode() { return educationPedagogicalMode; }

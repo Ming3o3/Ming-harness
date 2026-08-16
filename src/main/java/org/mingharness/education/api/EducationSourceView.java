@@ -18,6 +18,7 @@ public record EducationSourceView(
         String prerequisiteConcepts,
         int difficultyLevel,
         String sourceType,
+        String programmingLanguage,
         String documentTitle,
         String documentOwnerUserId,
         Instant createdAt,
@@ -33,6 +34,7 @@ public record EducationSourceView(
                 source.getSubject(), source.getGradeLevel(), source.getCurriculumVersion(),
                 source.getChapter(), source.getLearningObjectives(), source.getConceptTags(),
                 source.getPrerequisiteConcepts(), source.getDifficultyLevel(), source.getSourceType(),
+                source.getProgrammingLanguage(),
                 document == null ? null : document.getTitle(),
                 document == null ? null : document.getOwnerUserId(),
                 source.getCreatedAt(), source.getUpdatedAt());

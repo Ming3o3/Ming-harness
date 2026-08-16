@@ -21,8 +21,19 @@ public record EducationSourceRequest(
         @Size(max = 2000, message = "前置知识标签不能超过 2000 个字符") String prerequisiteConcepts,
         @Min(value = 1, message = "难度必须在 1 到 5 之间")
         @Max(value = 5, message = "难度必须在 1 到 5 之间") Integer difficultyLevel,
-        @Size(max = 64, message = "来源类型长度不能超过 64 个字符") String sourceType
+        @Size(max = 64, message = "来源类型长度不能超过 64 个字符") String sourceType,
+        @Size(max = 64, message = "编程语言长度不能超过 64 个字符") String programmingLanguage
 ) {
+
+    /** 兼容尚未填写编程语言标签的旧调用方。 */
+    public EducationSourceRequest(String documentId, String subject, String gradeLevel,
+                                  String curriculumVersion, String chapter,
+                                  String learningObjectives, String conceptTags,
+                                  String prerequisiteConcepts, Integer difficultyLevel,
+                                  String sourceType) {
+        this(documentId, subject, gradeLevel, curriculumVersion, chapter, learningObjectives,
+                conceptTags, prerequisiteConcepts, difficultyLevel, sourceType, null);
+    }
 
     public int effectiveDifficultyLevel() {
         return difficultyLevel == null ? 3 : Math.max(1, Math.min(5, difficultyLevel));

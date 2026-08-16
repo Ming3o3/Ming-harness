@@ -19,6 +19,7 @@ public record EducationRetrievalFilter(
         String gradeLevel,
         String curriculumVersion,
         String conceptKey,
+        String programmingLanguage,
         Integer minDifficulty,
         Integer maxDifficulty,
         Map<String, Double> masteryScores,
@@ -36,7 +37,7 @@ public record EducationRetrievalFilter(
     public EducationRetrievalFilter(String subject, String gradeLevel, String curriculumVersion,
                                     String conceptKey, Integer minDifficulty, Integer maxDifficulty,
                                     Map<String, Double> masteryScores) {
-        this(subject, gradeLevel, curriculumVersion, conceptKey, minDifficulty, maxDifficulty,
+        this(subject, gradeLevel, curriculumVersion, conceptKey, null, minDifficulty, maxDifficulty,
                 masteryScores, null, Map.of());
     }
 
@@ -45,8 +46,18 @@ public record EducationRetrievalFilter(
                                     String conceptKey, Integer minDifficulty, Integer maxDifficulty,
                                     Map<String, Double> masteryScores,
                                     EducationDependencyGraph dependencyGraph) {
-        this(subject, gradeLevel, curriculumVersion, conceptKey, minDifficulty, maxDifficulty,
+        this(subject, gradeLevel, curriculumVersion, conceptKey, null, minDifficulty, maxDifficulty,
                 masteryScores, dependencyGraph, Map.of());
+    }
+
+    /** 兼容尚未携带编程语言标签的完整旧构造方式。 */
+    public EducationRetrievalFilter(String subject, String gradeLevel, String curriculumVersion,
+                                    String conceptKey, Integer minDifficulty, Integer maxDifficulty,
+                                    Map<String, Double> masteryScores,
+                                    EducationDependencyGraph dependencyGraph,
+                                    Map<String, LearnerStateEvidence> masteryEvidence) {
+        this(subject, gradeLevel, curriculumVersion, conceptKey, null, minDifficulty, maxDifficulty,
+                masteryScores, dependencyGraph, masteryEvidence);
     }
 
     public EducationRetrievalFilter {
@@ -54,6 +65,7 @@ public record EducationRetrievalFilter(
         gradeLevel = normalize(gradeLevel);
         curriculumVersion = normalize(curriculumVersion);
         conceptKey = normalize(conceptKey);
+        programmingLanguage = normalizeProgrammingLanguage(programmingLanguage);
         minDifficulty = boundDifficulty(minDifficulty);
         maxDifficulty = boundDifficulty(maxDifficulty);
         if (minDifficulty != null && maxDifficulty != null && minDifficulty > maxDifficulty) {
@@ -68,7 +80,8 @@ public record EducationRetrievalFilter(
 
     public boolean active() {
         return subject != null || gradeLevel != null || curriculumVersion != null
-                || conceptKey != null || minDifficulty != null || maxDifficulty != null;
+                || conceptKey != null || programmingLanguage != null
+                || minDifficulty != null || maxDifficulty != null;
     }
 
     public boolean matches(EducationKnowledgeSource source) {
@@ -81,8 +94,14 @@ public record EducationRetrievalFilter(
         return equalsOrUnconstrained(subject, source.getSubject())
                 && equalsOrUnconstrained(gradeLevel, source.getGradeLevel())
                 && equalsOrUnconstrained(curriculumVersion, source.getCurriculumVersion())
+                && languageMatches(source)
                 && (minDifficulty == null || source.getDifficultyLevel() >= minDifficulty)
                 && (maxDifficulty == null || source.getDifficultyLevel() <= maxDifficulty);
+    }
+
+    private boolean languageMatches(EducationKnowledgeSource source) {
+        return programmingLanguage == null
+                || (source != null && programmingLanguage.equalsIgnoreCase(source.getProgrammingLanguage()));
     }
 
     public boolean requiresEducationMetadata() {
@@ -93,6 +112,7 @@ public record EducationRetrievalFilter(
     public String gradeLevelOrNull() { return gradeLevel; }
     public String curriculumVersionOrNull() { return curriculumVersion; }
     public String conceptKeyOrNull() { return conceptKey; }
+    public String programmingLanguageOrNull() { return programmingLanguage; }
     public Integer minDifficultyOrNull() { return minDifficulty; }
     public Integer maxDifficultyOrNull() { return maxDifficulty; }
 
@@ -104,7 +124,7 @@ public record EducationRetrievalFilter(
 
     public EducationRetrievalFilter withDependencyGraph(EducationDependencyGraph graph) {
         return new EducationRetrievalFilter(subject, gradeLevel, curriculumVersion, conceptKey,
-                minDifficulty, maxDifficulty, masteryScores, graph, masteryEvidence);
+                programmingLanguage, minDifficulty, maxDifficulty, masteryScores, graph, masteryEvidence);
     }
 
     /** 返回目标知识点及其传递前置知识点，供图驱动召回使用。 */
@@ -208,6 +228,11 @@ public record EducationRetrievalFilter(
     private static String normalize(String value) {
         if (value == null || value.isBlank()) return null;
         return value.trim();
+    }
+
+    private static String normalizeProgrammingLanguage(String value) {
+        String normalized = normalize(value);
+        return normalized == null ? null : normalized.toUpperCase(Locale.ROOT);
     }
 
     private static Integer boundDifficulty(Integer value) {

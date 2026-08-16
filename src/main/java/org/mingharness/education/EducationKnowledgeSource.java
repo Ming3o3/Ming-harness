@@ -48,6 +48,9 @@ public class EducationKnowledgeSource {
     private int difficultyLevel;
     @Column(nullable = false, length = 64)
     private String sourceType;
+    /** 可选的编程语言标签；为空表示该资料不限定语言。 */
+    @Column(name = "programming_language", length = 64)
+    private String programmingLanguage;
     @Column(nullable = false)
     private Instant createdAt;
     @Column(nullable = false)
@@ -62,17 +65,38 @@ public class EducationKnowledgeSource {
                                     String chapter, String learningObjectives,
                                     String conceptTags, String prerequisiteConcepts,
                                     int difficultyLevel, String sourceType) {
+        this(tenantId, documentId, subject, gradeLevel, curriculumVersion, chapter,
+                learningObjectives, conceptTags, prerequisiteConcepts, difficultyLevel,
+                sourceType, null);
+    }
+
+    public EducationKnowledgeSource(String tenantId, String documentId, String subject,
+                                    String gradeLevel, String curriculumVersion,
+                                    String chapter, String learningObjectives,
+                                    String conceptTags, String prerequisiteConcepts,
+                                    int difficultyLevel, String sourceType,
+                                    String programmingLanguage) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = required(tenantId, "tenantId");
         this.documentId = required(documentId, "documentId");
         this.createdAt = Instant.now();
         update(subject, gradeLevel, curriculumVersion, chapter, learningObjectives,
-                conceptTags, prerequisiteConcepts, difficultyLevel, sourceType);
+                conceptTags, prerequisiteConcepts, difficultyLevel, sourceType,
+                programmingLanguage);
     }
 
     public void update(String subject, String gradeLevel, String curriculumVersion,
                        String chapter, String learningObjectives, String conceptTags,
                        String prerequisiteConcepts, int difficultyLevel, String sourceType) {
+        update(subject, gradeLevel, curriculumVersion, chapter, learningObjectives,
+                conceptTags, prerequisiteConcepts, difficultyLevel, sourceType,
+                this.programmingLanguage);
+    }
+
+    public void update(String subject, String gradeLevel, String curriculumVersion,
+                       String chapter, String learningObjectives, String conceptTags,
+                       String prerequisiteConcepts, int difficultyLevel, String sourceType,
+                       String programmingLanguage) {
         this.subject = required(subject, "subject");
         this.gradeLevel = required(gradeLevel, "gradeLevel");
         this.curriculumVersion = required(curriculumVersion, "curriculumVersion");
@@ -82,6 +106,7 @@ public class EducationKnowledgeSource {
         this.prerequisiteConcepts = normalizeList(prerequisiteConcepts);
         this.difficultyLevel = Math.max(1, Math.min(5, difficultyLevel));
         this.sourceType = normalize(sourceType).isBlank() ? "TEXTBOOK" : normalize(sourceType);
+        this.programmingLanguage = normalizeProgrammingLanguage(programmingLanguage);
         this.deletedAt = null;
         this.updatedAt = Instant.now();
     }
@@ -121,6 +146,11 @@ public class EducationKnowledgeSource {
                 .collect(Collectors.joining(","));
     }
 
+    private static String normalizeProgrammingLanguage(String value) {
+        String normalized = normalize(value);
+        return normalized.isBlank() ? null : normalized.toUpperCase(java.util.Locale.ROOT);
+    }
+
     public String getId() { return id; }
     public String getTenantId() { return tenantId; }
     public String getDocumentId() { return documentId; }
@@ -133,6 +163,7 @@ public class EducationKnowledgeSource {
     public String getPrerequisiteConcepts() { return prerequisiteConcepts; }
     public int getDifficultyLevel() { return difficultyLevel; }
     public String getSourceType() { return sourceType; }
+    public String getProgrammingLanguage() { return programmingLanguage; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getDeletedAt() { return deletedAt; }

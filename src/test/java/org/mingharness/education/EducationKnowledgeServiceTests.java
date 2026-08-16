@@ -57,7 +57,7 @@ class EducationKnowledgeServiceTests {
                 new SensitiveDataSanitizer());
         EducationKnowledgeSource source = service.upsertSource("tenant-a", "teacher-1",
                 new EducationSourceRequest(document.getId(), " 数学 ", "高中一年级", " 人教A版 ",
-                        "第一章", "理解函数", "函数, 定义域,函数", "集合", 4, null));
+                        "第一章", "理解函数", "函数, 定义域,函数", "集合", 4, null, "python"));
 
         assertEquals("数学", source.getSubject());
         assertEquals("人教A版", source.getCurriculumVersion());
@@ -65,6 +65,7 @@ class EducationKnowledgeServiceTests {
         assertEquals("集合", source.getPrerequisiteConcepts());
         assertEquals(4, source.getDifficultyLevel());
         assertEquals("TEXTBOOK", source.getSourceType());
+        assertEquals("PYTHON", source.getProgrammingLanguage());
         assertEquals("函数正文", document.getContent());
     }
 

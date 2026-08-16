@@ -1238,6 +1238,7 @@ const form = reactive({
     gradeLevel: '',
     curriculumVersion: '',
     conceptKey: '',
+    programmingLanguage: '',
     minDifficulty: null,
     maxDifficulty: null,
     pedagogicalMode: 'AUTO',
@@ -1335,6 +1336,7 @@ const educationSourceForm = reactive({
   prerequisiteConcepts: '',
   difficultyLevel: 3,
   sourceType: 'TEXTBOOK',
+  programmingLanguage: '',
 })
 const educationSourceAdvancedOpen = ref(false)
 
@@ -4114,6 +4116,7 @@ function defaultChatEducation() {
     gradeLevel: '',
     curriculumVersion: '',
     conceptKey: '',
+    programmingLanguage: '',
     minDifficulty: null,
     maxDifficulty: null,
     pedagogicalMode: 'AUTO',
@@ -5675,6 +5678,7 @@ async function sendChatMessage() {
       gradeLevel: educationCourse?.gradeLevel || educationProfile?.gradeLevel || '',
       curriculumVersion: educationCourse?.curriculumVersion || educationProfile?.curriculumVersion || '',
       conceptKey: String(chatEducation.conceptKey || '').trim(),
+      programmingLanguage: String(chatEducation.programmingLanguage || '').trim(),
       minDifficulty: chatEducation.minDifficulty == null ? null : Number(chatEducation.minDifficulty),
       maxDifficulty: chatEducation.maxDifficulty == null ? null : Number(chatEducation.maxDifficulty),
       pedagogicalMode: chatEducation.pedagogicalMode || 'AUTO',
@@ -7465,6 +7469,7 @@ async function bindLearningAssignmentToChat(assignment) {
   form.education.gradeLevel = chatEducation.gradeLevel
   form.education.curriculumVersion = chatEducation.curriculumVersion
   form.education.conceptKey = chatEducation.conceptKey
+  form.education.programmingLanguage = chatEducation.programmingLanguage
   const profile = learnerProfiles.value.find((item) => item.id === assignment.learnerProfileId)
   if (profile) {
     activeLearnerProfile.value = profile
@@ -8365,12 +8370,14 @@ async function deleteLearnerProfile(profile) {
         form.education.gradeLevel = ''
         form.education.curriculumVersion = ''
         form.education.conceptKey = ''
+        form.education.programmingLanguage = ''
         form.education.courseId = ''
         chatEducation.learnerProfileId = ''
         chatEducation.subject = ''
         chatEducation.gradeLevel = ''
         chatEducation.curriculumVersion = ''
         chatEducation.conceptKey = ''
+        chatEducation.programmingLanguage = ''
         chatEducation.courseId = ''
       }
     }
@@ -8412,6 +8419,7 @@ function selectEducationDocument(document) {
     educationSourceForm.subject = ''
     educationSourceForm.gradeLevel = ''
     educationSourceForm.curriculumVersion = ''
+    educationSourceForm.programmingLanguage = ''
     educationSourceForm.chapter = ''
     educationSourceForm.conceptTags = ''
     educationSourceForm.prerequisiteConcepts = ''
@@ -8429,6 +8437,7 @@ function selectEducationDocument(document) {
   educationSourceForm.subject = ''
   educationSourceForm.gradeLevel = ''
   educationSourceForm.curriculumVersion = ''
+  educationSourceForm.programmingLanguage = ''
   educationSourceForm.chapter = ''
   educationSourceForm.conceptTags = ''
   educationSourceForm.prerequisiteConcepts = ''
@@ -8443,6 +8452,7 @@ function editEducationSource(source) {
   educationSourceForm.subject = source.subject || ''
   educationSourceForm.gradeLevel = source.gradeLevel || ''
   educationSourceForm.curriculumVersion = source.curriculumVersion || ''
+  educationSourceForm.programmingLanguage = source.programmingLanguage || ''
   educationSourceForm.chapter = source.chapter || ''
   educationSourceForm.conceptTags = source.conceptTags || ''
   educationSourceForm.prerequisiteConcepts = source.prerequisiteConcepts || ''
@@ -8453,6 +8463,7 @@ function editEducationSource(source) {
     || educationSourceForm.conceptTags
     || educationSourceForm.prerequisiteConcepts
     || educationSourceForm.learningObjectives
+    || educationSourceForm.programmingLanguage
     || Number(educationSourceForm.difficultyLevel) !== 3,
   )
 }
@@ -8692,6 +8703,7 @@ function syncActiveConversationEducationContext(run) {
   chatEducation.gradeLevel = run.educationGradeLevel || ''
   chatEducation.curriculumVersion = run.educationCurriculumVersion || ''
   chatEducation.conceptKey = run.educationConceptKey || ''
+  chatEducation.programmingLanguage = run.educationProgrammingLanguage || ''
   chatEducation.pedagogicalMode = run.educationPedagogicalMode || 'AUTO'
   chatEducation.retrievalStrategy = run.educationRetrievalStrategy || 'FULL'
   form.education.courseId = chatEducation.courseId
@@ -9594,7 +9606,7 @@ onBeforeUnmount(() => {
                   <header><span><BookOpen :size="16" /></span><div><small>01 · 课程资料</small><strong>这次会参考的资料</strong></div><em :class="{ ready: currentEducationSourceCount }">{{ currentEducationSourceCount ? `${currentEducationSourceCount} 份可用` : '尚未准备好' }}</em></header>
                   <p :title="currentEducationRetrievalDetail">{{ currentEducationRetrievalDetail }}</p>
                   <div v-if="currentEducationSourcePreview.length" class="learning-agent-source-list" aria-label="当前可检索课程来源">
-                    <span v-for="source in currentEducationSourcePreview" :key="source.id" :title="isLearnerOnlyRole ? (source.conceptTags || educationSourceLabel(source)) : `${source.documentId} · ${source.conceptTags || '未标注知识点'}`"><BookOpen :size="11" /><b>{{ educationSourceLabel(source) }}</b><small v-if="isLearnerOnlyRole">已匹配当前课程</small><small v-else>{{ source.sourceType || 'TEXTBOOK' }} · 难度 {{ source.difficultyLevel || 3 }}</small></span>
+                      <span v-for="source in currentEducationSourcePreview" :key="source.id" :title="isLearnerOnlyRole ? (source.conceptTags || educationSourceLabel(source)) : `${source.documentId} · ${source.conceptTags || '未标注知识点'}`"><BookOpen :size="11" /><b>{{ educationSourceLabel(source) }}</b><small v-if="isLearnerOnlyRole">已匹配当前课程</small><small v-else>{{ source.sourceType || 'TEXTBOOK' }}{{ source.programmingLanguage ? ` · ${source.programmingLanguage}` : '' }} · 难度 {{ source.difficultyLevel || 3 }}</small></span>
                   </div>
                   <div v-else class="learning-agent-source-empty"><ShieldCheck :size="13" /><span>系统不会使用不属于本课程的资料。</span></div>
                   <footer><b>{{ currentEducationSourceCount ? '资料范围已确定' : '需先补充课程资料' }}</b><button type="button" @click="openEducationAgentSetup">{{ isLearnerOnlyRole ? '查看课程资料' : '管理课程资料' }} <ArrowUp :size="12" /></button></footer>
@@ -9888,6 +9900,7 @@ onBeforeUnmount(() => {
                   <label><span>学习方式</span><select v-model="chatEducation.pedagogicalMode" :disabled="chatSending || chatUploading"><option value="AUTO">自动选择</option><option value="EXPLAIN">概念讲解</option><option value="SOCRATIC">启发式引导</option><option value="PRACTICE">练习优先</option><option value="DIAGNOSE">错题讲解</option></select></label>
                   <label v-if="isAdminRole"><span>检索策略</span><select v-model="chatEducation.retrievalStrategy" :disabled="chatSending || chatUploading"><option value="FULL">完整方法</option><option value="ADAPTIVE">状态自适应（历史学习结果）</option><option value="BALANCED_EXPERIMENT">均衡实验分配（按状态）</option><option value="VECTOR_ONLY">向量基线</option><option value="KEYWORD_ONLY">关键词基线</option><option value="NO_LEARNER_STATE">去学习状态消融</option><option value="NO_DEPENDENCY_GRAPH">去知识依赖图消融</option><option value="STATIC_WEIGHT">固定权重消融</option><option value="CALIBRATED">教师校准</option></select></label>
                   <label><span>想练的知识点</span><input v-model="chatEducation.conceptKey" maxlength="255" placeholder="例如：函数定义域" :disabled="chatSending || chatUploading" /></label>
+                  <label><span>编程语言（可选）</span><input v-model="chatEducation.programmingLanguage" maxlength="64" placeholder="例如：Python、Java" :disabled="chatSending || chatUploading" /></label>
                   <label><span>题目难度</span><div class="chat-education-difficulty"><input v-model.number="chatEducation.minDifficulty" type="number" min="1" max="5" placeholder="1" :disabled="chatSending || chatUploading" /><span>—</span><input v-model.number="chatEducation.maxDifficulty" type="number" min="1" max="5" placeholder="5" :disabled="chatSending || chatUploading" /></div></label>
                   <small class="chat-education-context">{{ activeChatCourse ? `当前课程：${activeChatCourse.title}` : '尚未绑定课程；将按学习信息和课程资料范围运行' }} · {{ currentEducationRetrievalScope.subject || '未选择学科' }} · {{ currentEducationRetrievalScope.gradeLevel || '未选择年级' }} · {{ currentEducationRetrievalScope.curriculumVersion || '未选择课程版本' }}</small>
                 </div>
@@ -10455,6 +10468,7 @@ onBeforeUnmount(() => {
               <label class="field"><span>年级</span><input v-model="form.education.gradeLevel" required :readonly="Boolean(form.education.learnerProfileId)" :title="form.education.learnerProfileId ? '由学习信息锁定' : ''" /></label>
               <label class="field"><span>课程版本</span><input v-model="form.education.curriculumVersion" required :readonly="Boolean(form.education.learnerProfileId)" :title="form.education.learnerProfileId ? '由学习信息锁定' : ''" /></label>
               <label class="field"><span>目标知识点（可选）</span><input v-model="form.education.conceptKey" placeholder="例如：函数定义域" /></label>
+              <label class="field"><span>编程语言（可选）</span><input v-model="form.education.programmingLanguage" maxlength="64" placeholder="例如：Python、Java" /></label>
               <label class="field"><span>难度范围（可选）</span><div class="education-difficulty-range"><input v-model.number="form.education.minDifficulty" type="number" min="1" max="5" placeholder="1" /><span>—</span><input v-model.number="form.education.maxDifficulty" type="number" min="1" max="5" placeholder="5" /></div></label>
             </div>
             <small class="form-hint">学习模式需要先绑定学习信息；绑定学习目标后，系统会累计进度并给出下一步行动。</small>
@@ -11672,6 +11686,7 @@ onBeforeUnmount(() => {
                   <summary><span><strong>可选的详细设置</strong><small>章节、知识点和学习目标会帮助系统更准确地安排学习</small></span><em>{{ educationSourceAdvancedOpen ? '收起' : '稍后补充' }}</em></summary>
                   <div class="education-source-advanced-grid">
                     <label class="field"><span>章节（可选）</span><input v-model="educationSourceForm.chapter" placeholder="例如：第一章 函数" /></label>
+                    <label class="field"><span>编程语言（可选）</span><input v-model="educationSourceForm.programmingLanguage" maxlength="64" placeholder="例如：Python、Java" /></label>
                     <label class="field"><span>学习难度（可选）</span><input v-model.number="educationSourceForm.difficultyLevel" type="number" min="1" max="5" required title="1 表示基础，5 表示较难" /></label>
                     <label class="field education-source-wide"><span>知识点（可选）</span><input v-model="educationSourceForm.conceptTags" placeholder="例如：函数、定义域、值域" /></label>
                     <label class="field education-source-wide"><span>需要先会什么（可选）</span><input v-model="educationSourceForm.prerequisiteConcepts" placeholder="例如：集合、不等式" /></label>
@@ -11683,7 +11698,7 @@ onBeforeUnmount(() => {
               <div v-else class="context-preview-empty">当前没有可配置的课程资料；可以先上传课程资料，或请管理员授权课程资料。</div>
               <div v-if="educationSources.length" class="education-source-list">
                   <div v-for="source in educationSources" :key="source.id" class="education-source-row">
-                  <div><strong>{{ source.documentTitle || documents.find((document) => document.id === source.documentId)?.title || source.documentId }}</strong><small>{{ source.subject }} · {{ source.gradeLevel }} · {{ source.curriculumVersion }} · 难度 {{ source.difficultyLevel }}<template v-if="isAdminWorkspace && educationSourceOwnerLabel(source)"> · {{ educationSourceOwnerLabel(source) }}</template></small></div>
+                  <div><strong>{{ source.documentTitle || documents.find((document) => document.id === source.documentId)?.title || source.documentId }}</strong><small>{{ source.subject }} · {{ source.gradeLevel }} · {{ source.curriculumVersion }}<template v-if="source.programmingLanguage"> · {{ source.programmingLanguage }}</template> · 难度 {{ source.difficultyLevel }}<template v-if="isAdminWorkspace && educationSourceOwnerLabel(source)"> · {{ educationSourceOwnerLabel(source) }}</template></small></div>
                   <button v-if="canEditEducationSource(source)" class="text-button" type="button" @click="editEducationSource(source)">编辑</button>
                   <small v-else class="document-owner-hint">仅资料所有者可删除正文</small>
                 </div>

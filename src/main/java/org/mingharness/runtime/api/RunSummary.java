@@ -38,6 +38,7 @@ public record RunSummary(
         String educationLearningGoalTitle,
         Double educationLearningGoalTarget,
         String educationConceptKey,
+        String educationProgrammingLanguage,
         String educationReviewPlanId,
         String educationLearningAssignmentId,
         String educationCourseId,
@@ -57,7 +58,7 @@ public record RunSummary(
                 error, status, budget, createdAt, updatedAt, stepCount, idempotencyKey,
                 null, 0, BigDecimal.ZERO, false, 1, null,
                 false, null, null, null, null, null, null, null, null, null, null, null,
-                null, null, null, "FULL", 0, false);
+                null, null, null, null, "FULL", 0, false);
     }
 
     /** 兼容上一版已经携带追踪、耗时和成本字段的调用方。 */
@@ -70,6 +71,6 @@ public record RunSummary(
                 error, status, budget, createdAt, updatedAt, stepCount, idempotencyKey,
                 traceId, durationMs, totalCost, false, 1, null,
                 false, null, null, null, null, null, null, null, null, null, null, null,
-                null, null, null, "FULL", 0, false);
+                null, null, null, null, "FULL", 0, false);
     }
 }

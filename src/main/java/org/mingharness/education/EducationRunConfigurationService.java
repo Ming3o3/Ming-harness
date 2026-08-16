@@ -224,6 +224,7 @@ public class EducationRunConfigurationService {
                     "不支持的教学策略: " + pedagogicalMode);
         }
         String requestedConcept = clean(options.conceptKey());
+        String programmingLanguage = clean(options.programmingLanguage());
         if (goal != null && requestedConcept != null
                 && !EducationRetrievalFilter.conceptsMatch(requestedConcept, goal.getConceptKey())) {
             throw new BusinessException(HttpStatus.CONFLICT, "LEARNING_GOAL_CONCEPT_MISMATCH",
@@ -256,7 +257,8 @@ public class EducationRunConfigurationService {
                 course == null ? null : course.getId(),
                 course == null ? null : course.getCode(),
                 course == null ? null : course.getTitle(),
-                normalizeRetrievalStrategy(options.effectiveRetrievalStrategy()));
+                normalizeRetrievalStrategy(options.effectiveRetrievalStrategy()),
+                programmingLanguage);
         requireKnowledgeSource(tenantId, userId, configuration.retrievalFilter());
         EducationDependencyGraph graph = knowledgeService == null
                 ? EducationDependencyGraph.empty(configuration.conceptKey())
@@ -304,12 +306,14 @@ public class EducationRunConfigurationService {
                     "不支持的教学策略: " + pedagogicalMode);
         }
         String conceptKey = clean(options.conceptKey());
+        String programmingLanguage = clean(options.programmingLanguage());
         String retrievalStrategy = normalizeRetrievalStrategy(options.effectiveRetrievalStrategy());
         EducationRunConfiguration configuration = new EducationRunConfiguration(
                 true, null, null, null, null, null, null, null, null,
                 0.0, 0.0, clean(course.getSubject()), clean(course.getGradeLevel()),
                 clean(course.getCurriculumVersion()), conceptKey, minDifficulty, maxDifficulty,
-                pedagogicalMode, "", course.getId(), course.getCode(), course.getTitle(), retrievalStrategy);
+                pedagogicalMode, "", course.getId(), course.getCode(), course.getTitle(), retrievalStrategy,
+                programmingLanguage);
         requireKnowledgeSource(tenantId, userId, configuration.retrievalFilter());
         EducationDependencyGraph graph = knowledgeService == null
                 ? EducationDependencyGraph.empty(configuration.conceptKey())

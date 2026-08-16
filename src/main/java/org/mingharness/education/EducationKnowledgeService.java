@@ -75,12 +75,13 @@ public class EducationKnowledgeService {
         EducationKnowledgeSource source = existing.orElseGet(() -> new EducationKnowledgeSource(
                 tenantId, document.getId(), subject, gradeLevel, curriculumVersion,
                 clean(request.chapter()), clean(request.learningObjectives()), clean(request.conceptTags()),
-                clean(request.prerequisiteConcepts()), request.effectiveDifficultyLevel(), clean(request.sourceType())));
+                clean(request.prerequisiteConcepts()), request.effectiveDifficultyLevel(), clean(request.sourceType()),
+                clean(request.programmingLanguage())));
         if (existing.isPresent()) {
             source.update(subject, gradeLevel, curriculumVersion, clean(request.chapter()),
                     clean(request.learningObjectives()), clean(request.conceptTags()),
                     clean(request.prerequisiteConcepts()), request.effectiveDifficultyLevel(),
-                    clean(request.sourceType()));
+                    clean(request.sourceType()), clean(request.programmingLanguage()));
         }
         EducationKnowledgeSource saved = sourceRepository.save(source);
         if (graphService != null) graphService.replaceDerivedEdges(saved);

@@ -77,4 +77,22 @@ class EducationRetrievalFilterTests {
         assertTrue(filter.conservativeMasteryFor("函数") < 0.8);
         assertTrue(filter.uncertaintyFor("函数") > 0.0);
     }
+
+    @Test
+    void shouldUseProgrammingLanguageAsAnOptionalHardRetrievalConstraint() {
+        EducationRetrievalFilter pythonFilter = new EducationRetrievalFilter(
+                "计算机", "大学一年级", "Python基础", "函数", "python", null, null,
+                Map.of(), null, Map.of());
+
+        EducationKnowledgeSource python = new EducationKnowledgeSource(
+                "tenant-a", "doc-python", "计算机", "大学一年级", "Python基础", "函数",
+                "理解函数", "函数", "变量", 3, "CODE_EXAMPLE", "Python");
+        EducationKnowledgeSource java = new EducationKnowledgeSource(
+                "tenant-a", "doc-java", "计算机", "大学一年级", "Python基础", "函数",
+                "理解函数", "函数", "变量", 3, "CODE_EXAMPLE", "Java");
+
+        assertTrue(pythonFilter.matchesForRetrieval(python));
+        assertTrue(!pythonFilter.matchesForRetrieval(java));
+        assertEquals("PYTHON", python.getProgrammingLanguage());
+    }
 }
