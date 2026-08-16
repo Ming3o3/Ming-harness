@@ -193,8 +193,7 @@ public class EducationRetrievalCalibrationService {
     /** 与 ContextBuilder 使用同一状态命名，确保展示、校准和 Run 执行不会出现两套分桶。 */
     public String conditioningFor(EducationRunConfiguration configuration) {
         if (configuration == null || !configuration.enabled()) return "UNKNOWN";
-        double mastery = configuration.masteryScores().getOrDefault(
-                configuration.conceptKey(), configuration.learningGoalBaselineMastery());
+        double mastery = configuration.conservativeMasteryFor(configuration.conceptKey());
         EducationDependencyGraph graph = configuration.dependencyGraph();
         double deficit = graph == null ? 0.0 : graph.prerequisites().stream()
                 .mapToDouble(EducationDependencyPath::deficit).average().orElse(0.0);

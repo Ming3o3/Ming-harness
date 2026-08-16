@@ -372,13 +372,13 @@ public class ContextBuilder {
                 && containsConcept(source.getConceptTags(), targetConcept) ? 1.0 : 0.0;
         String[] prerequisites = splitConcepts(source.getPrerequisiteConcepts());
         double prerequisiteGap = java.util.Arrays.stream(prerequisites)
-                .mapToDouble(prerequisite -> 1.0 - filter.masteryFor(prerequisite))
+                .mapToDouble(prerequisite -> 1.0 - filter.conservativeMasteryFor(prerequisite))
                 .average().orElse(0.0);
         Set<String> graphGaps = graphGapSet(dependencyGraph);
         Set<String> sourceConcepts = sourceConceptSet(source);
         double graphCoverage = graphGaps.isEmpty() ? 0.0
                 : weightedCoverage(graphGaps, sourceConcepts, dependencyGraph);
-        double targetMastery = filter.masteryFor(filter.conceptKeyOrNull());
+        double targetMastery = filter.conservativeMasteryFor(filter.conceptKeyOrNull());
         double preferredDifficulty = targetMastery < 0.35 ? 2.0
                 : targetMastery < 0.70 ? 3.0 : 4.0;
         double difficultyFit = 1.0 - Math.min(1.0,

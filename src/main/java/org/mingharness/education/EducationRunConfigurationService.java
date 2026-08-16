@@ -241,6 +241,7 @@ public class EducationRunConfigurationService {
                     + "\n教师当前干预（"
                     + intervention.getAction().name() + "）：" + intervention.getMessage();
         }
+        String learnerStateSnapshot = masterySnapshot(tenantId, profile.getId());
         EducationRunConfiguration configuration = new EducationRunConfiguration(true, profile.getId(),
                 goal == null ? null : goal.getId(), assignment == null ? null : assignment.getId(),
                 assignment == null ? null : assignment.getTitle(),
@@ -260,7 +261,8 @@ public class EducationRunConfigurationService {
         EducationDependencyGraph graph = knowledgeService == null
                 ? EducationDependencyGraph.empty(configuration.conceptKey())
                 : knowledgeService.resolveDependencyGraph(tenantId, configuration.retrievalFilter());
-        return configuration.withDependencyGraphSnapshot(EducationDependencyGraphSnapshotCodec.encode(graph));
+        return configuration.withLearnerStateSnapshot(learnerStateSnapshot)
+                .withDependencyGraphSnapshot(EducationDependencyGraphSnapshotCodec.encode(graph));
     }
 
     /**
@@ -513,6 +515,11 @@ public class EducationRunConfigurationService {
                 .limit(40)
                 .map(item -> item.getConceptKey() + "=" + String.format(Locale.ROOT, "%.2f", item.getMasteryScore()))
                 .collect(Collectors.joining(", "));
+    }
+
+    private String masterySnapshot(String tenantId, String profileId) {
+        return LearnerStateSnapshotCodec.encode(masteryRepository
+                .findByTenantIdAndLearnerProfileIdOrderByConceptKeyAsc(tenantId, profileId));
     }
 
     private boolean sameOrUnspecified(String requested, String expected) {

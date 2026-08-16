@@ -91,6 +91,9 @@ public class Run {
     private String educationRetrievalStrategy;
     @Column(name = "education_dependency_graph", columnDefinition = "text")
     private String educationDependencyGraph;
+    /** Run 创建时冻结的掌握度、观测次数和答对次数快照。 */
+    @Column(name = "education_learner_state_snapshot", columnDefinition = "text")
+    private String educationLearnerStateSnapshot;
     /** CALIBRATED 或 ADAPTIVE 策略在创建 Run 时冻结的检索策略快照。 */
     @Column(name = "education_retrieval_weights", columnDefinition = "text")
     private String educationRetrievalWeights;
@@ -237,6 +240,7 @@ public class Run {
         this.educationLearnerState = value.learnerStateSummary();
         this.educationRetrievalStrategy = value.retrievalStrategyValue().name();
         this.educationDependencyGraph = value.dependencyGraphSnapshot();
+        this.educationLearnerStateSnapshot = value.learnerStateSnapshot();
     }
 
     public void attachEducationRetrievalWeights(String snapshot) {
@@ -263,7 +267,7 @@ public class Run {
                 educationLearnerState == null ? "" : educationLearnerState,
                 educationCourseId, educationCourseCode, educationCourseTitle,
                 educationRetrievalStrategy == null ? "FULL" : educationRetrievalStrategy,
-                educationDependencyGraph);
+                educationDependencyGraph, educationLearnerStateSnapshot);
     }
 
     /** Worker 成功获取执行锁后建立租约。 */
@@ -420,6 +424,7 @@ public class Run {
     public String getEducationLearnerState() { return educationLearnerState; }
     public String getEducationRetrievalStrategy() { return educationRetrievalStrategy == null ? "FULL" : educationRetrievalStrategy; }
     public String getEducationDependencyGraph() { return educationDependencyGraph; }
+    public String getEducationLearnerStateSnapshot() { return educationLearnerStateSnapshot; }
     public String getEducationRetrievalWeights() { return educationRetrievalWeights; }
     public String getModelConfigSnapshotId() { return modelConfigSnapshotId; }
     public String getIdempotencyKey() { return idempotencyKey; }

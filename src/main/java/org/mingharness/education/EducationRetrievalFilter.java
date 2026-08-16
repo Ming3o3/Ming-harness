@@ -22,7 +22,8 @@ public record EducationRetrievalFilter(
         Integer minDifficulty,
         Integer maxDifficulty,
         Map<String, Double> masteryScores,
-        EducationDependencyGraph dependencyGraph
+        EducationDependencyGraph dependencyGraph,
+        Map<String, LearnerStateEvidence> masteryEvidence
 ) {
 
     /** 保持旧调用方的六参数构造方式；学习者状态默认为空。 */
@@ -36,7 +37,16 @@ public record EducationRetrievalFilter(
                                     String conceptKey, Integer minDifficulty, Integer maxDifficulty,
                                     Map<String, Double> masteryScores) {
         this(subject, gradeLevel, curriculumVersion, conceptKey, minDifficulty, maxDifficulty,
-                masteryScores, null);
+                masteryScores, null, Map.of());
+    }
+
+    /** 携带 Run 创建时冻结的掌握度证据与依赖图。 */
+    public EducationRetrievalFilter(String subject, String gradeLevel, String curriculumVersion,
+                                    String conceptKey, Integer minDifficulty, Integer maxDifficulty,
+                                    Map<String, Double> masteryScores,
+                                    EducationDependencyGraph dependencyGraph) {
+        this(subject, gradeLevel, curriculumVersion, conceptKey, minDifficulty, maxDifficulty,
+                masteryScores, dependencyGraph, Map.of());
     }
 
     public EducationRetrievalFilter {
@@ -53,6 +63,7 @@ public record EducationRetrievalFilter(
         }
         masteryScores = normalizeMasteryScores(masteryScores);
         dependencyGraph = dependencyGraph;
+        masteryEvidence = normalizeMasteryEvidence(masteryEvidence);
     }
 
     public boolean active() {
@@ -93,7 +104,7 @@ public record EducationRetrievalFilter(
 
     public EducationRetrievalFilter withDependencyGraph(EducationDependencyGraph graph) {
         return new EducationRetrievalFilter(subject, gradeLevel, curriculumVersion, conceptKey,
-                minDifficulty, maxDifficulty, masteryScores, graph);
+                minDifficulty, maxDifficulty, masteryScores, graph, masteryEvidence);
     }
 
     /** 返回目标知识点及其传递前置知识点，供图驱动召回使用。 */
@@ -121,6 +132,26 @@ public record EducationRetrievalFilter(
     public double masteryFor(String concept) {
         if (concept == null || concept.isBlank()) return 0.5;
         return masteryScores.getOrDefault(normalizeConcept(concept), 0.5);
+    }
+
+    /** 返回指定知识点的冻结证据；旧 Run 没有证据快照时使用中性状态。 */
+    public LearnerStateEvidence masteryEvidenceFor(String concept) {
+        if (concept == null || concept.isBlank()) {
+            return new LearnerStateEvidence(0.5, 0, 0);
+        }
+        String normalized = normalizeConcept(concept);
+        LearnerStateEvidence evidence = masteryEvidence.get(normalized);
+        if (evidence != null) return evidence;
+        return new LearnerStateEvidence(masteryFor(normalized), 0, 0);
+    }
+
+    /** 使用置信下界驱动教育检索，避免少量证据造成过度自信。 */
+    public double conservativeMasteryFor(String concept) {
+        return masteryEvidenceFor(concept).conservativeMastery();
+    }
+
+    public double uncertaintyFor(String concept) {
+        return masteryEvidenceFor(concept).uncertainty();
     }
 
     private static boolean equalsOrUnconstrained(String expected, String actual) {
@@ -188,6 +219,17 @@ public record EducationRetrievalFilter(
         });
         return normalized.isEmpty()
                 ? Map.of() : Collections.unmodifiableMap(normalized);
+    }
+
+    private static Map<String, LearnerStateEvidence> normalizeMasteryEvidence(
+            Map<String, LearnerStateEvidence> values) {
+        if (values == null || values.isEmpty()) return Map.of();
+        Map<String, LearnerStateEvidence> normalized = new LinkedHashMap<>();
+        values.forEach((key, value) -> {
+            String concept = normalizeConcept(key);
+            if (concept != null && value != null) normalized.put(concept, value);
+        });
+        return normalized.isEmpty() ? Map.of() : Collections.unmodifiableMap(normalized);
     }
 
     private static String normalizeConcept(String value) {

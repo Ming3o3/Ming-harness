@@ -66,4 +66,15 @@ class EducationRetrievalFilterTests {
         assertTrue(!filter.matchesForRetrieval(wrongCourse));
         assertTrue(filter.matches(prerequisite) == false);
     }
+
+    @Test
+    void shouldUseConservativeMasteryFromFrozenEvidenceForRetrieval() {
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "数学", "高中一年级", "人教A版", "函数", null, null,
+                Map.of("函数", 0.8), null,
+                Map.of("函数", new LearnerStateEvidence(0.8, 1, 1)));
+
+        assertTrue(filter.conservativeMasteryFor("函数") < 0.8);
+        assertTrue(filter.uncertaintyFor("函数") > 0.0);
+    }
 }
