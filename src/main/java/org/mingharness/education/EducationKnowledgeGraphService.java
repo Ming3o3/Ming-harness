@@ -43,6 +43,8 @@ public class EducationKnowledgeGraphService {
         if (source == null) return;
         dependencyRepository.deleteByTenantIdAndSourceDocumentId(
                 source.getTenantId(), source.getDocumentId());
+        // Ensure old edges are removed before inserts with the same unique key are queued.
+        dependencyRepository.flush();
         List<String> concepts = split(source.getConceptTags());
         List<String> prerequisites = split(source.getPrerequisiteConcepts());
         if (concepts.isEmpty() || prerequisites.isEmpty()) return;

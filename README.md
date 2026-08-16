@@ -114,101 +114,101 @@ npm run desktop:dev
 
 ## 常用配置
 
-| 环境变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `SERVER_PORT` | `8080` | 后端端口 |
+| 环境变量 | 默认值                                                       | 说明 |
+| --- |-----------------------------------------------------------| --- |
+| `SERVER_PORT` | `8080`                                                    | 后端端口 |
 | `DB_URL` | `jdbc:h2:file:./data/ming-harness;DB_CLOSE_ON_EXIT=FALSE` | 数据库连接，生产环境建议替换为 PostgreSQL/MySQL |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 前端来源白名单 |
-| `HARNESS_AUTH_MODE` | `local` | `local`、`api-key` 或 `oidc`（OIDC 推荐使用 `oidc` Profile） |
-| `HARNESS_API_KEYS` | 空 | 静态引导 Key：`key|tenant|user|permission1,permission2;...`；生产环境优先使用数据库生命周期 API，并通过密钥系统注入引导 Key |
-| `OIDC_ISSUER_URI` | 空 | `oidc` Profile 使用的 OIDC Issuer 地址 |
-| `OIDC_AUDIENCE` | 空 | OIDC Token 必须包含的受众，多个值使用逗号分隔；生产 OIDC 必填 |
-| `AUDIT_INTEGRITY_KEY` | 本地演示默认值 | 审计 HMAC 密钥，生产环境必须从密钥系统注入 |
-| `MODEL_ENABLED` | `false` | 是否启用 OpenAI 兼容模型网关 |
-| `MODEL_BASE_URL` | `https://api.openai.com/v1` | 模型服务地址 |
-| `MODEL_API_KEY` | 空 | 模型服务密钥，仅通过环境变量注入 |
-| `MODEL_NAME` | `gpt-4o-mini` | 模型名称 |
-| `MODEL_FALLBACK_BASE_URL` | 空 | 临时故障时使用的备用 OpenAI 兼容服务地址 |
-| `MODEL_FALLBACK_API_KEY` | 空 | 备用模型服务密钥，仅通过环境变量注入 |
-| `MODEL_FALLBACK_NAME` | 主模型名称 | 备用服务默认模型名称 |
-| `MODEL_MAX_ATTEMPTS` | `3` | 单个供应商最大尝试次数，包含首次调用 |
-| `MODEL_RETRY_BACKOFF_MS` | `200` | 供应商重试初始退避毫秒数，按指数退避并限制上限 |
-| `MODEL_CIRCUIT_FAILURE_THRESHOLD` | `3` | 连续临时故障达到后打开应用内熔断 |
-| `MODEL_CIRCUIT_OPEN_MS` | `30000` | 熔断打开时间 |
-| `MODEL_INPUT_COST_PER_1K_TOKENS` | `0` | 输入每 1000 token 成本，按实际 usage 计算 |
-| `MODEL_OUTPUT_COST_PER_1K_TOKENS` | `0` | 输出每 1000 token 成本，按实际 usage 计算 |
-| `MODEL_MAX_RESPONSE_CHARS` | `100000` | 单次模型响应正文上限 |
-| `MODEL_TIMEOUT_MS` | `30000` | 模型调用超时；前端连接测试会使用不超过 10 秒的快速边界 |
-| `MAX_ACTIVE_RUNS_PER_TENANT` | `20` | 平台单组织活动 Run 硬上限；可通过组织策略进一步收紧 |
-| `MAX_STEPS_PER_RUN` | `1000` | 平台单次 Run 的动态步骤硬上限；可通过组织策略进一步收紧 |
-| `MAX_CREATES_PER_MINUTE` | `60` | 平台单组织每分钟创建 Run 硬上限；可通过组织策略进一步收紧 |
-| `MAX_INPUT_LENGTH` | `10000` | 平台单次输入字符硬上限；可通过组织策略进一步收紧 |
-| `MAX_RUN_BUDGET` | `1000` | 平台单次 Run 预算硬上限；可通过组织策略进一步收紧 |
-| `MAX_CONTEXT_CHARS` | `64000` | 注入模型的上下文最大字符数 |
-| `CONTEXT_CHUNK_MAX_CHARS` | `1600` | 上下文父文档子块的最大字符数 |
-| `CONTEXT_CHUNK_OVERLAP_CHARS` | `160` | 相邻上下文子块的尾部重叠字符数 |
-| `CONTEXT_PARENT_WINDOW_MAX_CHARS` | `4800` | 连续子块组成的父窗口最大字符数；只用于推理上下文，不参与向量召回 |
-| `CONTEXT_DOCUMENT_MAX_UPLOAD_BYTES` | `26214400` | PDF/DOCX 知识文档原始文件最大大小（25 MB） |
-| `CONTEXT_DOCUMENT_MAX_CONTENT_CHARS` | `100000` | PDF/DOCX 解析后写入知识库的正文最大字符数 |
-| `CONTEXT_SEMANTIC_ENABLED` | `false` | 是否调用 embedding API 按语义边界分块 |
-| `CONTEXT_SEMANTIC_BREAKPOINT` | `0.35` | 相邻原子单元余弦相似度低于该值时允许切分 |
-| `CONTEXT_SEMANTIC_MIN_UNITS` | `3` | 语义切分前至少累计的原子单元数 |
-| `CONTEXT_INDEX_ASYNC_ENABLED` | `true` | 是否在正文事务提交后异步执行 embedding 索引 |
-| `CONTEXT_INDEX_CONCURRENCY` | `2` | 上下文 embedding 后台线程数 |
-| `CONTEXT_INDEX_QUEUE_CAPACITY` | `100` | 上下文 embedding 有界队列容量；队列满时由重建接口补偿 |
-| `EMBEDDING_ENABLED` | `false` | 是否启用外部 embedding API；关闭时保持关键词召回 |
-| `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` | OpenAI 地址 / 空 | OpenAI 兼容 embedding 服务地址和密钥 |
-| `EMBEDDING_MODEL` | `text-embedding-3-small` | embedding 模型名称 |
-| `EMBEDDING_MODEL_VERSION` | `v1` | embedding 模型或供应商配置版本；变更后自动隔离旧缓存 |
-| `EMBEDDING_DIMENSION` | `1536` | embedding 维度，必须与 pgvector 迁移保持一致 |
-| `EMBEDDING_BATCH_SIZE` | `32` | 单批 embedding 文本块数量 |
-| `EMBEDDING_MAX_INPUT_TOKENS` | `8192` | 单条 embedding 输入的保守 token 上限；与字符上限同时生效 |
-| `EMBEDDING_CACHE_RETENTION_DAYS` | `30` | 持久化 embedding 缓存的保留天数 |
-| `CONTEXT_RETRIEVAL_CANDIDATE_LIMIT` | `20` | 向量召回候选子块数量 |
-| `CONTEXT_RETRIEVAL_MAX_PARENTS` | `5` | 最终展开的父文档数量 |
-| `CONTEXT_RETRIEVAL_NEIGHBOR_RADIUS` | `1` | 命中子块两侧补回的相邻子块数量 |
-| `CONTEXT_RETRIEVAL_MIN_SIMILARITY` | `0.7` | 向量余弦相似度最低阈值 |
-| `RECOVERY_TIMEOUT_MS` | `120000` | Worker 中断后将 RUNNING 任务转为超时的阈值 |
-| `MAX_TOOL_ATTEMPTS` | `3` | 单个只读工具的自动重试次数上限，副作用工具固定为 1 |
-| `RUN_EVENT_STREAM_POLL_MS` | `750` | 已订阅 Run 的持久化快照检查间隔；可跨 Worker 实例推送状态变化 |
-| `RUN_EVENT_STREAM_HEARTBEAT_MS` | `15000` | SSE 空闲连接的保活注释间隔 |
-| `RUN_EVENT_STREAM_MAX_SUBSCRIBERS` | `200` | 单个 Runtime 实例允许的并发 Run 实时订阅上限 |
-| `WORKSPACE_ENABLED` | `false`（`local` 为 `true`） | 是否启用 Agent 工作区工具；生产环境必须显式评估后开启 |
-| `HARNESS_WORKSPACE_ROOT` | `./workspace` | 工作区根目录，所有文件工具都不能访问该目录之外的路径 |
-| `WORKSPACE_MAX_READ_BYTES` / `WORKSPACE_MAX_WRITE_BYTES` | `1000000` / `1000000` | 单次读取/写入的 UTF-8 字节上限 |
-| `WORKSPACE_MAX_LIST_ENTRIES` | `200` | 单次目录浏览最多返回的条目数 |
-| `WORKSPACE_MAX_SEARCH_FILES` / `WORKSPACE_MAX_SEARCH_RESULTS` | `2000` / `200` | 搜索扫描文件数和返回匹配数上限 |
-| `WORKSPACE_MAX_READ_LINES` | `2000` | 单次文件读取允许请求的最大行数 |
-| `WORKSPACE_ALLOW_HIDDEN_FILES` | `false` | 是否允许访问 `.git`、`.env` 等隐藏路径，生产环境建议保持关闭 |
-| `WORKSPACE_EXEC_ENABLED` | `false` | 是否允许 `workspace.exec` 启动子进程；默认关闭，开启后仍需白名单和人工审批 |
-| `WORKSPACE_ALLOWED_COMMANDS` | 空 | 允许的可执行文件逗号列表，例如 `./mvnw,npm,node`；未命中白名单直接拒绝 |
-| `WORKSPACE_MAX_COMMAND_TIMEOUT_MS` | `120000` | 单条命令最大运行时间，超时会终止进程树 |
-| `WORKSPACE_MAX_COMMAND_OUTPUT_BYTES` | `200000` | 单条命令最大合并输出，超过后终止进程并标记截断 |
-| `WORKSPACE_MAX_COMMAND_ARGS` | `32` | 单条命令最多参数数量 |
-| `WORKSPACE_PATH_ENCRYPTION_KEY` | 本地演示默认值 | 本机工作区绝对路径的 AES-GCM 加密密钥；正式环境必须单独配置并妥善保管 |
-| `WORKSPACE_LOCAL_REGISTRATION_ENABLED` | `false`（`local` 为 `true`） | 是否允许桌面端登记用户主动选择的本地项目；仍必须提供桌面桥接令牌 |
-| `HARNESS_DESKTOP_BRIDGE_TOKEN` | 空 | Electron/Tauri 主进程与本机 Runtime 的一次性桥接令牌；不可写入前端环境变量、数据库或聊天记录 |
-| `DATA_RETENTION_ENABLED` | `false`（`local-infra` 为 `true`） | 是否启用定时数据保留清理 |
-| `RUN_RETENTION_DAYS` | `90` | 终态 Run 最短保留天数；实际会与审计保留期取较大值 |
-| `AUDIT_RETENTION_DAYS` | `365` | 审计链保留天数，避免清理部分事件破坏完整性 |
-| `MEMORY_RETENTION_DAYS` | `30` | 已删除长期记忆的保留天数；已到期记忆会立即清理 |
-| `DOCUMENT_RETENTION_DAYS` | `30` | 已删除知识文档的保留天数 |
-| `OUTBOX_RETENTION_DAYS` | `14` | 已发布/最终失败 Outbox 保留天数，`PENDING` 永不自动清理 |
-| `TENANT_POLICY_AUDIT_RETENTION_DAYS` | `365` | 组织资源策略变更审计保留天数 |
-| `API_KEY_AUDIT_RETENTION_DAYS` | `365` | 数据库 API Key 生命周期审计保留天数 |
-| `RETENTION_BATCH_SIZE` | `100` | 每轮最多清理的终态 Run 数量 |
-| `SPRING_PROFILES_ACTIVE` | `local` | `local`、`local-infra`，可组合 `oidc` |
-| `HARNESS_EXECUTION_MODE` | `sync` | `sync` 或 `rabbit` |
-| `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379` | Redis 连接参数 |
-| `REDIS_LOCK_TTL_MS` | `30000` | Redis 执行锁和组织配额锁基础租约；Worker 执行锁会自动取不小于 `RECOVERY_TIMEOUT_MS` 的时长，不能低于 1000 毫秒 |
-| `REDIS_QUOTA_LOCK_WAIT_MS` | `1000` | 活动 Run 配额锁等待时长；Redis 不可用时快速失败 |
-| `RABBITMQ_HOST` / `RABBITMQ_PORT` | `localhost` / `5672` | RabbitMQ 连接参数 |
-| `OUTBOX_CLAIM_LEASE_MS` | `30000` | Outbox Relay 发布租约时长；实例中断后过期租约可被其他实例接管 |
-| `RABBITMQ_CONSUMER_CONCURRENCY` | `1` | 每个应用实例初始 Worker 消费者数量 |
-| `RABBITMQ_MAX_CONSUMER_CONCURRENCY` | `4` | 每个应用实例 Worker 消费者数量上限 |
-| `RABBITMQ_PREFETCH` | `1` | 每个消费者预取消息数，避免未执行消息脱离队列监控 |
-| `RABBITMQ_MAX_QUEUE_DEPTH` | `1000` | 执行队列允许的最大待消费消息数，达到上限时 Outbox Relay 暂停抢占 |
-| `RABBITMQ_QUEUE_METRICS_POLL_MS` | `5000` | 队列深度指标刷新间隔 |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173`             | 前端来源白名单 |
+| `HARNESS_AUTH_MODE` | `local`                                                   | `local`、`api-key` 或 `oidc`（OIDC 推荐使用 `oidc` Profile） |
+| `HARNESS_API_KEYS` | 空                                                         | 静态引导 Key：`key|tenant|user|permission1,permission2;...`；生产环境优先使用数据库生命周期 API，并通过密钥系统注入引导 Key |
+| `OIDC_ISSUER_URI` | 空                                                         | `oidc` Profile 使用的 OIDC Issuer 地址 |
+| `OIDC_AUDIENCE` | 空                                                         | OIDC Token 必须包含的受众，多个值使用逗号分隔；生产 OIDC 必填 |
+| `AUDIT_INTEGRITY_KEY` | 本地演示默认值                                                   | 审计 HMAC 密钥，生产环境必须从密钥系统注入 |
+| `MODEL_ENABLED` | `false`                                                   | 是否启用 OpenAI 兼容模型网关 |
+| `MODEL_BASE_URL` | `https://api.openai.com/v1`                               | 模型服务地址 |
+| `MODEL_API_KEY` | 空                                                         | 模型服务密钥，仅通过环境变量注入 |
+| `MODEL_NAME` | `gpt-4o-mini`                                             | 模型名称 |
+| `MODEL_FALLBACK_BASE_URL` | 空                                                         | 临时故障时使用的备用 OpenAI 兼容服务地址 |
+| `MODEL_FALLBACK_API_KEY` | 空                                                         | 备用模型服务密钥，仅通过环境变量注入 |
+| `MODEL_FALLBACK_NAME` | 主模型名称                                                     | 备用服务默认模型名称 |
+| `MODEL_MAX_ATTEMPTS` | `3`                                                       | 单个供应商最大尝试次数，包含首次调用 |
+| `MODEL_RETRY_BACKOFF_MS` | `200`                                                     | 供应商重试初始退避毫秒数，按指数退避并限制上限 |
+| `MODEL_CIRCUIT_FAILURE_THRESHOLD` | `3`                                                       | 连续临时故障达到后打开应用内熔断 |
+| `MODEL_CIRCUIT_OPEN_MS` | `30000`                                                   | 熔断打开时间 |
+| `MODEL_INPUT_COST_PER_1K_TOKENS` | `0`                                                       | 输入每 1000 token 成本，按实际 usage 计算 |
+| `MODEL_OUTPUT_COST_PER_1K_TOKENS` | `0`                                                       | 输出每 1000 token 成本，按实际 usage 计算 |
+| `MODEL_MAX_RESPONSE_CHARS` | `100000`                                                  | 单次模型响应正文上限 |
+| `MODEL_TIMEOUT_MS` | `30000`                                                   | 模型调用超时；前端连接测试会使用不超过 10 秒的快速边界 |
+| `MAX_ACTIVE_RUNS_PER_TENANT` | `20`                                                      | 平台单组织活动 Run 硬上限；可通过组织策略进一步收紧 |
+| `MAX_STEPS_PER_RUN` | `1000`                                                    | 平台单次 Run 的动态步骤硬上限；可通过组织策略进一步收紧 |
+| `MAX_CREATES_PER_MINUTE` | `60`                                                      | 平台单组织每分钟创建 Run 硬上限；可通过组织策略进一步收紧 |
+| `MAX_INPUT_LENGTH` | `10000`                                                   | 平台单次输入字符硬上限；可通过组织策略进一步收紧 |
+| `MAX_RUN_BUDGET` | `1000`                                                    | 平台单次 Run 预算硬上限；可通过组织策略进一步收紧 |
+| `MAX_CONTEXT_CHARS` | `64000`                                                   | 注入模型的上下文最大字符数 |
+| `CONTEXT_CHUNK_MAX_CHARS` | `1600`                                                    | 上下文父文档子块的最大字符数 |
+| `CONTEXT_CHUNK_OVERLAP_CHARS` | `160`                                                     | 相邻上下文子块的尾部重叠字符数 |
+| `CONTEXT_PARENT_WINDOW_MAX_CHARS` | `4800`                                                    | 连续子块组成的父窗口最大字符数；只用于推理上下文，不参与向量召回 |
+| `CONTEXT_DOCUMENT_MAX_UPLOAD_BYTES` | `26214400`                                                | PDF/DOCX 知识文档原始文件最大大小（25 MB） |
+| `CONTEXT_DOCUMENT_MAX_CONTENT_CHARS` | `100000`                                                  | PDF/DOCX 解析后写入知识库的正文最大字符数 |
+| `CONTEXT_SEMANTIC_ENABLED` | `false`                                                   | 是否调用 embedding API 按语义边界分块 |
+| `CONTEXT_SEMANTIC_BREAKPOINT` | `0.35`                                                    | 相邻原子单元余弦相似度低于该值时允许切分 |
+| `CONTEXT_SEMANTIC_MIN_UNITS` | `3`                                                       | 语义切分前至少累计的原子单元数 |
+| `CONTEXT_INDEX_ASYNC_ENABLED` | `true`                                                    | 是否在正文事务提交后异步执行 embedding 索引 |
+| `CONTEXT_INDEX_CONCURRENCY` | `2`                                                       | 上下文 embedding 后台线程数 |
+| `CONTEXT_INDEX_QUEUE_CAPACITY` | `100`                                                     | 上下文 embedding 有界队列容量；队列满时由重建接口补偿 |
+| `EMBEDDING_ENABLED` | `false`                                                   | 是否启用外部 embedding API；关闭时保持关键词召回 |
+| `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` | OpenAI 地址 / 空                                             | OpenAI 兼容 embedding 服务地址和密钥 |
+| `EMBEDDING_MODEL` | `text-embedding-3-small`                                  | embedding 模型名称 |
+| `EMBEDDING_MODEL_VERSION` | `v1`                                                      | embedding 模型或供应商配置版本；变更后自动隔离旧缓存 |
+| `EMBEDDING_DIMENSION` | `1536`                                                    | embedding 维度，必须与 pgvector 迁移保持一致 |
+| `EMBEDDING_BATCH_SIZE` | `20`                                                      | 单批 embedding 文本块数量 |
+| `EMBEDDING_MAX_INPUT_TOKENS` | `8192`                                                    | 单条 embedding 输入的保守 token 上限；与字符上限同时生效 |
+| `EMBEDDING_CACHE_RETENTION_DAYS` | `30`                                                      | 持久化 embedding 缓存的保留天数 |
+| `CONTEXT_RETRIEVAL_CANDIDATE_LIMIT` | `20`                                                      | 向量召回候选子块数量 |
+| `CONTEXT_RETRIEVAL_MAX_PARENTS` | `5`                                                       | 最终展开的父文档数量 |
+| `CONTEXT_RETRIEVAL_NEIGHBOR_RADIUS` | `1`                                                       | 命中子块两侧补回的相邻子块数量 |
+| `CONTEXT_RETRIEVAL_MIN_SIMILARITY` | `0.7`                                                     | 向量余弦相似度最低阈值 |
+| `RECOVERY_TIMEOUT_MS` | `120000`                                                  | Worker 中断后将 RUNNING 任务转为超时的阈值 |
+| `MAX_TOOL_ATTEMPTS` | `3`                                                       | 单个只读工具的自动重试次数上限，副作用工具固定为 1 |
+| `RUN_EVENT_STREAM_POLL_MS` | `750`                                                     | 已订阅 Run 的持久化快照检查间隔；可跨 Worker 实例推送状态变化 |
+| `RUN_EVENT_STREAM_HEARTBEAT_MS` | `15000`                                                   | SSE 空闲连接的保活注释间隔 |
+| `RUN_EVENT_STREAM_MAX_SUBSCRIBERS` | `200`                                                     | 单个 Runtime 实例允许的并发 Run 实时订阅上限 |
+| `WORKSPACE_ENABLED` | `false`（`local` 为 `true`）                                 | 是否启用 Agent 工作区工具；生产环境必须显式评估后开启 |
+| `HARNESS_WORKSPACE_ROOT` | `./workspace`                                             | 工作区根目录，所有文件工具都不能访问该目录之外的路径 |
+| `WORKSPACE_MAX_READ_BYTES` / `WORKSPACE_MAX_WRITE_BYTES` | `1000000` / `1000000`                                     | 单次读取/写入的 UTF-8 字节上限 |
+| `WORKSPACE_MAX_LIST_ENTRIES` | `200`                                                     | 单次目录浏览最多返回的条目数 |
+| `WORKSPACE_MAX_SEARCH_FILES` / `WORKSPACE_MAX_SEARCH_RESULTS` | `2000` / `200`                                            | 搜索扫描文件数和返回匹配数上限 |
+| `WORKSPACE_MAX_READ_LINES` | `2000`                                                    | 单次文件读取允许请求的最大行数 |
+| `WORKSPACE_ALLOW_HIDDEN_FILES` | `false`                                                   | 是否允许访问 `.git`、`.env` 等隐藏路径，生产环境建议保持关闭 |
+| `WORKSPACE_EXEC_ENABLED` | `false`                                                   | 是否允许 `workspace.exec` 启动子进程；默认关闭，开启后仍需白名单和人工审批 |
+| `WORKSPACE_ALLOWED_COMMANDS` | 空                                                         | 允许的可执行文件逗号列表，例如 `./mvnw,npm,node`；未命中白名单直接拒绝 |
+| `WORKSPACE_MAX_COMMAND_TIMEOUT_MS` | `120000`                                                  | 单条命令最大运行时间，超时会终止进程树 |
+| `WORKSPACE_MAX_COMMAND_OUTPUT_BYTES` | `200000`                                                  | 单条命令最大合并输出，超过后终止进程并标记截断 |
+| `WORKSPACE_MAX_COMMAND_ARGS` | `32`                                                      | 单条命令最多参数数量 |
+| `WORKSPACE_PATH_ENCRYPTION_KEY` | 本地演示默认值                                                   | 本机工作区绝对路径的 AES-GCM 加密密钥；正式环境必须单独配置并妥善保管 |
+| `WORKSPACE_LOCAL_REGISTRATION_ENABLED` | `false`（`local` 为 `true`）                                 | 是否允许桌面端登记用户主动选择的本地项目；仍必须提供桌面桥接令牌 |
+| `HARNESS_DESKTOP_BRIDGE_TOKEN` | 空                                                         | Electron/Tauri 主进程与本机 Runtime 的一次性桥接令牌；不可写入前端环境变量、数据库或聊天记录 |
+| `DATA_RETENTION_ENABLED` | `false`（`local-infra` 为 `true`）                           | 是否启用定时数据保留清理 |
+| `RUN_RETENTION_DAYS` | `90`                                                      | 终态 Run 最短保留天数；实际会与审计保留期取较大值 |
+| `AUDIT_RETENTION_DAYS` | `365`                                                     | 审计链保留天数，避免清理部分事件破坏完整性 |
+| `MEMORY_RETENTION_DAYS` | `30`                                                      | 已删除长期记忆的保留天数；已到期记忆会立即清理 |
+| `DOCUMENT_RETENTION_DAYS` | `30`                                                      | 已删除知识文档的保留天数 |
+| `OUTBOX_RETENTION_DAYS` | `14`                                                      | 已发布/最终失败 Outbox 保留天数，`PENDING` 永不自动清理 |
+| `TENANT_POLICY_AUDIT_RETENTION_DAYS` | `365`                                                     | 组织资源策略变更审计保留天数 |
+| `API_KEY_AUDIT_RETENTION_DAYS` | `365`                                                     | 数据库 API Key 生命周期审计保留天数 |
+| `RETENTION_BATCH_SIZE` | `100`                                                     | 每轮最多清理的终态 Run 数量 |
+| `SPRING_PROFILES_ACTIVE` | `local`                                                   | `local`、`local-infra`，可组合 `oidc` |
+| `HARNESS_EXECUTION_MODE` | `sync`                                                    | `sync` 或 `rabbit` |
+| `REDIS_HOST` / `REDIS_PORT` | `localhost` / `6379`                                      | Redis 连接参数 |
+| `REDIS_LOCK_TTL_MS` | `30000`                                                   | Redis 执行锁和组织配额锁基础租约；Worker 执行锁会自动取不小于 `RECOVERY_TIMEOUT_MS` 的时长，不能低于 1000 毫秒 |
+| `REDIS_QUOTA_LOCK_WAIT_MS` | `1000`                                                    | 活动 Run 配额锁等待时长；Redis 不可用时快速失败 |
+| `RABBITMQ_HOST` / `RABBITMQ_PORT` | `localhost` / `5672`                                      | RabbitMQ 连接参数 |
+| `OUTBOX_CLAIM_LEASE_MS` | `30000`                                                   | Outbox Relay 发布租约时长；实例中断后过期租约可被其他实例接管 |
+| `RABBITMQ_CONSUMER_CONCURRENCY` | `1`                                                       | 每个应用实例初始 Worker 消费者数量 |
+| `RABBITMQ_MAX_CONSUMER_CONCURRENCY` | `4`                                                       | 每个应用实例 Worker 消费者数量上限 |
+| `RABBITMQ_PREFETCH` | `1`                                                       | 每个消费者预取消息数，避免未执行消息脱离队列监控 |
+| `RABBITMQ_MAX_QUEUE_DEPTH` | `1000`                                                    | 执行队列允许的最大待消费消息数，达到上限时 Outbox Relay 暂停抢占 |
+| `RABBITMQ_QUEUE_METRICS_POLL_MS` | `5000`                                                    | 队列深度指标刷新间隔 |
 
 默认演示网关不会访问外部模型服务，适合本地开发和联调。
 

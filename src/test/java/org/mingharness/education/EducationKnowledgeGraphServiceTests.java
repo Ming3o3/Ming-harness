@@ -9,9 +9,11 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import org.mockito.InOrder;
 
 class EducationKnowledgeGraphServiceTests {
 
@@ -26,8 +28,10 @@ class EducationKnowledgeGraphServiceTests {
 
         service.replaceDerivedEdges(source);
 
-        verify(repository).deleteByTenantIdAndSourceDocumentId("tenant-a", "doc-1");
-        verify(repository).saveAll(any());
+        InOrder persistence = inOrder(repository);
+        persistence.verify(repository).deleteByTenantIdAndSourceDocumentId("tenant-a", "doc-1");
+        persistence.verify(repository).flush();
+        persistence.verify(repository).saveAll(any());
     }
 
     @Test
