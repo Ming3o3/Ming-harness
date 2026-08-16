@@ -28,6 +28,7 @@ public class LearningAssignmentService {
     private final SensitiveDataSanitizer sanitizer;
     private final LearningAssignmentNotificationService notificationService;
     private final EducationCourseService courseService;
+    private final EducationKnowledgeService knowledgeService;
 
     /** 保留旧构造器，方便已有单元测试和嵌入式调用；生产环境由 Spring 使用带通知服务的构造器。 */
     public LearningAssignmentService(LearningAssignmentRepository assignmentRepository,
@@ -35,7 +36,7 @@ public class LearningAssignmentService {
                                      LearningGoalRepository goalRepository,
                                      LearnerMasteryRepository masteryRepository,
                                      SensitiveDataSanitizer sanitizer) {
-        this(assignmentRepository, profileRepository, goalRepository, masteryRepository, sanitizer, null, null);
+        this(assignmentRepository, profileRepository, goalRepository, masteryRepository, sanitizer, null, null, null);
     }
 
     public LearningAssignmentService(LearningAssignmentRepository assignmentRepository,
@@ -45,7 +46,18 @@ public class LearningAssignmentService {
                                      SensitiveDataSanitizer sanitizer,
                                      LearningAssignmentNotificationService notificationService) {
         this(assignmentRepository, profileRepository, goalRepository, masteryRepository, sanitizer,
-                notificationService, null);
+                notificationService, null, null);
+    }
+
+    public LearningAssignmentService(LearningAssignmentRepository assignmentRepository,
+                                     LearnerProfileRepository profileRepository,
+                                     LearningGoalRepository goalRepository,
+                                     LearnerMasteryRepository masteryRepository,
+                                     SensitiveDataSanitizer sanitizer,
+                                     LearningAssignmentNotificationService notificationService,
+                                     EducationCourseService courseService) {
+        this(assignmentRepository, profileRepository, goalRepository, masteryRepository, sanitizer,
+                notificationService, courseService, null);
     }
 
     @Autowired
@@ -55,7 +67,8 @@ public class LearningAssignmentService {
                                      LearnerMasteryRepository masteryRepository,
                                      SensitiveDataSanitizer sanitizer,
                                      LearningAssignmentNotificationService notificationService,
-                                     EducationCourseService courseService) {
+                                     EducationCourseService courseService,
+                                     EducationKnowledgeService knowledgeService) {
         this.assignmentRepository = assignmentRepository;
         this.profileRepository = profileRepository;
         this.goalRepository = goalRepository;
@@ -63,6 +76,7 @@ public class LearningAssignmentService {
         this.sanitizer = sanitizer;
         this.notificationService = notificationService;
         this.courseService = courseService;
+        this.knowledgeService = knowledgeService;
     }
 
     @Transactional
@@ -111,6 +125,7 @@ public class LearningAssignmentService {
                         "作业课程约束必须与课程实例一致");
             }
         }
+        requireVisibleMatchingSource(tenantId, learnerUserId, request);
         LearningAssignment saved = assignmentRepository.save(new LearningAssignment(
                 tenantId, teacherUserId, learnerUserId,
                 clean(request.title()), clean(request.instructions()), clean(request.subject()),
@@ -290,6 +305,18 @@ public class LearningAssignmentService {
 
     private boolean same(String left, String right) {
         return left != null && right != null && left.trim().equalsIgnoreCase(right.trim());
+    }
+
+    private void requireVisibleMatchingSource(String tenantId, String learnerUserId,
+                                              LearningAssignmentRequest request) {
+        if (knowledgeService == null) return;
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                request.subject(), request.gradeLevel(), request.curriculumVersion(),
+                request.conceptKey(), null, null);
+        if (knowledgeService.hasVisibleMatchingSource(tenantId, learnerUserId, filter)) return;
+        throw new BusinessException(HttpStatus.CONFLICT, "EDUCATION_ASSIGNMENT_SOURCE_UNAVAILABLE",
+                "无法布置作业：学习者没有可访问的课程资料覆盖目标知识点「"
+                        + clean(request.conceptKey()) + "」。请选择课程资料中的知识点，或补充资料后重试。");
     }
 
     private void notifyState(LearningAssignment assignment) {

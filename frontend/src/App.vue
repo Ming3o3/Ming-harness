@@ -1813,7 +1813,7 @@ function learningAssignmentNextAction(assignment) {
     }
   }
   if (assignment.status === 'ASSIGNED') {
-    return { label: '接受并开始', detail: '按课程范围启动第一轮学习。', issue: 'assigned', actionable: true }
+    return { label: '接受并进入学习对话', detail: '按课程范围启动第一轮学习，并进入学习对话。', issue: 'assigned', actionable: true }
   }
   if (assignment.status === 'AWAITING_EVIDENCE') {
     return {
@@ -2370,8 +2370,19 @@ const learningOverviewNextAction = computed(() => {
   if (educationSendBlockReason.value) {
     return { kind: 'setup', label: educationSetupActionLabel.value, detail: educationSendBlockReason.value }
   }
-  const assignmentAction = learningAssignmentNextAction(nextLearnerCourseAssignment.value)
-  if (assignmentAction.actionable && nextLearnerCourseAssignment.value) {
+  const assignment = nextLearnerCourseAssignment.value
+  const assignmentAction = learningAssignmentNextAction(assignment)
+  const assignmentSourceBlockReason = assignmentAction.actionable
+    ? learningAssignmentSourceBlockReason(assignment)
+    : ''
+  if (assignmentSourceBlockReason) {
+    return {
+      kind: 'setup',
+      label: '查看课程状态',
+      detail: assignmentSourceBlockReason,
+    }
+  }
+  if (assignmentAction.actionable && assignment) {
     return { kind: 'assignment', label: assignmentAction.label, detail: assignmentAction.detail }
   }
   if (!activeLearningGoal.value) {
@@ -2424,7 +2435,14 @@ function sourceHasConcept(source, conceptKey) {
   return String(source?.conceptTags || '')
     .split(/[,，;；\n]/)
     .map((item) => normalizeEducationFilterValue(item))
-    .some((item) => item === expected)
+    .some((item) => conceptsMatch(expected, item))
+}
+
+function conceptsMatch(expected, candidate) {
+  if (!expected || !candidate) return false
+  if (expected === candidate) return true
+  if (Array.from(expected).length < 3 || Array.from(candidate).length < 3) return false
+  return expected.includes(candidate) || candidate.includes(expected)
 }
 
 function sourceMatchesEducationScope(source, scope) {
@@ -6651,8 +6669,8 @@ function learningAssignmentReviewNoteLabel(assignment) {
 }
 
 function learningAssignmentStartLabel(assignment, starting = false) {
-  if (starting) return '启动中…'
-  if (assignment?.status === 'ASSIGNED') return '接受并开始学习'
+  if (starting) return '正在进入学习对话…'
+  if (assignment?.status === 'ASSIGNED') return '接受并进入学习对话'
   if (assignment?.status === 'AWAITING_EVIDENCE') return '补充作答并继续'
   if (assignment?.status === 'RETRY_REQUIRED') {
     return assignment.reviewStatus === 'REVISION_REQUIRED' ? '按教师要求返工' : '重试课程作业'
@@ -7396,7 +7414,7 @@ async function startLearningAssignment(assignment) {
     if (runId) void selectRun(runId, false, false)
     await loadEducationData()
     void loadConversations(started.conversation.conversation.id)
-    noticeMessage.value = `已开始课程作业：${started.assignment.title}`
+    noticeMessage.value = `已进入学习对话：${started.assignment.title}`
     return true
   } catch (error) {
     errorMessage.value = errorText(error)
@@ -10858,8 +10876,8 @@ onBeforeUnmount(() => {
                 <p>{{ learningOverviewNextAction.detail }}</p>
                 <small v-if="activeEducationCourse?.title || activeChatCourse?.title">{{ activeEducationCourse?.title || activeChatCourse?.title }}</small>
               </div>
-              <button class="primary-button learner-focus-action" type="button" :disabled="chatSending || chatUploading || (learningOverviewNextAction.kind === 'task' && learningTaskStartingId)" @click="runLearningOverviewNextAction">
-                {{ learningOverviewNextAction.label }} <ArrowRight :size="13" />
+              <button class="primary-button learner-focus-action" type="button" :disabled="chatSending || chatUploading || (learningOverviewNextAction.kind === 'task' && learningTaskStartingId) || (learningOverviewNextAction.kind === 'assignment' && learningAssignmentPrimaryActionBusy(nextLearnerCourseAssignment))" @click="runLearningOverviewNextAction">
+                {{ learningOverviewNextAction.kind === 'assignment' && learningAssignmentPrimaryActionBusy(nextLearnerCourseAssignment) ? '正在进入学习对话…' : learningOverviewNextAction.label }} <ArrowRight :size="13" />
               </button>
             </section>
             <section v-if="isTeacherOnlyRole" class="learner-focus-card teacher-focus-card" aria-label="今天优先处理">
@@ -11305,15 +11323,12 @@ onBeforeUnmount(() => {
                     <div id="education-course-assignment" class="education-course-step-content">
                     <form v-if="activeEducationCourseIsOwner" class="education-course-assignment-form" @submit.prevent="assignEducationCourse">
                       <label class="field"><span>作业标题</span><input v-model="educationCourseAssignmentForm.title" required maxlength="255" placeholder="例如：函数定义域练习" /></label>
-                      <label class="field"><span>这次主要学什么</span><input v-model="educationCourseAssignmentForm.conceptKey" required maxlength="255" placeholder="例如：函数定义域" /></label>
-                      <div v-if="activeEducationCourseConceptSuggestions.length" class="education-course-assignment-suggestions education-course-wide">
-                        <span>可以直接选择课程资料里的主题：</span>
-                        <button v-for="concept in activeEducationCourseConceptSuggestions" :key="concept" type="button" :class="{ active: educationCourseAssignmentForm.conceptKey === concept }" @click="selectEducationCourseConcept(concept)">{{ concept }}</button>
-                      </div>
+                      <label class="field"><span>目标知识点</span><select v-model="educationCourseAssignmentForm.conceptKey" required :disabled="!activeEducationCourseConceptSuggestions.length" @change="selectEducationCourseConcept(educationCourseAssignmentForm.conceptKey)"><option value="">请选择课程资料中的知识点</option><option v-for="concept in activeEducationCourseConceptSuggestions" :key="concept" :value="concept">{{ concept }}</option></select></label>
+                      <p v-if="!activeEducationCourseConceptSuggestions.length" class="policy-error education-course-wide">请先在“课程材料设置”中补充知识点，再布置作业。</p>
                       <label class="field"><span>希望学生达到的程度 <small class="field-label-hint">例如 80 表示掌握八成</small></span><input v-model="educationCourseAssignmentForm.targetMastery" type="number" min="1" max="100" step="1" required placeholder="例如：80" title="请输入 1 到 100 之间的数字，例如 80 表示 80%" /></label>
                       <label class="field"><span>截止时间（可选）</span><input v-model="educationCourseAssignmentForm.dueAt" type="datetime-local" /></label>
                       <label class="field education-course-wide"><span>作业说明</span><textarea v-model="educationCourseAssignmentForm.instructions" required maxlength="4000" rows="2" placeholder="说明作答范围、提交要求或迁移任务"></textarea></label>
-                      <button class="secondary-button" type="submit" :disabled="educationCourseAssignmentSaving || !educationCourseEnrollments.some((item) => item.status === 'ACTIVE')">{{ educationCourseAssignmentSaving ? '布置中…' : '布置给已加入的学生' }}</button>
+                      <button class="secondary-button" type="submit" :disabled="educationCourseAssignmentSaving || !educationCourseEnrollments.some((item) => item.status === 'ACTIVE') || !activeEducationCourseConceptSuggestions.length">{{ educationCourseAssignmentSaving ? '布置中…' : '布置给已加入的学生' }}</button>
                     </form>
                     <p v-if="activeEducationCourseIsOwner" class="learning-task-help">系统会把同一份作业发给所有已加入的学生，并保留课程范围。</p>
                     <p v-else class="learning-task-help">管理员只读查看作业规模与证据覆盖；布置作业由课程教师执行。</p>

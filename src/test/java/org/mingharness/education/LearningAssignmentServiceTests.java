@@ -60,6 +60,23 @@ class LearningAssignmentServiceTests {
     }
 
     @Test
+    void shouldRejectAssignmentBeforeItCanReachAStudentWithoutMatchingCourseMaterial() {
+        EducationKnowledgeService knowledge = mock(EducationKnowledgeService.class);
+        when(knowledge.hasVisibleMatchingSource(eq("tenant-a"), eq("student-1"), any(EducationRetrievalFilter.class)))
+                .thenReturn(false);
+
+        BusinessException unavailable = assertThrows(BusinessException.class, () -> new LearningAssignmentService(
+                mock(LearningAssignmentRepository.class), mock(LearnerProfileRepository.class),
+                mock(LearningGoalRepository.class), mock(LearnerMasteryRepository.class),
+                new SensitiveDataSanitizer(), null, null, knowledge)
+                .create("tenant-a", "teacher-1", new LearningAssignmentRequest(
+                        "student-1", "二次函数练习", "完成二次函数练习", "数学", "九年级", "人教版",
+                        "二次函数", 0.8, null, null)));
+
+        assertEquals("EDUCATION_ASSIGNMENT_SOURCE_UNAVAILABLE", unavailable.getCode());
+    }
+
+    @Test
     void shouldAcceptAssignmentAndCreateLearnerProfileAndGoal() {
         LearningAssignmentRepository assignments = mock(LearningAssignmentRepository.class);
         LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);

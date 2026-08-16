@@ -495,7 +495,7 @@ public class ContextBuilder {
     private boolean containsConcept(String values, String expected) {
         if (values == null || values.isBlank() || expected == null || expected.isBlank()) return false;
         for (String value : splitConcepts(values)) {
-            if (value.equalsIgnoreCase(expected.trim())) return true;
+            if (EducationRetrievalFilter.conceptsMatch(expected, value)) return true;
         }
         return false;
     }

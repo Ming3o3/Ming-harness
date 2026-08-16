@@ -130,21 +130,41 @@ public record EducationRetrievalFilter(
     private static boolean containsConcept(String expected, String values) {
         if (expected == null) return true;
         if (values == null || values.isBlank()) return false;
-        Set<String> normalized = Arrays.stream(values.split("[,，;；\\n]+"))
-                .map(EducationRetrievalFilter::normalizeConcept)
-                .filter(value -> value != null)
-                .collect(Collectors.toSet());
-        return normalized.contains(normalizeConcept(expected));
+        String normalizedExpected = normalizeConcept(expected);
+        return normalizedConcepts(values).stream()
+                .anyMatch(tag -> conceptsMatch(normalizedExpected, tag));
     }
 
     private static boolean containsAnyConcept(Set<String> expected, String values) {
         if (expected == null || expected.isEmpty()) return true;
         if (values == null || values.isBlank()) return false;
-        Set<String> normalized = Arrays.stream(values.split("[,，;；\\n]+"))
+        return normalizedConcepts(values).stream()
+                .anyMatch(tag -> expected.stream().anyMatch(candidate -> conceptsMatch(candidate, tag)));
+    }
+
+    /**
+     * 课程标签是短主题，作业目标有时会带教学动作，例如“理解二次函数的概念及一般形式”。
+     * 在双方都是足够具体的词组时，允许短主题命中目标描述，避免把同一课程主题误判为无资料。
+     */
+    public static boolean conceptsMatch(String expected, String candidate) {
+        String normalizedExpected = normalizeConcept(expected);
+        String normalizedCandidate = normalizeConcept(candidate);
+        if (normalizedExpected == null || normalizedCandidate == null) return false;
+        if (normalizedExpected.equals(normalizedCandidate)) return true;
+        if (conceptLength(normalizedExpected) < 3 || conceptLength(normalizedCandidate) < 3) return false;
+        return normalizedExpected.contains(normalizedCandidate)
+                || normalizedCandidate.contains(normalizedExpected);
+    }
+
+    private static Set<String> normalizedConcepts(String values) {
+        return Arrays.stream(values.split("[,，;；\\n]+"))
                 .map(EducationRetrievalFilter::normalizeConcept)
                 .filter(value -> value != null)
                 .collect(Collectors.toSet());
-        return expected.stream().anyMatch(normalized::contains);
+    }
+
+    private static int conceptLength(String value) {
+        return value.codePointCount(0, value.length());
     }
 
     private static String normalize(String value) {

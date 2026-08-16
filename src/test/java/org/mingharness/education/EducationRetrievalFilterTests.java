@@ -39,6 +39,16 @@ class EducationRetrievalFilterTests {
     }
 
     @Test
+    void shouldMatchAConcreteCourseTagInsideAnAssignmentObjective() {
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "数学", "九年级", "人教版", "理解二次函数的概念及一般形式", null, null);
+
+        assertTrue(filter.matches(new EducationKnowledgeSource(
+                "tenant-a", "doc-1", "数学", "九年级", "人教版", "第二章",
+                "理解二次函数", "二次函数,二次函数图像", "一次函数", 3, "TEXTBOOK")));
+    }
+
+    @Test
     void shouldExpandRetrievalConceptsToFrozenPrerequisiteGraphWithoutWeakeningCourseGate() {
         EducationDependencyGraph graph = new EducationDependencyGraph("函数", List.of(
                 new EducationDependencyPath("集合", 1, 0.1, 0.9)), false);
