@@ -197,12 +197,17 @@ public class LearningRecommendationService {
                 goal.getLearnerProfileId(), tenantId, userId).orElse(null);
         if (profile == null) return DependencyRecommendation.empty();
         Map<String, Double> masteryScores = new java.util.LinkedHashMap<>();
+        Map<String, LearnerStateEvidence> masteryEvidence = new java.util.LinkedHashMap<>();
         masteryRepository.findByTenantIdAndLearnerProfileIdOrderByConceptKeyAsc(
                         tenantId, profile.getId())
-                .forEach(item -> masteryScores.put(item.getConceptKey(), item.getMasteryScore()));
+                .forEach(item -> {
+                    masteryScores.put(item.getConceptKey(), item.getMasteryScore());
+                    masteryEvidence.put(item.getConceptKey(), new LearnerStateEvidence(
+                            item.getMasteryScore(), item.getAttempts(), item.getCorrectAttempts()));
+                });
         EducationRetrievalFilter filter = new EducationRetrievalFilter(
                 profile.getSubject(), profile.getGradeLevel(), profile.getCurriculumVersion(),
-                goal.getConceptKey(), null, null, masteryScores);
+                goal.getConceptKey(), null, null, masteryScores, null, masteryEvidence);
         EducationDependencyGraph graph = graphService.resolve(tenantId, filter);
         if (graph == null || graph.prerequisites().isEmpty()) {
             return new DependencyRecommendation(null, 0.0, 0.0, false,

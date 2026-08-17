@@ -10,8 +10,11 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import org.mockito.ArgumentCaptor;
 
 class LearningRecommendationServiceTests {
 
@@ -177,5 +180,41 @@ class LearningRecommendationServiceTests {
         assertEquals(0.9, recommendation.priorityPrerequisiteDeficit());
         assertTrue(recommendation.dependencyGraphAvailable());
         assertTrue(recommendation.nextActionPrompt().contains("栈与状态"));
+    }
+
+    @Test
+    void shouldFreezeMasteryEvidenceForDependencyRecommendation() {
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        AssessmentAttemptRepository attempts = mock(AssessmentAttemptRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
+        EducationKnowledgeGraphService graph = mock(EducationKnowledgeGraphService.class);
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", "profile-1",
+                "掌握递归", "递归", 0.2, 0.8);
+        LearnerProfile profile = new LearnerProfile("tenant-a", "student-1", "编程",
+                "大一", "课程版", "递归", "zh-CN");
+        when(goals.findByIdAndTenantIdAndUserId(goal.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(goal));
+        when(attempts.findByTenantIdAndUserIdAndLearningGoalIdOrderByCreatedAtAsc(
+                "tenant-a", "student-1", goal.getId())).thenReturn(List.of());
+        when(mastery.findByTenantIdAndLearnerProfileIdAndConceptKey(
+                "tenant-a", "profile-1", "递归")).thenReturn(Optional.empty());
+        when(profiles.findByIdAndTenantIdAndUserId("profile-1", "tenant-a", "student-1"))
+                .thenReturn(Optional.of(profile));
+        when(mastery.findByTenantIdAndLearnerProfileIdOrderByConceptKeyAsc(
+                "tenant-a", profile.getId())).thenReturn(List.of(
+                new LearnerMastery("tenant-a", "profile-1", "函数调用", 0.95, 1, 1)));
+        when(graph.resolve(anyString(), any(EducationRetrievalFilter.class))).thenReturn(
+                new EducationDependencyGraph("递归", List.of(
+                        new EducationDependencyPath("函数调用", 1, 0.2, 0.8)), false));
+
+        new LearningRecommendationService(goals, attempts, mastery, null, null, profiles, graph)
+                .recommend("tenant-a", "student-1", goal.getId());
+
+        ArgumentCaptor<EducationRetrievalFilter> captor = ArgumentCaptor.forClass(EducationRetrievalFilter.class);
+        verify(graph).resolve(anyString(), captor.capture());
+        EducationRetrievalFilter filter = captor.getValue();
+        assertEquals(1, filter.masteryEvidenceFor("函数调用").attempts());
+        assertTrue(filter.conservativeMasteryFor("函数调用") < 0.95);
     }
 }
