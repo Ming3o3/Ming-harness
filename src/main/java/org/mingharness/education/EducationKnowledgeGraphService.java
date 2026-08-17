@@ -137,8 +137,12 @@ public class EducationKnowledgeGraphService {
                 .map(entry -> new EducationDependencyPath(
                         displayName(entry.getKey(), edges), entry.getValue(),
                         filter.conservativeMasteryFor(entry.getKey()),
-                        1.0 - filter.conservativeMasteryFor(entry.getKey())))
+                        1.0 - filter.conservativeMasteryFor(entry.getKey()),
+                        filter.uncertaintyFor(entry.getKey()),
+                        filter.forgettingRiskFor(entry.getKey())))
                 .sorted(Comparator.comparingInt(EducationDependencyPath::depth)
+                        .thenComparing(Comparator.comparingDouble(EducationDependencyPath::statePriority)
+                                .reversed())
                         .thenComparing(path -> path.conceptKey().toLowerCase(Locale.ROOT)))
                 .toList();
         return new EducationDependencyGraph(target, paths, truncated);

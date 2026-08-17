@@ -5,6 +5,7 @@ import org.mingharness.common.SensitiveDataSanitizer;
 
 import java.util.List;
 import java.util.Map;
+import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -60,6 +61,29 @@ class EducationKnowledgeGraphServiceTests {
         assertEquals(2, graph.prerequisites().get(1).depth());
         assertTrue(graph.prerequisites().stream().anyMatch(path -> path.conceptKey().equals("数集")
                 && path.deficit() > 0.8));
+    }
+
+    @Test
+    void shouldCarryUncertaintyAndForgettingRiskIntoResolvedPaths() {
+        EducationConceptDependencyRepository repository = mock(EducationConceptDependencyRepository.class);
+        EducationKnowledgeGraphService service = new EducationKnowledgeGraphService(repository,
+                new SensitiveDataSanitizer());
+        when(repository
+                .findByTenantIdAndSubjectAndGradeLevelAndCurriculumVersionOrderByConceptKeyAscPrerequisiteConceptAsc(
+                        "tenant-a", "编程", "大一", "课程版"))
+                .thenReturn(List.of(edge("递归", "栈", "doc-1")));
+
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "编程", "大一", "课程版", "递归", null, null,
+                Map.of("栈", 0.9), null,
+                Map.of("栈", new LearnerStateEvidence(0.9, 1, 1,
+                        Instant.parse("2026-01-01T00:00:00Z"), 0.2)));
+
+        EducationDependencyPath path = service.resolve("tenant-a", filter).prerequisites().get(0);
+
+        assertTrue(path.uncertainty() > 0.0);
+        assertTrue(path.forgettingRisk() > 0.7);
+        assertTrue(path.statePriority() > path.deficit() * 0.7);
     }
 
     @Test

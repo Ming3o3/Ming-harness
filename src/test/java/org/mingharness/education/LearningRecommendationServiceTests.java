@@ -184,6 +184,41 @@ class LearningRecommendationServiceTests {
     }
 
     @Test
+    void shouldPrioritizeUncertainPrerequisiteWhenDeficitsAreEquivalent() {
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        AssessmentAttemptRepository attempts = mock(AssessmentAttemptRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
+        EducationKnowledgeGraphService graph = mock(EducationKnowledgeGraphService.class);
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", "profile-1",
+                "掌握递归", "递归", 0.2, 0.8);
+        LearnerProfile profile = new LearnerProfile("tenant-a", "student-1", "编程",
+                "大一", "课程版", "递归", "zh-CN");
+        AssessmentAttempt failed = new AssessmentAttempt("tenant-a", "student-1", "run-1", "step-1",
+                goal.getId(), "profile-1", "递归", false, 0.2, 0.4, 0.28, "未通过");
+        when(goals.findByIdAndTenantIdAndUserId(goal.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(goal));
+        when(attempts.findByTenantIdAndUserIdAndLearningGoalIdOrderByCreatedAtAsc(
+                "tenant-a", "student-1", goal.getId())).thenReturn(List.of(failed));
+        when(mastery.findByTenantIdAndLearnerProfileIdAndConceptKey("tenant-a", "profile-1", "递归"))
+                .thenReturn(Optional.of(new LearnerMastery("tenant-a", "profile-1", "递归", 0.28, 1, 0)));
+        when(profiles.findByIdAndTenantIdAndUserId("profile-1", "tenant-a", "student-1"))
+                .thenReturn(Optional.of(profile));
+        when(mastery.findByTenantIdAndLearnerProfileIdOrderByConceptKeyAsc("tenant-a", "profile-1"))
+                .thenReturn(List.of());
+        when(graph.resolve(anyString(), any(EducationRetrievalFilter.class))).thenReturn(
+                new EducationDependencyGraph("递归", List.of(
+                        new EducationDependencyPath("稳定前置", 1, 0.2, 0.8, 0.0, 0.0),
+                        new EducationDependencyPath("不确定前置", 1, 0.2, 0.8, 0.9, 0.8)), false));
+
+        var recommendation = new LearningRecommendationService(goals, attempts, mastery, null, null,
+                profiles, graph).recommend("tenant-a", "student-1", goal.getId());
+
+        assertEquals("不确定前置", recommendation.priorityPrerequisiteConcept());
+        assertTrue(recommendation.rationale().contains("状态不确定性"));
+    }
+
+    @Test
     void shouldFreezeMasteryEvidenceForDependencyRecommendation() {
         LearningGoalRepository goals = mock(LearningGoalRepository.class);
         AssessmentAttemptRepository attempts = mock(AssessmentAttemptRepository.class);

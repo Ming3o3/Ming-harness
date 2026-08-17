@@ -11895,7 +11895,7 @@ onBeforeUnmount(() => {
                     <div v-else class="learning-dependency-list">
                       <div v-for="path in educationDependencyGraph.prerequisites" :key="`${path.conceptKey}-${path.depth}`" class="learning-dependency-row">
                         <span class="learning-dependency-depth">L{{ path.depth }}</span>
-                        <strong>{{ path.conceptKey }}</strong>
+                        <div class="learning-dependency-concept"><strong>{{ path.conceptKey }}</strong><small>不确定 {{ formatRate(path.uncertainty) }} · <em :class="{ 'is-risk': path.forgettingRisk >= 0.25 }">遗忘风险 {{ formatRate(path.forgettingRisk) }}</em></small></div>
                         <span class="learning-dependency-mastery">学习进度 {{ formatRate(path.masteryScore) }}</span>
                         <span class="learning-dependency-gap" :class="{ 'is-gap': path.deficit >= 0.5 }">{{ path.deficit >= 0.5 ? '需补强' : '已覆盖' }}</span>
                       </div>

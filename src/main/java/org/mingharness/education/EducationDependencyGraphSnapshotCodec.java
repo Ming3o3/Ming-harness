@@ -38,7 +38,8 @@ public final class EducationDependencyGraphSnapshotCodec {
                     if (item == null || !item.isObject()) continue;
                     paths.add(new EducationDependencyPath(
                             text(item, "conceptKey"), integer(item, "depth", 1),
-                            number(item, "masteryScore"), number(item, "deficit")));
+                            number(item, "masteryScore"), number(item, "deficit"),
+                            number(item, "uncertainty"), number(item, "forgettingRisk")));
                 }
             }
             return new EducationDependencyGraph(target, paths, booleanValue(root, "truncated"));

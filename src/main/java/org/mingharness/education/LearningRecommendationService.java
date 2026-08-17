@@ -217,21 +217,24 @@ public class LearningRecommendationService {
                 goal.getConceptKey(), null, null, masteryScores, null, masteryEvidence);
         EducationDependencyGraph graph = graphService.resolve(tenantId, filter);
         if (graph == null || graph.prerequisites().isEmpty()) {
-            return new DependencyRecommendation(null, 0.0, 0.0, false,
+            return new DependencyRecommendation(null, 0.0, 0.0, 0.0, 0.0, 0.0, false,
                     graph != null && graph.truncated());
         }
         EducationDependencyPath priority = graph.prerequisites().stream()
                 .filter(path -> path.deficit() > 0.05)
-                .sorted(java.util.Comparator.comparingDouble(EducationDependencyPath::deficit).reversed()
+                .sorted(java.util.Comparator.comparingDouble(EducationDependencyPath::statePriority).reversed()
+                        .thenComparing(java.util.Comparator.comparingDouble(EducationDependencyPath::deficit).reversed())
                         .thenComparing(java.util.Comparator.comparingInt(EducationDependencyPath::depth).reversed())
                         .thenComparing(EducationDependencyPath::conceptKey,
                                 String.CASE_INSENSITIVE_ORDER))
                 .findFirst().orElse(null);
         if (priority == null) {
-            return new DependencyRecommendation(null, 0.0, 0.0, true, graph.truncated());
+            return new DependencyRecommendation(null, 0.0, 0.0, 0.0, 0.0, 0.0,
+                    true, graph.truncated());
         }
         return new DependencyRecommendation(priority.conceptKey(), priority.masteryScore(),
-                priority.deficit(), true, graph.truncated());
+                priority.deficit(), priority.uncertainty(), priority.forgettingRisk(),
+                priority.statePriority(), true, graph.truncated());
     }
 
     private String prerequisitePrompt(LearningGoal goal, DependencyRecommendation dependency,
@@ -244,7 +247,10 @@ public class LearningRecommendationService {
 
     private String prerequisiteRationale(DependencyRecommendation dependency, String prefix) {
         return prefix + "依赖图优先级为“" + dependency.priorityConcept() + "”，当前掌握度约 "
-                + percent(dependency.priorityMastery()) + "，缺口约 " + percent(dependency.priorityDeficit()) + "。";
+                + percent(dependency.priorityMastery()) + "，缺口约 " + percent(dependency.priorityDeficit())
+                + "；状态不确定性约 " + percent(dependency.priorityUncertainty())
+                + "，保持度风险约 " + percent(dependency.priorityForgettingRisk())
+                + "，综合优先级 " + percent(dependency.priorityStateScore()) + "。";
     }
 
     private CodeDiagnosticCategory latestCodeDiagnosticCategory(AssessmentAttempt attempt) {
@@ -309,10 +315,12 @@ public class LearningRecommendationService {
     }
 
     private record DependencyRecommendation(String priorityConcept, double priorityMastery,
-                                             double priorityDeficit, boolean graphAvailable,
+                                             double priorityDeficit, double priorityUncertainty,
+                                             double priorityForgettingRisk, double priorityStateScore,
+                                             boolean graphAvailable,
                                              boolean graphTruncated) {
         private static DependencyRecommendation empty() {
-            return new DependencyRecommendation(null, 0.0, 0.0, false, false);
+            return new DependencyRecommendation(null, 0.0, 0.0, 0.0, 0.0, 0.0, false, false);
         }
 
         private boolean hasGap() {

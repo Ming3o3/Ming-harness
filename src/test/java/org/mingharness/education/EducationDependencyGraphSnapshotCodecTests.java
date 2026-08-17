@@ -39,6 +39,33 @@ class EducationDependencyGraphSnapshotCodecTests {
     }
 
     @Test
+    void shouldDecodeLegacySnapshotsWithoutStateRiskFields() {
+        EducationDependencyGraph decoded = EducationDependencyGraphSnapshotCodec.decode(
+                "{\"targetConcept\":\"函数\",\"prerequisites\":["
+                        + "{\"conceptKey\":\"集合\",\"depth\":1,"
+                        + "\"masteryScore\":0.2,\"deficit\":0.8}],\"truncated\":false}",
+                "函数");
+
+        assertEquals(0.0, decoded.prerequisites().get(0).uncertainty());
+        assertEquals(0.0, decoded.prerequisites().get(0).forgettingRisk());
+        assertEquals(0.8, decoded.prerequisites().get(0).deficit());
+    }
+
+    @Test
+    void shouldRoundTripStateRiskFieldsInNewSnapshots() {
+        EducationDependencyGraph source = new EducationDependencyGraph("函数", List.of(
+                new EducationDependencyPath("集合", 1, 0.2, 0.8, 0.45, 0.30)), false);
+
+        EducationDependencyGraph decoded = EducationDependencyGraphSnapshotCodec.decode(
+                EducationDependencyGraphSnapshotCodec.encode(source), "函数");
+
+        assertEquals(0.45, decoded.prerequisites().get(0).uncertainty(), 0.000001);
+        assertEquals(0.30, decoded.prerequisites().get(0).forgettingRisk(), 0.000001);
+        assertEquals(source.prerequisites().get(0).statePriority(),
+                decoded.prerequisites().get(0).statePriority(), 0.000001);
+    }
+
+    @Test
     void shouldHideFrozenGraphFromTheDependencyGraphAblationWhileKeepingMastery() {
         EducationDependencyGraph graph = new EducationDependencyGraph("函数", List.of(
                 new EducationDependencyPath("集合", 1, 0.1, 0.9)), false);

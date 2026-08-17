@@ -429,9 +429,9 @@ public class ContextBuilder {
     /**
      * 将知识依赖图的缺口转换为证据集合选择的边际收益。
      *
-     * <p>同样的掌握度缺口下，距离目标更近的前置节点优先级更高；缺口严重度仍
-     * 作为主权重。这样贪心规划会先补齐依赖前沿，再把预算留给更深层节点，且
-     * 该优先级可以从路径深度和 deficit 直接回放。</p>
+     * <p>路径优先级同时考虑缺口、状态不确定性和保持度风险；距离目标更近的前置
+     * 节点仍然优先。这样贪心规划会先补齐依赖前沿，并且每个选择都可以从路径
+     * statePriority 回放。</p>
      */
     private Map<String, Double> gapWeights(EducationDependencyGraph graph, Set<String> gaps) {
         if (gaps == null || gaps.isEmpty()) return Map.of();
@@ -440,9 +440,7 @@ public class ContextBuilder {
             for (EducationDependencyPath path : graph.prerequisites()) {
                 String concept = normalizeConcept(path.conceptKey());
                 if (!gaps.contains(concept)) continue;
-                double deficit = Math.max(0.001, path.deficit());
-                double depthPriority = 1.0 / Math.max(1, path.depth());
-                result.put(concept, deficit * depthPriority);
+                result.put(concept, Math.max(0.001, path.statePriority()));
             }
         }
         for (String gap : gaps) {
@@ -477,8 +475,9 @@ public class ContextBuilder {
         for (EducationDependencyPath path : graph.prerequisites()) {
             String concept = normalizeConcept(path.conceptKey());
             if (!graphGaps.contains(concept)) continue;
-            // 立即前置节点优先于更深层节点，避免在上下文预算紧张时跳过依赖前沿。
-            double weight = Math.max(0.0, path.deficit()) / Math.max(1, path.depth());
+            // 立即前置节点、状态不确定性和保持度风险共同决定覆盖价值，避免在上下文
+            // 预算紧张时跳过依赖前沿或已经有遗忘风险的节点。
+            double weight = path.statePriority();
             total += weight;
             if (sourceConcepts.contains(concept)) covered += weight;
         }
@@ -497,7 +496,7 @@ public class ContextBuilder {
         if (breakdown.targetConceptMatch() >= 0.5) reasons.add("匹配目标知识点");
         if (breakdown.difficultyFit() >= 0.75) reasons.add("难度适配");
         if (breakdown.learnerStateUncertainty() >= 0.25) {
-            reasons.add(String.format(Locale.ROOT, "状态不确定性 %.2f，采用保守掌握度",
+            reasons.add(String.format(Locale.ROOT, "状态不确定性/保持度风险 %.2f，采用保守掌握度",
                     breakdown.learnerStateUncertainty()));
         }
         if (!displayGaps.isEmpty()) reasons.add("覆盖前置缺口：" + String.join("、", displayGaps));

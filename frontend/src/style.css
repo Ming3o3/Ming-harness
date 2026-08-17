@@ -1312,7 +1312,11 @@ h3 { margin: 0; font-size: 13px; }
 .learning-dependency-list { display: grid; gap: 4px; }
 .learning-dependency-row { display: grid; grid-template-columns: 25px minmax(0, 1fr) auto auto; align-items: center; gap: 6px; border-top: 1px solid rgba(153,174,218,.09); padding-top: 5px; }
 .learning-dependency-depth { color: var(--accent-light); font: 8px "DM Mono", monospace; }
+.learning-dependency-concept { display: grid; gap: 2px; min-width: 0; }
 .learning-dependency-row strong { overflow: hidden; color: var(--soft); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.learning-dependency-concept small { overflow: hidden; color: var(--muted); font: 8px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.learning-dependency-concept em { color: var(--muted); font-style: normal; }
+.learning-dependency-concept em.is-risk { color: var(--orange); }
 .learning-dependency-mastery,
 .learning-dependency-gap { color: var(--muted); font: 8px "DM Mono", monospace; }
 .learning-dependency-gap.is-gap { color: var(--orange); }
