@@ -11,6 +11,7 @@ import org.mingharness.runtime.domain.StepType;
 import org.mingharness.runtime.repository.RunRepository;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -122,6 +123,32 @@ class EducationExperimentServiceTests {
                 .exportAllocationCsv("tenant-a", "student-1", false);
         assertTrue(csv.startsWith("requested_strategy,effective_strategy,conditioning,"));
         assertTrue(csv.contains("\"BALANCED_EXPERIMENT\",\"CALIBRATED\""));
+    }
+
+    @Test
+    void shouldExportDeidentifiedRunSamplesWithFrozenStateAndOutcome() {
+        RunRepository runs = mock(RunRepository.class);
+        AssessmentAttemptRepository assessments = mock(AssessmentAttemptRepository.class);
+        Run run = educationalRun("FULL", 0.8);
+        String snapshot = LearnerStateSnapshotCodec.encode(List.of(
+                new LearnerMastery("tenant-a", "profile-1", "函数", 0.35, 4, 1,
+                        Instant.parse("2026-01-01T00:00:00Z"))),
+                Instant.parse("2026-01-15T00:00:00Z"));
+        run.attachEducationConfiguration(run.educationConfiguration().withLearnerStateSnapshot(snapshot));
+        AssessmentAttempt attempt = attempt(run, 0.85);
+        when(runs.findByTenantIdAndUserIdAndEducationModeTrueOrderByCreatedAtAsc(
+                "tenant-a", "student-1")).thenReturn(List.of(run));
+        when(assessments.findByTenantIdAndUserIdOrderByCreatedAtAsc("tenant-a", "student-1"))
+                .thenReturn(List.of(attempt));
+
+        String csv = new EducationExperimentService(runs, assessments)
+                .exportSampleCsv("tenant-a", "student-1", false);
+
+        assertTrue(csv.startsWith("sample_id,learner_key,learner_goal_key,created_at,"));
+        assertTrue(csv.contains(",0.8,\"STATE_WITH_RETENTION_V1\",\"2026-01-15T00:00:00Z\",1,true,"));
+        assertTrue(csv.contains(",1,1,1.0,0.6499999999999999,true,\"OUTCOME_READY\""));
+        assertTrue(csv.contains("\"FULL\",\"FULL\",\"UNKNOWN\""));
+        assertTrue(!csv.contains("student-1"));
     }
 
     @Test

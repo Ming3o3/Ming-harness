@@ -516,6 +516,7 @@ curl -X POST http://localhost:8080/api/runs \
 - `GET /api/education/metrics`：读取当前租户和用户可见的作业、提交物覆盖、待重试/待返工作业、任务、测评证据、教师确认、教师量规评价覆盖与三维平均分、反馈确认与执行、反馈确认时延、重试成功率、保持度正确率和平均掌握度提升；无事实时各比率返回 `0`
 - `GET /api/education/experiments`：按 Run 创建时冻结的教育检索策略聚合实验指标，包括证据覆盖、前置缺口覆盖、证据冗余、目标知识点匹配、知识图覆盖、难度适配、测评准确率、平均掌握度变化和目标达成轮次
 - `GET /api/education/experiments.csv`：导出上述策略级实验指标；样本状态会区分无数据、样本不足和达到基础分析门槛，不能把小样本结果误读为显著性结论
+- `GET /api/education/experiments/samples.csv`：导出逐 Run 的去标识实验样本；稳定哈希键支持学习者内配对，行内同时包含冻结状态、语言上下文、检索证据、形成性测评和目标达成字段，原始用户 ID、代码和回答不会导出
 - `GET /api/education/experiments/paired.csv`：导出同一学习者-目标内以 `FULL` 为参考的配对策略结果；差值定义为“对比策略 − FULL”，达到目标轮次为负表示对比策略更快
 - `GET /api/education/experiments/allocations.csv`：导出请求策略→实际策略的分配审计，按状态条件列出已分配 Run、成功 Run、有形成性结果 Run 和测评数量；适合检查 `BALANCED_EXPERIMENT` 的样本均衡性
 - `GET /api/education/experiments/synergy.csv`：导出同一学习者—目标固定混合召回四臂配对的状态 × 知识依赖图联合消融摘要，interaction 定义为 `FULL − NO_LEARNER_STATE − NO_DEPENDENCY_GRAPH + NO_STATE_NO_GRAPH`；`VECTOR_ONLY` 仅保留为独立召回模态基线，不参与 interaction

@@ -435,6 +435,19 @@ public class EducationController {
                 .body(csv.getBytes(StandardCharsets.UTF_8));
     }
 
+    /** 导出逐 Run 的去标识实验样本，供论文分层统计和离线复现实验使用。 */
+    @GetMapping(value = "/experiments/samples.csv", produces = "text/csv")
+    public ResponseEntity<byte[]> exportExperimentSamples() {
+        HarnessIdentity identity = identity();
+        boolean tenantScope = identity.hasPermission("ops.read");
+        String csv = experimentService.exportSampleCsv(identity.tenantId(), identity.userId(), tenantScope);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"education-experiment-samples.csv\"")
+                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .body(csv.getBytes(StandardCharsets.UTF_8));
+    }
+
     @GetMapping(value = "/experiments/paired.csv", produces = "text/csv")
     public ResponseEntity<byte[]> exportPairedExperiments() {
         HarnessIdentity identity = identity();

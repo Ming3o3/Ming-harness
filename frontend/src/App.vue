@@ -3286,6 +3286,7 @@ const educationExperimentBest = computed(() => educationExperimentStrategies.val
   .slice()
   .sort((left, right) => Number(right.averageMasteryGain || 0) - Number(left.averageMasteryGain || 0))[0] || null)
 const educationExperimentDownloading = ref(false)
+const educationExperimentSampleDownloading = ref(false)
 const educationExperimentPairedDownloading = ref(false)
 const educationExperimentAllocationDownloading = ref(false)
 const educationExperimentSynergyDownloading = ref(false)
@@ -3306,6 +3307,23 @@ async function downloadEducationExperimentCsv() {
     educationError.value = errorText(error)
   } finally {
     educationExperimentDownloading.value = false
+  }
+}
+async function downloadEducationExperimentSamplesCsv() {
+  if (educationExperimentSampleDownloading.value) return
+  educationExperimentSampleDownloading.value = true
+  try {
+    const result = await api.downloadEducationExperimentSamples()
+    const url = URL.createObjectURL(result.blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = result.filename
+    anchor.click()
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    educationError.value = errorText(error)
+  } finally {
+    educationExperimentSampleDownloading.value = false
   }
 }
 async function downloadPairedEducationExperimentCsv() {
@@ -11292,7 +11310,7 @@ onBeforeUnmount(() => {
               </div>
             </details>
             <details v-if="isAdminWorkspace && educationExperiment" class="education-operations-metrics education-experiment-panel" open>
-              <summary><span>EI 检索实验诊断</span><small>基线 · 消融 · 学习效果</small><button class="inline-summary-action" type="button" :disabled="educationExperimentDownloading" @click.prevent="downloadEducationExperimentCsv">{{ educationExperimentDownloading ? '导出中…' : '导出策略 CSV' }}</button><button class="inline-summary-action" type="button" :disabled="educationExperimentPairedDownloading" @click.prevent="downloadPairedEducationExperimentCsv">{{ educationExperimentPairedDownloading ? '导出中…' : '导出配对 CSV' }}</button><button class="inline-summary-action" type="button" :disabled="educationExperimentAllocationDownloading" @click.prevent="downloadEducationExperimentAllocationCsv">{{ educationExperimentAllocationDownloading ? '导出中…' : '导出分配 CSV' }}</button><button class="inline-summary-action" type="button" :disabled="educationExperimentSynergyDownloading" @click.prevent="downloadEducationExperimentSynergyCsv">{{ educationExperimentSynergyDownloading ? '导出中…' : '导出协同 CSV' }}</button></summary>
+              <summary><span>EI 检索实验诊断</span><small>基线 · 消融 · 学习效果</small><button class="inline-summary-action" type="button" :disabled="educationExperimentDownloading" @click.prevent="downloadEducationExperimentCsv">{{ educationExperimentDownloading ? '导出中…' : '导出策略 CSV' }}</button><button class="inline-summary-action" type="button" :disabled="educationExperimentSampleDownloading" @click.prevent="downloadEducationExperimentSamplesCsv">{{ educationExperimentSampleDownloading ? '导出中…' : '导出样本 CSV' }}</button><button class="inline-summary-action" type="button" :disabled="educationExperimentPairedDownloading" @click.prevent="downloadPairedEducationExperimentCsv">{{ educationExperimentPairedDownloading ? '导出中…' : '导出配对 CSV' }}</button><button class="inline-summary-action" type="button" :disabled="educationExperimentAllocationDownloading" @click.prevent="downloadEducationExperimentAllocationCsv">{{ educationExperimentAllocationDownloading ? '导出中…' : '导出分配 CSV' }}</button><button class="inline-summary-action" type="button" :disabled="educationExperimentSynergyDownloading" @click.prevent="downloadEducationExperimentSynergyCsv">{{ educationExperimentSynergyDownloading ? '导出中…' : '导出协同 CSV' }}</button></summary>
               <p class="learning-task-help">结果按 Run 创建时冻结的检索策略聚合；每条证据来自实际步骤快照，测评和掌握度变化按 runId 对齐。效率指标用证据摘录字符数作为跨模型 token 成本的稳定代理。</p>
               <div class="education-experiment-overview">
                 <span><strong>{{ educationExperiment.totalRunCount }}</strong>教育 Run</span>

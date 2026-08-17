@@ -17,12 +17,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.ToDoubleFunction;
@@ -164,6 +168,109 @@ public class EducationExperimentService {
                     .append(item.averageMasteryGain()).append(',').append(item.targetGoalCount()).append(',')
                     .append(item.targetReachedGoalCount()).append(',').append(item.targetReachRate()).append(',')
                     .append(item.averageRoundsToTarget()).append(',').append(csv(item.sampleStatus())).append('\n');
+        }
+        return csv.toString();
+    }
+
+    /**
+     * 导出逐 Run 的去标识实验样本，供论文统计和离线复现实验使用。
+     *
+     * <p>该出口不导出用户 ID、学习目标 ID 或原始代码/回答；三个稳定哈希键只用于在
+     * 外部统计脚本中做学习者内配对和重复测量。所有数值都来自 Run 创建时冻结的状态、
+     * 真实步骤证据快照和绑定 Run 的形成性测评，避免把当前状态重新计算进历史样本。</p>
+     */
+    @Transactional(readOnly = true)
+    public String exportSampleCsv(String tenantId, String userId, boolean tenantScope) {
+        List<Run> runs = tenantScope
+                ? runRepository.findByTenantIdAndEducationModeTrueOrderByCreatedAtAsc(tenantId)
+                : runRepository.findByTenantIdAndUserIdAndEducationModeTrueOrderByCreatedAtAsc(
+                tenantId, userId);
+        if (runs == null) runs = List.of();
+
+        List<AssessmentAttempt> attempts = tenantScope
+                ? assessmentRepository.findByTenantIdOrderByCreatedAtAsc(tenantId)
+                : assessmentRepository.findByTenantIdAndUserIdOrderByCreatedAtAsc(tenantId, userId);
+        if (attempts == null) attempts = List.of();
+
+        Map<String, List<AssessmentAttempt>> attemptsByRun = new HashMap<>();
+        Set<String> runIds = runs.stream().filter(run -> run != null)
+                .map(Run::getId).collect(java.util.stream.Collectors.toSet());
+        for (AssessmentAttempt attempt : attempts) {
+            if (attempt == null || attempt.getAssessmentType() != AssessmentAttemptType.FORMATIVE
+                    || !runIds.contains(attempt.getRunId())) continue;
+            attemptsByRun.computeIfAbsent(attempt.getRunId(), ignored -> new ArrayList<>()).add(attempt);
+        }
+
+        StringBuilder csv = new StringBuilder();
+        csv.append("sample_id,learner_key,learner_goal_key,created_at,run_status,"
+                + "requested_strategy,effective_strategy,conditioning,programming_language,subject,"
+                + "grade_level,curriculum_version,concept_key,baseline_mastery,target_mastery,"
+                + "state_snapshot_version,state_captured_at,state_concept_count,target_state_present,"
+                + "target_mastery_score,target_effective_mastery,target_conservative_mastery,"
+                + "target_uncertainty,target_retention_score,target_forgetting_risk,target_attempts,"
+                + "target_correct_attempts,evidence_count,unique_evidence_count,evidence_chars,"
+                + "prerequisite_gap_coverage,evidence_redundancy_rate,average_ranking_score,"
+                + "graph_coverage,assessment_count,correct_assessment_count,assessment_accuracy_rate,"
+                + "average_mastery_gain,target_reached,sample_status\n");
+
+        for (Run run : runs) {
+            if (run == null) continue;
+            List<AssessmentAttempt> runAttempts = attemptsByRun.getOrDefault(run.getId(), List.of());
+            EvidenceStats evidence = evidenceStats(run);
+            StateSample state = stateSample(run);
+            long correct = runAttempts.stream().filter(AssessmentAttempt::isCorrect).count();
+            double averageGain = runAttempts.stream()
+                    .mapToDouble(item -> item.getMasteryAfter() - item.getMasteryBefore())
+                    .average().orElse(0.0);
+            double target = run.getEducationLearningGoalTarget() == null
+                    ? 1.0 : run.getEducationLearningGoalTarget();
+            boolean reached = !runAttempts.isEmpty() && runAttempts.stream()
+                    .anyMatch(attempt -> attempt.getMasteryAfter() >= target);
+
+            appendField(csv, hash(tenantId + "\u0000" + run.getId())).append(',');
+            appendField(csv, hash(tenantId + "\u0000" + run.getUserId())).append(',');
+            appendField(csv, hash(tenantId + "\u0000" + run.getUserId() + "\u0000"
+                    + nullToEmpty(run.getEducationLearningGoalId()))).append(',');
+            appendField(csv, run.getCreatedAt()).append(',');
+            appendField(csv, run.getStatus()).append(',');
+            appendField(csv, EducationRetrievalStrategy.parse(run.getEducationRetrievalStrategy())).append(',');
+            appendField(csv, effectiveExperimentStrategy(run)).append(',');
+            appendField(csv, conditioningFor(run)).append(',');
+            appendField(csv, run.getEducationProgrammingLanguage()).append(',');
+            appendField(csv, run.getEducationSubject()).append(',');
+            appendField(csv, run.getEducationGradeLevel()).append(',');
+            appendField(csv, run.getEducationCurriculumVersion()).append(',');
+            appendField(csv, run.getEducationConceptKey()).append(',');
+            appendField(csv, run.getEducationLearningGoalBaseline()).append(',');
+            appendField(csv, run.getEducationLearningGoalTarget()).append(',');
+            appendField(csv, state.version()).append(',');
+            appendField(csv, state.capturedAt()).append(',');
+            appendField(csv, state.conceptCount()).append(',');
+            appendField(csv, state.present()).append(',');
+            appendField(csv, state.masteryScore()).append(',');
+            appendField(csv, state.effectiveMastery()).append(',');
+            appendField(csv, state.conservativeMastery()).append(',');
+            appendField(csv, state.uncertainty()).append(',');
+            appendField(csv, state.retentionScore()).append(',');
+            appendField(csv, state.forgettingRisk()).append(',');
+            appendField(csv, state.attempts()).append(',');
+            appendField(csv, state.correctAttempts()).append(',');
+            appendField(csv, evidence.totalCount()).append(',');
+            appendField(csv, evidence.uniqueCount()).append(',');
+            appendField(csv, evidence.evidenceChars()).append(',');
+            appendField(csv, evidence.prerequisiteGapCoverage()).append(',');
+            appendField(csv, evidence.redundancyRate()).append(',');
+            appendField(csv, evidence.rankingScore()).append(',');
+            appendField(csv, evidence.graphCoverage()).append(',');
+            appendField(csv, runAttempts.size()).append(',');
+            appendField(csv, correct).append(',');
+            appendField(csv, ratio(correct, runAttempts.size())).append(',');
+            appendField(csv, averageGain).append(',');
+            appendField(csv, reached).append(',');
+            appendField(csv, runAttempts.isEmpty()
+                    ? "NO_FORMATIVE_OUTCOME"
+                    : run.getStatus() == RunStatus.SUCCEEDED ? "OUTCOME_READY" : "NON_SUCCESS_WITH_OUTCOME");
+            csv.append('\n');
         }
         return csv.toString();
     }
@@ -487,6 +594,57 @@ public class EducationExperimentService {
                 ? effective.name() : EducationRetrievalStrategy.FULL.name();
     }
 
+    private StateSample stateSample(Run run) {
+        EducationRunConfiguration configuration = run.educationConfiguration();
+        LearnerStateSnapshot snapshot = configuration.learnerStateSnapshotValue();
+        String concept = normalizeConcept(run.getEducationConceptKey());
+        LearnerStateEvidence target = concept == null ? null : snapshot.evidence().entrySet().stream()
+                .filter(entry -> concept.equals(normalizeConcept(entry.getKey())))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse(null);
+        if (target == null) {
+            return new StateSample(snapshot.version(), snapshot.capturedAt(), snapshot.evidence().size(),
+                    false, null, null, null, null, null, null, null, null);
+        }
+        return new StateSample(snapshot.version(), snapshot.capturedAt(), snapshot.evidence().size(),
+                true, target.masteryScore(), target.effectiveMastery(), target.conservativeMastery(),
+                target.uncertainty(), target.retentionScore(), target.forgettingRisk(),
+                target.attempts(), target.correctAttempts());
+    }
+
+    private String normalizeConcept(String value) {
+        if (value == null || value.isBlank()) return null;
+        return value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String nullToEmpty(String value) {
+        return value == null ? "" : value;
+    }
+
+    private StringBuilder appendField(StringBuilder csv, Object value) {
+        if (value == null) return csv;
+        if (value instanceof String || value instanceof Instant || value instanceof Enum<?>) {
+            return csv.append(csv(String.valueOf(value)));
+        }
+        return csv.append(value);
+    }
+
+    private String hash(String value) {
+        if (value == null || value.isBlank()) return "";
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder result = new StringBuilder(digest.length * 2);
+            for (byte item : digest) {
+                result.append(String.format(Locale.ROOT, "%02x", item));
+            }
+            return result.toString();
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("JVM 缺少 SHA-256", exception);
+        }
+    }
+
     private GoalStrategyOutcome goalStrategyOutcome(List<Run> strategyRuns,
                                                     Map<String, List<AssessmentAttempt>> attemptsByRun) {
         if (strategyRuns == null || strategyRuns.isEmpty()) return null;
@@ -619,6 +777,12 @@ public class EducationExperimentService {
 
     private record FourArmOutcome(double full, double noState, double noGraph,
                                   double noStateNoGraph) {
+    }
+
+    private record StateSample(String version, Instant capturedAt, int conceptCount,
+                               boolean present, Double masteryScore, Double effectiveMastery,
+                               Double conservativeMastery, Double uncertainty, Double retentionScore,
+                               Double forgettingRisk, Integer attempts, Integer correctAttempts) {
     }
 
     private static final class AllocationAccumulator {
