@@ -141,6 +141,13 @@ npm run desktop:dev
 | `MODEL_OUTPUT_COST_PER_1K_TOKENS` | `0`                                                       | 输出每 1000 token 成本，按实际 usage 计算 |
 | `MODEL_MAX_RESPONSE_CHARS` | `100000`                                                  | 单次模型响应正文上限 |
 | `MODEL_TIMEOUT_MS` | `30000`                                                   | 模型调用超时；前端连接测试会使用不超过 10 秒的快速边界 |
+| `EDUCATION_CODE_EVALUATION_ENABLED` | `false` | 是否启用学生代码 Docker 语法/编译评测；默认关闭 |
+| `EDUCATION_CODE_EVALUATION_DOCKER` | `docker` | Docker 可执行文件路径；评测不会复用 `workspace.exec` |
+| `EDUCATION_CODE_EVALUATION_TIMEOUT_MS` | `10000` | 单次代码评测超时，服务端会限制在安全范围内 |
+| `EDUCATION_CODE_EVALUATION_MEMORY_MB` | `256` | 评测容器内存上限 |
+| `EDUCATION_CODE_EVALUATION_CPUS` | `1.0` | 评测容器 CPU 上限 |
+| `EDUCATION_CODE_EVALUATION_PIDS_LIMIT` | `64` | 评测容器进程数上限 |
+| `EDUCATION_CODE_EVALUATION_ROOT` | `./data/code-evaluation` | 宿主机临时源文件目录；应配置到专用、权限受限目录 |
 | `MAX_ACTIVE_RUNS_PER_TENANT` | `20`                                                      | 平台单组织活动 Run 硬上限；可通过组织策略进一步收紧 |
 | `MAX_STEPS_PER_RUN` | `1000`                                                    | 平台单次 Run 的动态步骤硬上限；可通过组织策略进一步收紧 |
 | `MAX_CREATES_PER_MINUTE` | `60`                                                      | 平台单组织每分钟创建 Run 硬上限；可通过组织策略进一步收紧 |
@@ -520,7 +527,7 @@ curl -X POST http://localhost:8080/api/runs \
 - `POST/GET /api/education/assignments`：教师/组织以当前身份布置或查询课程作业；作业携带学科、年级、课程版本、目标知识点和可选编程语言，截止时间到达后会显示为 `OVERDUE`
 - `GET /api/education/assignments/{assignmentId}`：查询当前用户作为布置者或学习者参与的课程作业
 - `GET /api/education/assignments/{assignmentId}/progress`：查询当前参与者可见的掌握度、测评、Run 证据覆盖、掌握度提升、反馈确认和学习任务进度；教师可据此判断是否需要干预以及干预是否被确认
-- `POST/GET /api/education/assignments/{assignmentId}/submissions`：学习者提交或查询绑定到成功教育 Run 的作业提交物；目标达标后作业虽进入 `COMPLETED`，在教师确认前仍允许补交；同一 Run 重复提交幂等返回原提交，教师可据此查看可审计的原始作答
+- `POST/GET /api/education/assignments/{assignmentId}/submissions`：学习者提交或查询绑定到成功教育 Run 的作业提交物；请求可选择 `TEXT` 或 `CODE`，代码提交必须使用作业冻结的编程语言；启用评测沙箱后返回语法/编译状态和诊断，评测只形成低权重学习证据，不替代教师评分；目标达标后作业虽进入 `COMPLETED`，在教师确认前仍允许补交；同一 Run 重复提交幂等返回原提交，教师可据此查看可审计的原始作答
 - `POST/GET /api/education/assignments/{assignmentId}/feedback`：教师提交普通反馈、补证据、重新学习或重新安排截止时间的干预；学习者可确认反馈，补证据/重新学习干预在下一次教育 Run 成功创建后进入 `RESOLVED`，不再污染后续 Run
 - `GET /api/education/assignments/{assignmentId}/evaluations`：查询该作业不可变的教师量规评价历史；教师和该作业学习者可见，评价记录包含内容正确性、证据质量、迁移准备度（1-5 分）、决定和量规版本
 - `GET /api/education/evaluation-queue`：拥有 `education.evaluate` 权限的第二评分者查询待独立评价的已完成作业

@@ -2,6 +2,8 @@ package org.mingharness.education;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
@@ -28,6 +30,18 @@ public class LearningAssignmentSubmission {
     private String runId;
     @Column(nullable = false, columnDefinition = "text")
     private String content;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "submission_type", nullable = false, length = 16)
+    private LearningAssignmentSubmissionType submissionType;
+    @Column(name = "programming_language", length = 64)
+    private String programmingLanguage;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "code_evaluation_status", nullable = false, length = 32)
+    private CodeEvaluationStatus codeEvaluationStatus;
+    @Column(name = "code_diagnostics", columnDefinition = "text")
+    private String codeDiagnostics;
+    @Column(name = "code_evaluation_duration_ms", nullable = false)
+    private long codeEvaluationDurationMs;
     @Column(nullable = false)
     private Instant submittedAt;
 
@@ -37,12 +51,30 @@ public class LearningAssignmentSubmission {
     public LearningAssignmentSubmission(String tenantId, String learningAssignmentId,
                                         String learnerUserId, String runId, String content,
                                         Instant submittedAt) {
+        this(tenantId, learningAssignmentId, learnerUserId, runId, content,
+                LearningAssignmentSubmissionType.TEXT, null,
+                CodeEvaluationStatus.NOT_REQUESTED, null, 0, submittedAt);
+    }
+
+    public LearningAssignmentSubmission(String tenantId, String learningAssignmentId,
+                                        String learnerUserId, String runId, String content,
+                                        LearningAssignmentSubmissionType submissionType,
+                                        String programmingLanguage,
+                                        CodeEvaluationStatus codeEvaluationStatus,
+                                        String codeDiagnostics, long codeEvaluationDurationMs,
+                                        Instant submittedAt) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = required(tenantId, "tenantId");
         this.learningAssignmentId = required(learningAssignmentId, "learningAssignmentId");
         this.learnerUserId = required(learnerUserId, "learnerUserId");
         this.runId = required(runId, "runId");
         this.content = required(content, "content");
+        this.submissionType = submissionType == null ? LearningAssignmentSubmissionType.TEXT : submissionType;
+        this.programmingLanguage = optional(programmingLanguage);
+        this.codeEvaluationStatus = codeEvaluationStatus == null
+                ? CodeEvaluationStatus.NOT_REQUESTED : codeEvaluationStatus;
+        this.codeDiagnostics = optional(codeDiagnostics);
+        this.codeEvaluationDurationMs = Math.max(0, codeEvaluationDurationMs);
         this.submittedAt = submittedAt == null ? Instant.now() : submittedAt;
     }
 
@@ -52,11 +84,21 @@ public class LearningAssignmentSubmission {
         return normalized;
     }
 
+    private static String optional(String value) {
+        String normalized = value == null ? "" : value.trim();
+        return normalized.isBlank() ? null : normalized;
+    }
+
     public String getId() { return id; }
     public String getTenantId() { return tenantId; }
     public String getLearningAssignmentId() { return learningAssignmentId; }
     public String getLearnerUserId() { return learnerUserId; }
     public String getRunId() { return runId; }
     public String getContent() { return content; }
+    public LearningAssignmentSubmissionType getSubmissionType() { return submissionType; }
+    public String getProgrammingLanguage() { return programmingLanguage; }
+    public CodeEvaluationStatus getCodeEvaluationStatus() { return codeEvaluationStatus; }
+    public String getCodeDiagnostics() { return codeDiagnostics; }
+    public long getCodeEvaluationDurationMs() { return codeEvaluationDurationMs; }
     public Instant getSubmittedAt() { return submittedAt; }
 }

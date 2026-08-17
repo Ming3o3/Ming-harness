@@ -8,6 +8,8 @@ import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.runtime.repository.RunRepository;
 import org.springframework.http.HttpStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,22 +20,49 @@ import java.util.List;
 @Service
 public class LearningAssignmentSubmissionService {
 
+    private static final Logger log = LoggerFactory.getLogger(LearningAssignmentSubmissionService.class);
+
     private final LearningAssignmentService assignmentService;
     private final LearningAssignmentSubmissionRepository submissionRepository;
     private final RunRepository runRepository;
     private final LearningAssignmentNotificationService notificationService;
     private final SensitiveDataSanitizer sanitizer;
+    private final EducationCodeEvaluator codeEvaluator;
+    private final EducationCodeEvidenceService codeEvidenceService;
 
     public LearningAssignmentSubmissionService(LearningAssignmentService assignmentService,
                                               LearningAssignmentSubmissionRepository submissionRepository,
                                               RunRepository runRepository,
                                               LearningAssignmentNotificationService notificationService,
                                               SensitiveDataSanitizer sanitizer) {
+        this(assignmentService, submissionRepository, runRepository, notificationService, sanitizer, null, null);
+    }
+
+    public LearningAssignmentSubmissionService(LearningAssignmentService assignmentService,
+                                              LearningAssignmentSubmissionRepository submissionRepository,
+                                              RunRepository runRepository,
+                                              LearningAssignmentNotificationService notificationService,
+                                              SensitiveDataSanitizer sanitizer,
+                                              EducationCodeEvaluator codeEvaluator) {
+        this(assignmentService, submissionRepository, runRepository, notificationService, sanitizer,
+                codeEvaluator, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public LearningAssignmentSubmissionService(LearningAssignmentService assignmentService,
+                                              LearningAssignmentSubmissionRepository submissionRepository,
+                                              RunRepository runRepository,
+                                              LearningAssignmentNotificationService notificationService,
+                                              SensitiveDataSanitizer sanitizer,
+                                              EducationCodeEvaluator codeEvaluator,
+                                              EducationCodeEvidenceService codeEvidenceService) {
         this.assignmentService = assignmentService;
         this.submissionRepository = submissionRepository;
         this.runRepository = runRepository;
         this.notificationService = notificationService;
         this.sanitizer = sanitizer;
+        this.codeEvaluator = codeEvaluator;
+        this.codeEvidenceService = codeEvidenceService;
     }
 
     @Transactional
@@ -62,14 +91,44 @@ public class LearningAssignmentSubmissionService {
             throw new BusinessException(HttpStatus.CONFLICT, "ASSIGNMENT_SUBMISSION_NOT_OPEN",
                     "当前课程作业不在可提交状态");
         }
-        String content = clean(request == null ? null : request.content());
+        LearningAssignmentSubmissionType submissionType = request == null
+                ? LearningAssignmentSubmissionType.TEXT : request.effectiveSubmissionType();
+        String requestedLanguage = normalizeLanguage(request == null ? null : request.programmingLanguage());
+        String assignmentLanguage = normalizeLanguage(assignment.getProgrammingLanguage());
+        if (submissionType == LearningAssignmentSubmissionType.CODE
+                && requestedLanguage != null && assignmentLanguage != null
+                && !assignmentLanguage.equals(requestedLanguage)) {
+            throw new BusinessException(HttpStatus.CONFLICT, "ASSIGNMENT_SUBMISSION_LANGUAGE_MISMATCH",
+                    "代码提交语言不能覆盖作业冻结的编程语言");
+        }
+        String effectiveLanguage = assignmentLanguage == null ? requestedLanguage : assignmentLanguage;
+        if (submissionType == LearningAssignmentSubmissionType.CODE && effectiveLanguage == null) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "ASSIGNMENT_SUBMISSION_LANGUAGE_REQUIRED",
+                    "代码提交必须指定编程语言，或先在作业中配置编程语言");
+        }
+        String rawContent = request == null ? null : request.content();
+        String content = submissionType == LearningAssignmentSubmissionType.CODE
+                ? rawCode(rawContent) : clean(rawContent);
         if (content.isBlank()) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "ASSIGNMENT_SUBMISSION_REQUIRED",
                     "作业提交内容不能为空");
         }
+        EducationCodeEvaluationResult evaluation = submissionType == LearningAssignmentSubmissionType.CODE
+                ? evaluateCodeSafely(effectiveLanguage, content)
+                : new EducationCodeEvaluationResult(CodeEvaluationStatus.NOT_REQUESTED, null, null, null, 0);
         LearningAssignmentSubmission saved = submissionRepository.save(
                 new LearningAssignmentSubmission(tenantId, assignment.getId(), learnerUserId,
-                        run.getId(), content, Instant.now()));
+                        run.getId(), content, submissionType, effectiveLanguage,
+                        evaluation.status(), evaluation.diagnostics(), evaluation.durationMs(), Instant.now()));
+        if (submissionType == LearningAssignmentSubmissionType.CODE && codeEvidenceService != null) {
+            try {
+                // 证据是提交后的派生事实；写入失败不能回滚学习者已经保存的提交物。
+                codeEvidenceService.record(tenantId, learnerUserId, assignment, run, evaluation);
+            } catch (RuntimeException exception) {
+                log.warn("Unable to record code evaluation evidence for assignment {} and run {}",
+                        assignment.getId(), run.getId(), exception);
+            }
+        }
         if (notificationService != null) notificationService.ensureForSubmission(saved, assignment);
         return LearningAssignmentSubmissionView.from(saved);
     }
@@ -120,5 +179,32 @@ public class LearningAssignmentSubmissionService {
     private String cleanNullable(String value) {
         String cleaned = clean(value);
         return cleaned.isBlank() ? null : cleaned;
+    }
+
+    private String rawCode(String value) {
+        String normalized = value == null ? "" : value.trim();
+        if (sanitizer.containsSensitiveData(normalized)) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "ASSIGNMENT_SUBMISSION_SENSITIVE_DATA",
+                    "代码提交疑似包含凭证或敏感配置，请删除后再提交");
+        }
+        return normalized;
+    }
+
+    private EducationCodeEvaluationResult evaluateCodeSafely(String language, String content) {
+        if (codeEvaluator == null) {
+            return EducationCodeEvaluationResult.unavailable("当前运行环境未配置代码评测沙箱。");
+        }
+        try {
+            return codeEvaluator.evaluate(language, content);
+        } catch (RuntimeException exception) {
+            log.warn("Code evaluation adapter failed for language {}", language, exception);
+            return new EducationCodeEvaluationResult(CodeEvaluationStatus.ERROR,
+                    "代码评测服务暂时不可用，请稍后重试。", "", null, 0);
+        }
+    }
+
+    private String normalizeLanguage(String value) {
+        String normalized = cleanNullable(value);
+        return normalized == null ? null : normalized.toUpperCase(java.util.Locale.ROOT);
     }
 }

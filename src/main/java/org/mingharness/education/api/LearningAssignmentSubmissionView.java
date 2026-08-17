@@ -11,11 +11,19 @@ public record LearningAssignmentSubmissionView(
         String learnerUserId,
         String runId,
         String content,
+        String submissionType,
+        String programmingLanguage,
+        String codeEvaluationStatus,
+        String codeDiagnostics,
+        long codeEvaluationDurationMs,
         Instant submittedAt
 ) {
     public static LearningAssignmentSubmissionView from(LearningAssignmentSubmission submission) {
         return new LearningAssignmentSubmissionView(submission.getId(),
                 submission.getLearningAssignmentId(), submission.getLearnerUserId(),
-                submission.getRunId(), submission.getContent(), submission.getSubmittedAt());
+                submission.getRunId(), submission.getContent(),
+                submission.getSubmissionType().name(), submission.getProgrammingLanguage(),
+                submission.getCodeEvaluationStatus().name(), submission.getCodeDiagnostics(),
+                submission.getCodeEvaluationDurationMs(), submission.getSubmittedAt());
     }
 }
