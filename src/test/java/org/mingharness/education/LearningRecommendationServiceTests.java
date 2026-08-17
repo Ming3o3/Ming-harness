@@ -62,6 +62,31 @@ class LearningRecommendationServiceTests {
     }
 
     @Test
+    void shouldTurnCodeDiagnosticEvidenceIntoTargetedDiagnosis() {
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        AssessmentAttemptRepository attempts = mock(AssessmentAttemptRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", "profile-1",
+                "掌握类型转换", "类型转换", 0.2, 0.8);
+        AssessmentAttempt failedCode = new AssessmentAttempt("tenant-a", "student-1", "run-1", "step-1",
+                goal.getId(), "profile-1", "类型转换", false, 0.2, 0.4, 0.32, "代码评测");
+        failedCode.setStructuredEvidence(2, "[]", false, false, "CODE_TYPE");
+        when(goals.findByIdAndTenantIdAndUserId(goal.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(goal));
+        when(attempts.findByTenantIdAndUserIdAndLearningGoalIdOrderByCreatedAtAsc(
+                "tenant-a", "student-1", goal.getId())).thenReturn(List.of(failedCode));
+        when(mastery.findByTenantIdAndLearnerProfileIdAndConceptKey("tenant-a", "profile-1", "类型转换"))
+                .thenReturn(Optional.of(new LearnerMastery("tenant-a", "profile-1", "类型转换", 0.32, 2, 0)));
+
+        var recommendation = new LearningRecommendationService(goals, attempts, mastery)
+                .recommend("tenant-a", "student-1", goal.getId());
+
+        assertEquals("DIAGNOSE", recommendation.nextActionType());
+        assertTrue(recommendation.nextActionTitle().contains("类型错误"));
+        assertTrue(recommendation.nextActionPrompt().contains("独立测试"));
+    }
+
+    @Test
     void shouldUseNegativeRunFeedbackToAdjustTheNextAction() {
         LearningGoalRepository goals = mock(LearningGoalRepository.class);
         AssessmentAttemptRepository attempts = mock(AssessmentAttemptRepository.class);

@@ -82,6 +82,7 @@ public class LearningRecommendationService {
         double denominator = Math.max(0.0001, goal.getTargetMastery() - goal.getBaselineMastery());
         double progress = clamp((current - goal.getBaselineMastery()) / denominator);
         long correct = attempts.stream().filter(AssessmentAttempt::isCorrect).count();
+        CodeDiagnosticCategory latestCodeDiagnostic = latestCodeDiagnosticCategory(latest);
         DependencyRecommendation dependency = dependencyRecommendation(tenantId, userId, goal);
         LearningReviewPlan reviewPlan = goal.getStatus() == LearningGoalStatus.COMPLETED
                 && reviewPlanService != null ? reviewPlanService.find(tenantId, userId, goalId) : null;
@@ -138,6 +139,13 @@ public class LearningRecommendationService {
             prompt = "我对上一轮“" + goal.getConceptKey()
                     + "”学习结果反馈为需要调整。请换一种讲解方式，先确认我卡住的原因，再安排一道低难度检查题。";
             rationale = "上一轮学习结果收到负向反馈，下一步先调整表达和节奏，再重新检查理解。";
+        } else if (latestCodeDiagnostic != CodeDiagnosticCategory.NONE) {
+            actionType = "DIAGNOSE";
+            actionTitle = "针对代码" + codeDiagnosticLabel(latestCodeDiagnostic) + "进行诊断";
+            prompt = codeDiagnosticPrompt(goal, latestCodeDiagnostic, dependency);
+            rationale = "上一轮代码评测只提供了低权重形成性线索（"
+                    + codeDiagnosticLabel(latestCodeDiagnostic)
+                    + "），下一步先通过解释、最小修改和独立测试确认真正原因，再更新掌握度。";
         } else if (dependency.hasCriticalGap()
                 && (latest != null && !latest.isCorrect() || correct * 2 < attempts.size())) {
             actionType = "PREREQUISITE_REMEDIATION";
@@ -225,6 +233,55 @@ public class LearningRecommendationService {
     private String prerequisiteRationale(DependencyRecommendation dependency, String prefix) {
         return prefix + "依赖图优先级为“" + dependency.priorityConcept() + "”，当前掌握度约 "
                 + percent(dependency.priorityMastery()) + "，缺口约 " + percent(dependency.priorityDeficit()) + "。";
+    }
+
+    private CodeDiagnosticCategory latestCodeDiagnosticCategory(AssessmentAttempt attempt) {
+        if (attempt == null || attempt.getQuestionType() == null
+                || !attempt.getQuestionType().startsWith("CODE_")) {
+            return CodeDiagnosticCategory.NONE;
+        }
+        String raw = attempt.getQuestionType().substring("CODE_".length());
+        try {
+            CodeDiagnosticCategory category = CodeDiagnosticCategory.valueOf(raw);
+            return category == CodeDiagnosticCategory.NONE ? CodeDiagnosticCategory.NONE : category;
+        } catch (IllegalArgumentException ignored) {
+            return CodeDiagnosticCategory.UNKNOWN;
+        }
+    }
+
+    private String codeDiagnosticPrompt(LearningGoal goal, CodeDiagnosticCategory category,
+                                        DependencyRecommendation dependency) {
+        String focus = switch (category) {
+            case SYNTAX -> "定位语法规则和标点导致的解析失败";
+            case STRUCTURE -> "检查缩进、括号或代码块结构";
+            case IDENTIFIER -> "追踪变量、函数或类的声明与作用域";
+            case TYPE -> "追踪每个表达式的类型，并解释类型转换是否成立";
+            case DEPENDENCY -> "检查模块、包或导入关系，并说明运行环境需要什么依赖";
+            case COMPILATION -> "逐条解释编译器诊断，并定位最小可修复位置";
+            case TIMEOUT -> "检查循环终止条件和时间复杂度";
+            case UNKNOWN -> "阅读评测诊断，提出可验证的错误原因";
+            case NONE -> "复核代码思路";
+        };
+        String prerequisite = dependency.hasGap()
+                ? "如果问题涉及前置知识“" + dependency.priorityConcept() + "”，先用一句话解释它再修改代码。"
+                : "不要只把代码改到能通过；先用自己的话解释原因。";
+        return "请围绕学习目标“" + goal.getConceptKey() + "”做一次代码错误诊断："
+                + focus + "。先指出最小可疑位置，再给出最小修改，最后设计一个独立测试验证修改是否有效。"
+                + prerequisite;
+    }
+
+    private String codeDiagnosticLabel(CodeDiagnosticCategory category) {
+        return switch (category) {
+            case SYNTAX -> "语法错误";
+            case STRUCTURE -> "结构/缩进错误";
+            case IDENTIFIER -> "标识符错误";
+            case TYPE -> "类型错误";
+            case DEPENDENCY -> "依赖/导入错误";
+            case COMPILATION -> "编译错误";
+            case TIMEOUT -> "超时风险";
+            case UNKNOWN -> "未归类错误";
+            case NONE -> "问题";
+        };
     }
 
     private String percent(double value) {
