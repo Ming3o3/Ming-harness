@@ -63,12 +63,14 @@ public class EducationCodeEvidenceService {
                         2, 0.5, false, false));
         String evidenceText = "代码语法/编译检查：" + evaluation.status().name()
                 + "；" + (evaluation.diagnostics() == null ? "" : evaluation.diagnostics());
+        CodeDiagnosticCategory diagnosticCategory = CodeDiagnosticClassifier.classify(evaluation);
         AssessmentAttempt attempt = new AssessmentAttempt(tenantId, learnerUserId, run.getId(),
                 step.getId(), run.getEducationLearningGoalId(), run.getEducationLearnerProfileId(),
                 conceptKey, correct, observed, before, updated.getMasteryScore(),
                 AssessmentAttemptType.FORMATIVE, null, "CODE_EVALUATION", evidenceText,
                 evaluation.diagnostics(), assignment.getId(), EducationRetrievalEvidence.snapshot(run), null);
-        attempt.setStructuredEvidence(2, "[]", false, false, "CODE_SYNTAX");
+        attempt.setStructuredEvidence(2, "[]", false, false,
+                "CODE_" + diagnosticCategory.name());
         return attemptRepository.save(attempt);
     }
 }

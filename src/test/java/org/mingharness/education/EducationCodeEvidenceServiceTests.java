@@ -15,6 +15,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class EducationCodeEvidenceServiceTests {
 
@@ -34,11 +35,12 @@ class EducationCodeEvidenceServiceTests {
                 any(), any(), any(), any(MasteryUpdateRequest.class))).thenReturn(after);
         when(attempts.save(any(AssessmentAttempt.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        new EducationCodeEvidenceService(attempts, runs, mastery, learner).record(
+        AssessmentAttempt attempt = new EducationCodeEvidenceService(attempts, runs, mastery, learner).record(
                 "tenant-a", "student-1", assignment, run,
                 new EducationCodeEvaluationResult(CodeEvaluationStatus.PASSED,
                         "语法/编译检查通过。", "", 0, 25));
 
+        assertEquals("CODE_NONE", attempt.getQuestionType());
         verify(learner).recordObservedMasteryWithoutGoalCompletion(
                 any(), any(), any(), any(MasteryUpdateRequest.class));
         verify(attempts).save(any(AssessmentAttempt.class));

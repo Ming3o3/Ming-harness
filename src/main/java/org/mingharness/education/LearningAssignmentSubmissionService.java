@@ -116,10 +116,13 @@ public class LearningAssignmentSubmissionService {
         EducationCodeEvaluationResult evaluation = submissionType == LearningAssignmentSubmissionType.CODE
                 ? evaluateCodeSafely(effectiveLanguage, content)
                 : new EducationCodeEvaluationResult(CodeEvaluationStatus.NOT_REQUESTED, null, null, null, 0);
+        CodeDiagnosticCategory diagnosticCategory = submissionType == LearningAssignmentSubmissionType.CODE
+                ? CodeDiagnosticClassifier.classify(evaluation) : CodeDiagnosticCategory.NONE;
         LearningAssignmentSubmission saved = submissionRepository.save(
                 new LearningAssignmentSubmission(tenantId, assignment.getId(), learnerUserId,
                         run.getId(), content, submissionType, effectiveLanguage,
-                        evaluation.status(), evaluation.diagnostics(), evaluation.durationMs(), Instant.now()));
+                        evaluation.status(), evaluation.diagnostics(), diagnosticCategory,
+                        evaluation.durationMs(), Instant.now()));
         if (submissionType == LearningAssignmentSubmissionType.CODE && codeEvidenceService != null) {
             try {
                 // 证据是提交后的派生事实；写入失败不能回滚学习者已经保存的提交物。

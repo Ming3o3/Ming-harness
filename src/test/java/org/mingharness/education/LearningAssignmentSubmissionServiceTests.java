@@ -125,6 +125,7 @@ class LearningAssignmentSubmissionServiceTests {
         assertEquals("CODE", result.submissionType());
         assertEquals("PYTHON", result.programmingLanguage());
         assertEquals("PASSED", result.codeEvaluationStatus());
+        assertEquals("NONE", result.codeDiagnosticCategory());
         assertEquals(42, result.codeEvaluationDurationMs());
         verify(evaluator).evaluate("PYTHON", "print('ok')");
     }

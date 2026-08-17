@@ -40,6 +40,9 @@ public class LearningAssignmentSubmission {
     private CodeEvaluationStatus codeEvaluationStatus;
     @Column(name = "code_diagnostics", columnDefinition = "text")
     private String codeDiagnostics;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "code_diagnostic_category", nullable = false, length = 32)
+    private CodeDiagnosticCategory codeDiagnosticCategory;
     @Column(name = "code_evaluation_duration_ms", nullable = false)
     private long codeEvaluationDurationMs;
     @Column(nullable = false)
@@ -53,7 +56,7 @@ public class LearningAssignmentSubmission {
                                         Instant submittedAt) {
         this(tenantId, learningAssignmentId, learnerUserId, runId, content,
                 LearningAssignmentSubmissionType.TEXT, null,
-                CodeEvaluationStatus.NOT_REQUESTED, null, 0, submittedAt);
+                CodeEvaluationStatus.NOT_REQUESTED, null, CodeDiagnosticCategory.NONE, 0, submittedAt);
     }
 
     public LearningAssignmentSubmission(String tenantId, String learningAssignmentId,
@@ -62,6 +65,20 @@ public class LearningAssignmentSubmission {
                                         String programmingLanguage,
                                         CodeEvaluationStatus codeEvaluationStatus,
                                         String codeDiagnostics, long codeEvaluationDurationMs,
+                                        Instant submittedAt) {
+        this(tenantId, learningAssignmentId, learnerUserId, runId, content, submissionType,
+                programmingLanguage, codeEvaluationStatus, codeDiagnostics, CodeDiagnosticCategory.NONE,
+                codeEvaluationDurationMs, submittedAt);
+    }
+
+    public LearningAssignmentSubmission(String tenantId, String learningAssignmentId,
+                                        String learnerUserId, String runId, String content,
+                                        LearningAssignmentSubmissionType submissionType,
+                                        String programmingLanguage,
+                                        CodeEvaluationStatus codeEvaluationStatus,
+                                        String codeDiagnostics,
+                                        CodeDiagnosticCategory codeDiagnosticCategory,
+                                        long codeEvaluationDurationMs,
                                         Instant submittedAt) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = required(tenantId, "tenantId");
@@ -74,6 +91,8 @@ public class LearningAssignmentSubmission {
         this.codeEvaluationStatus = codeEvaluationStatus == null
                 ? CodeEvaluationStatus.NOT_REQUESTED : codeEvaluationStatus;
         this.codeDiagnostics = optional(codeDiagnostics);
+        this.codeDiagnosticCategory = codeDiagnosticCategory == null
+                ? CodeDiagnosticCategory.NONE : codeDiagnosticCategory;
         this.codeEvaluationDurationMs = Math.max(0, codeEvaluationDurationMs);
         this.submittedAt = submittedAt == null ? Instant.now() : submittedAt;
     }
@@ -99,6 +118,7 @@ public class LearningAssignmentSubmission {
     public String getProgrammingLanguage() { return programmingLanguage; }
     public CodeEvaluationStatus getCodeEvaluationStatus() { return codeEvaluationStatus; }
     public String getCodeDiagnostics() { return codeDiagnostics; }
+    public CodeDiagnosticCategory getCodeDiagnosticCategory() { return codeDiagnosticCategory; }
     public long getCodeEvaluationDurationMs() { return codeEvaluationDurationMs; }
     public Instant getSubmittedAt() { return submittedAt; }
 }
