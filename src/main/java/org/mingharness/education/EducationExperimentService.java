@@ -47,6 +47,7 @@ public class EducationExperimentService {
             EducationRetrievalStrategy.VECTOR_ONLY,
             EducationRetrievalStrategy.KEYWORD_ONLY,
             EducationRetrievalStrategy.NO_LEARNER_STATE,
+            EducationRetrievalStrategy.NO_STATE_NO_GRAPH,
             EducationRetrievalStrategy.NO_DEPENDENCY_GRAPH,
             EducationRetrievalStrategy.STATIC_WEIGHT,
             EducationRetrievalStrategy.CALIBRATED,
@@ -216,20 +217,22 @@ public class EducationExperimentService {
         return csv.toString();
     }
 
-    /** 导出学习者状态与知识依赖图四臂联合消融的描述性摘要。 */
+    /** 导出固定混合召回条件下学习者状态与知识依赖图 2×2 联合消融的描述性摘要。 */
     @Transactional(readOnly = true)
     public String exportSynergyCsv(String tenantId, String userId, boolean tenantScope) {
         EducationExperimentSynergyView item = summarize(tenantId, userId, tenantScope).jointAblation();
         StringBuilder csv = new StringBuilder();
         csv.append("fully_paired_learner_goal_count,full_average_mastery_gain,"
                 + "no_learner_state_average_mastery_gain,no_dependency_graph_average_mastery_gain,"
-                + "vector_only_average_mastery_gain,full_minus_no_learner_state,"
+                + "no_state_no_graph_average_mastery_gain,vector_only_average_mastery_gain,"
+                + "full_minus_no_learner_state,"
                 + "full_minus_no_dependency_graph,interaction_effect,sample_status\n");
         if (item != null) {
             csv.append(item.fullyPairedLearnerGoalCount()).append(',')
                     .append(item.fullAverageMasteryGain()).append(',')
                     .append(item.noLearnerStateAverageMasteryGain()).append(',')
                     .append(item.noDependencyGraphAverageMasteryGain()).append(',')
+                    .append(item.noStateNoGraphAverageMasteryGain()).append(',')
                     .append(item.vectorOnlyAverageMasteryGain()).append(',')
                     .append(item.fullMinusNoLearnerState()).append(',')
                     .append(item.fullMinusNoDependencyGraph()).append(',')
@@ -415,8 +418,9 @@ public class EducationExperimentService {
     }
 
     /**
-     * 只纳入同一学习者—目标同时拥有四种方法结果的样本，计算包含式协同项：
-     * FULL − NO_LEARNER_STATE − NO_DEPENDENCY_GRAPH + VECTOR_ONLY。
+     * 只纳入同一学习者—目标同时拥有固定混合召回四种方法结果的样本，计算 2×2 协同项：
+     * FULL − NO_LEARNER_STATE − NO_DEPENDENCY_GRAPH + NO_STATE_NO_GRAPH。
+     * VECTOR_ONLY 仍作为独立的召回模态基线统计，不混入协同项。
      */
     private EducationExperimentSynergyView jointAblation(
             List<Run> runs, Map<String, List<AssessmentAttempt>> attemptsByRun) {
@@ -433,6 +437,7 @@ public class EducationExperimentService {
         }
 
         List<FourArmOutcome> outcomes = new ArrayList<>();
+        List<Double> vectorOnlyOutcomes = new ArrayList<>();
         for (Map<String, List<Run>> byStrategy : grouped.values()) {
             GoalStrategyOutcome full = goalStrategyOutcome(
                     byStrategy.get(EducationRetrievalStrategy.FULL.name()), attemptsByRun);
@@ -440,23 +445,29 @@ public class EducationExperimentService {
                     byStrategy.get(EducationRetrievalStrategy.NO_LEARNER_STATE.name()), attemptsByRun);
             GoalStrategyOutcome noGraph = goalStrategyOutcome(
                     byStrategy.get(EducationRetrievalStrategy.NO_DEPENDENCY_GRAPH.name()), attemptsByRun);
+            GoalStrategyOutcome noStateNoGraph = goalStrategyOutcome(
+                    byStrategy.get(EducationRetrievalStrategy.NO_STATE_NO_GRAPH.name()), attemptsByRun);
             GoalStrategyOutcome vector = goalStrategyOutcome(
                     byStrategy.get(EducationRetrievalStrategy.VECTOR_ONLY.name()), attemptsByRun);
-            if (full == null || noState == null || noGraph == null || vector == null) continue;
+            if (vector != null) vectorOnlyOutcomes.add(vector.masteryGain());
+            if (full == null || noState == null || noGraph == null || noStateNoGraph == null) continue;
             outcomes.add(new FourArmOutcome(full.masteryGain(), noState.masteryGain(),
-                    noGraph.masteryGain(), vector.masteryGain()));
+                    noGraph.masteryGain(), noStateNoGraph.masteryGain()));
         }
 
         if (outcomes.isEmpty()) {
             return new EducationExperimentSynergyView(0, 0.0, 0.0, 0.0, 0.0,
-                    0.0, 0.0, 0.0, "NO_DATA");
+                    0.0, 0.0, 0.0, 0.0, "NO_DATA");
         }
         double full = outcomes.stream().mapToDouble(FourArmOutcome::full).average().orElse(0.0);
         double noState = outcomes.stream().mapToDouble(FourArmOutcome::noState).average().orElse(0.0);
         double noGraph = outcomes.stream().mapToDouble(FourArmOutcome::noGraph).average().orElse(0.0);
-        double vector = outcomes.stream().mapToDouble(FourArmOutcome::vector).average().orElse(0.0);
-        return new EducationExperimentSynergyView(outcomes.size(), full, noState, noGraph, vector,
-                full - noState, full - noGraph, full - noState - noGraph + vector,
+        double vector = vectorOnlyOutcomes.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+        double noStateNoGraph = outcomes.stream().mapToDouble(FourArmOutcome::noStateNoGraph)
+                .average().orElse(0.0);
+        return new EducationExperimentSynergyView(outcomes.size(), full, noState, noGraph,
+                noStateNoGraph, vector,
+                full - noState, full - noGraph, full - noState - noGraph + noStateNoGraph,
                 sampleStatusForPairs(outcomes.size()));
     }
 
@@ -605,7 +616,8 @@ public class EducationExperimentService {
                                        double prerequisiteGapCoverage) {
     }
 
-    private record FourArmOutcome(double full, double noState, double noGraph, double vector) {
+    private record FourArmOutcome(double full, double noState, double noGraph,
+                                  double noStateNoGraph) {
     }
 
     private static final class AllocationAccumulator {

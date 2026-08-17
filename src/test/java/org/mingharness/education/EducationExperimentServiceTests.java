@@ -86,7 +86,7 @@ class EducationExperimentServiceTests {
                 .summarize("tenant-a", "operator", true);
 
         assertEquals(List.of("FULL", "VECTOR_ONLY", "KEYWORD_ONLY", "NO_LEARNER_STATE",
-                        "NO_DEPENDENCY_GRAPH", "STATIC_WEIGHT", "CALIBRATED", "ADAPTIVE"),
+                        "NO_STATE_NO_GRAPH", "NO_DEPENDENCY_GRAPH", "STATIC_WEIGHT", "CALIBRATED", "ADAPTIVE"),
                 view.strategies().stream().map(item -> item.retrievalStrategy()).toList());
         assertEquals(0, view.totalRunCount());
         assertEquals("NO_DATA", view.strategies().get(0).sampleStatus());
@@ -173,12 +173,13 @@ class EducationExperimentServiceTests {
         AssessmentAttemptRepository assessments = mock(AssessmentAttemptRepository.class);
         Run full = educationalRun("FULL", 0.8);
         Run noState = educationalRun("NO_LEARNER_STATE", 0.8);
+        Run noStateNoGraph = educationalRun("NO_STATE_NO_GRAPH", 0.8);
         Run noGraph = educationalRun("NO_DEPENDENCY_GRAPH", 0.8);
         Run vector = educationalRun("VECTOR_ONLY", 0.8);
-        List<Run> all = List.of(full, noState, noGraph, vector);
+        List<Run> all = List.of(full, noState, noStateNoGraph, noGraph, vector);
         List<AssessmentAttempt> outcomes = List.of(
                 attempt(full, 0.80), attempt(noState, 0.40),
-                attempt(noGraph, 0.50), attempt(vector, 0.20));
+                attempt(noStateNoGraph, 0.35), attempt(noGraph, 0.50), attempt(vector, 0.20));
         when(runs.findByTenantIdAndUserIdAndEducationModeTrueOrderByCreatedAtAsc(
                 "tenant-a", "student-1")).thenReturn(all);
         when(assessments.findByTenantIdAndUserIdOrderByCreatedAtAsc(
@@ -191,12 +192,14 @@ class EducationExperimentServiceTests {
         assertEquals(0.60, view.jointAblation().fullAverageMasteryGain(), 0.0001);
         assertEquals(0.40, view.jointAblation().fullMinusNoLearnerState(), 0.0001);
         assertEquals(0.30, view.jointAblation().fullMinusNoDependencyGraph(), 0.0001);
-        assertEquals(0.10, view.jointAblation().interactionEffect(), 0.0001);
+        assertEquals(0.15, view.jointAblation().noStateNoGraphAverageMasteryGain(), 0.0001);
+        assertEquals(0.25, view.jointAblation().interactionEffect(), 0.0001);
         assertEquals("INSUFFICIENT_SAMPLE", view.jointAblation().sampleStatus());
 
         String csv = new EducationExperimentService(runs, assessments)
                 .exportSynergyCsv("tenant-a", "student-1", false);
         assertTrue(csv.startsWith("fully_paired_learner_goal_count,"));
+        assertTrue(csv.contains("no_state_no_graph_average_mastery_gain"));
         assertTrue(csv.contains("\"INSUFFICIENT_SAMPLE\""));
     }
 

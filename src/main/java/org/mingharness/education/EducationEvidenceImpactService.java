@@ -215,7 +215,7 @@ public class EducationEvidenceImpactService {
                 EducationRetrievalPolicySnapshotCodec.decode(
                         run == null ? null : run.getEducationRetrievalWeights()).selectedStrategy());
         return switch (effective) {
-            case FULL, VECTOR_ONLY, KEYWORD_ONLY, NO_LEARNER_STATE,
+            case FULL, VECTOR_ONLY, KEYWORD_ONLY, NO_LEARNER_STATE, NO_STATE_NO_GRAPH,
                     NO_DEPENDENCY_GRAPH, STATIC_WEIGHT, CALIBRATED -> effective.name();
             default -> EducationRetrievalStrategy.FULL.name();
         };

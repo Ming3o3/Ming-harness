@@ -17,6 +17,8 @@ public enum EducationRetrievalStrategy {
     KEYWORD_ONLY,
     /** 混合召回，但去掉掌握度和依赖图状态项，用于状态消融实验。 */
     NO_LEARNER_STATE,
+    /** 固定混合召回，同时关闭学习者状态和知识依赖图；用于干净的 2×2 基线控制。 */
+    NO_STATE_NO_GRAPH,
     /** 混合召回并使用学习者状态，但不读取知识依赖图，用于图结构消融实验。 */
     NO_DEPENDENCY_GRAPH,
     /** 混合召回并使用学习者状态，但固定排序权重，用于自适应权重消融。 */

@@ -42,6 +42,8 @@ Ming Harness 是一个面向课程约束与学习者状态的教育知识库 Age
 
 面向编程学习时，课程资料可额外绑定 `programmingLanguage`（如 `PYTHON`、`JAVA`）。教育 Run 会在创建时冻结同一语言上下文，语言标签作为可回放的硬检索约束；未填写语言的历史资料继续作为通用课程资料兼容使用。代码评测诊断还会归一为 `SYNTAX`、`STRUCTURE`、`IDENTIFIER`、`TYPE`、`DEPENDENCY`、`COMPILATION`、`TIMEOUT` 或 `UNKNOWN`，用于跨语言统计和选择下一步诊断练习；该标签是形成性证据，不是自动教师评分，也不会单独推出知识点掌握结论。
 
+为保证状态 × 知识依赖图联合消融的可解释性，`NO_STATE_NO_GRAPH` 保留固定的向量+关键词混合召回，但同时关闭学习者状态和知识依赖图；它是主 2×2 消融的无状态无图控制组，`VECTOR_ONLY` 仅作为独立召回模态基线。
+
 教师可以在成功教育 Run 的真实检索证据上提交 1--5 分量规评价，系统只接受该 Run 的证据快照引用，并通过 `GET /api/education/retrieval-calibration` 查看当前租户的校准版本、样本量、四项均值和生效权重。校准快照还会按冻结的学习状态汇总历史形成性测评的掌握度增益、正确率和目标达成率，将其作为低强度的总体相关性信号参与后续权重收缩；该结果信号是状态层面的描述性校准，不代表任一 citation 的因果贡献。整个闭环用于实验校准与审计回放，不把主观评价或观察结果伪装成学习者掌握度事实。
 
 ## 已实现模块
@@ -512,7 +514,7 @@ curl -X POST http://localhost:8080/api/runs \
 - `GET /api/education/experiments.csv`：导出上述策略级实验指标；样本状态会区分无数据、样本不足和达到基础分析门槛，不能把小样本结果误读为显著性结论
 - `GET /api/education/experiments/paired.csv`：导出同一学习者-目标内以 `FULL` 为参考的配对策略结果；差值定义为“对比策略 − FULL”，达到目标轮次为负表示对比策略更快
 - `GET /api/education/experiments/allocations.csv`：导出请求策略→实际策略的分配审计，按状态条件列出已分配 Run、成功 Run、有形成性结果 Run 和测评数量；适合检查 `BALANCED_EXPERIMENT` 的样本均衡性
-- `GET /api/education/experiments/synergy.csv`：导出同一学习者—目标四臂配对的状态 × 知识依赖图联合消融摘要，interaction 定义为 `FULL − NO_LEARNER_STATE − NO_DEPENDENCY_GRAPH + VECTOR_ONLY`，仅作描述性协同趋势
+- `GET /api/education/experiments/synergy.csv`：导出同一学习者—目标固定混合召回四臂配对的状态 × 知识依赖图联合消融摘要，interaction 定义为 `FULL − NO_LEARNER_STATE − NO_DEPENDENCY_GRAPH + NO_STATE_NO_GRAPH`；`VECTOR_ONLY` 仅保留为独立召回模态基线，不参与 interaction
 - `GET /api/education/evidence-impact`：按“检索策略 + citation”聚合形成性测评的证据级学习收益，返回引用权重、掌握度增益、正确率、排序拆解和快照匹配率；只统计成功教育 Run
 - `GET /api/education/evidence-impact.csv`：导出证据级学习收益归因，适合与教师证据标注或策略消融结果联表分析
 - `GET /api/education/retrieval-calibration`：查看当前租户教师检索证据标注聚合出的版本化校准快照及学习状态分层；只有新建并选择 `CALIBRATED` 策略的 Run 使用该快照，历史 Run 继续使用创建时冻结的权重

@@ -3249,6 +3249,7 @@ const educationExperimentStrategyLabel = (strategy) => ({
   VECTOR_ONLY: '仅向量',
   KEYWORD_ONLY: '仅关键词',
   NO_LEARNER_STATE: '去学习者状态',
+  NO_STATE_NO_GRAPH: '去状态与依赖图（混合召回）',
   NO_DEPENDENCY_GRAPH: '去知识依赖图',
   STATIC_WEIGHT: '固定权重消融',
   CALIBRATED: '教师校准',
@@ -9960,7 +9961,7 @@ onBeforeUnmount(() => {
                   <label><span>当前课程</span><select v-model="chatEducation.courseId" :disabled="chatSending || chatUploading || !chatEducation.learnerProfileId" @change="selectChatCourse"><option value="">仅使用当前学习信息</option><option v-for="course in availableChatCourses" :key="course.id" :value="course.id">{{ course.title }} · {{ course.subject }} · {{ course.gradeLevel }}</option></select></label>
                   <label><span>学习目标</span><select v-model="chatEducation.learningGoalId" :disabled="chatSending || chatUploading" @change="selectLearningGoal(learningGoals.find((goal) => goal.id === chatEducation.learningGoalId), false)"><option value="">不绑定目标</option><option v-for="goal in learningGoals.filter((item) => item.status === 'ACTIVE')" :key="goal.id" :value="goal.id">{{ goal.title }} · {{ goal.conceptKey }}</option></select></label>
                   <label><span>学习方式</span><select v-model="chatEducation.pedagogicalMode" :disabled="chatSending || chatUploading"><option value="AUTO">自动选择</option><option value="EXPLAIN">概念讲解</option><option value="SOCRATIC">启发式引导</option><option value="PRACTICE">练习优先</option><option value="DIAGNOSE">错题讲解</option></select></label>
-                  <label v-if="isAdminRole"><span>检索策略</span><select v-model="chatEducation.retrievalStrategy" :disabled="chatSending || chatUploading"><option value="FULL">完整方法</option><option value="ADAPTIVE">状态自适应（历史学习结果）</option><option value="BALANCED_EXPERIMENT">均衡实验分配（按状态）</option><option value="VECTOR_ONLY">向量基线</option><option value="KEYWORD_ONLY">关键词基线</option><option value="NO_LEARNER_STATE">去学习状态消融</option><option value="NO_DEPENDENCY_GRAPH">去知识依赖图消融</option><option value="STATIC_WEIGHT">固定权重消融</option><option value="CALIBRATED">教师校准</option></select></label>
+                  <label v-if="isAdminRole"><span>检索策略</span><select v-model="chatEducation.retrievalStrategy" :disabled="chatSending || chatUploading"><option value="FULL">完整方法</option><option value="ADAPTIVE">状态自适应（历史学习结果）</option><option value="BALANCED_EXPERIMENT">均衡实验分配（按状态）</option><option value="VECTOR_ONLY">向量基线</option><option value="KEYWORD_ONLY">关键词基线</option><option value="NO_STATE_NO_GRAPH">去状态与依赖图（混合召回）</option><option value="NO_LEARNER_STATE">去学习状态消融</option><option value="NO_DEPENDENCY_GRAPH">去知识依赖图消融</option><option value="STATIC_WEIGHT">固定权重消融</option><option value="CALIBRATED">教师校准</option></select></label>
                   <label><span>想练的知识点</span><input v-model="chatEducation.conceptKey" maxlength="255" placeholder="例如：函数定义域" :disabled="chatSending || chatUploading" /></label>
                   <label><span>编程语言（可选）</span><input v-model="chatEducation.programmingLanguage" maxlength="64" placeholder="例如：Python、Java" :disabled="chatSending || chatUploading" /></label>
                   <label><span>题目难度</span><div class="chat-education-difficulty"><input v-model.number="chatEducation.minDifficulty" type="number" min="1" max="5" placeholder="1" :disabled="chatSending || chatUploading" /><span>—</span><input v-model.number="chatEducation.maxDifficulty" type="number" min="1" max="5" placeholder="5" :disabled="chatSending || chatUploading" /></div></label>
@@ -10516,6 +10517,7 @@ onBeforeUnmount(() => {
                   <option value="BALANCED_EXPERIMENT">均衡实验分配（按状态）</option>
                   <option value="VECTOR_ONLY">向量基线</option>
                   <option value="KEYWORD_ONLY">关键词基线</option>
+                  <option value="NO_STATE_NO_GRAPH">去状态与依赖图（混合召回）</option>
                   <option value="NO_LEARNER_STATE">去学习状态消融</option>
                   <option value="NO_DEPENDENCY_GRAPH">去知识依赖图消融</option>
                   <option value="STATIC_WEIGHT">固定权重消融</option>
@@ -11157,11 +11159,13 @@ onBeforeUnmount(() => {
               </div>
               <div v-if="educationExperimentSynergy" class="education-experiment-synergy-card">
                 <div class="education-calibration-heading"><span>状态 × 依赖图联合消融</span><em>{{ educationExperimentSynergy.fullyPairedLearnerGoalCount || 0 }} 个四臂配对 · {{ educationExperimentSampleLabel(educationExperimentSynergy.sampleStatus) }}</em></div>
-                <p class="learning-task-help">interaction = FULL − 去学习者状态 − 去知识依赖图 + 仅向量。该值只用于描述协同趋势，不代表因果显著性。</p>
+                <p class="learning-task-help">interaction = FULL − 去学习者状态 − 去知识依赖图 + 去状态与依赖图（混合召回）。仅向量作为独立召回基线，不混入 interaction；该值只用于描述协同趋势，不代表因果显著性。</p>
                 <div class="education-calibration-grid">
                   <span><small>FULL 增益</small><strong>{{ formatSignedRate(educationExperimentSynergy.fullAverageMasteryGain) }}</strong></span>
                   <span><small>去状态差值</small><strong>{{ formatSignedRate(educationExperimentSynergy.fullMinusNoLearnerState) }}</strong></span>
                   <span><small>去图差值</small><strong>{{ formatSignedRate(educationExperimentSynergy.fullMinusNoDependencyGraph) }}</strong></span>
+                  <span><small>无状态无图基线</small><strong>{{ formatSignedRate(educationExperimentSynergy.noStateNoGraphAverageMasteryGain) }}</strong></span>
+                  <span><small>仅向量基线</small><strong>{{ formatSignedRate(educationExperimentSynergy.vectorOnlyAverageMasteryGain) }}</strong></span>
                   <span><small>interaction</small><strong :class="educationExperimentSynergy.interactionEffect >= 0 ? 'is-positive' : 'is-negative'">{{ formatSignedRate(educationExperimentSynergy.interactionEffect) }}</strong></span>
                 </div>
               </div>
