@@ -23,12 +23,13 @@ public class EducationLearnerService {
     private final LearningReviewPlanService reviewPlanService;
     private final LearningAssignmentCompletionService assignmentCompletionService;
     private final SensitiveDataSanitizer sanitizer;
+    private final LearnerStateAuditService stateAuditService;
 
     /** 兼容不启用学习目标存储的组件测试和旧扩展调用方。 */
     public EducationLearnerService(LearnerProfileRepository profileRepository,
                                    LearnerMasteryRepository masteryRepository,
                                    SensitiveDataSanitizer sanitizer) {
-        this(profileRepository, masteryRepository, null, null, null, sanitizer);
+        this(profileRepository, masteryRepository, null, null, null, sanitizer, null);
     }
 
     /** 兼容已有学习目标服务测试和旧扩展调用方。 */
@@ -36,7 +37,7 @@ public class EducationLearnerService {
                                    LearnerMasteryRepository masteryRepository,
                                    LearningGoalRepository goalRepository,
                                    SensitiveDataSanitizer sanitizer) {
-        this(profileRepository, masteryRepository, goalRepository, null, null, sanitizer);
+        this(profileRepository, masteryRepository, goalRepository, null, null, sanitizer, null);
     }
 
     public EducationLearnerService(LearnerProfileRepository profileRepository,
@@ -44,7 +45,17 @@ public class EducationLearnerService {
                                    LearningGoalRepository goalRepository,
                                    LearningReviewPlanService reviewPlanService,
                                    SensitiveDataSanitizer sanitizer) {
-        this(profileRepository, masteryRepository, goalRepository, reviewPlanService, null, sanitizer);
+        this(profileRepository, masteryRepository, goalRepository, reviewPlanService, null, sanitizer, null);
+    }
+
+    public EducationLearnerService(LearnerProfileRepository profileRepository,
+                                   LearnerMasteryRepository masteryRepository,
+                                   LearningGoalRepository goalRepository,
+                                   LearningReviewPlanService reviewPlanService,
+                                   LearningAssignmentCompletionService assignmentCompletionService,
+                                   SensitiveDataSanitizer sanitizer) {
+        this(profileRepository, masteryRepository, goalRepository, reviewPlanService,
+                assignmentCompletionService, sanitizer, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -53,13 +64,15 @@ public class EducationLearnerService {
                                    LearningGoalRepository goalRepository,
                                    LearningReviewPlanService reviewPlanService,
                                    LearningAssignmentCompletionService assignmentCompletionService,
-                                   SensitiveDataSanitizer sanitizer) {
+                                   SensitiveDataSanitizer sanitizer,
+                                   LearnerStateAuditService stateAuditService) {
         this.profileRepository = profileRepository;
         this.masteryRepository = masteryRepository;
         this.goalRepository = goalRepository;
         this.reviewPlanService = reviewPlanService;
         this.assignmentCompletionService = assignmentCompletionService;
         this.sanitizer = sanitizer;
+        this.stateAuditService = stateAuditService;
     }
 
     @Transactional
@@ -123,7 +136,8 @@ public class EducationLearnerService {
         LearnerMastery mastery = masteryRepository
                 .findByTenantIdAndLearnerProfileIdAndConceptKey(tenantId, profile.getId(), conceptKey)
                 .orElseGet(() -> new LearnerMastery(tenantId, profile.getId(), conceptKey,
-                        request.effectiveMasteryScore(), 0, 0));
+                        0.0, 0, 0));
+        LearnerMastery before = copyMastery(mastery);
         if (request.masteryScore() != null) {
             mastery.setMastery(request.effectiveMasteryScore(),
                     request.attempts() == null ? mastery.getAttempts() : request.attempts(),
@@ -133,6 +147,8 @@ public class EducationLearnerService {
                     "掌握度更新必须提供 masteryScore 或 correct");
         }
         LearnerMastery saved = masteryRepository.save(mastery);
+        auditTransition(tenantId, userId, profile.getId(), conceptKey, before, saved,
+                LearnerStateTransitionContext.manualCalibration());
         return saved;
     }
 
@@ -143,7 +159,15 @@ public class EducationLearnerService {
     @Transactional
     public LearnerMastery recordObservedMastery(String tenantId, String userId, String profileId,
                                                 MasteryUpdateRequest request) {
-        return recordObservedMastery(tenantId, userId, profileId, request, true);
+        return recordObservedMastery(tenantId, userId, profileId, request, true,
+                LearnerStateTransitionContext.observation(null, null, null, null, null));
+    }
+
+    /** 绑定 Run 和证据上下文的形成性状态更新入口。 */
+    public LearnerMastery recordObservedMastery(String tenantId, String userId, String profileId,
+                                                MasteryUpdateRequest request,
+                                                LearnerStateTransitionContext context) {
+        return recordObservedMastery(tenantId, userId, profileId, request, true, context);
     }
 
     /**
@@ -154,12 +178,22 @@ public class EducationLearnerService {
     public LearnerMastery recordObservedMasteryWithoutGoalCompletion(String tenantId, String userId,
                                                                        String profileId,
                                                                        MasteryUpdateRequest request) {
-        return recordObservedMastery(tenantId, userId, profileId, request, false);
+        return recordObservedMastery(tenantId, userId, profileId, request, false,
+                LearnerStateTransitionContext.observation(null, null, null, null, null));
+    }
+
+    /** 多知识点测评使用同一 Run 证据，但暂不自动完成目标。 */
+    public LearnerMastery recordObservedMasteryWithoutGoalCompletion(String tenantId, String userId,
+                                                                       String profileId,
+                                                                       MasteryUpdateRequest request,
+                                                                       LearnerStateTransitionContext context) {
+        return recordObservedMastery(tenantId, userId, profileId, request, false, context);
     }
 
     private LearnerMastery recordObservedMastery(String tenantId, String userId, String profileId,
                                                  MasteryUpdateRequest request,
-                                                 boolean allowGoalCompletion) {
+                                                 boolean allowGoalCompletion,
+                                                 LearnerStateTransitionContext context) {
         if (request == null || !request.isObservation()) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "MASTERY_OBSERVATION_REQUIRED",
                     "形成性测评必须提供答题观察结果");
@@ -172,13 +206,30 @@ public class EducationLearnerService {
                 .findByTenantIdAndLearnerProfileIdAndConceptKey(tenantId, profile.getId(), conceptKey)
                 .orElseGet(() -> new LearnerMastery(tenantId, profile.getId(), conceptKey,
                         0.0, 0, 0));
+        LearnerMastery before = copyMastery(mastery);
         mastery.recordAssessment(Boolean.TRUE.equals(request.correct()), request.effectiveMasteryScore(),
                 request.effectiveDifficultyLevel(), request.effectiveEvidenceWeight(), request.isHintUsed());
         LearnerMastery saved = masteryRepository.save(mastery);
+        auditTransition(tenantId, userId, profile.getId(), conceptKey, before, saved, context);
         if (allowGoalCompletion) {
             completeEligibleGoals(tenantId, userId, profile.getId(), conceptKey, saved.getMasteryScore());
         }
         return saved;
+    }
+
+    private void auditTransition(String tenantId, String userId, String profileId, String conceptKey,
+                                 LearnerMastery before, LearnerMastery after,
+                                 LearnerStateTransitionContext context) {
+        if (stateAuditService != null) {
+            stateAuditService.record(tenantId, userId, profileId, conceptKey, before, after, context);
+        }
+    }
+
+    private LearnerMastery copyMastery(LearnerMastery source) {
+        if (source == null) return null;
+        return new LearnerMastery(source.getTenantId(), source.getLearnerProfileId(), source.getConceptKey(),
+                source.getMasteryScore(), source.getAttempts(), source.getCorrectAttempts(),
+                source.getLastAssessedAt());
     }
 
     @Transactional(readOnly = true)

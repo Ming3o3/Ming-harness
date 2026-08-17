@@ -379,6 +379,10 @@ export const api = {
   }),
   activeLearnerProfile: () => request('/education/profiles/active'),
   listLearnerMastery: (profileId) => request(`/education/profiles/${encodeURIComponent(profileId)}/mastery`),
+  listLearnerStateTransitions: (profileId, conceptKey) => {
+    const query = conceptKey ? `?conceptKey=${encodeURIComponent(conceptKey)}` : ''
+    return request(`/education/profiles/${encodeURIComponent(profileId)}/state-transitions${query}`)
+  },
   updateLearnerMastery: (profileId, payload) => request(`/education/profiles/${encodeURIComponent(profileId)}/mastery`, {
     method: 'POST',
     body: JSON.stringify(payload),

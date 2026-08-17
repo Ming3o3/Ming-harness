@@ -9,6 +9,7 @@ import org.mingharness.education.api.AssessmentAttemptView;
 import org.mingharness.education.api.DeferLearningTaskRequest;
 import org.mingharness.education.api.ExecuteLearningActionRequest;
 import org.mingharness.education.api.LearnerMasteryView;
+import org.mingharness.education.api.LearnerStateTransitionView;
 import org.mingharness.education.api.LearnerProfileRequest;
 import org.mingharness.education.api.LearnerProfileView;
 import org.mingharness.education.api.LearningGoalRequest;
@@ -116,6 +117,7 @@ public class EducationController {
     private final EducationRetrievalCalibrationService retrievalCalibrationService;
     private final EducationRetrievalPolicyService retrievalPolicyService;
     private final EducationEvidenceImpactService evidenceImpactService;
+    private final LearnerStateAuditService stateAuditService;
 
     public EducationController(EducationKnowledgeService knowledgeService,
                                 EducationLearnerService learnerService,
@@ -145,9 +147,10 @@ public class EducationController {
                                 EducationKnowledgeGraphService knowledgeGraphService,
                                 EducationRetrievalJudgmentService retrievalJudgmentService,
                                EducationRetrievalCalibrationService retrievalCalibrationService,
-                               EducationRetrievalPolicyService retrievalPolicyService,
+                                EducationRetrievalPolicyService retrievalPolicyService,
                                 EducationEvidenceImpactService evidenceImpactService,
-                                LearningAssignmentTestCaseService testCaseService) {
+                                LearningAssignmentTestCaseService testCaseService,
+                                LearnerStateAuditService stateAuditService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
@@ -179,6 +182,7 @@ public class EducationController {
         this.retrievalPolicyService = retrievalPolicyService;
         this.evidenceImpactService = evidenceImpactService;
         this.testCaseService = testCaseService;
+        this.stateAuditService = stateAuditService;
     }
 
     @PostMapping("/sources")
@@ -285,6 +289,19 @@ public class EducationController {
         HarnessIdentity identity = identity();
         return learnerService.listMastery(identity.tenantId(), identity.userId(), profileId).stream()
                 .map(LearnerMasteryView::from).toList();
+    }
+
+    /** 返回当前学习者自己的掌握度状态转移，支持按知识点筛选，供复盘与实验回放使用。 */
+    @GetMapping("/profiles/{profileId}/state-transitions")
+    public List<LearnerStateTransitionView> listStateTransitions(
+            @PathVariable String profileId,
+            @RequestParam(required = false) String conceptKey) {
+        HarnessIdentity identity = identity();
+        learnerService.profileFor(identity.tenantId(), identity.userId(), profileId)
+                .orElseThrow(() -> new org.mingharness.common.BusinessException(
+                        HttpStatus.NOT_FOUND, "LEARNER_PROFILE_NOT_FOUND", "学习者画像不存在"));
+        return stateAuditService.listForProfile(identity.tenantId(), profileId, conceptKey).stream()
+                .map(LearnerStateTransitionView::from).toList();
     }
 
     @PostMapping("/goals")

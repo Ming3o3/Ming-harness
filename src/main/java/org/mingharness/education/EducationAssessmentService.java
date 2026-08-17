@@ -274,7 +274,8 @@ public class EducationAssessmentService {
                 .map(LearnerMastery::getMasteryScore)
                 .orElse(0.0);
         LearnerMastery updated = updateMasteryForObservation(tenantId, userId, profileId, assessmentConcept,
-                targetObservation, boundedObserved);
+                targetObservation, boundedObserved, runId, normalizedEvidenceSource, attemptType.name(),
+                normalizedEvidenceText);
 
         List<KnowledgePointAssessment> points = effectiveObservation.knowledgePoints();
         List<LearnerMastery> updatedKnowledgePoints = new ArrayList<>();
@@ -286,10 +287,12 @@ public class EducationAssessmentService {
                     updatedKnowledgePoints.add(updated);
                     continue;
                 }
+                AssessmentObservation pointObservation = new AssessmentObservation(point.correct(), point.score(),
+                        effectiveObservation.difficultyLevel(), List.of(), effectiveObservation.hintUsed(),
+                        effectiveObservation.independent(), effectiveObservation.questionType());
                 LearnerMastery pointMastery = updateMasteryForObservation(tenantId, userId, profileId, pointConcept,
-                        new AssessmentObservation(point.correct(), point.score(), effectiveObservation.difficultyLevel(),
-                                List.of(), effectiveObservation.hintUsed(), effectiveObservation.independent(),
-                                effectiveObservation.questionType()), point.score());
+                        pointObservation, point.score(), runId, normalizedEvidenceSource, attemptType.name(),
+                        evidenceForConcept(normalizedEvidenceText, point));
                 if (pointMastery != null) updatedKnowledgePoints.add(pointMastery);
             }
         }
@@ -335,19 +338,35 @@ public class EducationAssessmentService {
 
     private LearnerMastery updateMasteryForObservation(String tenantId, String userId, String profileId,
                                                         String conceptKey, AssessmentObservation observation,
-                                                        double observedMastery) {
+                                                        double observedMastery, String runId,
+                                                        String evidenceSource, String assessmentType,
+                                                        String evidenceText) {
         MasteryUpdateRequest request = new MasteryUpdateRequest(conceptKey, observedMastery,
                 observation.correct(), null, null, observation.difficultyLevel(),
                 observation.effectiveEvidenceWeight(), observation.hintUsed(), observation.independent());
+        LearnerStateTransitionContext context = LearnerStateTransitionContext.observation(
+                runId, evidenceSource, assessmentType, evidenceText, observation);
         if (observation.hasStructuredKnowledgePoints()) {
             LearnerMastery updated = learnerService.recordObservedMasteryWithoutGoalCompletion(
-                    tenantId, userId, profileId, request);
+                    tenantId, userId, profileId, request, context);
             // 兼容只 mock 旧接口的组件测试和旧扩展实现。
             return updated == null
                     ? learnerService.recordObservedMastery(tenantId, userId, profileId, request)
                     : updated;
         }
-        return learnerService.recordObservedMastery(tenantId, userId, profileId, request);
+        LearnerMastery updated = learnerService.recordObservedMastery(
+                tenantId, userId, profileId, request, context);
+        // 兼容只 mock 旧接口的组件测试和旧扩展实现。
+        return updated == null
+                ? learnerService.recordObservedMastery(tenantId, userId, profileId, request)
+                : updated;
+    }
+
+    private String evidenceForConcept(String aggregateEvidence, KnowledgePointAssessment point) {
+        String pointEvidence = point == null ? null : cleanEvidence(point.evidenceText());
+        if (pointEvidence == null) return aggregateEvidence;
+        if (aggregateEvidence == null || aggregateEvidence.isBlank()) return pointEvidence;
+        return aggregateEvidence + "；知识点证据：" + pointEvidence;
     }
 
     private List<KnowledgePointAssessment> deduplicate(List<KnowledgePointAssessment> points) {

@@ -68,6 +68,8 @@ const learnerProfiles = ref([])
 const activeLearnerProfile = ref(null)
 const learnerMastery = ref([])
 const learnerMasteryLoading = ref(false)
+const learnerStateTransitions = ref([])
+const learnerStateTransitionsLoading = ref(false)
 const learningGoals = ref([])
 const activeLearningGoal = ref(null)
 const learningGoalAssessments = ref([])
@@ -3383,6 +3385,25 @@ const learnerMasteryPreview = computed(() => [...learnerMastery.value]
   .sort((left, right) => Number(left.effectiveMasteryScore ?? left.masteryScore) - Number(right.effectiveMasteryScore ?? right.masteryScore)
     || String(left.conceptKey || '').localeCompare(String(right.conceptKey || ''), 'zh-CN'))
   .slice(0, 3))
+const learnerStateTransitionPreview = computed(() => learnerStateTransitions.value.slice(0, 5))
+
+function learnerStateEvidenceLabel(transition) {
+  const source = String(transition?.evidenceSource || '').toUpperCase()
+  if (source === 'CODE_EVALUATION') return '代码行为评测'
+  if (source === 'MANUAL_REVIEW') return '教师复核'
+  if (source === 'MODEL_TOOL') return '对话测评'
+  if (source === 'MANUAL_CALIBRATION') return '人工校准'
+  return source || '形成性测评'
+}
+
+function learnerStateTransitionDetail(transition) {
+  const source = learnerStateEvidenceLabel(transition)
+  const diagnostic = transition?.diagnosticCategory ? ` · ${transition.diagnosticCategory}` : ''
+  const passRate = transition?.behaviorTestPassRate == null
+    ? '' : ` · 测试 ${formatRate(transition.behaviorTestPassRate)}`
+  const run = transition?.runId ? ` · Run ${String(transition.runId).slice(0, 8)}` : ''
+  return `${source}${diagnostic}${passRate}${run}`
+}
 const learningSetupProgress = computed(() => {
   const completed = [
     Boolean(activeLearnerProfile.value),
@@ -5893,16 +5914,25 @@ async function loadDashboard() {
 async function refreshLearnerMastery(profileId = activeLearnerProfile.value?.id) {
   if (!profileId) {
     learnerMastery.value = []
+    learnerStateTransitions.value = []
     return
   }
   learnerMasteryLoading.value = true
+  learnerStateTransitionsLoading.value = true
   try {
-    learnerMastery.value = await api.listLearnerMastery(profileId)
+    const [mastery, transitions] = await Promise.all([
+      api.listLearnerMastery(profileId).catch(() => null),
+      api.listLearnerStateTransitions(profileId).catch(() => null),
+    ])
+    learnerMastery.value = mastery || []
+    learnerStateTransitions.value = transitions || []
   } catch {
     // 学习主界面仍应可用；画像不存在或权限不足时只隐藏掌握度明细。
     learnerMastery.value = []
+    learnerStateTransitions.value = []
   } finally {
     learnerMasteryLoading.value = false
+    learnerStateTransitionsLoading.value = false
   }
 }
 
@@ -6079,6 +6109,7 @@ async function loadEducationData() {
       await refreshLearnerMastery(nextProfile.id)
     } else {
       learnerMastery.value = []
+      learnerStateTransitions.value = []
       if (isLearnerOnlyRole.value) {
         const enrolledCourse = enrolledEducationCourses.value.find((course) => course.status === 'ACTIVE')
         if (enrolledCourse) {
@@ -8510,6 +8541,7 @@ async function deleteLearnerProfile(profile) {
       } else {
         activeLearnerProfile.value = null
         learnerMastery.value = []
+        learnerStateTransitions.value = []
         learnerProfileForm.subject = ''
         learnerProfileForm.gradeLevel = ''
         learnerProfileForm.curriculumVersion = ''
@@ -9052,10 +9084,11 @@ function refreshEducationAfterChatRun(runId, runSnapshot = selectedRun.value?.ru
     const goalId = run.educationLearningGoalId
     const profileId = run.educationLearnerProfileId
     const assignmentId = run.educationLearningAssignmentId
-    let [assessments, recommendation, mastery, tasks, assignments] = await Promise.all([
+    let [assessments, recommendation, mastery, transitions, tasks, assignments] = await Promise.all([
       api.listGoalAssessments(goalId),
       api.getGoalRecommendation(goalId).catch(() => null),
       profileId ? api.listLearnerMastery(profileId).catch(() => null) : Promise.resolve(null),
+      profileId ? api.listLearnerStateTransitions(profileId).catch(() => null) : Promise.resolve(null),
       api.listLearningTasks().catch(() => null),
       assignmentId ? api.listLearningAssignments().catch(() => null) : Promise.resolve(null),
     ])
@@ -9076,6 +9109,9 @@ function refreshEducationAfterChatRun(runId, runSnapshot = selectedRun.value?.ru
     }
     if (profileId && activeLearnerProfile.value?.id === profileId && mastery) {
       learnerMastery.value = mastery
+    }
+    if (profileId && activeLearnerProfile.value?.id === profileId && transitions) {
+      learnerStateTransitions.value = transitions
     }
     if (tasks) learningTasks.value = tasks
     // 通知原本只按 15 秒轮询；Run 终态已经是最可靠的状态边界，
@@ -11170,6 +11206,17 @@ onBeforeUnmount(() => {
                     <small>04 · 完成后会更新</small><strong>{{ agentEvidenceRequest.title }}</strong><p>{{ agentEvidenceRequest.detail }}</p>
                   </article>
                 </div>
+                <details v-if="learnerStateTransitions.length || learnerStateTransitionsLoading" class="learner-state-audit-details">
+                  <summary><span>状态变化记录</span><small>{{ learnerStateTransitionsLoading ? '正在读取…' : `最近 ${learnerStateTransitionPreview.length} 条` }}</small></summary>
+                  <div v-if="learnerStateTransitionPreview.length" class="learner-state-audit-list">
+                    <article v-for="transition in learnerStateTransitionPreview" :key="transition.id" class="learner-state-audit-item">
+                      <header><strong>{{ transition.conceptKey }}</strong><time>{{ formatDate(transition.createdAt) }}</time></header>
+                      <div><b>{{ formatRate(transition.beforeMastery) }} → {{ formatRate(transition.afterMastery) }}</b><span>有效 {{ formatRate(transition.afterEffectiveMastery) }}</span></div>
+                      <p>{{ learnerStateTransitionDetail(transition) }}</p>
+                    </article>
+                  </div>
+                  <p v-else class="learner-state-audit-empty">完成一次作答或代码行为评测后，这里会记录掌握度为什么变化。</p>
+                </details>
                 <footer class="education-agent-state-footer">
                   <span>{{ activeLearningGoal ? `当前目标：${activeLearningGoal.title} · ${learningEvidenceSummary}` : '还没有学习目标；可以先学习，设置后系统会记录进度。' }}</span>
                 </footer>

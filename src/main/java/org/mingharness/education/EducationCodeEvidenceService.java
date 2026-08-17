@@ -57,14 +57,7 @@ public class EducationCodeEvidenceService {
         boolean correct = evaluation.hasBehaviorEvidence()
                 ? evaluation.testPassRate() >= 0.999999
                 : evaluation.status() == CodeEvaluationStatus.PASSED;
-        double before = masteryRepository
-                .findByTenantIdAndLearnerProfileIdAndConceptKey(
-                        tenantId, run.getEducationLearnerProfileId(), conceptKey)
-                .map(LearnerMastery::getMasteryScore).orElse(0.0);
-        LearnerMastery updated = learnerService.recordObservedMasteryWithoutGoalCompletion(
-                tenantId, learnerUserId, run.getEducationLearnerProfileId(),
-                new MasteryUpdateRequest(conceptKey, observed, correct, null, null,
-                        2, 0.5, false, false));
+        CodeDiagnosticCategory diagnosticCategory = CodeDiagnosticClassifier.classify(evaluation);
         String evidenceText = evaluation.hasBehaviorEvidence()
                 ? "代码行为测试：" + evaluation.passedTestCaseCount() + "/"
                 + evaluation.testCaseCount() + "（通过率 "
@@ -72,7 +65,24 @@ public class EducationCodeEvidenceService {
                 + "）；" + evaluation.diagnostics()
                 : "代码语法/编译检查：" + evaluation.status().name()
                 + "；" + (evaluation.diagnostics() == null ? "" : evaluation.diagnostics());
-        CodeDiagnosticCategory diagnosticCategory = CodeDiagnosticClassifier.classify(evaluation);
+        double before = masteryRepository
+                .findByTenantIdAndLearnerProfileIdAndConceptKey(
+                        tenantId, run.getEducationLearnerProfileId(), conceptKey)
+                .map(LearnerMastery::getMasteryScore).orElse(0.0);
+        LearnerStateTransitionContext context = LearnerStateTransitionContext.code(
+                run.getId(), evidenceText, diagnosticCategory.name(), evaluation.testPassRate());
+        LearnerMastery updated = learnerService.recordObservedMasteryWithoutGoalCompletion(
+                tenantId, learnerUserId, run.getEducationLearnerProfileId(),
+                new MasteryUpdateRequest(conceptKey, observed, correct, null, null,
+                        2, 0.5, false, false), context);
+        // 兼容只 mock 旧接口的组件测试和旧扩展实现。
+        if (updated == null) {
+            updated = learnerService.recordObservedMasteryWithoutGoalCompletion(
+                    tenantId, learnerUserId, run.getEducationLearnerProfileId(),
+                    new MasteryUpdateRequest(conceptKey, observed, correct, null, null,
+                            2, 0.5, false, false));
+        }
+        if (updated == null) return null;
         AssessmentAttempt attempt = new AssessmentAttempt(tenantId, learnerUserId, run.getId(),
                 step.getId(), run.getEducationLearningGoalId(), run.getEducationLearnerProfileId(),
                 conceptKey, correct, observed, before, updated.getMasteryScore(),
