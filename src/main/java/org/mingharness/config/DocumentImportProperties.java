@@ -17,7 +17,7 @@ public record DocumentImportProperties(
 
     @ConstructorBinding
     public DocumentImportProperties {
-        maxUploadBytes = bounded(maxUploadBytes, 25 * 1024 * 1024, 128 * 1024, 100 * 1024 * 1024);
+        maxUploadBytes = bounded(maxUploadBytes, 100 * 1024 * 1024, 128 * 1024, 100 * 1024 * 1024);
         maxContentChars = bounded(maxContentChars, 100_000, 1_000, 1_000_000);
     }
 

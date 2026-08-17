@@ -8402,7 +8402,7 @@ function closeApiKeySecret() {
   createdApiKeySecret.value = ''
 }
 
-const DOCUMENT_UPLOAD_MAX_BYTES = 25 * 1024 * 1024
+const DOCUMENT_UPLOAD_MAX_BYTES = 100 * 1024 * 1024
 
 function openDocumentUploadPicker() {
   if (loading.value || documentUploading.value) return
@@ -11084,7 +11084,7 @@ onBeforeUnmount(() => {
               <div class="document-upload-copy">
                 <strong>{{ documentUploadFile ? documentUploadFile.name : '拖入 PDF 或 DOCX 文件' }}</strong>
                 <small v-if="documentUploadFile">{{ formatFileSize(documentUploadFile.size) }} · 上传后自动整理成可检索的课程资料</small>
-                <small v-else>单个文件最大 25 MB；扫描型 PDF 需要先经过 OCR 才能提取文字</small>
+                <small v-else>单个文件最大 100 MB；扫描型 PDF 需要先经过 OCR 才能提取文字</small>
               </div>
               <div class="document-upload-actions">
                 <button class="secondary-button" type="button" :disabled="loading || documentUploading" @click="openDocumentUploadPicker">{{ documentUploadFile ? '更换文件' : '选择文件' }}</button>

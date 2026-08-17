@@ -87,7 +87,7 @@ export EMBEDDING_MAX_INPUT_TOKENS=8192
 
 #### 导入 PDF/DOCX 知识文档
 
-运行控制台的“上下文治理”面板可以选择或拖入一个 PDF/DOCX。服务端按文件扩展名和文件头双重校验后提取纯文本，原始二进制不会写入知识库；解析结果随后沿用现有文档权限、chunk、父窗口和 embedding 索引流程。默认原始文件上限为 25 MB，解析正文上限为 100000 字符，可通过 `CONTEXT_DOCUMENT_MAX_UPLOAD_BYTES` 和 `CONTEXT_DOCUMENT_MAX_CONTENT_CHARS` 调整。只有包含文本层的 PDF 可以直接提取，扫描型 PDF 需要先 OCR；加密或损坏文件会返回结构化解析错误。
+运行控制台的“上下文治理”面板可以选择或拖入一个 PDF/DOCX。服务端按文件扩展名和文件头双重校验后提取纯文本，原始二进制不会写入知识库；解析结果随后沿用现有文档权限、chunk、父窗口和 embedding 索引流程。默认原始文件上限为 100 MB，解析正文上限为 100000 字符，可通过 `CONTEXT_DOCUMENT_MAX_UPLOAD_BYTES` 和 `CONTEXT_DOCUMENT_MAX_CONTENT_CHARS` 调整。只有包含文本层的 PDF 可以直接提取，扫描型 PDF 需要先 OCR；加密或损坏文件会返回结构化解析错误。
 
 也可以直接调用上传接口（调用方需要 `context.write` 权限）：
 
