@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 
 /** 根据可追踪测评事实生成确定性的下一步学习动作，避免推荐变成不可解释的黑盒。 */
 @Service
@@ -19,12 +20,14 @@ public class LearningRecommendationService {
     private final LearnerMasteryRepository masteryRepository;
     private final RunFeedbackRepository feedbackRepository;
     private final LearningReviewPlanService reviewPlanService;
+    private final LearnerProfileRepository profileRepository;
+    private final EducationKnowledgeGraphService graphService;
 
     /** 兼容只使用教育状态的组件测试和旧扩展调用方。 */
     public LearningRecommendationService(LearningGoalRepository goalRepository,
                                          AssessmentAttemptRepository attemptRepository,
                                          LearnerMasteryRepository masteryRepository) {
-        this(goalRepository, attemptRepository, masteryRepository, null, null);
+        this(goalRepository, attemptRepository, masteryRepository, null, null, null, null);
     }
 
     /** 兼容已有反馈回流测试和旧扩展调用方。 */
@@ -32,7 +35,7 @@ public class LearningRecommendationService {
                                          AssessmentAttemptRepository attemptRepository,
                                          LearnerMasteryRepository masteryRepository,
                                          RunFeedbackRepository feedbackRepository) {
-        this(goalRepository, attemptRepository, masteryRepository, feedbackRepository, null);
+        this(goalRepository, attemptRepository, masteryRepository, feedbackRepository, null, null, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -40,12 +43,26 @@ public class LearningRecommendationService {
                                          AssessmentAttemptRepository attemptRepository,
                                          LearnerMasteryRepository masteryRepository,
                                          RunFeedbackRepository feedbackRepository,
-                                         LearningReviewPlanService reviewPlanService) {
+                                         LearningReviewPlanService reviewPlanService,
+                                         LearnerProfileRepository profileRepository,
+                                         EducationKnowledgeGraphService graphService) {
         this.goalRepository = goalRepository;
         this.attemptRepository = attemptRepository;
         this.masteryRepository = masteryRepository;
         this.feedbackRepository = feedbackRepository;
         this.reviewPlanService = reviewPlanService;
+        this.profileRepository = profileRepository;
+        this.graphService = graphService;
+    }
+
+    /** 兼容已接入保持度复习、但尚未接入依赖图推荐的组件测试和扩展调用方。 */
+    public LearningRecommendationService(LearningGoalRepository goalRepository,
+                                         AssessmentAttemptRepository attemptRepository,
+                                         LearnerMasteryRepository masteryRepository,
+                                         RunFeedbackRepository feedbackRepository,
+                                         LearningReviewPlanService reviewPlanService) {
+        this(goalRepository, attemptRepository, masteryRepository, feedbackRepository, reviewPlanService,
+                null, null);
     }
 
     @Transactional(readOnly = true)
@@ -65,6 +82,7 @@ public class LearningRecommendationService {
         double denominator = Math.max(0.0001, goal.getTargetMastery() - goal.getBaselineMastery());
         double progress = clamp((current - goal.getBaselineMastery()) / denominator);
         long correct = attempts.stream().filter(AssessmentAttempt::isCorrect).count();
+        DependencyRecommendation dependency = dependencyRecommendation(tenantId, userId, goal);
         LearningReviewPlan reviewPlan = goal.getStatus() == LearningGoalStatus.COMPLETED
                 && reviewPlanService != null ? reviewPlanService.find(tenantId, userId, goalId) : null;
         java.time.Instant now = java.time.Instant.now();
@@ -102,16 +120,31 @@ public class LearningRecommendationService {
                 rationale = "当前目标已达标，下一步验证跨题型迁移和长期保持度。";
             }
         } else if (attempts.isEmpty()) {
-            actionType = "DIAGNOSE";
-            actionTitle = "先做一次基线诊断";
-            prompt = "请先围绕“" + goal.getConceptKey() + "”给我安排一组短小的基线诊断题，不要直接给出答案，并根据作答定位薄弱点。";
-            rationale = "目标还没有形成测评记录，先建立可比较的基线才能选择合适教学策略。";
+            if (dependency.hasGap()) {
+                actionType = "PREREQUISITE_DIAGNOSE";
+                actionTitle = "先诊断关键前置知识";
+                prompt = prerequisitePrompt(goal, dependency, true);
+                rationale = prerequisiteRationale(dependency,
+                        "当前目标还没有测评记录，先沿依赖图检查关键前置知识，再建立目标基线。");
+            } else {
+                actionType = "DIAGNOSE";
+                actionTitle = "先做一次基线诊断";
+                prompt = "请先围绕“" + goal.getConceptKey() + "”给我安排一组短小的基线诊断题，不要直接给出答案，并根据作答定位薄弱点。";
+                rationale = "目标还没有形成测评记录，先建立可比较的基线才能选择合适教学策略。";
+            }
         } else if (latestNegativeFeedback) {
             actionType = "EXPLAIN";
             actionTitle = "根据反馈调整教学方式";
             prompt = "我对上一轮“" + goal.getConceptKey()
                     + "”学习结果反馈为需要调整。请换一种讲解方式，先确认我卡住的原因，再安排一道低难度检查题。";
             rationale = "上一轮学习结果收到负向反馈，下一步先调整表达和节奏，再重新检查理解。";
+        } else if (dependency.hasCriticalGap()
+                && (latest != null && !latest.isCorrect() || correct * 2 < attempts.size())) {
+            actionType = "PREREQUISITE_REMEDIATION";
+            actionTitle = "补强最薄弱的前置知识";
+            prompt = prerequisitePrompt(goal, dependency, false);
+            rationale = prerequisiteRationale(dependency,
+                    "最近的学习证据显示目标仍不稳定，系统先修复依赖图上的关键缺口，避免直接重复目标题。");
         } else if (latest != null && !latest.isCorrect()) {
             actionType = "EXPLAIN";
             actionTitle = "针对最近错误重新讲解";
@@ -138,7 +171,80 @@ public class LearningRecommendationService {
                 reviewPlan == null ? 0 : reviewPlan.getIntervalDays(),
                 reviewPlan == null ? 0 : reviewPlan.getReviewCount(),
                 reviewPlan == null ? 0 : reviewPlan.getSuccessfulReviewCount(),
-                actionType, actionTitle, prompt, rationale);
+                actionType, actionTitle, prompt, rationale,
+                dependency.priorityConcept(), dependency.priorityMastery(), dependency.priorityDeficit(),
+                dependency.graphAvailable(), dependency.graphTruncated());
+    }
+
+    /**
+     * 把当前掌握度快照投影到目标的依赖图，选择“缺口最大、且更基础”的前置知识。
+     * 依赖图不可用时返回空结果，保持旧课程和旧测试的确定性行为。
+     */
+    private DependencyRecommendation dependencyRecommendation(String tenantId, String userId,
+                                                              LearningGoal goal) {
+        if (profileRepository == null || graphService == null || goal == null) {
+            return DependencyRecommendation.empty();
+        }
+        LearnerProfile profile = profileRepository.findByIdAndTenantIdAndUserId(
+                goal.getLearnerProfileId(), tenantId, userId).orElse(null);
+        if (profile == null) return DependencyRecommendation.empty();
+        Map<String, Double> masteryScores = new java.util.LinkedHashMap<>();
+        masteryRepository.findByTenantIdAndLearnerProfileIdOrderByConceptKeyAsc(
+                        tenantId, profile.getId())
+                .forEach(item -> masteryScores.put(item.getConceptKey(), item.getMasteryScore()));
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                profile.getSubject(), profile.getGradeLevel(), profile.getCurriculumVersion(),
+                goal.getConceptKey(), null, null, masteryScores);
+        EducationDependencyGraph graph = graphService.resolve(tenantId, filter);
+        if (graph == null || graph.prerequisites().isEmpty()) {
+            return new DependencyRecommendation(null, 0.0, 0.0, false,
+                    graph != null && graph.truncated());
+        }
+        EducationDependencyPath priority = graph.prerequisites().stream()
+                .filter(path -> path.deficit() > 0.05)
+                .sorted(java.util.Comparator.comparingDouble(EducationDependencyPath::deficit).reversed()
+                        .thenComparing(java.util.Comparator.comparingInt(EducationDependencyPath::depth).reversed())
+                        .thenComparing(EducationDependencyPath::conceptKey,
+                                String.CASE_INSENSITIVE_ORDER))
+                .findFirst().orElse(null);
+        if (priority == null) {
+            return new DependencyRecommendation(null, 0.0, 0.0, true, graph.truncated());
+        }
+        return new DependencyRecommendation(priority.conceptKey(), priority.masteryScore(),
+                priority.deficit(), true, graph.truncated());
+    }
+
+    private String prerequisitePrompt(LearningGoal goal, DependencyRecommendation dependency,
+                                      boolean diagnosis) {
+        String verb = diagnosis ? "先安排一道短小的诊断题" : "先用一个由易到难的练习补强";
+        return "当前目标“" + goal.getConceptKey() + "”依赖前置知识“" + dependency.priorityConcept()
+                + "”。系统估计该前置知识掌握度约为 " + percent(dependency.priorityMastery())
+                + "，请" + verb + "，让我解释思路并给出可核验的作答依据，再回到目标知识点。";
+    }
+
+    private String prerequisiteRationale(DependencyRecommendation dependency, String prefix) {
+        return prefix + "依赖图优先级为“" + dependency.priorityConcept() + "”，当前掌握度约 "
+                + percent(dependency.priorityMastery()) + "，缺口约 " + percent(dependency.priorityDeficit()) + "。";
+    }
+
+    private String percent(double value) {
+        return String.format(java.util.Locale.ROOT, "%.0f%%", clamp(value) * 100.0);
+    }
+
+    private record DependencyRecommendation(String priorityConcept, double priorityMastery,
+                                             double priorityDeficit, boolean graphAvailable,
+                                             boolean graphTruncated) {
+        private static DependencyRecommendation empty() {
+            return new DependencyRecommendation(null, 0.0, 0.0, false, false);
+        }
+
+        private boolean hasGap() {
+            return priorityConcept != null && priorityDeficit > 0.05;
+        }
+
+        private boolean hasCriticalGap() {
+            return hasGap() && priorityDeficit >= 0.40;
+        }
     }
 
     @Transactional(readOnly = true)

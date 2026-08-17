@@ -923,6 +923,7 @@ h3 { margin: 0; font-size: 13px; }
 .learning-recommendation-heading strong { color: var(--soft); font-size: 12px; }
 .learning-recommendation p { margin: 0; color: var(--soft); font-size: 10px; line-height: 1.55; }
 .learning-recommendation > small { color: var(--muted); font: 8px "DM Mono", monospace; }
+.learning-recommendation > small.learning-recommendation-dependency { color: #8fe9dd; }
 .learning-assessment-history { border-top: 1px solid rgba(153,174,218,.12); padding-top: 7px; color: var(--muted); font-size: 9px; }
 .learning-assessment-history > div { display: grid; grid-template-columns: 42px 1fr auto; gap: 8px; padding: 5px 0; }
 .assessment-correct { color: #69e3a6; }

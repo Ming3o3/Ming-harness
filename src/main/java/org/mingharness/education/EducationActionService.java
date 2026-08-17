@@ -101,9 +101,9 @@ public class EducationActionService {
     private String pedagogicalMode(String actionType) {
         String normalized = actionType == null ? "" : actionType.trim().toUpperCase(Locale.ROOT);
         return switch (normalized) {
-            case "DIAGNOSE" -> "DIAGNOSE";
+            case "DIAGNOSE", "PREREQUISITE_DIAGNOSE" -> "DIAGNOSE";
             case "EXPLAIN" -> "EXPLAIN";
-            case "PRACTICE", "ASSESS", "REVIEW" -> "PRACTICE";
+            case "PRACTICE", "PREREQUISITE_REMEDIATION", "ASSESS", "REVIEW" -> "PRACTICE";
             default -> "AUTO";
         };
     }

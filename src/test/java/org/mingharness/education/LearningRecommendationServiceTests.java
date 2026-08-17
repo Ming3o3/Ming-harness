@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -112,5 +114,43 @@ class LearningRecommendationServiceTests {
         assertEquals("WAIT", recommendation.nextActionType());
         assertEquals(plan.getId(), recommendation.reviewPlanId());
         assertEquals(plan.getNextReviewAt(), recommendation.nextReviewAt());
+    }
+
+    @Test
+    void shouldUseTheWeakestPrerequisiteForTheNextTeachingAction() {
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        AssessmentAttemptRepository attempts = mock(AssessmentAttemptRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        LearnerProfileRepository profiles = mock(LearnerProfileRepository.class);
+        EducationKnowledgeGraphService graph = mock(EducationKnowledgeGraphService.class);
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", "profile-1",
+                "掌握递归", "递归", 0.2, 0.8);
+        LearnerProfile profile = new LearnerProfile("tenant-a", "student-1", "编程",
+                "大一", "课程版", "递归", "zh-CN");
+        AssessmentAttempt failed = new AssessmentAttempt("tenant-a", "student-1", "run-1", "step-1",
+                goal.getId(), "profile-1", "递归", false, 0.2, 0.4, 0.28, "栈帧理解错误");
+        when(goals.findByIdAndTenantIdAndUserId(goal.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(goal));
+        when(attempts.findByTenantIdAndUserIdAndLearningGoalIdOrderByCreatedAtAsc(
+                "tenant-a", "student-1", goal.getId())).thenReturn(List.of(failed));
+        when(mastery.findByTenantIdAndLearnerProfileIdAndConceptKey("tenant-a", "profile-1", "递归"))
+                .thenReturn(Optional.of(new LearnerMastery("tenant-a", "profile-1", "递归", 0.28, 1, 0)));
+        when(profiles.findByIdAndTenantIdAndUserId("profile-1", "tenant-a", "student-1"))
+                .thenReturn(Optional.of(profile));
+        when(mastery.findByTenantIdAndLearnerProfileIdOrderByConceptKeyAsc("tenant-a", "profile-1"))
+                .thenReturn(List.of());
+        when(graph.resolve(any(), any(EducationRetrievalFilter.class))).thenReturn(
+                new EducationDependencyGraph("递归", List.of(
+                        new EducationDependencyPath("函数调用", 1, 0.7, 0.3),
+                        new EducationDependencyPath("栈与状态", 2, 0.1, 0.9)), false));
+
+        var recommendation = new LearningRecommendationService(goals, attempts, mastery, null, null,
+                profiles, graph).recommend("tenant-a", "student-1", goal.getId());
+
+        assertEquals("PREREQUISITE_REMEDIATION", recommendation.nextActionType());
+        assertEquals("栈与状态", recommendation.priorityPrerequisiteConcept());
+        assertEquals(0.9, recommendation.priorityPrerequisiteDeficit());
+        assertTrue(recommendation.dependencyGraphAvailable());
+        assertTrue(recommendation.nextActionPrompt().contains("栈与状态"));
     }
 }

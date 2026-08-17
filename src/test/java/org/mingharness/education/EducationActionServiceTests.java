@@ -37,8 +37,8 @@ class EducationActionServiceTests {
                 "掌握函数", "函数", 0.2, 0.8);
         LearningRecommendationView recommendation = new LearningRecommendationView(
                 goal.getId(), goal.getTitle(), "ACTIVE", "函数", 0.2, 0.2, 0.8,
-                0.0, 0, 0, null, "DIAGNOSE", "先做一次基线诊断",
-                "请先完成基线诊断。", "需要先建立基线。");
+                0.0, 0, 0, null, "PREREQUISITE_DIAGNOSE", "先诊断关键前置知识",
+                "请先完成前置知识诊断。", "依赖图显示需要先补强前置知识。");
         ConversationDetail created = detail("conversation-1");
         ConversationDetail sent = detail("conversation-1");
 
