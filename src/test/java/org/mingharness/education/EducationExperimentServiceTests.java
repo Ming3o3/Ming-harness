@@ -167,6 +167,47 @@ class EducationExperimentServiceTests {
         assertTrue(csv.contains("\"VECTOR_ONLY\""));
     }
 
+    @Test
+    void shouldEstimateJointStateGraphAblationOnlyForCompleteFourArmPairs() {
+        RunRepository runs = mock(RunRepository.class);
+        AssessmentAttemptRepository assessments = mock(AssessmentAttemptRepository.class);
+        Run full = educationalRun("FULL", 0.8);
+        Run noState = educationalRun("NO_LEARNER_STATE", 0.8);
+        Run noGraph = educationalRun("NO_DEPENDENCY_GRAPH", 0.8);
+        Run vector = educationalRun("VECTOR_ONLY", 0.8);
+        List<Run> all = List.of(full, noState, noGraph, vector);
+        List<AssessmentAttempt> outcomes = List.of(
+                attempt(full, 0.80), attempt(noState, 0.40),
+                attempt(noGraph, 0.50), attempt(vector, 0.20));
+        when(runs.findByTenantIdAndUserIdAndEducationModeTrueOrderByCreatedAtAsc(
+                "tenant-a", "student-1")).thenReturn(all);
+        when(assessments.findByTenantIdAndUserIdOrderByCreatedAtAsc(
+                "tenant-a", "student-1")).thenReturn(outcomes);
+
+        EducationExperimentView view = new EducationExperimentService(runs, assessments)
+                .summarize("tenant-a", "student-1", false);
+
+        assertEquals(1, view.jointAblation().fullyPairedLearnerGoalCount());
+        assertEquals(0.60, view.jointAblation().fullAverageMasteryGain(), 0.0001);
+        assertEquals(0.40, view.jointAblation().fullMinusNoLearnerState(), 0.0001);
+        assertEquals(0.30, view.jointAblation().fullMinusNoDependencyGraph(), 0.0001);
+        assertEquals(0.10, view.jointAblation().interactionEffect(), 0.0001);
+        assertEquals("INSUFFICIENT_SAMPLE", view.jointAblation().sampleStatus());
+
+        String csv = new EducationExperimentService(runs, assessments)
+                .exportSynergyCsv("tenant-a", "student-1", false);
+        assertTrue(csv.startsWith("fully_paired_learner_goal_count,"));
+        assertTrue(csv.contains("\"INSUFFICIENT_SAMPLE\""));
+    }
+
+    private AssessmentAttempt attempt(Run run, double masteryAfter) {
+        Step step = run.getSteps().get(0);
+        return new AssessmentAttempt("tenant-a", "student-1", run.getId(), step.getId(),
+                "goal-1", "profile-1", "函数", masteryAfter >= 0.5,
+                masteryAfter, 0.20, masteryAfter, AssessmentAttemptType.FORMATIVE,
+                null, "MODEL_TOOL", "学生作答", "反馈");
+    }
+
     private Run educationalRun(String strategy, double target) {
         Run run = new Run("tenant-a", "student-1", "函数学习", "求定义域", BigDecimal.ONE,
                 "model", "prompt", "policy");

@@ -438,6 +438,19 @@ public class EducationController {
                 .body(csv.getBytes(StandardCharsets.UTF_8));
     }
 
+    /** 导出状态与知识依赖图四臂联合消融的描述性 interaction effect。 */
+    @GetMapping(value = "/experiments/synergy.csv", produces = "text/csv")
+    public ResponseEntity<byte[]> exportExperimentSynergy() {
+        HarnessIdentity identity = identity();
+        boolean tenantScope = identity.hasPermission("ops.read");
+        String csv = experimentService.exportSynergyCsv(identity.tenantId(), identity.userId(), tenantScope);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"education-experiment-synergy.csv\"")
+                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .body(csv.getBytes(StandardCharsets.UTF_8));
+    }
+
     /** 将冻结 citation 与形成性掌握度变化做证据级描述性归因。 */
     @GetMapping("/evidence-impact")
     public EducationEvidenceImpactSummaryView evidenceImpact() {

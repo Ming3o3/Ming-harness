@@ -512,6 +512,7 @@ curl -X POST http://localhost:8080/api/runs \
 - `GET /api/education/experiments.csv`：导出上述策略级实验指标；样本状态会区分无数据、样本不足和达到基础分析门槛，不能把小样本结果误读为显著性结论
 - `GET /api/education/experiments/paired.csv`：导出同一学习者-目标内以 `FULL` 为参考的配对策略结果；差值定义为“对比策略 − FULL”，达到目标轮次为负表示对比策略更快
 - `GET /api/education/experiments/allocations.csv`：导出请求策略→实际策略的分配审计，按状态条件列出已分配 Run、成功 Run、有形成性结果 Run 和测评数量；适合检查 `BALANCED_EXPERIMENT` 的样本均衡性
+- `GET /api/education/experiments/synergy.csv`：导出同一学习者—目标四臂配对的状态 × 知识依赖图联合消融摘要，interaction 定义为 `FULL − NO_LEARNER_STATE − NO_DEPENDENCY_GRAPH + VECTOR_ONLY`，仅作描述性协同趋势
 - `GET /api/education/evidence-impact`：按“检索策略 + citation”聚合形成性测评的证据级学习收益，返回引用权重、掌握度增益、正确率、排序拆解和快照匹配率；只统计成功教育 Run
 - `GET /api/education/evidence-impact.csv`：导出证据级学习收益归因，适合与教师证据标注或策略消融结果联表分析
 - `GET /api/education/retrieval-calibration`：查看当前租户教师检索证据标注聚合出的版本化校准快照及学习状态分层；只有新建并选择 `CALIBRATED` 策略的 Run 使用该快照，历史 Run 继续使用创建时冻结的权重

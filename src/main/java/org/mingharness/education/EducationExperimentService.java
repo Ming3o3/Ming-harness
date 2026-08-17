@@ -7,6 +7,7 @@ import org.mingharness.education.api.EducationExperimentAllocationView;
 import org.mingharness.education.api.EducationExperimentStrategyView;
 import org.mingharness.education.api.EducationExperimentView;
 import org.mingharness.education.api.EducationExperimentPairView;
+import org.mingharness.education.api.EducationExperimentSynergyView;
 import org.mingharness.runtime.domain.Run;
 import org.mingharness.runtime.domain.RunStatus;
 import org.mingharness.runtime.domain.Step;
@@ -115,6 +116,7 @@ public class EducationExperimentService {
                 .toList();
         List<EducationExperimentAllocationView> allocations = allocationSummary(runs, attemptsByRun);
         List<EducationExperimentPairView> pairedComparisons = pairedComparisons(runs, attemptsByRun);
+        EducationExperimentSynergyView jointAblation = jointAblation(runs, attemptsByRun);
         long successfulRuns = runs.stream().filter(run -> run.getStatus() == RunStatus.SUCCEEDED).count();
         Map<String, Set<String>> strategiesByLearnerGoal = new HashMap<>();
         for (Run run : runs) {
@@ -128,7 +130,7 @@ public class EducationExperimentService {
                 .filter(value -> value.size() == EXPERIMENT_STRATEGIES.size()).count();
         return new EducationExperimentView(Instant.now(), runs.size(), successfulRuns,
                 scopedAttempts.size(), tenantScope, paired, fullyPaired, summaries, pairedComparisons,
-                allocations);
+                allocations, jointAblation);
     }
 
     @Transactional(readOnly = true)
@@ -210,6 +212,29 @@ public class EducationExperimentService {
                     .append(item.successfulRunCount()).append(',')
                     .append(item.outcomeRunCount()).append(',')
                     .append(item.assessmentCount()).append('\n');
+        }
+        return csv.toString();
+    }
+
+    /** 导出学习者状态与知识依赖图四臂联合消融的描述性摘要。 */
+    @Transactional(readOnly = true)
+    public String exportSynergyCsv(String tenantId, String userId, boolean tenantScope) {
+        EducationExperimentSynergyView item = summarize(tenantId, userId, tenantScope).jointAblation();
+        StringBuilder csv = new StringBuilder();
+        csv.append("fully_paired_learner_goal_count,full_average_mastery_gain,"
+                + "no_learner_state_average_mastery_gain,no_dependency_graph_average_mastery_gain,"
+                + "vector_only_average_mastery_gain,full_minus_no_learner_state,"
+                + "full_minus_no_dependency_graph,interaction_effect,sample_status\n");
+        if (item != null) {
+            csv.append(item.fullyPairedLearnerGoalCount()).append(',')
+                    .append(item.fullAverageMasteryGain()).append(',')
+                    .append(item.noLearnerStateAverageMasteryGain()).append(',')
+                    .append(item.noDependencyGraphAverageMasteryGain()).append(',')
+                    .append(item.vectorOnlyAverageMasteryGain()).append(',')
+                    .append(item.fullMinusNoLearnerState()).append(',')
+                    .append(item.fullMinusNoDependencyGraph()).append(',')
+                    .append(item.interactionEffect()).append(',')
+                    .append(csv(item.sampleStatus())).append('\n');
         }
         return csv.toString();
     }
@@ -389,6 +414,52 @@ public class EducationExperimentService {
                 .toList();
     }
 
+    /**
+     * 只纳入同一学习者—目标同时拥有四种方法结果的样本，计算包含式协同项：
+     * FULL − NO_LEARNER_STATE − NO_DEPENDENCY_GRAPH + VECTOR_ONLY。
+     */
+    private EducationExperimentSynergyView jointAblation(
+            List<Run> runs, Map<String, List<AssessmentAttempt>> attemptsByRun) {
+        Map<String, Map<String, List<Run>>> grouped = new LinkedHashMap<>();
+        for (Run run : runs) {
+            if (run == null || run.getStatus() != RunStatus.SUCCEEDED
+                    || run.getUserId() == null || run.getUserId().isBlank()
+                    || run.getEducationLearningGoalId() == null
+                    || run.getEducationLearningGoalId().isBlank()) continue;
+            String goalKey = run.getUserId() + "\u0000" + run.getEducationLearningGoalId();
+            grouped.computeIfAbsent(goalKey, ignored -> new LinkedHashMap<>())
+                    .computeIfAbsent(effectiveExperimentStrategy(run), ignored -> new ArrayList<>())
+                    .add(run);
+        }
+
+        List<FourArmOutcome> outcomes = new ArrayList<>();
+        for (Map<String, List<Run>> byStrategy : grouped.values()) {
+            GoalStrategyOutcome full = goalStrategyOutcome(
+                    byStrategy.get(EducationRetrievalStrategy.FULL.name()), attemptsByRun);
+            GoalStrategyOutcome noState = goalStrategyOutcome(
+                    byStrategy.get(EducationRetrievalStrategy.NO_LEARNER_STATE.name()), attemptsByRun);
+            GoalStrategyOutcome noGraph = goalStrategyOutcome(
+                    byStrategy.get(EducationRetrievalStrategy.NO_DEPENDENCY_GRAPH.name()), attemptsByRun);
+            GoalStrategyOutcome vector = goalStrategyOutcome(
+                    byStrategy.get(EducationRetrievalStrategy.VECTOR_ONLY.name()), attemptsByRun);
+            if (full == null || noState == null || noGraph == null || vector == null) continue;
+            outcomes.add(new FourArmOutcome(full.masteryGain(), noState.masteryGain(),
+                    noGraph.masteryGain(), vector.masteryGain()));
+        }
+
+        if (outcomes.isEmpty()) {
+            return new EducationExperimentSynergyView(0, 0.0, 0.0, 0.0, 0.0,
+                    0.0, 0.0, 0.0, "NO_DATA");
+        }
+        double full = outcomes.stream().mapToDouble(FourArmOutcome::full).average().orElse(0.0);
+        double noState = outcomes.stream().mapToDouble(FourArmOutcome::noState).average().orElse(0.0);
+        double noGraph = outcomes.stream().mapToDouble(FourArmOutcome::noGraph).average().orElse(0.0);
+        double vector = outcomes.stream().mapToDouble(FourArmOutcome::vector).average().orElse(0.0);
+        return new EducationExperimentSynergyView(outcomes.size(), full, noState, noGraph, vector,
+                full - noState, full - noGraph, full - noState - noGraph + vector,
+                sampleStatusForPairs(outcomes.size()));
+    }
+
     /** 将分配器 Run 解码为实际执行方法，避免把 BALANCED_EXPERIMENT 当成一种检索算法。 */
     private String effectiveExperimentStrategy(Run run) {
         EducationRetrievalStrategy requested = EducationRetrievalStrategy.parse(
@@ -532,6 +603,9 @@ public class EducationExperimentService {
 
     private record GoalStrategyOutcome(double masteryGain, int reachedRound,
                                        double prerequisiteGapCoverage) {
+    }
+
+    private record FourArmOutcome(double full, double noState, double noGraph, double vector) {
     }
 
     private static final class AllocationAccumulator {

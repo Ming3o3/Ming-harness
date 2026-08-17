@@ -14,7 +14,8 @@ public record EducationExperimentView(
         long fullyPairedLearnerGoalCount,
         List<EducationExperimentStrategyView> strategies,
         List<EducationExperimentPairView> pairedComparisons,
-        List<EducationExperimentAllocationView> allocations
+        List<EducationExperimentAllocationView> allocations,
+        EducationExperimentSynergyView jointAblation
 ) {
 
     /** 兼容旧版调用方；没有分配审计时返回空列表。 */
@@ -25,6 +26,18 @@ public record EducationExperimentView(
                                    List<EducationExperimentPairView> pairedComparisons) {
         this(generatedAt, totalRunCount, successfulRunCount, totalAssessmentCount, tenantScope,
                 pairedLearnerGoalCount, fullyPairedLearnerGoalCount, strategies, pairedComparisons, List.of());
+    }
+
+    /** 兼容尚未接入联合消融摘要的旧调用方。 */
+    public EducationExperimentView(Instant generatedAt, long totalRunCount, long successfulRunCount,
+                                   long totalAssessmentCount, boolean tenantScope,
+                                   long pairedLearnerGoalCount, long fullyPairedLearnerGoalCount,
+                                   List<EducationExperimentStrategyView> strategies,
+                                   List<EducationExperimentPairView> pairedComparisons,
+                                   List<EducationExperimentAllocationView> allocations) {
+        this(generatedAt, totalRunCount, successfulRunCount, totalAssessmentCount, tenantScope,
+                pairedLearnerGoalCount, fullyPairedLearnerGoalCount, strategies, pairedComparisons,
+                allocations, null);
     }
 
     public EducationExperimentView {
