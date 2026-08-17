@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -78,5 +79,18 @@ class EducationDependencyGraphSnapshotCodecTests {
 
         assertNull(configuration.retrievalFilter().dependencyGraphOrNull());
         assertEquals(0.1, configuration.retrievalFilter().masteryFor("函数"));
+    }
+
+    @Test
+    void shouldFreezePointEstimateModeInTheRunRetrievalFilter() {
+        EducationRunConfiguration configuration = new EducationRunConfiguration(
+                true, "profile", "goal", null, null, null, null, null,
+                "函数目标", 0.1, 0.8, "数学", "高中一年级", "人教A版", "函数",
+                null, null, "PRACTICE", "函数=0.10", null, null, null,
+                "FULL_POINT_ESTIMATE");
+
+        assertFalse(configuration.retrievalFilter().uncertaintyAware());
+        assertTrue(configuration.retrievalFilter().dependencyGraphOrNull() == null);
+        assertTrue(configuration.retrievalStrategyValue().usesDependencyGraph());
     }
 }

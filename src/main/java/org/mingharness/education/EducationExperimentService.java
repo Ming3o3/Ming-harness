@@ -44,6 +44,7 @@ public class EducationExperimentService {
     /** 实验表按实际执行方法聚合；ADAPTIVE/BALANCED_EXPERIMENT 是分配器而非方法。 */
     private static final List<EducationRetrievalStrategy> EXPERIMENT_STRATEGIES = List.of(
             EducationRetrievalStrategy.FULL,
+            EducationRetrievalStrategy.FULL_POINT_ESTIMATE,
             EducationRetrievalStrategy.VECTOR_ONLY,
             EducationRetrievalStrategy.KEYWORD_ONLY,
             EducationRetrievalStrategy.NO_LEARNER_STATE,

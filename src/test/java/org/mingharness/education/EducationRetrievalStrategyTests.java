@@ -17,4 +17,16 @@ class EducationRetrievalStrategyTests {
         assertFalse(strategy.usesDependencyGraph());
         assertFalse(strategy.usesAdaptiveWeights());
     }
+
+    @Test
+    void pointEstimateAblationKeepsStateAndGraphButDisablesUncertaintySignal() {
+        EducationRetrievalStrategy strategy = EducationRetrievalStrategy.FULL_POINT_ESTIMATE;
+
+        assertTrue(strategy.usesVector());
+        assertTrue(strategy.usesKeyword());
+        assertTrue(strategy.usesLearnerState());
+        assertTrue(strategy.usesDependencyGraph());
+        assertTrue(strategy.usesAdaptiveWeights());
+        assertFalse(strategy.usesUncertaintyAwareState());
+    }
 }

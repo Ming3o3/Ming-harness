@@ -11,6 +11,8 @@ import java.util.Locale;
 public enum EducationRetrievalStrategy {
     /** 向量 + 关键词 + 课程约束 + 掌握度/依赖图边际覆盖选择。 */
     FULL,
+    /** 与 FULL 相同，但用保持度校正后的掌握度点估计，不使用 Wilson 保守下界。 */
+    FULL_POINT_ESTIMATE,
     /** 仅向量召回，保留课程硬约束但不使用学习者状态重排。 */
     VECTOR_ONLY,
     /** 仅关键词召回，保留课程硬约束但不使用学习者状态重排。 */
@@ -49,17 +51,24 @@ public enum EducationRetrievalStrategy {
     }
 
     public boolean usesLearnerState() {
-        return this == FULL || this == NO_DEPENDENCY_GRAPH || this == STATIC_WEIGHT
+        return this == FULL || this == FULL_POINT_ESTIMATE
+                || this == NO_DEPENDENCY_GRAPH || this == STATIC_WEIGHT
                 || this == CALIBRATED || this == ADAPTIVE || this == BALANCED_EXPERIMENT;
     }
 
     public boolean usesAdaptiveWeights() {
-        return this == FULL || this == NO_DEPENDENCY_GRAPH || this == CALIBRATED
+        return this == FULL || this == FULL_POINT_ESTIMATE
+                || this == NO_DEPENDENCY_GRAPH || this == CALIBRATED
                 || this == ADAPTIVE || this == BALANCED_EXPERIMENT;
     }
 
     public boolean usesDependencyGraph() {
-        return this == FULL || this == STATIC_WEIGHT || this == CALIBRATED
+        return this == FULL || this == FULL_POINT_ESTIMATE || this == STATIC_WEIGHT || this == CALIBRATED
                 || this == ADAPTIVE || this == BALANCED_EXPERIMENT;
+    }
+
+    /** FULL_POINT_ESTIMATE 保留保持度和图结构，但不使用证据量带来的置信区间下界。 */
+    public boolean usesUncertaintyAwareState() {
+        return usesLearnerState() && this != FULL_POINT_ESTIMATE;
     }
 }

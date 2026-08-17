@@ -87,6 +87,28 @@ class EducationKnowledgeGraphServiceTests {
     }
 
     @Test
+    void shouldResolvePointEstimatePathsWithoutConfidenceWidth() {
+        EducationConceptDependencyRepository repository = mock(EducationConceptDependencyRepository.class);
+        EducationKnowledgeGraphService service = new EducationKnowledgeGraphService(repository,
+                new SensitiveDataSanitizer());
+        when(repository
+                .findByTenantIdAndSubjectAndGradeLevelAndCurriculumVersionOrderByConceptKeyAscPrerequisiteConceptAsc(
+                        "tenant-a", "编程", "大一", "课程版"))
+                .thenReturn(List.of(edge("递归", "栈", "doc-1")));
+
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "编程", "大一", "课程版", "递归", null, null,
+                Map.of("栈", 0.9), null,
+                Map.of("栈", new LearnerStateEvidence(0.9, 1, 1)), false);
+
+        EducationDependencyPath path = service.resolve("tenant-a", filter).prerequisites().get(0);
+
+        assertEquals(0.9, path.masteryScore(), 0.000001);
+        assertEquals(0.0, path.uncertainty(), 0.000001);
+        assertEquals(0.1, path.deficit(), 0.000001);
+    }
+
+    @Test
     void shouldRejectCycleAcrossKnowledgeSourcesBeforePersistingEdges() {
         EducationConceptDependencyRepository repository = mock(EducationConceptDependencyRepository.class);
         EducationKnowledgeGraphService service = new EducationKnowledgeGraphService(repository,

@@ -80,6 +80,18 @@ class EducationRetrievalFilterTests {
     }
 
     @Test
+    void shouldSeparatePointEstimateFromUncertaintyAwareRanking() {
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "数学", "高中一年级", "人教A版", "函数", null, null,
+                Map.of("函数", 0.8), null,
+                Map.of("函数", new LearnerStateEvidence(0.8, 1, 1)), false);
+
+        assertEquals(0.8, filter.rankingMasteryFor("函数"), 0.000001);
+        assertEquals(0.0, filter.rankingUncertaintyFor("函数"), 0.000001);
+        assertTrue(filter.conservativeMasteryFor("函数") < filter.rankingMasteryFor("函数"));
+    }
+
+    @Test
     void shouldUseRetentionAdjustedMasteryFromFrozenEvidence() {
         EducationRetrievalFilter filter = new EducationRetrievalFilter(
                 "数学", "高中一年级", "人教A版", "函数", null, null,

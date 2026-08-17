@@ -123,7 +123,12 @@ public class ContextBuilder {
                                         EducationRetrievalFilter educationFilter,
                                         EducationRetrievalStrategy strategy,
                                         EducationRankingWeights calibratedWeights) {
-        EducationRetrievalFilter effectiveEducationFilter = educationFilter;
+        // 只有真正读取学习者状态的策略才冻结估计模式。向量/关键词基线不应因为
+        // 内部新增的 uncertaintyAware 字段改变传给召回器的过滤器值，保持旧调用方
+        // 的 record 相等性和基线语义稳定。
+        EducationRetrievalFilter effectiveEducationFilter = educationFilter == null || !strategy.usesLearnerState()
+                ? educationFilter
+                : educationFilter.withUncertaintyAware(strategy.usesUncertaintyAwareState());
         EducationDependencyGraph dependencyGraph = EducationDependencyGraph.empty(
                 educationFilter == null ? null : educationFilter.conceptKeyOrNull());
         if (educationFilter != null && educationFilter.active()) {
@@ -373,19 +378,19 @@ public class ContextBuilder {
                 && containsConcept(source.getConceptTags(), targetConcept) ? 1.0 : 0.0;
         String[] prerequisites = splitConcepts(source.getPrerequisiteConcepts());
         double prerequisiteGap = java.util.Arrays.stream(prerequisites)
-                .mapToDouble(prerequisite -> 1.0 - filter.conservativeMasteryFor(prerequisite))
+                .mapToDouble(prerequisite -> 1.0 - filter.rankingMasteryFor(prerequisite))
                 .average().orElse(0.0);
         Set<String> graphGaps = graphGapSet(dependencyGraph);
         Set<String> sourceConcepts = sourceConceptSet(source);
         double graphCoverage = graphGaps.isEmpty() ? 0.0
                 : weightedCoverage(graphGaps, sourceConcepts, dependencyGraph);
-        double targetMastery = filter.conservativeMasteryFor(filter.conceptKeyOrNull());
+        double targetMastery = filter.rankingMasteryFor(filter.conceptKeyOrNull());
         boolean learnerStateEnabled = strategy != null && strategy.usesLearnerState();
         double targetUncertainty = !learnerStateEnabled || targetConcept == null ? 0.0
-                : Math.max(filter.uncertaintyFor(targetConcept), filter.forgettingRiskFor(targetConcept));
+                : Math.max(filter.rankingUncertaintyFor(targetConcept), filter.forgettingRiskFor(targetConcept));
         double prerequisiteUncertainty = !learnerStateEnabled ? 0.0
                 : java.util.Arrays.stream(prerequisites)
-                .mapToDouble(prerequisite -> Math.max(filter.uncertaintyFor(prerequisite),
+                .mapToDouble(prerequisite -> Math.max(filter.rankingUncertaintyFor(prerequisite),
                         filter.forgettingRiskFor(prerequisite)))
                 .average().orElse(0.0);
         double learnerStateUncertainty = targetConcept == null

@@ -136,9 +136,9 @@ public class EducationKnowledgeGraphService {
         List<EducationDependencyPath> paths = depths.entrySet().stream()
                 .map(entry -> new EducationDependencyPath(
                         displayName(entry.getKey(), edges), entry.getValue(),
-                        filter.conservativeMasteryFor(entry.getKey()),
-                        1.0 - filter.conservativeMasteryFor(entry.getKey()),
-                        filter.uncertaintyFor(entry.getKey()),
+                        filter.rankingMasteryFor(entry.getKey()),
+                        1.0 - filter.rankingMasteryFor(entry.getKey()),
+                        filter.rankingUncertaintyFor(entry.getKey()),
                         filter.forgettingRiskFor(entry.getKey())))
                 .sorted(Comparator.comparingInt(EducationDependencyPath::depth)
                         .thenComparing(Comparator.comparingDouble(EducationDependencyPath::statePriority)

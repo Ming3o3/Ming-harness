@@ -24,7 +24,8 @@ public record EducationRetrievalFilter(
         Integer maxDifficulty,
         Map<String, Double> masteryScores,
         EducationDependencyGraph dependencyGraph,
-        Map<String, LearnerStateEvidence> masteryEvidence
+        Map<String, LearnerStateEvidence> masteryEvidence,
+        boolean uncertaintyAware
 ) {
 
     /** 保持旧调用方的六参数构造方式；学习者状态默认为空。 */
@@ -38,7 +39,7 @@ public record EducationRetrievalFilter(
                                     String conceptKey, Integer minDifficulty, Integer maxDifficulty,
                                     Map<String, Double> masteryScores) {
         this(subject, gradeLevel, curriculumVersion, conceptKey, null, minDifficulty, maxDifficulty,
-                masteryScores, null, Map.of());
+                masteryScores, null, Map.of(), true);
     }
 
     /** 绑定可选编程语言的轻量构造方式。 */
@@ -46,7 +47,7 @@ public record EducationRetrievalFilter(
                                     String conceptKey, String programmingLanguage,
                                     Integer minDifficulty, Integer maxDifficulty) {
         this(subject, gradeLevel, curriculumVersion, conceptKey, programmingLanguage,
-                minDifficulty, maxDifficulty, Map.of(), null, Map.of());
+                minDifficulty, maxDifficulty, Map.of(), null, Map.of(), true);
     }
 
     /** 携带 Run 创建时冻结的掌握度证据与依赖图。 */
@@ -55,7 +56,7 @@ public record EducationRetrievalFilter(
                                     Map<String, Double> masteryScores,
                                     EducationDependencyGraph dependencyGraph) {
         this(subject, gradeLevel, curriculumVersion, conceptKey, null, minDifficulty, maxDifficulty,
-                masteryScores, dependencyGraph, Map.of());
+                masteryScores, dependencyGraph, Map.of(), true);
     }
 
     /** 兼容尚未携带编程语言标签的完整旧构造方式。 */
@@ -65,7 +66,29 @@ public record EducationRetrievalFilter(
                                     EducationDependencyGraph dependencyGraph,
                                     Map<String, LearnerStateEvidence> masteryEvidence) {
         this(subject, gradeLevel, curriculumVersion, conceptKey, null, minDifficulty, maxDifficulty,
-                masteryScores, dependencyGraph, masteryEvidence);
+                masteryScores, dependencyGraph, masteryEvidence, true);
+    }
+
+    /** 不带编程语言标签的点估计消融构造方式。 */
+    public EducationRetrievalFilter(String subject, String gradeLevel, String curriculumVersion,
+                                    String conceptKey, Integer minDifficulty, Integer maxDifficulty,
+                                    Map<String, Double> masteryScores,
+                                    EducationDependencyGraph dependencyGraph,
+                                    Map<String, LearnerStateEvidence> masteryEvidence,
+                                    boolean uncertaintyAware) {
+        this(subject, gradeLevel, curriculumVersion, conceptKey, null, minDifficulty, maxDifficulty,
+                masteryScores, dependencyGraph, masteryEvidence, uncertaintyAware);
+    }
+
+    /** 兼容旧版带编程语言和状态快照、但未携带估计模式的构造方式。 */
+    public EducationRetrievalFilter(String subject, String gradeLevel, String curriculumVersion,
+                                    String conceptKey, String programmingLanguage,
+                                    Integer minDifficulty, Integer maxDifficulty,
+                                    Map<String, Double> masteryScores,
+                                    EducationDependencyGraph dependencyGraph,
+                                    Map<String, LearnerStateEvidence> masteryEvidence) {
+        this(subject, gradeLevel, curriculumVersion, conceptKey, programmingLanguage,
+                minDifficulty, maxDifficulty, masteryScores, dependencyGraph, masteryEvidence, true);
     }
 
     public EducationRetrievalFilter {
@@ -132,7 +155,14 @@ public record EducationRetrievalFilter(
 
     public EducationRetrievalFilter withDependencyGraph(EducationDependencyGraph graph) {
         return new EducationRetrievalFilter(subject, gradeLevel, curriculumVersion, conceptKey,
-                programmingLanguage, minDifficulty, maxDifficulty, masteryScores, graph, masteryEvidence);
+                programmingLanguage, minDifficulty, maxDifficulty, masteryScores, graph, masteryEvidence,
+                uncertaintyAware);
+    }
+
+    public EducationRetrievalFilter withUncertaintyAware(boolean enabled) {
+        return new EducationRetrievalFilter(subject, gradeLevel, curriculumVersion, conceptKey,
+                programmingLanguage, minDifficulty, maxDifficulty, masteryScores, dependencyGraph,
+                masteryEvidence, enabled);
     }
 
     /** 返回目标知识点及其传递前置知识点，供图驱动召回使用。 */
@@ -184,6 +214,16 @@ public record EducationRetrievalFilter(
         return normalized != null && masteryEvidence.containsKey(normalized)
                 ? masteryEvidence.get(normalized).conservativeMastery()
                 : masteryFor(normalized);
+    }
+
+    /** 当前策略用于排序的掌握度；点估计消融不读取证据量带来的保守下界。 */
+    public double rankingMasteryFor(String concept) {
+        return uncertaintyAware ? conservativeMasteryFor(concept) : masteryFor(concept);
+    }
+
+    /** 当前策略用于排序的不确定性；点估计消融显式关闭区间宽度信号。 */
+    public double rankingUncertaintyFor(String concept) {
+        return uncertaintyAware ? uncertaintyFor(concept) : 0.0;
     }
 
     public double uncertaintyFor(String concept) {

@@ -170,7 +170,8 @@ public record EducationRunConfiguration(
                 conceptKey, programmingLanguage, minDifficulty, maxDifficulty,
                 strategy.usesLearnerState() ? masteryScores() : Map.of(),
                 strategy.usesDependencyGraph() ? dependencyGraph() : null,
-                strategy.usesLearnerState() ? masteryEvidence() : Map.of()) : null;
+                strategy.usesLearnerState() ? masteryEvidence() : Map.of(),
+                strategy.usesUncertaintyAwareState()) : null;
     }
 
     public EducationRetrievalStrategy retrievalStrategyValue() {
