@@ -40,6 +40,13 @@ public class LearnerMastery {
 
     public LearnerMastery(String tenantId, String learnerProfileId, String conceptKey,
                           double masteryScore, int attempts, int correctAttempts) {
+        this(tenantId, learnerProfileId, conceptKey, masteryScore, attempts, correctAttempts, Instant.now());
+    }
+
+    /** 支持导入历史测评时间，并让保持度计算在测试和重放中可复现。 */
+    public LearnerMastery(String tenantId, String learnerProfileId, String conceptKey,
+                          double masteryScore, int attempts, int correctAttempts,
+                          Instant lastAssessedAt) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = required(tenantId, "tenantId");
         this.learnerProfileId = required(learnerProfileId, "learnerProfileId");
@@ -47,7 +54,7 @@ public class LearnerMastery {
         this.masteryScore = clamp(masteryScore);
         this.attempts = Math.max(0, attempts);
         this.correctAttempts = Math.max(0, Math.min(this.attempts, correctAttempts));
-        this.lastAssessedAt = Instant.now();
+        this.lastAssessedAt = lastAssessedAt == null ? Instant.now() : lastAssessedAt;
         this.updatedAt = this.lastAssessedAt;
     }
 
@@ -98,6 +105,29 @@ public class LearnerMastery {
     public int getCorrectAttempts() { return correctAttempts; }
     public Instant getLastAssessedAt() { return lastAssessedAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+
+    /** 以指定时点计算保持度，不能在 Run 重放时隐式读取当前时间。 */
+    public double retentionScoreAt(Instant asOf) {
+        return LearnerRetentionModel.retentionAt(lastAssessedAt, asOf);
+    }
+
+    public double effectiveMasteryAt(Instant asOf) {
+        return LearnerRetentionModel.effectiveMastery(masteryScore, retentionScoreAt(asOf));
+    }
+
+    public double forgettingRiskAt(Instant asOf) {
+        return LearnerRetentionModel.forgettingRisk(retentionScoreAt(asOf));
+    }
+
+    public double confidenceLowerAt(Instant asOf) {
+        return new LearnerStateEvidence(masteryScore, attempts, correctAttempts,
+                lastAssessedAt, retentionScoreAt(asOf)).confidenceLower();
+    }
+
+    public double confidenceUpperAt(Instant asOf) {
+        return new LearnerStateEvidence(masteryScore, attempts, correctAttempts,
+                lastAssessedAt, retentionScoreAt(asOf)).confidenceUpper();
+    }
 
     /** 近似 95% 可信范围；证据越少区间越宽，供页面解释而不是替代 BKT 状态。 */
     public double getConfidenceLower() { return confidenceInterval()[0]; }

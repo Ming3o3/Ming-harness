@@ -379,9 +379,13 @@ public class ContextBuilder {
         double graphCoverage = graphGaps.isEmpty() ? 0.0
                 : weightedCoverage(graphGaps, sourceConcepts, dependencyGraph);
         double targetMastery = filter.conservativeMasteryFor(filter.conceptKeyOrNull());
-        double targetUncertainty = targetConcept == null ? 0.0 : filter.uncertaintyFor(targetConcept);
-        double prerequisiteUncertainty = java.util.Arrays.stream(prerequisites)
-                .mapToDouble(filter::uncertaintyFor)
+        boolean learnerStateEnabled = strategy != null && strategy.usesLearnerState();
+        double targetUncertainty = !learnerStateEnabled || targetConcept == null ? 0.0
+                : Math.max(filter.uncertaintyFor(targetConcept), filter.forgettingRiskFor(targetConcept));
+        double prerequisiteUncertainty = !learnerStateEnabled ? 0.0
+                : java.util.Arrays.stream(prerequisites)
+                .mapToDouble(prerequisite -> Math.max(filter.uncertaintyFor(prerequisite),
+                        filter.forgettingRiskFor(prerequisite)))
                 .average().orElse(0.0);
         double learnerStateUncertainty = targetConcept == null
                 ? prerequisiteUncertainty

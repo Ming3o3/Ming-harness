@@ -30,7 +30,12 @@ public record LearningRecommendationView(
         double priorityPrerequisiteMastery,
         double priorityPrerequisiteDeficit,
         boolean dependencyGraphAvailable,
-        boolean dependencyGraphTruncated
+        boolean dependencyGraphTruncated,
+        /** 当前知识点的时间保持度和状态可信区间。 */
+        double retentionScore,
+        double forgettingRisk,
+        double confidenceLower,
+        double confidenceUpper
 ) {
 
     /** 兼容尚未接入保持度复习计划的旧测试和扩展调用方。 */
@@ -43,7 +48,7 @@ public record LearningRecommendationView(
         this(learningGoalId, learningGoalTitle, goalStatus, conceptKey, currentMastery, baselineMastery,
                 targetMastery, progressRatio, attemptCount, correctAttemptCount, lastAssessmentAt,
                 null, null, null, 0, 0, 0, nextActionType, nextActionTitle, nextActionPrompt, rationale,
-                null, 0.0, 0.0, false, false);
+                null, 0.0, 0.0, false, false, 1.0, 0.0, 0.0, 1.0);
     }
 
     /** 兼容已接入保持度复习、但尚未返回依赖图解释字段的旧调用方。 */
@@ -59,6 +64,6 @@ public record LearningRecommendationView(
                 targetMastery, progressRatio, attemptCount, correctAttemptCount, lastAssessmentAt,
                 reviewPlanId, reviewPlanStatus, nextReviewAt, reviewIntervalDays, reviewCount,
                 successfulReviewCount, nextActionType, nextActionTitle, nextActionPrompt, rationale,
-                null, 0.0, 0.0, false, false);
+                null, 0.0, 0.0, false, false, 1.0, 0.0, 0.0, 1.0);
     }
 }

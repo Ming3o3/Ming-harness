@@ -73,20 +73,21 @@ public class LearningRecommendationService {
         List<AssessmentAttempt> attempts = attemptRepository
                 .findByTenantIdAndUserIdAndLearningGoalIdOrderByCreatedAtAsc(tenantId, userId, goalId);
         AssessmentAttempt latest = attempts.isEmpty() ? null : attempts.get(attempts.size() - 1);
-        double current = masteryRepository
+        java.time.Instant now = java.time.Instant.now();
+        LearnerMastery currentMasteryEntity = masteryRepository
                 .findByTenantIdAndLearnerProfileIdAndConceptKey(
                         tenantId, goal.getLearnerProfileId(), goal.getConceptKey())
-                .map(LearnerMastery::getMasteryScore)
-                .orElse(goal.getBaselineMastery());
+                .orElse(null);
+        double current = currentMasteryEntity == null
+                ? goal.getBaselineMastery() : currentMasteryEntity.effectiveMasteryAt(now);
         double gap = Math.max(0.0, goal.getTargetMastery() - current);
         double denominator = Math.max(0.0001, goal.getTargetMastery() - goal.getBaselineMastery());
         double progress = clamp((current - goal.getBaselineMastery()) / denominator);
         long correct = attempts.stream().filter(AssessmentAttempt::isCorrect).count();
         CodeDiagnosticCategory latestCodeDiagnostic = latestCodeDiagnosticCategory(latest);
-        DependencyRecommendation dependency = dependencyRecommendation(tenantId, userId, goal);
+        DependencyRecommendation dependency = dependencyRecommendation(tenantId, userId, goal, now);
         LearningReviewPlan reviewPlan = goal.getStatus() == LearningGoalStatus.COMPLETED
                 && reviewPlanService != null ? reviewPlanService.find(tenantId, userId, goalId) : null;
-        java.time.Instant now = java.time.Instant.now();
         boolean latestNegativeFeedback = latest != null && feedbackRepository != null
                 && feedbackRepository.findByRunIdAndUserId(latest.getRunId(), userId)
                 .map(RunFeedback::getRating)
@@ -181,7 +182,11 @@ public class LearningRecommendationService {
                 reviewPlan == null ? 0 : reviewPlan.getSuccessfulReviewCount(),
                 actionType, actionTitle, prompt, rationale,
                 dependency.priorityConcept(), dependency.priorityMastery(), dependency.priorityDeficit(),
-                dependency.graphAvailable(), dependency.graphTruncated());
+                dependency.graphAvailable(), dependency.graphTruncated(),
+                currentMasteryEntity == null ? 1.0 : currentMasteryEntity.retentionScoreAt(now),
+                currentMasteryEntity == null ? 0.0 : currentMasteryEntity.forgettingRiskAt(now),
+                currentMasteryEntity == null ? 0.0 : currentMasteryEntity.confidenceLowerAt(now),
+                currentMasteryEntity == null ? 1.0 : currentMasteryEntity.confidenceUpperAt(now));
     }
 
     /**
@@ -189,7 +194,8 @@ public class LearningRecommendationService {
      * 依赖图不可用时返回空结果，保持旧课程和旧测试的确定性行为。
      */
     private DependencyRecommendation dependencyRecommendation(String tenantId, String userId,
-                                                              LearningGoal goal) {
+                                                              LearningGoal goal,
+                                                              java.time.Instant asOf) {
         if (profileRepository == null || graphService == null || goal == null) {
             return DependencyRecommendation.empty();
         }
@@ -201,9 +207,10 @@ public class LearningRecommendationService {
         masteryRepository.findByTenantIdAndLearnerProfileIdOrderByConceptKeyAsc(
                         tenantId, profile.getId())
                 .forEach(item -> {
-                    masteryScores.put(item.getConceptKey(), item.getMasteryScore());
+                    masteryScores.put(item.getConceptKey(), item.effectiveMasteryAt(asOf));
                     masteryEvidence.put(item.getConceptKey(), new LearnerStateEvidence(
-                            item.getMasteryScore(), item.getAttempts(), item.getCorrectAttempts()));
+                            item.getMasteryScore(), item.getAttempts(), item.getCorrectAttempts(),
+                            item.getLastAssessedAt(), item.retentionScoreAt(asOf)));
                 });
         EducationRetrievalFilter filter = new EducationRetrievalFilter(
                 profile.getSubject(), profile.getGradeLevel(), profile.getCurriculumVersion(),

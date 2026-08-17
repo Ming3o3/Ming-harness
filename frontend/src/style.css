@@ -3273,6 +3273,7 @@ button svg {
 .learning-agent-mastery-strip button { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--soft); padding: 4px 7px; font: 8px "DM Mono", monospace; }
 .learning-agent-mastery-strip button:hover { border-color: var(--heading); color: var(--heading); }
 .learning-agent-mastery-strip em { color: var(--muted); font-style: normal; }
+.learning-agent-mastery-strip small { color: var(--orange); font: 7px "DM Mono", monospace; }
 
 .chat-heading {
   min-height: 76px;

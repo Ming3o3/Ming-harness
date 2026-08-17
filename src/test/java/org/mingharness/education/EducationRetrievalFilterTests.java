@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 import java.util.List;
+import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -76,6 +77,19 @@ class EducationRetrievalFilterTests {
 
         assertTrue(filter.conservativeMasteryFor("函数") < 0.8);
         assertTrue(filter.uncertaintyFor("函数") > 0.0);
+    }
+
+    @Test
+    void shouldUseRetentionAdjustedMasteryFromFrozenEvidence() {
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "数学", "高中一年级", "人教A版", "函数", null, null,
+                Map.of("函数", 0.9), null,
+                Map.of("函数", new LearnerStateEvidence(0.9, 10, 9,
+                        Instant.parse("2026-01-01T00:00:00Z"), 0.25)));
+
+        assertEquals(0.6, filter.masteryFor("函数"), 0.000001);
+        assertTrue(filter.forgettingRiskFor("函数") > 0.7);
+        assertTrue(filter.conservativeMasteryFor("函数") < 0.6);
     }
 
     @Test

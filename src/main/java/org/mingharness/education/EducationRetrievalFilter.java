@@ -159,7 +159,10 @@ public record EducationRetrievalFilter(
     /** 供教育重排使用：没有观测过的知识点按中性掌握度处理。 */
     public double masteryFor(String concept) {
         if (concept == null || concept.isBlank()) return 0.5;
-        return masteryScores.getOrDefault(normalizeConcept(concept), 0.5);
+        String normalized = normalizeConcept(concept);
+        LearnerStateEvidence evidence = masteryEvidence.get(normalized);
+        return evidence == null ? masteryScores.getOrDefault(normalized, 0.5)
+                : evidence.effectiveMastery();
     }
 
     /** 返回指定知识点的冻结证据；旧 Run 没有证据快照时使用中性状态。 */
@@ -187,6 +190,13 @@ public record EducationRetrievalFilter(
         String normalized = concept == null ? null : normalizeConcept(concept);
         LearnerStateEvidence evidence = normalized == null ? null : masteryEvidence.get(normalized);
         return evidence == null ? 1.0 : evidence.uncertainty();
+    }
+
+    /** 返回冻结时点的保持度风险，旧 Run 没有时间证据时为 0。 */
+    public double forgettingRiskFor(String concept) {
+        String normalized = concept == null ? null : normalizeConcept(concept);
+        LearnerStateEvidence evidence = normalized == null ? null : masteryEvidence.get(normalized);
+        return evidence == null ? 0.0 : evidence.forgettingRisk();
     }
 
     private static boolean equalsOrUnconstrained(String expected, String actual) {

@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.time.Instant;
 
 /** 将创建请求解析为可审计、可复现的教育执行快照。 */
 @Service
@@ -270,7 +271,12 @@ public class EducationRunConfigurationService {
                     + "\n教师当前干预（"
                     + intervention.getAction().name() + "）：" + intervention.getMessage();
         }
-        String learnerStateSnapshot = masterySnapshot(tenantId, profile.getId());
+        // 同一批状态只读取一次，并使用同一个捕获时点生成摘要和快照，避免一次 Run
+        // 因为两次查询跨越时间边界而产生无法解释的状态差异。
+        Instant stateCapturedAt = Instant.now();
+        List<LearnerMastery> learnerMastery = masteryRepository
+                .findByTenantIdAndLearnerProfileIdOrderByConceptKeyAsc(tenantId, profile.getId());
+        String learnerStateSnapshot = LearnerStateSnapshotCodec.encode(learnerMastery, stateCapturedAt);
         EducationRunConfiguration configuration = new EducationRunConfiguration(true, profile.getId(),
                 goal == null ? null : goal.getId(), assignment == null ? null : assignment.getId(),
                 assignment == null ? null : assignment.getTitle(),
@@ -281,7 +287,7 @@ public class EducationRunConfigurationService {
                 goal == null ? 0.0 : goal.getBaselineMastery(),
                 goal == null ? 0.0 : goal.getTargetMastery(),
                 clean(subject), clean(gradeLevel), clean(curriculumVersion), conceptKey,
-                minDifficulty, maxDifficulty, pedagogicalMode, masterySummary(tenantId, profile.getId()),
+                minDifficulty, maxDifficulty, pedagogicalMode, masterySummary(learnerMastery, stateCapturedAt),
                 course == null ? null : course.getId(),
                 course == null ? null : course.getCode(),
                 course == null ? null : course.getTitle(),
@@ -545,19 +551,13 @@ public class EducationRunConfigurationService {
                         "LEARNER_PROFILE_REQUIRED", "启用教育 Agent 前请先创建学习者画像"));
     }
 
-    private String masterySummary(String tenantId, String profileId) {
-        List<LearnerMastery> mastery = masteryRepository
-                .findByTenantIdAndLearnerProfileIdOrderByConceptKeyAsc(tenantId, profileId);
+    private String masterySummary(List<LearnerMastery> mastery, Instant capturedAt) {
         if (mastery.isEmpty()) return "暂无掌握度记录";
         return mastery.stream()
                 .limit(40)
-                .map(item -> item.getConceptKey() + "=" + String.format(Locale.ROOT, "%.2f", item.getMasteryScore()))
+                .map(item -> item.getConceptKey() + "=" + String.format(Locale.ROOT, "%.2f",
+                        item.effectiveMasteryAt(capturedAt)))
                 .collect(Collectors.joining(", "));
-    }
-
-    private String masterySnapshot(String tenantId, String profileId) {
-        return LearnerStateSnapshotCodec.encode(masteryRepository
-                .findByTenantIdAndLearnerProfileIdOrderByConceptKeyAsc(tenantId, profileId));
     }
 
     private boolean sameOrUnspecified(String requested, String expected) {

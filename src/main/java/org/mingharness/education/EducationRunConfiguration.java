@@ -221,6 +221,13 @@ public record EducationRunConfiguration(
 
     /** 从随 Run 冻结的摘要恢复轻量掌握度快照，保证重启 Worker 后重排结果稳定。 */
     public Map<String, Double> masteryScores() {
+        Map<String, LearnerStateEvidence> snapshotEvidence = masteryEvidence();
+        if (!snapshotEvidence.isEmpty()) {
+            Map<String, Double> result = new LinkedHashMap<>();
+            snapshotEvidence.forEach((concept, evidence) ->
+                    result.put(concept, evidence.effectiveMastery()));
+            return Map.copyOf(result);
+        }
         if (learnerStateSummary == null || learnerStateSummary.isBlank()
                 || learnerStateSummary.contains("暂无掌握度记录")) {
             return Map.of();
@@ -244,6 +251,26 @@ public record EducationRunConfiguration(
 
     public Map<String, LearnerStateEvidence> masteryEvidence() {
         return LearnerStateSnapshotCodec.decode(learnerStateSnapshot);
+    }
+
+    public LearnerStateSnapshot learnerStateSnapshotValue() {
+        return LearnerStateSnapshotCodec.decodeSnapshot(learnerStateSnapshot);
+    }
+
+    public java.time.Instant learnerStateCapturedAt() {
+        return learnerStateSnapshotValue().capturedAt();
+    }
+
+    public double retentionFor(String concept) {
+        String normalized = concept == null ? "" : concept.trim().toLowerCase(java.util.Locale.ROOT);
+        LearnerStateEvidence evidence = masteryEvidence().get(normalized);
+        return evidence == null ? 1.0 : evidence.retentionScore();
+    }
+
+    public double forgettingRiskFor(String concept) {
+        String normalized = concept == null ? "" : concept.trim().toLowerCase(java.util.Locale.ROOT);
+        LearnerStateEvidence evidence = masteryEvidence().get(normalized);
+        return evidence == null ? 0.0 : evidence.forgettingRisk();
     }
 
     /** 状态条件化策略使用保守掌握度，历史 Run 没有证据快照时回退摘要分数。 */
@@ -294,6 +321,15 @@ public record EducationRunConfiguration(
         }
         if (learnerStateSummary != null && !learnerStateSummary.isBlank()) {
             summary.append("；学习者状态=").append(learnerStateSummary);
+        }
+        if (conceptKey != null && !conceptKey.isBlank()) {
+            LearnerStateEvidence targetEvidence = masteryEvidence().get(
+                    conceptKey.trim().toLowerCase(java.util.Locale.ROOT));
+            if (targetEvidence != null && targetEvidence.forgettingRisk() > 0.01) {
+                summary.append("；目标知识保持度风险=")
+                        .append(String.format(java.util.Locale.ROOT, "%.2f",
+                                targetEvidence.forgettingRisk()));
+            }
         }
         summary.append("；检索策略=").append(retrievalStrategyValue().name());
         return summary.toString();

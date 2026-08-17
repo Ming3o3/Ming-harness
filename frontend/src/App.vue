@@ -2823,7 +2823,10 @@ const learnerStateDiagnosis = computed(() => {
   const recommendation = activeLearningRecommendation.value
   const currentMastery = Number(recommendation?.currentMastery)
   const targetMastery = Number(recommendation?.targetMastery ?? activeLearningGoal.value.targetMastery)
+  const forgettingRisk = Number(recommendation?.forgettingRisk)
   const evidenceCount = currentLearningEvidenceCount.value
+  const retentionNote = Number.isFinite(forgettingRisk) && forgettingRisk > 0.05
+    ? `；保持度风险 ${formatRate(forgettingRisk)}，建议安排复习` : ''
   if (Number.isFinite(currentMastery) && Number.isFinite(targetMastery)) {
     const gap = Math.max(0, targetMastery - currentMastery)
     return {
@@ -2832,7 +2835,7 @@ const learnerStateDiagnosis = computed(() => {
         ? `${isLearnerOnlyRole.value ? '还没有练习记录' : '还没有学习记录'} · 距离目标 ${formatRate(gap)}`
         : (gap > 0.01 ? `距离目标还差 ${formatRate(gap)}` : (isLearnerOnlyRole.value ? '当前学习进度已达到目标' : '当前证据已达到目标')),
       detail: evidenceCount
-        ? `围绕「${activeLearningGoal.value.conceptKey}」已有 ${evidenceCount} 次学习记录；系统会按此状态调整难度与动作。`
+        ? `围绕「${activeLearningGoal.value.conceptKey}」已有 ${evidenceCount} 次学习记录；系统会按此状态调整难度与动作${retentionNote}。`
         : (isLearnerOnlyRole.value
           ? '完成一次练习后，系统会更准确地判断当前进度。'
           : '还没有可验证的学习记录；完成一次作答后，系统会更准确地判断当前进度。'),
@@ -3377,7 +3380,7 @@ const matchingEducationSourceCount = computed(() => {
     && source.curriculumVersion === profile.curriculumVersion).length
 })
 const learnerMasteryPreview = computed(() => [...learnerMastery.value]
-  .sort((left, right) => Number(left.masteryScore) - Number(right.masteryScore)
+  .sort((left, right) => Number(left.effectiveMasteryScore ?? left.masteryScore) - Number(right.effectiveMasteryScore ?? right.masteryScore)
     || String(left.conceptKey || '').localeCompare(String(right.conceptKey || ''), 'zh-CN'))
   .slice(0, 3))
 const learningSetupProgress = computed(() => {
@@ -3412,7 +3415,7 @@ const learningConceptTrail = computed(() => {
     .map((item) => String(item || '').trim())
     .filter(Boolean)
   const uniqueConcepts = [...new Set(concepts)].slice(0, 5)
-  const mastery = new Map(learnerMastery.value.map((item) => [String(item.conceptKey || '').trim(), Number(item.masteryScore)]))
+  const mastery = new Map(learnerMastery.value.map((item) => [String(item.conceptKey || '').trim(), Number(item.effectiveMasteryScore ?? item.masteryScore)]))
   if (!uniqueConcepts.length) {
     return [{ concept: '等待课程节点', detail: '配置课程资料后显示知识路径', state: 'pending', score: null }]
   }
@@ -9805,7 +9808,7 @@ onBeforeUnmount(() => {
             </form>
             <div v-if="learnerMasteryPreview.length" class="learning-agent-mastery-strip" aria-label="需要关注的知识点">
               <span>优先关注</span>
-              <button v-for="item in learnerMasteryPreview" :key="item.id || item.conceptKey" type="button" @click="chatInput = `请帮我诊断并练习「${item.conceptKey}」`"><strong>{{ item.conceptKey }}</strong><em>{{ formatRate(item.masteryScore) }}</em></button>
+              <button v-for="item in learnerMasteryPreview" :key="item.id || item.conceptKey" type="button" :title="Number(item.forgettingRisk) > 0.05 ? `保持度风险 ${formatRate(item.forgettingRisk)}` : '当前保持度稳定'" @click="chatInput = `请帮我诊断并练习「${item.conceptKey}」`"><strong>{{ item.conceptKey }}</strong><em>{{ formatRate(item.effectiveMasteryScore ?? item.masteryScore) }}</em><small v-if="Number(item.forgettingRisk) > 0.05">复习 {{ formatRate(item.forgettingRisk) }}</small></button>
             </div>
           </section>
 

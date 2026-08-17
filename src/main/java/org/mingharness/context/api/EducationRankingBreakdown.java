@@ -60,8 +60,11 @@ public record EducationRankingBreakdown(
 
     /** 固定排序分量，不含证据集合选择阶段的边际覆盖和冗余惩罚。 */
     public double baseScore() {
-        return weights.score(retrievalRelevance, targetConceptMatch, prerequisiteGap,
+        double staticScore = weights.score(retrievalRelevance, targetConceptMatch, prerequisiteGap,
                 graphCoverage, difficultyFit);
+        // 状态不确定性/保持度风险应改变证据优先级，而不能只停留在解释文本中。
+        // 使用有界的小幅增益，避免低质量资料仅凭状态风险压过课程相关性。
+        return bounded(staticScore + 0.10 * learnerStateUncertainty);
     }
 
     public EducationRankingBreakdown withSelection(double marginalCoverage,

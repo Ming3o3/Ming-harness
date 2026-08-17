@@ -6,6 +6,7 @@ import org.mingharness.feedback.RunFeedbackRepository;
 
 import java.util.List;
 import java.util.Optional;
+import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -216,5 +217,28 @@ class LearningRecommendationServiceTests {
         EducationRetrievalFilter filter = captor.getValue();
         assertEquals(1, filter.masteryEvidenceFor("函数调用").attempts());
         assertTrue(filter.conservativeMasteryFor("函数调用") < 0.95);
+    }
+
+    @Test
+    void shouldExposeRetentionRiskAndUseEffectiveMasteryForStaleRecommendation() {
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        AssessmentAttemptRepository attempts = mock(AssessmentAttemptRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", "profile-1",
+                "掌握函数", "函数", 0.2, 0.8);
+        when(goals.findByIdAndTenantIdAndUserId(goal.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(goal));
+        when(attempts.findByTenantIdAndUserIdAndLearningGoalIdOrderByCreatedAtAsc(
+                "tenant-a", "student-1", goal.getId())).thenReturn(List.of());
+        when(mastery.findByTenantIdAndLearnerProfileIdAndConceptKey("tenant-a", "profile-1", "函数"))
+                .thenReturn(Optional.of(new LearnerMastery("tenant-a", "profile-1", "函数",
+                        0.9, 10, 9, Instant.parse("2026-01-01T00:00:00Z"))));
+
+        var recommendation = new LearningRecommendationService(goals, attempts, mastery)
+                .recommend("tenant-a", "student-1", goal.getId());
+
+        assertTrue(recommendation.forgettingRisk() > 0.5);
+        assertTrue(recommendation.currentMastery() < 0.9);
+        assertTrue(recommendation.confidenceLower() < recommendation.currentMastery());
     }
 }
