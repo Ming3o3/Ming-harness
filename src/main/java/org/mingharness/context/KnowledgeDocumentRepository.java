@@ -35,5 +35,7 @@ public interface KnowledgeDocumentRepository extends JpaRepository<KnowledgeDocu
     @Query("select d from KnowledgeDocument d where d.id = :id")
     Optional<KnowledgeDocument> findByIdForUpdate(@Param("id") String id);
 
+    List<KnowledgeDocument> findByImportStatusAndImportSourcePathIsNotNull(DocumentImportStatus status);
+
     long deleteByDeletedAtBefore(Instant deletedAt);
 }

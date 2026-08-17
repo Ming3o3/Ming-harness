@@ -89,7 +89,9 @@ public class VectorContextRetriever {
                    AND (
                         (c.parent_type = 'DOCUMENT'
                          AND d.deleted_at IS NULL
-                         AND (d.allowed_users IS NULL OR d.allowed_users = ''
+                         AND d.import_status = 'READY'
+                         AND (d.owner_user_id = :userId
+                              OR d.allowed_users IS NULL OR d.allowed_users = ''
                               OR :userId = ANY(string_to_array(d.allowed_users, ','))))
                         OR
                         (c.parent_type = 'MEMORY'

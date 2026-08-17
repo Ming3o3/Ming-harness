@@ -59,8 +59,13 @@ public class ContextIndexRebuildService {
         int parentsRebuilt = 0;
         int chunksCreated = 0;
         for (ParentRef parent : parents) {
-            if (!effective.shouldRechunk()
-                    && chunkWriter.hasActiveChunks(tenantId, parent.type(), parent.id())) {
+            boolean hasActiveChunks = chunkWriter.hasActiveChunks(tenantId, parent.type(), parent.id());
+            // 异步导入文档的 content intentionally 为空，正文只保存在已经流式写入的
+            // chunk/父窗口中。重建请求不能用“标题 + 空正文”覆盖这些有效索引。
+            if (!parent.rebuildable() && "DOCUMENT".equals(parent.type())) {
+                continue;
+            }
+            if (!effective.shouldRechunk() && hasActiveChunks) {
                 continue;
             }
             chunksCreated += chunkWriter.replace(tenantId, parent.type(), parent.id(), parent.content());
@@ -101,8 +106,10 @@ public class ContextIndexRebuildService {
         if ("ALL".equals(scope) || "DOCUMENT".equals(scope)) {
             documentRepository.findByTenantIdAndDeletedAtIsNullOrderByCreatedAtAsc(tenantId, page)
                     .stream()
+                    .filter(KnowledgeDocument::isReady)
                     .map(document -> new ParentRef("DOCUMENT", document.getId(),
-                            document.getCreatedAt(), document.getTitle() + "\n" + document.getContent()))
+                            document.getCreatedAt(), document.getTitle() + "\n" + document.getContent(),
+                            !document.getContent().isBlank()))
                     .forEach(result::add);
         }
         if ("ALL".equals(scope) || "MEMORY".equals(scope)) {
@@ -111,7 +118,7 @@ public class ContextIndexRebuildService {
                     .stream()
                     .filter(memory -> memory.isActive(now))
                     .map(memory -> new ParentRef("MEMORY", memory.getId(),
-                            memory.getCreatedAt(), memory.getMemoryType() + "\n" + memory.getContent()))
+                            memory.getCreatedAt(), memory.getMemoryType() + "\n" + memory.getContent(), true))
                     .forEach(result::add);
         }
         return result.stream()
@@ -125,6 +132,6 @@ public class ContextIndexRebuildService {
         return value > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) Math.max(0L, value);
     }
 
-    private record ParentRef(String type, String id, Instant createdAt, String content) {
+    private record ParentRef(String type, String id, Instant createdAt, String content, boolean rebuildable) {
     }
 }

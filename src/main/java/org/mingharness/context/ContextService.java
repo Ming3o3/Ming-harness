@@ -26,6 +26,8 @@ public class ContextService {
     private final ContextSemanticRechunkDispatcher semanticRechunkDispatcher;
     private final SensitiveDataSanitizer sanitizer;
     private final KnowledgeDocumentFileParser fileParser;
+    private final DocumentImportStorage documentImportStorage;
+    private final DocumentImportDispatcher documentImportDispatcher;
     private final TransactionTemplate transactionTemplate;
 
     public ContextService(KnowledgeDocumentRepository documentRepository,
@@ -37,6 +39,8 @@ public class ContextService {
                           ContextSemanticRechunkDispatcher semanticRechunkDispatcher,
                           SensitiveDataSanitizer sanitizer,
                           KnowledgeDocumentFileParser fileParser,
+                          DocumentImportStorage documentImportStorage,
+                          DocumentImportDispatcher documentImportDispatcher,
                           PlatformTransactionManager transactionManager) {
         this.documentRepository = documentRepository;
         this.memoryRepository = memoryRepository;
@@ -47,6 +51,8 @@ public class ContextService {
         this.semanticRechunkDispatcher = semanticRechunkDispatcher;
         this.sanitizer = sanitizer;
         this.fileParser = fileParser;
+        this.documentImportStorage = documentImportStorage;
+        this.documentImportDispatcher = documentImportDispatcher;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -56,14 +62,37 @@ public class ContextService {
                 request.sensitivity(), request.allowedUsers());
     }
 
-    /** 解析上传的 PDF/DOCX 后复用同一套权限、切块和 embedding 索引流程。 */
+    /** 创建上传任务；正文解析和索引在后台按片段完成。 */
     public KnowledgeDocument createDocumentFromUpload(String tenantId, String userId,
                                                        MultipartFile file, String title,
                                                        String sensitivity, String allowedUsers) {
-        ParsedKnowledgeDocument parsed = fileParser.parse(file);
-        String requestedTitle = title == null || title.isBlank() ? titleFromFile(parsed.originalName()) : title;
-        return transactionTemplate.execute(status -> persistDocument(tenantId, userId, requestedTitle,
-                parsed.text(), sensitivity, allowedUsers));
+        String originalName = fileParser.validateUpload(file);
+        String requestedTitle = title == null || title.isBlank() ? titleFromFile(originalName) : title;
+        String sourcePath = documentImportStorage.stage(file).toString();
+        try {
+            KnowledgeDocument document = transactionTemplate.execute(status ->
+                    persistPendingDocument(tenantId, userId, requestedTitle, sensitivity, allowedUsers,
+                            sourcePath, originalName));
+            if (document == null) {
+                documentImportStorage.delete(sourcePath);
+                throw new BusinessException(HttpStatus.SERVICE_UNAVAILABLE,
+                        "DOCUMENT_IMPORT_QUEUE_FULL", "当前文档导入任务较多，请稍后重试");
+            }
+            if (!documentImportDispatcher.dispatch(document.getId())) {
+                transactionTemplate.executeWithoutResult(status -> documentRepository.findByIdForUpdate(document.getId())
+                        .ifPresent(pending -> {
+                            pending.markImportFailed("当前文档导入任务较多，请稍后重试");
+                            documentRepository.save(pending);
+                        }));
+                documentImportStorage.delete(sourcePath);
+                throw new BusinessException(HttpStatus.SERVICE_UNAVAILABLE,
+                        "DOCUMENT_IMPORT_QUEUE_FULL", "当前文档导入任务较多，请稍后重试");
+            }
+            return document;
+        } catch (RuntimeException exception) {
+            documentImportStorage.delete(sourcePath);
+            throw exception;
+        }
     }
 
     @Transactional(readOnly = true)
@@ -83,6 +112,7 @@ public class ContextService {
         }
         document.markDeleted();
         documentRepository.save(document);
+        documentImportStorage.delete(document.getImportSourcePath());
         markChunksDeleted("DOCUMENT", document.getId());
         markParentWindowsDeleted(tenantId, "DOCUMENT", document.getId());
     }
@@ -145,6 +175,21 @@ public class ContextService {
         writeChunksAndDispatch("DOCUMENT", document.getId(), tenantId,
                 document.getTitle() + "\n" + document.getContent());
         return document;
+    }
+
+    private KnowledgeDocument persistPendingDocument(String tenantId, String userId, String title,
+                                                     String sensitivity, String allowedUsers,
+                                                     String sourcePath, String sourceName) {
+        String normalizedTitle = sanitizer.sanitize(title == null ? "" : title.trim());
+        if (normalizedTitle.isBlank()) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "DOCUMENT_TITLE_REQUIRED", "文档标题不能为空");
+        }
+        if (normalizedTitle.length() > 200) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "DOCUMENT_TITLE_TOO_LONG", "文档标题不能超过 200 个字符");
+        }
+        return documentRepository.save(new KnowledgeDocument(tenantId, userId, normalizedTitle,
+                sanitizer.sanitize(sensitivity), sanitizer.sanitize(allowedUsers), sourcePath, sourceName,
+                DocumentImportStatus.PROCESSING));
     }
 
     private static String titleFromFile(String fileName) {

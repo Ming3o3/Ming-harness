@@ -82,8 +82,20 @@ class HarnessAuthWebTests {
                 HttpResponse.BodyHandlers.ofString());
 
         assertEquals(201, response.statusCode(), response.body());
-        assertTrue(response.body().contains("真实 HTTP 导入的发布规则"), response.body());
         assertTrue(response.body().contains("\"title\":\"http-release-rules\""), response.body());
+        String documentId = response.body().replaceFirst(".*\\\"id\\\":\\\"([^\\\"]+).*", "$1");
+        String readyBody = "";
+        for (int attempt = 0; attempt < 100; attempt++) {
+            HttpResponse<String> listed = httpClient.send(
+                    HttpRequest.newBuilder(URI.create(baseUrl() + "/api/context/documents"))
+                            .header("Authorization", "Bearer web-test-key").GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            readyBody = listed.body();
+            if (readyBody.contains("\"id\":\"" + documentId + "\"")
+                    && readyBody.contains("\"importStatus\":\"READY\"")) break;
+            Thread.sleep(20);
+        }
+        assertTrue(readyBody.matches("(?s).*\\\"contentCharCount\\\":[1-9][0-9]*.*"), readyBody);
     }
 
     @Test

@@ -13,6 +13,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 
 import java.io.ByteArrayOutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -99,5 +103,51 @@ class KnowledgeDocumentFileParserTests {
         BusinessException exception = assertThrows(BusinessException.class, () -> parser.parse(
                 new MockMultipartFile("file", "empty.docx", null, emptyDocx)));
         assertEquals("DOCUMENT_TEXT_EMPTY", exception.getCode());
+    }
+
+    @Test
+    void shouldEmitDocxParagraphsWithoutBuildingAFullTextResult() throws Exception {
+        byte[] bytes;
+        try (XWPFDocument document = new XWPFDocument()) {
+            document.createParagraph().createRun().setText("第一段");
+            document.createParagraph().createRun().setText("第二段");
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            document.write(output);
+            bytes = output.toByteArray();
+        }
+        Path path = Files.createTempFile("knowledge-parser-", ".docx");
+        try {
+            Files.write(path, bytes);
+            List<ParsedDocumentSegment> segments = new ArrayList<>();
+            ParsedDocumentMetadata metadata = parser.parseSegments(path, "guide.docx", segments::add);
+
+            assertEquals(List.of("第一段", "第二段"), segments.stream()
+                    .map(ParsedDocumentSegment::text).toList());
+            assertEquals(6, metadata.contentCharCount());
+        } finally {
+            Files.deleteIfExists(path);
+        }
+    }
+
+    @Test
+    void shouldStopStreamingWhenTheConfiguredContentLimitIsExceeded() throws Exception {
+        byte[] bytes;
+        try (XWPFDocument document = new XWPFDocument()) {
+            document.createParagraph().createRun().setText("x".repeat(100_001));
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            document.write(output);
+            bytes = output.toByteArray();
+        }
+        KnowledgeDocumentFileParser limited = new KnowledgeDocumentFileParser(
+                new DocumentImportProperties(2_000_000, 100_000));
+        Path path = Files.createTempFile("knowledge-parser-limit-", ".docx");
+        try {
+            Files.write(path, bytes);
+            BusinessException exception = assertThrows(BusinessException.class,
+                    () -> limited.parseSegments(path, "limit.docx", ignored -> { }));
+            assertEquals("DOCUMENT_TEXT_TOO_LARGE", exception.getCode());
+        } finally {
+            Files.deleteIfExists(path);
+        }
     }
 }

@@ -67,6 +67,12 @@ public class EducationKnowledgeService {
             throw new BusinessException(HttpStatus.CONFLICT, "DOCUMENT_DELETED",
                     "已删除的知识文档不能绑定教育元数据");
         }
+        if (!document.isReady()) {
+            throw new BusinessException(HttpStatus.CONFLICT, "DOCUMENT_NOT_READY",
+                    document.getImportStatus() == org.mingharness.context.DocumentImportStatus.FAILED
+                            ? "课程资料解析失败，请重新上传后再绑定课程元数据"
+                            : "课程资料仍在解析中，请稍后再试");
+        }
 
         String subject = clean(request.subject());
         String gradeLevel = clean(request.gradeLevel());

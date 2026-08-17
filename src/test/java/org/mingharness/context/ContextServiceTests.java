@@ -145,10 +145,21 @@ class ContextServiceTests {
                 null, "INTERNAL", "operator");
 
         assertEquals("release-rules", document.getTitle());
-        assertTrue(document.getContent().contains("上传文档中的发布回滚规则"));
+        document = waitForImport(document.getId());
+        assertEquals(DocumentImportStatus.READY, document.getImportStatus());
+        assertTrue(document.getContent().isBlank());
         assertTrue(chunkRepository.findByParentTypeAndParentIdAndDeletedAtIsNullOrderByChunkIndexAsc(
                 "DOCUMENT", document.getId()).size() > 0);
         assertEquals(1, contextBuilder.build("tenant-a", "operator", "发布回滚规则", 4_000)
                 .evidences().size());
+    }
+
+    private KnowledgeDocument waitForImport(String documentId) throws InterruptedException {
+        for (int attempt = 0; attempt < 100; attempt++) {
+            KnowledgeDocument document = documentRepository.findById(documentId).orElseThrow();
+            if (document.getImportStatus() != DocumentImportStatus.PROCESSING) return document;
+            Thread.sleep(20);
+        }
+        return documentRepository.findById(documentId).orElseThrow();
     }
 }

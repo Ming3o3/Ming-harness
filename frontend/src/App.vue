@@ -601,6 +601,7 @@ const theme = ref(readTheme())
 let runPollTimer
 let healthPollTimer
 let learningNotificationPollTimer
+let documentImportPollTimer
 // 聊天工作台状态：每轮消息对应一个后端 Run，助手气泡由 Run 终态回写。
 const chatMode = ref(true)
 const activeConsoleSection = ref('runtime')
@@ -890,6 +891,7 @@ function endFormalSession() {
   window.clearInterval(conversationPollTimer)
   window.clearInterval(healthPollTimer)
   window.clearInterval(learningNotificationPollTimer)
+  window.clearInterval(documentImportPollTimer)
   stopRunEventStream()
   currentUser.value = null
   identityLoadError.value = { status: 401 }
@@ -925,6 +927,7 @@ async function initializeAuthenticatedWorkspace() {
   await loadConversations()
   runPollTimer = window.setInterval(pollSelectedRun, 1500)
   conversationPollTimer = window.setInterval(pollConversation, 1200)
+  documentImportPollTimer = window.setInterval(pollDocumentImports, 2500)
   if (currentUserHasPermission('ops.read')) {
     healthPollTimer = window.setInterval(loadHealth, 10000)
   } else {
@@ -1503,8 +1506,8 @@ const ownedEducationSources = computed(() => educationSources.value
     (document) => document.id === source.documentId,
   )))
 const manageableEducationDocuments = computed(() => isTeacherOnlyRole.value
-  ? documents.value
-  : ownedKnowledgeDocuments.value)
+  ? documents.value.filter((document) => document.importStatus === 'READY')
+  : ownedKnowledgeDocuments.value.filter((document) => document.importStatus === 'READY'))
 const manageableEducationSources = computed(() => educationSources.value
   .filter((source) => manageableEducationDocuments.value.some(
     (document) => document.id === source.documentId,
@@ -4909,6 +4912,14 @@ function formatFileSize(size) {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function documentImportStatusLabel(status) {
+  return {
+    PROCESSING: '解析中',
+    READY: '已完成',
+    FAILED: '解析失败',
+  }[status] || '待处理'
+}
+
 function clearChatAttachments() {
   chatAttachments.value = []
   chatDragActive.value = false
@@ -5888,6 +5899,27 @@ async function refreshActiveConversation() {
   conversations.value = await api.listConversations()
   if (selectionToken !== conversationSelectionToken || activeConversationId.value !== conversationId) return
   scrollChatToBottom(true)
+}
+
+async function pollDocumentImports() {
+  if (!documents.value.some((document) => document.importStatus === 'PROCESSING')) return
+  try {
+    const previous = new Map(documents.value.map((document) => [document.id, document.importStatus]))
+    const latest = await api.listDocuments()
+    documents.value = latest || []
+    const completed = documents.value.find((document) => previous.get(document.id) === 'PROCESSING'
+      && document.importStatus === 'READY')
+    const failed = documents.value.find((document) => previous.get(document.id) === 'PROCESSING'
+      && document.importStatus === 'FAILED')
+    if (completed) {
+      noticeMessage.value = `课程资料“${completed.title}”已解析完成，可以补充课程资料信息。`
+      await loadEducationData()
+    } else if (failed) {
+      documentUploadError.value = failed.importError || `课程资料“${failed.title}”解析失败，请重新上传。`
+    }
+  } catch {
+    // 后台导入轮询失败时保留当前状态，下一轮继续刷新。
+  }
 }
 
 async function loadDashboard() {
@@ -8475,7 +8507,9 @@ async function createDocument() {
     documents.value = [document, ...documents.value.filter((item) => item.id !== document.id)]
     clearDocumentUploadFile()
     await loadDashboard()
-    if (isTeacherOnlyRole.value) {
+    if (document.importStatus === 'PROCESSING') {
+      noticeMessage.value = '课程资料已上传，正在后台解析；完成后即可补充课程信息。'
+    } else if (isTeacherOnlyRole.value) {
       noticeMessage.value = manageableEducationSources.value.length
         ? '课程资料已上传；下一步可以创建课程。'
         : '课程资料已上传；下一步请补充课程信息。'
@@ -9396,6 +9430,7 @@ onBeforeUnmount(() => {
   window.clearInterval(conversationPollTimer)
   window.clearInterval(healthPollTimer)
   window.clearInterval(learningNotificationPollTimer)
+  window.clearInterval(documentImportPollTimer)
   window.clearTimeout(chatHighlightTimer)
   if (noticeDismissTimer) window.clearTimeout(noticeDismissTimer)
   cancelScheduledAuditEventsRefresh()
@@ -11084,7 +11119,7 @@ onBeforeUnmount(() => {
               <div class="document-upload-copy">
                 <strong>{{ documentUploadFile ? documentUploadFile.name : '拖入 PDF 或 DOCX 文件' }}</strong>
                 <small v-if="documentUploadFile">{{ formatFileSize(documentUploadFile.size) }} · 上传后自动整理成可检索的课程资料</small>
-                <small v-else>单个文件最大 100 MB；扫描型 PDF 需要先经过 OCR 才能提取文字</small>
+                <small v-else>单个文件最大 100 MB，解析正文最多 1,000,000 字符；扫描型 PDF 需要先经过 OCR 才能提取文字</small>
               </div>
               <div class="document-upload-actions">
                 <button class="secondary-button" type="button" :disabled="loading || documentUploading" @click="openDocumentUploadPicker">{{ documentUploadFile ? '更换文件' : '选择文件' }}</button>
@@ -11100,7 +11135,12 @@ onBeforeUnmount(() => {
               <div v-for="document in documents" :key="document.id" class="document-row">
                 <div class="document-row-content">
                   <strong>{{ document.title }}</strong>
-                  <small>{{ document.allowedUsers ? `授权：${document.allowedUsers}` : '组织内可见' }} · {{ formatDate(document.createdAt) }}</small>
+                  <small>
+                    <span class="document-import-status" :class="`is-${String(document.importStatus || 'READY').toLowerCase()}`">{{ documentImportStatusLabel(document.importStatus) }}</span>
+                    <template v-if="document.importStatus === 'READY'"> · {{ document.contentCharCount || 0 }} 字符<template v-if="document.pageCount"> · {{ document.pageCount }} 页</template></template>
+                    {{ document.allowedUsers ? ` · 授权：${document.allowedUsers}` : ' · 组织内可见' }} · {{ formatDate(document.createdAt) }}
+                  </small>
+                  <small v-if="document.importStatus === 'FAILED'" class="document-import-error">{{ document.importError || '解析失败，请重新上传' }}</small>
                 </div>
                 <button
                   v-if="document.ownerUserId === form.userId"

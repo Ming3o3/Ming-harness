@@ -41,6 +41,7 @@ public class ContextBuilder {
     private final ContextRetrievalProperties retrievalProperties;
     private final EducationKnowledgeSourceRepository educationSourceRepository;
     private final EducationKnowledgeGraphService knowledgeGraphService;
+    private final ContextChunkRepository chunkRepository;
 
     /** 兼容单元测试和本地调用；生产环境使用配置注入的构造器。 */
     public ContextBuilder(KnowledgeDocumentRepository documentRepository,
@@ -48,7 +49,7 @@ public class ContextBuilder {
                           VectorContextRetriever vectorContextRetriever,
                           HarnessMetrics metrics) {
         this(documentRepository, memoryRepository, vectorContextRetriever, metrics,
-                new ContextRetrievalProperties(20, 5, 1, 0.7), null);
+                new ContextRetrievalProperties(20, 5, 1, 0.7), null, null, null);
     }
 
     public ContextBuilder(KnowledgeDocumentRepository documentRepository,
@@ -57,7 +58,7 @@ public class ContextBuilder {
                           HarnessMetrics metrics,
                           ContextRetrievalProperties retrievalProperties) {
         this(documentRepository, memoryRepository, vectorContextRetriever, metrics,
-                retrievalProperties, null);
+                retrievalProperties, null, null, null);
     }
 
     public ContextBuilder(KnowledgeDocumentRepository documentRepository,
@@ -67,7 +68,19 @@ public class ContextBuilder {
                           ContextRetrievalProperties retrievalProperties,
                           EducationKnowledgeSourceRepository educationSourceRepository) {
         this(documentRepository, memoryRepository, vectorContextRetriever, metrics, retrievalProperties,
-                educationSourceRepository, null);
+                educationSourceRepository, null, null);
+    }
+
+    /** 保持旧的显式构造调用兼容；流式文档关键词降级只在生产构造器启用。 */
+    public ContextBuilder(KnowledgeDocumentRepository documentRepository,
+                          MemoryEntryRepository memoryRepository,
+                          VectorContextRetriever vectorContextRetriever,
+                          HarnessMetrics metrics,
+                          ContextRetrievalProperties retrievalProperties,
+                          EducationKnowledgeSourceRepository educationSourceRepository,
+                          EducationKnowledgeGraphService knowledgeGraphService) {
+        this(documentRepository, memoryRepository, vectorContextRetriever, metrics, retrievalProperties,
+                educationSourceRepository, knowledgeGraphService, null);
     }
 
     @Autowired
@@ -77,7 +90,8 @@ public class ContextBuilder {
                           HarnessMetrics metrics,
                           ContextRetrievalProperties retrievalProperties,
                           EducationKnowledgeSourceRepository educationSourceRepository,
-                          EducationKnowledgeGraphService knowledgeGraphService) {
+                          EducationKnowledgeGraphService knowledgeGraphService,
+                          ContextChunkRepository chunkRepository) {
         this.documentRepository = documentRepository;
         this.memoryRepository = memoryRepository;
         this.vectorContextRetriever = vectorContextRetriever;
@@ -85,6 +99,7 @@ public class ContextBuilder {
         this.retrievalProperties = retrievalProperties;
         this.educationSourceRepository = educationSourceRepository;
         this.knowledgeGraphService = knowledgeGraphService;
+        this.chunkRepository = chunkRepository;
     }
 
     public ContextResult build(String tenantId, String userId, String query, int maxChars) {
@@ -202,10 +217,15 @@ public class ContextBuilder {
             if (!matchesEducationFilter(tenantId, document, educationFilter)) {
                 continue;
             }
-            String searchable = (document.getTitle() + "\n" + document.getContent()).toLowerCase(Locale.ROOT);
-            int score = score(searchable, terms);
+            String content = document.getContent();
+            int score = score((document.getTitle() + "\n" + content).toLowerCase(Locale.ROOT), terms);
+            if (content.isBlank() && chunkRepository != null) {
+                ChunkMatch match = bestChunkMatch(tenantId, document.getId(), terms);
+                score = Math.max(score, match.score());
+                content = match.content();
+            }
             if (score > 0) {
-                candidates.add(ScoredContext.document(document, score));
+                candidates.add(ScoredContext.document(document, score, content));
             }
         }
 
@@ -256,7 +276,8 @@ public class ContextBuilder {
     private List<KnowledgeDocument> keywordDocuments(String tenantId,
                                                      EducationRetrievalFilter educationFilter) {
         if (educationFilter == null || !educationFilter.active()) {
-            return documentRepository.findTop100ByTenantIdAndDeletedAtIsNullOrderByCreatedAtDesc(tenantId);
+            return documentRepository.findTop100ByTenantIdAndDeletedAtIsNullOrderByCreatedAtDesc(tenantId).stream()
+                    .filter(KnowledgeDocument::isReady).toList();
         }
         if (educationSourceRepository == null) return List.of();
         List<String> sourceDocumentIds = educationSourceRepository
@@ -268,7 +289,23 @@ public class ContextBuilder {
                 .toList();
         if (sourceDocumentIds.isEmpty()) return List.of();
         return documentRepository.findByTenantIdAndIdInAndDeletedAtIsNullOrderByCreatedAtDesc(
-                tenantId, sourceDocumentIds);
+                tenantId, sourceDocumentIds).stream().filter(KnowledgeDocument::isReady).toList();
+    }
+
+    private ChunkMatch bestChunkMatch(String tenantId, String documentId, String[] terms) {
+        List<ContextChunk> chunks = chunkRepository
+                .findByParentTypeAndParentIdAndDeletedAtIsNullOrderByChunkIndexAsc("DOCUMENT", documentId)
+                .stream().filter(chunk -> tenantId.equals(chunk.getTenantId())).toList();
+        String best = chunks.isEmpty() ? "" : chunks.get(0).getContent();
+        int bestScore = 0;
+        for (ContextChunk chunk : chunks) {
+            int score = score(chunk.getContent().toLowerCase(Locale.ROOT), terms);
+            if (score > bestScore) {
+                bestScore = score;
+                best = chunk.getContent();
+            }
+        }
+        return new ChunkMatch(best, bestScore);
     }
 
     /**
@@ -703,9 +740,9 @@ public class ContextBuilder {
             return score;
         }
 
-        private static ScoredContext document(KnowledgeDocument document, int score) {
+        private static ScoredContext document(KnowledgeDocument document, int score, String content) {
             return new ScoredContext(document.getId(), document.getTitle(),
-                    "document:" + document.getId(), document.getContent(), score, document.getCreatedAt());
+                    "document:" + document.getId(), content, score, document.getCreatedAt());
         }
 
         private static ScoredContext memory(MemoryEntry memory, int score) {
@@ -713,6 +750,9 @@ public class ContextBuilder {
                     "记忆 · " + memory.getMemoryType(), "memory:" + memory.getId(),
                     memory.getContent(), score, memory.getCreatedAt());
         }
+    }
+
+    private record ChunkMatch(String content, int score) {
     }
 
     private record RankedEvidence(ContextEvidence evidence, double score,

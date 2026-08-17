@@ -83,7 +83,7 @@ public class ContextChunker {
         int start = 0;
         while (start < unit.length()) {
             int end = Math.min(unit.length(), start + properties.chunkMaxChars());
-            if (embeddingProperties != null && embeddingProperties.maxInputTokens() > 0) {
+            if (embeddingEnabled() && embeddingProperties.maxInputTokens() > 0) {
                 String tokenBounded = EmbeddingTokenEstimator.truncate(unit.substring(start),
                         embeddingProperties.maxInputTokens());
                 if (!tokenBounded.isEmpty()) {
@@ -95,7 +95,7 @@ public class ContextChunker {
                 if (boundary > start + properties.chunkMaxChars() / 2) {
                     end = boundary + 1;
                 }
-                if (embeddingProperties != null && embeddingProperties.maxInputTokens() > 0) {
+                if (embeddingEnabled() && embeddingProperties.maxInputTokens() > 0) {
                     String tokenBounded = EmbeddingTokenEstimator.truncate(unit.substring(start),
                             embeddingProperties.maxInputTokens());
                     if (!tokenBounded.isEmpty()) {
@@ -134,8 +134,12 @@ public class ContextChunker {
     }
 
     private boolean fitsTokens(String value) {
-        return embeddingProperties == null
+        return !embeddingEnabled()
                 || EmbeddingTokenEstimator.estimate(value) <= embeddingProperties.maxInputTokens();
+    }
+
+    private boolean embeddingEnabled() {
+        return embeddingProperties != null && embeddingProperties.enabled();
     }
 
     private String join(StringBuilder current, String unit) {

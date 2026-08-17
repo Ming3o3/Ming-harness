@@ -10,15 +10,27 @@ import java.util.Set;
 @ConfigurationProperties(prefix = "harness.context.document")
 public record DocumentImportProperties(
         int maxUploadBytes,
-        int maxContentChars
+        int maxContentChars,
+        String importDirectory,
+        int workerCount,
+        int queueCapacity
 ) {
 
     private static final Set<String> SUPPORTED_EXTENSIONS = Set.of("pdf", "docx");
 
+    /** 兼容已有测试和本地构造调用。 */
+    public DocumentImportProperties(int maxUploadBytes, int maxContentChars) {
+        this(maxUploadBytes, maxContentChars, "./data/context-document-imports", 1, 16);
+    }
+
     @ConstructorBinding
     public DocumentImportProperties {
         maxUploadBytes = bounded(maxUploadBytes, 100 * 1024 * 1024, 128 * 1024, 100 * 1024 * 1024);
-        maxContentChars = bounded(maxContentChars, 100_000, 1_000, 1_000_000);
+        maxContentChars = bounded(maxContentChars, 1_000_000, 1_000, 10_000_000);
+        importDirectory = importDirectory == null || importDirectory.isBlank()
+                ? "./data/context-document-imports" : importDirectory.trim();
+        workerCount = bounded(workerCount, 1, 1, 4);
+        queueCapacity = bounded(queueCapacity, 16, 1, 128);
     }
 
     public boolean supportsExtension(String extension) {

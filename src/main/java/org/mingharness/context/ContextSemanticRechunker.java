@@ -49,7 +49,11 @@ public class ContextSemanticRechunker {
     private ParentContent findActiveParent(String parentType, String parentId) {
         if ("DOCUMENT".equals(parentType)) {
             return documentRepository.findByIdForUpdate(parentId)
-                    .filter(document -> document.getDeletedAt() == null)
+                    .filter(document -> document.getDeletedAt() == null
+                            && document.isReady()
+                            // 异步导入文档的正文在 chunk 中，不允许语义重分块用空
+                            // content 清空已经完成的流式索引。
+                            && !document.getContent().isBlank())
                     .map(document -> new ParentContent("DOCUMENT", document.getId(), document.getTenantId(),
                             document.getTitle() + "\n" + document.getContent()))
                     .orElse(null);

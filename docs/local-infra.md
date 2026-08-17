@@ -87,7 +87,7 @@ export EMBEDDING_MAX_INPUT_TOKENS=8192
 
 #### 导入 PDF/DOCX 知识文档
 
-运行控制台的“上下文治理”面板可以选择或拖入一个 PDF/DOCX。服务端按文件扩展名和文件头双重校验后提取纯文本，原始二进制不会写入知识库；解析结果随后沿用现有文档权限、chunk、父窗口和 embedding 索引流程。默认原始文件上限为 100 MB，解析正文上限为 100000 字符，可通过 `CONTEXT_DOCUMENT_MAX_UPLOAD_BYTES` 和 `CONTEXT_DOCUMENT_MAX_CONTENT_CHARS` 调整。只有包含文本层的 PDF 可以直接提取，扫描型 PDF 需要先 OCR；加密或损坏文件会返回结构化解析错误。
+运行控制台的“上下文治理”面板可以选择或拖入一个 PDF/DOCX。上传后接口立即创建 `PROCESSING` 文档并返回，原始文件暂存在 `CONTEXT_DOCUMENT_IMPORT_DIRECTORY`，后台 Worker 再按 PDF 页、DOCX 段落/表格段落流式解析，逐步分块、分批写入 chunk 和父窗口，完成后更新为 `READY` 并触发 embedding；失败则更新为 `FAILED`，页面显示脱敏错误并允许重新上传。服务端按文件扩展名和文件头双重校验，解析完成后原始二进制自动删除；解析结果沿用现有文档权限、chunk、父窗口和 embedding 索引流程。默认原始文件上限为 100 MB，解析正文上限为 1,000,000 字符，可通过 `CONTEXT_DOCUMENT_MAX_UPLOAD_BYTES` 和 `CONTEXT_DOCUMENT_MAX_CONTENT_CHARS` 调整。超过正文上限时返回/记录 `DOCUMENT_TEXT_TOO_LARGE`，不会静默截断、保存不完整正文或创建半成品索引。只有包含文本层的 PDF 可以直接提取，扫描型 PDF 需要先 OCR；加密或损坏文件会返回结构化解析错误。应用重启会重新接管仍有暂存文件的 `PROCESSING` 文档。
 
 也可以直接调用上传接口（调用方需要 `context.write` 权限）：
 
@@ -100,7 +100,7 @@ curl -X POST http://localhost:8080/api/context/documents/upload \
   -F 'allowedUsers=operator'
 ```
 
-接口返回的文档正文是脱敏后的文本；embedding 网关不可用时，正文和确定性 chunk 仍会保存，待处理 chunk 可通过“向量索引”或 `POST /api/context/reindex` 补齐。
+接口返回的文档状态初始为 `PROCESSING`，异步完成后列表中的 `importStatus` 变为 `READY`；异步导入文档的 `content` 字段保持为空，正文以受权限控制的 chunk/父窗口形式保存，关键词或向量检索会按问题召回相关片段。模型单次上下文仍受 `MAX_CONTEXT_CHARS`（默认 64,000 字符）约束，不会因为资料总长度增加而把全文发送给模型。embedding 网关不可用时，确定性 chunk 仍会保存，待处理 chunk 可通过“向量索引”或 `POST /api/context/reindex` 补齐。
 
 `EMBEDDING_DIMENSION` 必须与数据库中的 `vector(1536)` 一致；更换模型、维度或语义分块版本后，应执行一次有界重建。语义分块默认关闭，开启后会对段落/句子原子单元批量向量化，按相邻单元余弦相似度寻找边界，同时保留最大长度、最小单元数和 overlap 约束：
 

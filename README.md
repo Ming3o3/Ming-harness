@@ -165,7 +165,7 @@ npm run desktop:dev
 | `CONTEXT_CHUNK_OVERLAP_CHARS` | `160`                                                     | 相邻上下文子块的尾部重叠字符数 |
 | `CONTEXT_PARENT_WINDOW_MAX_CHARS` | `4800`                                                    | 连续子块组成的父窗口最大字符数；只用于推理上下文，不参与向量召回 |
 | `CONTEXT_DOCUMENT_MAX_UPLOAD_BYTES` | `104857600`                                               | PDF/DOCX 知识文档原始文件最大大小（100 MB） |
-| `CONTEXT_DOCUMENT_MAX_CONTENT_CHARS` | `100000`                                                  | PDF/DOCX 解析后写入知识库的正文最大字符数 |
+| `CONTEXT_DOCUMENT_MAX_CONTENT_CHARS` | `1000000`                                                 | PDF/DOCX 解析后写入知识库的正文最大字符数；超限任务失败，不静默截断 |
 | `CONTEXT_SEMANTIC_ENABLED` | `false`                                                   | 是否调用 embedding API 按语义边界分块 |
 | `CONTEXT_SEMANTIC_BREAKPOINT` | `0.35`                                                    | 相邻原子单元余弦相似度低于该值时允许切分 |
 | `CONTEXT_SEMANTIC_MIN_UNITS` | `3`                                                       | 语义切分前至少累计的原子单元数 |
@@ -257,7 +257,7 @@ npm run dist:win:green
 
 Embedding 配置按组织保存（知识库向量是组织共享索引），从运行控制台顶部的“向量模型”入口维护。它支持 OpenAI 兼容的 `/embeddings` 地址、模型、模型版本、API Key 和当前固定的 1536 维向量。保存后会清空该组织旧 chunk 向量，必须在“高级治理设置”的“向量索引”中重新建立索引；API Key 使用独立 AES-GCM 密钥标签加密，读取接口只返回掩码。后端通过 `GET/PUT/DELETE /api/context/embedding-config` 和 `POST /api/context/embedding-config/test` 管理配置；使用 api-key/OIDC 认证时需要 `context.configure` 权限。
 
-治理面板的“添加授权知识文档”支持直接拖入或选择 PDF/DOCX。Runtime 只保留解析后的纯文本，不保存原始二进制；解析完成后会复用知识文档的权限过滤、确定性/语义分块、父窗口物化和异步 embedding 索引流程。当前只提取有文本层的 PDF，扫描图片 PDF 需要先做 OCR；加密、损坏、格式签名不匹配或正文为空的文件会被拒绝。上传接口需要 `context.write` 权限，默认单文件上限为 100 MB、解析正文上限为 100000 字符。
+治理面板的“添加授权知识文档”支持直接拖入或选择 PDF/DOCX。上传请求会先把原始文件落到 `CONTEXT_DOCUMENT_IMPORT_DIRECTORY` 指定的暂存目录，随后由后台任务按 PDF 页、DOCX 段落/表格段落逐步解析、分块并分批写入 chunk/父窗口；页面会显示“解析中 / 已完成 / 解析失败”，应用重启后会自动恢复仍处于解析中的任务。Runtime 只保留解析后的纯文本分块，不保存原始二进制；解析完成后会复用知识文档的权限过滤、确定性/语义分块、父窗口物化和异步 embedding 索引流程。当前只提取有文本层的 PDF，扫描图片 PDF 需要先做 OCR；加密、损坏、格式签名不匹配或正文为空的文件会失败。上传接口需要 `context.write` 权限，默认单文件上限为 100 MB、解析正文上限为 1,000,000 字符；超过 `CONTEXT_DOCUMENT_MAX_CONTENT_CHARS` 会返回/记录 `DOCUMENT_TEXT_TOO_LARGE`，不会截断、保存不完整正文或创建可检索的半成品。
 
 聊天和运行控制台都支持 `⌘/Ctrl + K` 命令面板，可搜索并执行新建对话、聚焦输入框、打开项目文件、查看当前 Run、模型设置、工作台切换和主题切换等操作；面板会根据当前会话和权限自动隐藏不可用命令。
 
