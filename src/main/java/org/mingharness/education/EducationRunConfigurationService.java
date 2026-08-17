@@ -31,12 +31,13 @@ public class EducationRunConfigurationService {
     private final EducationEnrollmentRepository enrollmentRepository;
     private final EducationKnowledgeService knowledgeService;
     private final SensitiveDataSanitizer sanitizer;
+    private final LearningAssignmentTestCaseRepository testCaseRepository;
 
     /** 兼容旧组件测试和扩展调用方；未启用结构化学习目标解析。 */
     public EducationRunConfigurationService(LearnerProfileRepository profileRepository,
                                             LearnerMasteryRepository masteryRepository,
                                             SensitiveDataSanitizer sanitizer) {
-        this(profileRepository, masteryRepository, null, null, null, null, null, null, null, sanitizer);
+        this(profileRepository, masteryRepository, null, null, null, null, null, null, null, sanitizer, null);
     }
 
     /** 兼容已启用学习目标但尚未使用保持度复习的测试和扩展调用方。 */
@@ -44,7 +45,7 @@ public class EducationRunConfigurationService {
                                             LearnerMasteryRepository masteryRepository,
                                             LearningGoalRepository goalRepository,
                                             SensitiveDataSanitizer sanitizer) {
-        this(profileRepository, masteryRepository, goalRepository, null, null, null, null, null, null, sanitizer);
+        this(profileRepository, masteryRepository, goalRepository, null, null, null, null, null, null, sanitizer, null);
     }
 
     /** 兼容已接入保持度复习但尚未绑定课程作业的扩展调用方。 */
@@ -54,7 +55,7 @@ public class EducationRunConfigurationService {
                                             LearningReviewPlanService reviewPlanService,
                                             SensitiveDataSanitizer sanitizer) {
         this(profileRepository, masteryRepository, goalRepository, reviewPlanService, null, null,
-                null, null, null, sanitizer);
+                null, null, null, sanitizer, null);
     }
 
     /** 兼容已绑定课程作业但尚未接入教师干预的扩展调用方。 */
@@ -65,7 +66,7 @@ public class EducationRunConfigurationService {
                                             LearningAssignmentRepository assignmentRepository,
                                             SensitiveDataSanitizer sanitizer) {
         this(profileRepository, masteryRepository, goalRepository, reviewPlanService,
-                assignmentRepository, null, null, null, null, sanitizer);
+                assignmentRepository, null, null, null, null, sanitizer, null);
     }
 
     /** 兼容课程实例作为 Run 约束前的完整组件构造方式。 */
@@ -77,7 +78,7 @@ public class EducationRunConfigurationService {
                                             LearningAssignmentFeedbackRepository feedbackRepository,
                                             SensitiveDataSanitizer sanitizer) {
         this(profileRepository, masteryRepository, goalRepository, reviewPlanService,
-                assignmentRepository, feedbackRepository, null, null, null, sanitizer);
+                assignmentRepository, feedbackRepository, null, null, null, sanitizer, null);
     }
 
     /** 兼容课程实例已作为 Run 约束、但尚未接入知识源前置校验的扩展调用方。 */
@@ -92,7 +93,23 @@ public class EducationRunConfigurationService {
                                             SensitiveDataSanitizer sanitizer) {
         this(profileRepository, masteryRepository, goalRepository, reviewPlanService,
                 assignmentRepository, feedbackRepository, courseRepository, enrollmentRepository,
-                null, sanitizer);
+                null, sanitizer, null);
+    }
+
+    /** 兼容已经接入知识源校验、但尚未提供行为测试用例仓储的调用方。 */
+    public EducationRunConfigurationService(LearnerProfileRepository profileRepository,
+                                            LearnerMasteryRepository masteryRepository,
+                                            LearningGoalRepository goalRepository,
+                                            LearningReviewPlanService reviewPlanService,
+                                            LearningAssignmentRepository assignmentRepository,
+                                            LearningAssignmentFeedbackRepository feedbackRepository,
+                                            EducationCourseRepository courseRepository,
+                                            EducationEnrollmentRepository enrollmentRepository,
+                                            EducationKnowledgeService knowledgeService,
+                                            SensitiveDataSanitizer sanitizer) {
+        this(profileRepository, masteryRepository, goalRepository, reviewPlanService,
+                assignmentRepository, feedbackRepository, courseRepository, enrollmentRepository,
+                knowledgeService, sanitizer, null);
     }
 
     @Autowired
@@ -105,7 +122,8 @@ public class EducationRunConfigurationService {
                                             EducationCourseRepository courseRepository,
                                             EducationEnrollmentRepository enrollmentRepository,
                                             EducationKnowledgeService knowledgeService,
-                                            SensitiveDataSanitizer sanitizer) {
+                                            SensitiveDataSanitizer sanitizer,
+                                            LearningAssignmentTestCaseRepository testCaseRepository) {
         this.profileRepository = profileRepository;
         this.masteryRepository = masteryRepository;
         this.goalRepository = goalRepository;
@@ -116,6 +134,7 @@ public class EducationRunConfigurationService {
         this.enrollmentRepository = enrollmentRepository;
         this.knowledgeService = knowledgeService;
         this.sanitizer = sanitizer;
+        this.testCaseRepository = testCaseRepository;
     }
 
     @Transactional
@@ -272,8 +291,14 @@ public class EducationRunConfigurationService {
         EducationDependencyGraph graph = knowledgeService == null
                 ? EducationDependencyGraph.empty(configuration.conceptKey())
                 : knowledgeService.resolveDependencyGraph(tenantId, configuration.retrievalFilter());
+        String testCasesSnapshot = assignment == null || testCaseRepository == null
+                ? null
+                : EducationProgrammingTestCaseSnapshotCodec.encode(
+                testCaseRepository.findByTenantIdAndLearningAssignmentIdAndEnabledTrueOrderBySequenceAscCreatedAtAsc(
+                        tenantId, assignment.getId()));
         return configuration.withLearnerStateSnapshot(learnerStateSnapshot)
-                .withDependencyGraphSnapshot(EducationDependencyGraphSnapshotCodec.encode(graph));
+                .withDependencyGraphSnapshot(EducationDependencyGraphSnapshotCodec.encode(graph))
+                .withProgrammingTestCasesSnapshot(testCasesSnapshot);
     }
 
     /**

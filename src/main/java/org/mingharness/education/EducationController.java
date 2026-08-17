@@ -33,6 +33,8 @@ import org.mingharness.education.api.LearningAssignmentEvaluationRequest;
 import org.mingharness.education.api.LearningAssignmentEvaluationConsensusView;
 import org.mingharness.education.api.LearningAssignmentSubmissionRequest;
 import org.mingharness.education.api.LearningAssignmentSubmissionView;
+import org.mingharness.education.api.LearningAssignmentTestCaseRequest;
+import org.mingharness.education.api.LearningAssignmentTestCaseView;
 import org.mingharness.education.api.EducationMetricsView;
 import org.mingharness.education.api.EducationExperimentView;
 import org.mingharness.education.api.EducationCourseRequest;
@@ -105,6 +107,7 @@ public class EducationController {
     private final EducationCourseProgressService courseProgressService;
     private final EducationCourseCompletionService courseCompletionService;
     private final LearningAssignmentSubmissionService submissionService;
+    private final LearningAssignmentTestCaseService testCaseService;
     private final EducationCourseResultService courseResultService;
     private final LearningAssignmentIndependentEvaluationService independentEvaluationService;
     private final KnowledgeDocumentRepository documentRepository;
@@ -141,9 +144,10 @@ public class EducationController {
                                KnowledgeDocumentRepository documentRepository,
                                 EducationKnowledgeGraphService knowledgeGraphService,
                                 EducationRetrievalJudgmentService retrievalJudgmentService,
-                                EducationRetrievalCalibrationService retrievalCalibrationService,
-                                EducationRetrievalPolicyService retrievalPolicyService,
-                                EducationEvidenceImpactService evidenceImpactService) {
+                               EducationRetrievalCalibrationService retrievalCalibrationService,
+                               EducationRetrievalPolicyService retrievalPolicyService,
+                                EducationEvidenceImpactService evidenceImpactService,
+                                LearningAssignmentTestCaseService testCaseService) {
         this.knowledgeService = knowledgeService;
         this.learnerService = learnerService;
         this.learningGoalService = learningGoalService;
@@ -174,6 +178,7 @@ public class EducationController {
         this.retrievalCalibrationService = retrievalCalibrationService;
         this.retrievalPolicyService = retrievalPolicyService;
         this.evidenceImpactService = evidenceImpactService;
+        this.testCaseService = testCaseService;
     }
 
     @PostMapping("/sources")
@@ -662,6 +667,26 @@ public class EducationController {
         return identity.hasPermission("ops.read")
                 ? submissionService.listForGovernance(identity.tenantId(), assignmentId)
                 : submissionService.list(identity.tenantId(), identity.userId(), assignmentId);
+    }
+
+    @GetMapping("/assignments/{assignmentId}/test-cases")
+    public List<LearningAssignmentTestCaseView> assignmentTestCases(@PathVariable String assignmentId) {
+        HarnessIdentity identity = identity();
+        if (identity.hasPermission("ops.read")) {
+            return testCaseService.listForGovernance(identity.tenantId(), assignmentId);
+        }
+        return testCaseService.list(identity.tenantId(), identity.userId(), assignmentId,
+                identity.hasPermission("education.assign"));
+    }
+
+    @PostMapping("/assignments/{assignmentId}/test-cases")
+    @ResponseStatus(HttpStatus.CREATED)
+    public LearningAssignmentTestCaseView createAssignmentTestCase(
+            @PathVariable String assignmentId,
+            @Valid @RequestBody LearningAssignmentTestCaseRequest request) {
+        HarnessIdentity identity = identity();
+        requireEducationOperator(identity);
+        return testCaseService.create(identity.tenantId(), identity.userId(), assignmentId, request);
     }
 
     @PostMapping("/assignments/{assignmentId}/submissions")

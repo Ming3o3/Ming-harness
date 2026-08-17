@@ -617,6 +617,13 @@ export const api = {
     `/education/assignments/${encodeURIComponent(assignmentId)}/evidence`),
   listLearningAssignmentSubmissions: (assignmentId) => request(
     `/education/assignments/${encodeURIComponent(assignmentId)}/submissions`),
+  listLearningAssignmentTestCases: (assignmentId) => request(
+    `/education/assignments/${encodeURIComponent(assignmentId)}/test-cases`),
+  createLearningAssignmentTestCase: (assignmentId, payload) => request(
+    `/education/assignments/${encodeURIComponent(assignmentId)}/test-cases`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   submitLearningAssignmentSubmission: (assignmentId, payload) => request(
     `/education/assignments/${encodeURIComponent(assignmentId)}/submissions`, {
       method: 'POST',

@@ -81,6 +81,9 @@ public class Run {
     private String educationConceptKey;
     @Column(name = "education_programming_language", length = 64)
     private String educationProgrammingLanguage;
+    /** Run 创建时冻结的教师编程行为测试用例快照。 */
+    @Column(name = "education_programming_test_cases", columnDefinition = "text")
+    private String educationProgrammingTestCases;
     @Column(name = "education_min_difficulty")
     private Integer educationMinDifficulty;
     @Column(name = "education_max_difficulty")
@@ -237,6 +240,7 @@ public class Run {
         this.educationCurriculumVersion = value.curriculumVersion();
         this.educationConceptKey = value.conceptKey();
         this.educationProgrammingLanguage = value.programmingLanguage();
+        this.educationProgrammingTestCases = value.programmingTestCasesSnapshot();
         this.educationMinDifficulty = value.minDifficulty();
         this.educationMaxDifficulty = value.maxDifficulty();
         this.educationPedagogicalMode = value.pedagogicalMode();
@@ -270,7 +274,8 @@ public class Run {
                 educationLearnerState == null ? "" : educationLearnerState,
                 educationCourseId, educationCourseCode, educationCourseTitle,
                 educationRetrievalStrategy == null ? "FULL" : educationRetrievalStrategy,
-                educationDependencyGraph, educationLearnerStateSnapshot, educationProgrammingLanguage);
+                educationDependencyGraph, educationLearnerStateSnapshot, educationProgrammingLanguage,
+                educationProgrammingTestCases);
     }
 
     /** Worker 成功获取执行锁后建立租约。 */

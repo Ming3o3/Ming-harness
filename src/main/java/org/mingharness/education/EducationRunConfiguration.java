@@ -35,12 +35,13 @@ public record EducationRunConfiguration(
         String retrievalStrategy,
         String dependencyGraphSnapshot,
         String learnerStateSnapshot,
-        String programmingLanguage
+        String programmingLanguage,
+        String programmingTestCasesSnapshot
 ) {
 
     public static EducationRunConfiguration disabled() {
         return new EducationRunConfiguration(false, null, null, null, null, null, null, null, null, 0.0, 0.0,
-                null, null, null, null, null, null, "AUTO", "", null, null, null, "FULL", null, null, null);
+                null, null, null, null, null, null, "AUTO", "", null, null, null, "FULL", null, null, null, null);
     }
 
     /** 兼容增加课程实例快照前的完整配置构造方式。 */
@@ -58,7 +59,7 @@ public record EducationRunConfiguration(
                 learningAssignmentTeacherReviewNote, reviewPlanId, learningGoalTitle,
                 learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
                 curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
-                learnerStateSummary, null, null, null, "FULL", null, null, null);
+                learnerStateSummary, null, null, null, "FULL", null, null, null, null);
     }
 
     /** 兼容显式检索策略但尚未冻结知识依赖图的旧调用方。 */
@@ -77,7 +78,8 @@ public record EducationRunConfiguration(
                 learningAssignmentTeacherReviewNote, reviewPlanId, learningGoalTitle,
                 learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
                 curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
-                learnerStateSummary, courseId, courseCode, courseTitle, retrievalStrategy, null, null, null);
+                learnerStateSummary, courseId, courseCode, courseTitle, retrievalStrategy,
+                null, null, null, null);
     }
 
     /** 编程学习 Run 可额外冻结语言标签，旧调用方继续使用通用课程检索。 */
@@ -98,7 +100,7 @@ public record EducationRunConfiguration(
                 learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
                 curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
                 learnerStateSummary, courseId, courseCode, courseTitle, retrievalStrategy,
-                null, null, programmingLanguage);
+                null, null, programmingLanguage, null);
     }
 
     /** 兼容已携带课程实例快照、但尚未冻结检索策略的旧版调用方。 */
@@ -117,7 +119,7 @@ public record EducationRunConfiguration(
                 learningAssignmentTeacherReviewNote, reviewPlanId, learningGoalTitle,
                 learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
                 curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
-                learnerStateSummary, courseId, courseCode, courseTitle, "FULL", null, null, null);
+                learnerStateSummary, courseId, courseCode, courseTitle, "FULL", null, null, null, null);
     }
 
     /** 兼容未绑定教师返工说明的既有完整快照构造方式。 */
@@ -133,7 +135,7 @@ public record EducationRunConfiguration(
                 learningAssignmentInstructions, null, reviewPlanId, learningGoalTitle,
                 learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
                 curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
-                learnerStateSummary, null, null, null, "FULL", null, null, null);
+                learnerStateSummary, null, null, null, "FULL", null, null, null, null);
     }
 
     /** 兼容未绑定保持度复习计划的既有调用方。 */
@@ -146,7 +148,7 @@ public record EducationRunConfiguration(
         this(enabled, learnerProfileId, learningGoalId, null, null, null, null, null, learningGoalTitle,
                 learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
                 curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
-                learnerStateSummary, null, null, null, "FULL", null, null, null);
+                learnerStateSummary, null, null, null, "FULL", null, null, null, null);
     }
 
     /** 兼容旧版携带保持度复习计划的快照构造方式。 */
@@ -159,7 +161,7 @@ public record EducationRunConfiguration(
         this(enabled, learnerProfileId, learningGoalId, null, null, null, null, reviewPlanId, learningGoalTitle,
                 learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
                 curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
-                learnerStateSummary, null, null, null, "FULL", null, null, null);
+                learnerStateSummary, null, null, null, "FULL", null, null, null, null);
     }
 
     public EducationRetrievalFilter retrievalFilter() {
@@ -186,7 +188,8 @@ public record EducationRunConfiguration(
                 learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
                 curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
                 learnerStateSummary, courseId, courseCode, courseTitle,
-                retrievalStrategyValue().name(), snapshot, learnerStateSnapshot, programmingLanguage);
+                retrievalStrategyValue().name(), snapshot, learnerStateSnapshot, programmingLanguage,
+                programmingTestCasesSnapshot);
     }
 
     public EducationRunConfiguration withLearnerStateSnapshot(String snapshot) {
@@ -196,7 +199,24 @@ public record EducationRunConfiguration(
                 learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
                 curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
                 learnerStateSummary, courseId, courseCode, courseTitle,
-                retrievalStrategyValue().name(), dependencyGraphSnapshot, snapshot, programmingLanguage);
+                retrievalStrategyValue().name(), dependencyGraphSnapshot, snapshot, programmingLanguage,
+                programmingTestCasesSnapshot);
+    }
+
+    /** Run 创建时冻结的行为测试用例；历史 Run 没有快照时返回空集合。 */
+    public EducationProgrammingTestCaseSnapshot programmingTestCases() {
+        return EducationProgrammingTestCaseSnapshotCodec.decode(programmingTestCasesSnapshot);
+    }
+
+    public EducationRunConfiguration withProgrammingTestCasesSnapshot(String snapshot) {
+        return new EducationRunConfiguration(enabled, learnerProfileId, learningGoalId,
+                learningAssignmentId, learningAssignmentTitle, learningAssignmentInstructions,
+                learningAssignmentTeacherReviewNote, reviewPlanId, learningGoalTitle,
+                learningGoalBaselineMastery, learningGoalTargetMastery, subject, gradeLevel,
+                curriculumVersion, conceptKey, minDifficulty, maxDifficulty, pedagogicalMode,
+                learnerStateSummary, courseId, courseCode, courseTitle,
+                retrievalStrategyValue().name(), dependencyGraphSnapshot, learnerStateSnapshot,
+                programmingLanguage, snapshot);
     }
 
     /** 从随 Run 冻结的摘要恢复轻量掌握度快照，保证重启 Worker 后重排结果稳定。 */
