@@ -1,6 +1,8 @@
 package org.mingharness.education;
 
 import org.mingharness.common.SensitiveDataSanitizer;
+import org.mingharness.common.BusinessException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -66,7 +68,16 @@ public class EducationKnowledgeGraphService {
                         source.getDocumentId(), "PREREQUISITE", 1.0));
             }
         }
-        if (!edges.isEmpty()) dependencyRepository.saveAll(edges);
+        if (edges.isEmpty()) return;
+        List<EducationConceptDependency> existingEdges = dependencyRepository
+                .findByTenantIdAndSubjectAndGradeLevelAndCurriculumVersionOrderByConceptKeyAscPrerequisiteConceptAsc(
+                        source.getTenantId(), source.getSubject(), source.getGradeLevel(),
+                        source.getCurriculumVersion());
+        if (containsCycle(existingEdges, edges)) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "EDUCATION_DEPENDENCY_CYCLE",
+                    "知识依赖图存在循环依赖，请调整知识点或前置知识后重试");
+        }
+        dependencyRepository.saveAll(edges);
     }
 
     @Transactional
@@ -139,6 +150,47 @@ public class EducationKnowledgeGraphService {
                 .filter(value -> normalizeConcept(value).equals(normalized))
                 .findFirst().orElse(normalized);
     }
+
+    /** 依赖边语义为 prerequisite -> concept；跨资料合并后仍必须保持 DAG。 */
+    private boolean containsCycle(List<EducationConceptDependency> existingEdges,
+                                  List<EducationConceptDependency> newEdges) {
+        Map<String, Set<String>> adjacency = new LinkedHashMap<>();
+        for (EducationConceptDependency edge : concat(existingEdges, newEdges)) {
+            if (edge == null) continue;
+            String prerequisite = normalizeConcept(edge.getPrerequisiteConcept());
+            String concept = normalizeConcept(edge.getConceptKey());
+            if (prerequisite == null || concept == null || prerequisite.equals(concept)) continue;
+            adjacency.computeIfAbsent(prerequisite, ignored -> new HashSet<>()).add(concept);
+        }
+        Map<String, VisitState> states = new HashMap<>();
+        for (String concept : adjacency.keySet()) {
+            if (visitForCycle(concept, adjacency, states)) return true;
+        }
+        return false;
+    }
+
+    private boolean visitForCycle(String concept, Map<String, Set<String>> adjacency,
+                                  Map<String, VisitState> states) {
+        VisitState state = states.get(concept);
+        if (state == VisitState.VISITING) return true;
+        if (state == VisitState.VISITED) return false;
+        states.put(concept, VisitState.VISITING);
+        for (String next : adjacency.getOrDefault(concept, Set.of())) {
+            if (visitForCycle(next, adjacency, states)) return true;
+        }
+        states.put(concept, VisitState.VISITED);
+        return false;
+    }
+
+    private List<EducationConceptDependency> concat(List<EducationConceptDependency> existingEdges,
+                                                    List<EducationConceptDependency> newEdges) {
+        List<EducationConceptDependency> result = new ArrayList<>();
+        if (existingEdges != null) result.addAll(existingEdges);
+        if (newEdges != null) result.addAll(newEdges);
+        return result;
+    }
+
+    private enum VisitState { VISITING, VISITED }
 
     private List<String> split(String value) {
         if (value == null || value.isBlank()) return List.of();

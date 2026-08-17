@@ -7,8 +7,10 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -58,6 +60,26 @@ class EducationKnowledgeGraphServiceTests {
         assertEquals(2, graph.prerequisites().get(1).depth());
         assertTrue(graph.prerequisites().stream().anyMatch(path -> path.conceptKey().equals("数集")
                 && path.deficit() > 0.8));
+    }
+
+    @Test
+    void shouldRejectCycleAcrossKnowledgeSourcesBeforePersistingEdges() {
+        EducationConceptDependencyRepository repository = mock(EducationConceptDependencyRepository.class);
+        EducationKnowledgeGraphService service = new EducationKnowledgeGraphService(repository,
+                new SensitiveDataSanitizer());
+        when(repository
+                .findByTenantIdAndSubjectAndGradeLevelAndCurriculumVersionOrderByConceptKeyAscPrerequisiteConceptAsc(
+                        "tenant-a", "编程", "大一", "课程版"))
+                .thenReturn(List.of(edge("B", "A", "doc-existing")));
+        EducationKnowledgeSource source = new EducationKnowledgeSource(
+                "tenant-a", "doc-new", "编程", "大一", "课程版", "循环", "",
+                "A", "B", 3, "TEXTBOOK");
+
+        var exception = assertThrows(org.mingharness.common.BusinessException.class,
+                () -> service.replaceDerivedEdges(source));
+
+        assertEquals("EDUCATION_DEPENDENCY_CYCLE", exception.getCode());
+        org.mockito.Mockito.verify(repository, never()).saveAll(any());
     }
 
     private EducationConceptDependency edge(String concept, String prerequisite, String documentId) {
