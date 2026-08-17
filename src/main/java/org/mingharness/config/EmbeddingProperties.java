@@ -21,12 +21,20 @@ public record EmbeddingProperties(
         long timeoutMs
 ) {
 
+    /** 多数 OpenAI 兼容服务都接受 10 条以内；用保守上限避免供应商返回批量参数 400。 */
+    private static final int SAFE_PROVIDER_BATCH_SIZE = 10;
+
     /** 兼容已有测试和本地调用，默认使用 v1 缓存版本。 */
     public EmbeddingProperties(boolean enabled, String baseUrl, String apiKey, String model,
                                int dimension, int batchSize, int maxInputChars, int maxResponseChars,
                                int maxAttempts, long retryBackoffMs, long timeoutMs) {
         this(enabled, baseUrl, apiKey, model, "v1", dimension, batchSize, maxInputChars,
                 8_192, maxResponseChars, maxAttempts, retryBackoffMs, timeoutMs);
+    }
+
+    /** 返回经过供应商兼容上限裁剪后的实际请求批量。 */
+    public int effectiveBatchSize() {
+        return Math.min(batchSize, SAFE_PROVIDER_BATCH_SIZE);
     }
 
     @ConstructorBinding

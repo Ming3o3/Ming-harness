@@ -205,7 +205,7 @@ public class OpenAiCompatibleEmbeddingGateway implements EmbeddingGateway {
         return configService == null ? new EmbeddingProviderConfigService.ResolvedEmbeddingConfig(
                 defaultProperties.enabled(), defaultProperties.baseUrl(), defaultProperties.apiKey(),
                 defaultProperties.model(), defaultProperties.modelVersion(), defaultProperties.dimension(),
-                defaultProperties.batchSize(), defaultProperties.maxInputChars(), defaultProperties.maxInputTokens(),
+                defaultProperties.effectiveBatchSize(), defaultProperties.maxInputChars(), defaultProperties.maxInputTokens(),
                 defaultProperties.maxResponseChars(), defaultProperties.maxAttempts(), defaultProperties.retryBackoffMs(),
                 defaultProperties.timeoutMs(), "environment", null) : configService.resolve(tenantId);
     }

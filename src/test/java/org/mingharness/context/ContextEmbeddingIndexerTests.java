@@ -42,6 +42,35 @@ class ContextEmbeddingIndexerTests {
     }
 
     @Test
+    void shouldNeverSendMoreThanProviderSafeBatchSizeWhenConfiguredBatchIsLarger() {
+        ContextChunkRepository repository = mock(ContextChunkRepository.class);
+        EmbeddingGateway gateway = mock(EmbeddingGateway.class);
+        ContextEmbeddingStore store = mock(ContextEmbeddingStore.class);
+        EmbeddingProperties properties = new EmbeddingProperties(true, "http://embedding", "key", "model",
+                2, 20, 1_000, 100_000, 1, 0, 10_000);
+        List<ContextChunk> chunks = java.util.stream.IntStream.range(0, 11)
+                .mapToObj(index -> new ContextChunk("tenant-a", "DOCUMENT", "doc-1", index,
+                        "第" + index + "块", "hash-" + index))
+                .toList();
+        when(repository.findByParentTypeAndParentIdAndDeletedAtIsNullOrderByChunkIndexAsc("DOCUMENT", "doc-1"))
+                .thenReturn(chunks);
+        when(gateway.enabled()).thenReturn(true);
+        when(store.supported()).thenReturn(true);
+        when(gateway.embed(anyList())).thenAnswer(invocation -> {
+            List<String> inputs = invocation.getArgument(0);
+            return inputs.stream()
+                    .map(value -> new EmbeddingVector("model", List.of(0.1, 0.2)))
+                    .toList();
+        });
+
+        ContextEmbeddingIndexer indexer = new ContextEmbeddingIndexer(repository, gateway, store, properties);
+
+        assertEquals(11, indexer.indexParent("DOCUMENT", "doc-1"));
+        org.mockito.Mockito.verify(gateway).embed(org.mockito.ArgumentMatchers.argThat(values -> values.size() == 10));
+        org.mockito.Mockito.verify(gateway).embed(org.mockito.ArgumentMatchers.argThat(values -> values.size() == 1));
+    }
+
+    @Test
     void shouldReuseTenantAndModelScopedCacheWithoutCallingEmbeddingApi() {
         ContextChunkRepository repository = mock(ContextChunkRepository.class);
         EmbeddingGateway gateway = mock(EmbeddingGateway.class);

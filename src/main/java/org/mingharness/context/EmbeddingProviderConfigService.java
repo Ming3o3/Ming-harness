@@ -51,7 +51,7 @@ public class EmbeddingProviderConfigService {
         return repository.findByTenantId(tenantId)
                 .map(value -> new ResolvedEmbeddingConfig(value.isEnabled(), value.getBaseUrl(),
                         decrypt(value.getApiKeyCiphertext()), value.getModelName(), value.getModelVersion(),
-                        value.getDimension(), defaults.batchSize(), defaults.maxInputChars(), defaults.maxInputTokens(),
+                        value.getDimension(), defaults.effectiveBatchSize(), defaults.maxInputChars(), defaults.maxInputTokens(),
                         defaults.maxResponseChars(), defaults.maxAttempts(), defaults.retryBackoffMs(), defaults.timeoutMs(),
                         "tenant:" + value.getId(), value.getUpdatedAt()))
                 .orElseGet(this::environmentConfig);
@@ -112,7 +112,7 @@ public class EmbeddingProviderConfigService {
                                              String modelVersion, int dimension, String source,
                                              java.time.Instant updatedAt) {
         return new ResolvedEmbeddingConfig(enabled, baseUrl, apiKey, model, modelVersion, dimension,
-                defaults.batchSize(), defaults.maxInputChars(), defaults.maxInputTokens(), defaults.maxResponseChars(),
+                defaults.effectiveBatchSize(), defaults.maxInputChars(), defaults.maxInputTokens(), defaults.maxResponseChars(),
                 defaults.maxAttempts(), defaults.retryBackoffMs(), defaults.timeoutMs(), source, updatedAt);
     }
 

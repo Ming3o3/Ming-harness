@@ -362,7 +362,7 @@ public class VectorContextRetriever {
         return configService == null
                 ? new EmbeddingProviderConfigService.ResolvedEmbeddingConfig(embeddingProperties.enabled(),
                 embeddingProperties.baseUrl(), embeddingProperties.apiKey(), embeddingProperties.model(),
-                embeddingProperties.modelVersion(), embeddingProperties.dimension(), embeddingProperties.batchSize(),
+                embeddingProperties.modelVersion(), embeddingProperties.dimension(), embeddingProperties.effectiveBatchSize(),
                 embeddingProperties.maxInputChars(), embeddingProperties.maxInputTokens(), embeddingProperties.maxResponseChars(),
                 embeddingProperties.maxAttempts(), embeddingProperties.retryBackoffMs(), embeddingProperties.timeoutMs(),
                 "environment", null)

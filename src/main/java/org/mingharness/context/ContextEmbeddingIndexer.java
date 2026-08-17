@@ -131,7 +131,7 @@ public class ContextEmbeddingIndexer {
     }
 
     public int batchSize() {
-        return properties.batchSize();
+        return properties.effectiveBatchSize();
     }
 
     public int batchSize(String tenantId) {
@@ -174,7 +174,7 @@ public class ContextEmbeddingIndexer {
         return configService == null
                 ? new EmbeddingProviderConfigService.ResolvedEmbeddingConfig(properties.enabled(), properties.baseUrl(),
                 properties.apiKey(), properties.model(), properties.modelVersion(), properties.dimension(),
-                properties.batchSize(), properties.maxInputChars(), properties.maxInputTokens(),
+                properties.effectiveBatchSize(), properties.maxInputChars(), properties.maxInputTokens(),
                 properties.maxResponseChars(), properties.maxAttempts(), properties.retryBackoffMs(), properties.timeoutMs(),
                 "environment", null)
                 : configService.resolve(tenantId);
