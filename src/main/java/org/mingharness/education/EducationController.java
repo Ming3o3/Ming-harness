@@ -217,7 +217,8 @@ public class EducationController {
             @RequestParam String gradeLevel,
             @RequestParam String curriculumVersion,
             @RequestParam String conceptKey,
-            @RequestParam(required = false) String profileId) {
+            @RequestParam(required = false) String profileId,
+            @RequestParam(required = false) String programmingLanguage) {
         HarnessIdentity identity = identity();
         LearnerProfile profile = learnerService.profileFor(identity.tenantId(), identity.userId(), profileId)
                 .orElse(null);
@@ -228,9 +229,9 @@ public class EducationController {
                     "EDUCATION_CONTEXT_PROFILE_MISMATCH", "课程上下文必须与学习者画像一致");
         }
         EducationRetrievalFilter filter = new EducationRetrievalFilter(
-                subject, gradeLevel, curriculumVersion, conceptKey, null, null,
+                subject, gradeLevel, curriculumVersion, conceptKey, programmingLanguage, null, null,
                 profile == null ? Map.of() : learnerService.masteryScores(identity.tenantId(), identity.userId(),
-                        profile.getId()));
+                        profile.getId()), null, Map.of(), true);
         return EducationDependencyGraphView.from(knowledgeGraphService.resolve(identity.tenantId(), filter));
     }
 

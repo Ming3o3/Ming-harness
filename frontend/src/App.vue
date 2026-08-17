@@ -4093,7 +4093,7 @@ watch(noticeMessage, (message) => {
 watch(chatEducation, persistChatEducation, { deep: true })
 
 watch(
-  [activeLearnerProfile, activeLearningGoal, () => chatEducation.conceptKey],
+  [activeLearnerProfile, activeLearningGoal, () => chatEducation.conceptKey, () => chatEducation.programmingLanguage],
   () => { void loadEducationDependencyGraph() },
   { deep: true },
 )
@@ -4552,6 +4552,7 @@ async function loadEducationDependencyGraph() {
       curriculumVersion: profile.curriculumVersion,
       conceptKey: concept,
       profileId: profile.id,
+      programmingLanguage: chatEducation.programmingLanguage,
     })
     if (requestId === educationDependencyGraphRequestId) {
       educationDependencyGraph.value = graph

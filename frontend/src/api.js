@@ -352,7 +352,7 @@ export const api = {
   createMemory: (payload) => request('/context/memories', { method: 'POST', body: JSON.stringify(payload) }),
   deleteMemory: (memoryId) => request(`/context/memories/${encodeURIComponent(memoryId)}`, { method: 'DELETE' }),
   listEducationSources: () => request('/education/sources'),
-  getEducationDependencyGraph: ({ subject, gradeLevel, curriculumVersion, conceptKey, profileId } = {}) => {
+  getEducationDependencyGraph: ({ subject, gradeLevel, curriculumVersion, conceptKey, profileId, programmingLanguage } = {}) => {
     const params = new URLSearchParams({
       subject: subject || '',
       gradeLevel: gradeLevel || '',
@@ -360,6 +360,7 @@ export const api = {
       conceptKey: conceptKey || '',
     })
     if (profileId) params.set('profileId', profileId)
+    if (programmingLanguage) params.set('programmingLanguage', programmingLanguage)
     return request(`/education/dependency-graph?${params.toString()}`)
   },
   saveEducationSource: (payload) => request('/education/sources', {

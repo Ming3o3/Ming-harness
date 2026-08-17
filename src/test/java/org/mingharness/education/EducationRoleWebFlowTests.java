@@ -122,6 +122,36 @@ class EducationRoleWebFlowTests {
     }
 
     @Test
+    void shouldPreviewDependencyGraphInTheRequestedProgrammingLanguage() throws Exception {
+        HttpResponse<String> pythonDocument = request("teacher-flow-key", "POST", "/api/context/documents",
+                "{\"title\":\"Python 递归教材\",\"content\":\"递归函数需要栈帧基础。\","
+                        + "\"sensitivity\":\"INTERNAL\",\"allowedUsers\":\"" + TEACHER + "\"}");
+        assertEquals(201, pythonDocument.statusCode(), pythonDocument.body());
+        String pythonDocumentId = json(pythonDocument).path("id").asText();
+        HttpResponse<String> pythonSource = request("teacher-flow-key", "POST", "/api/education/sources",
+                sourceRequest(pythonDocumentId, "编程", "大一", "课程版", "递归", "栈", "PYTHON"));
+        assertEquals(201, pythonSource.statusCode(), pythonSource.body());
+
+        HttpResponse<String> javaDocument = request("teacher-flow-key", "POST", "/api/context/documents",
+                "{\"title\":\"Java 递归教材\",\"content\":\"递归函数需要对象基础。\","
+                        + "\"sensitivity\":\"INTERNAL\",\"allowedUsers\":\"" + TEACHER + "\"}");
+        assertEquals(201, javaDocument.statusCode(), javaDocument.body());
+        String javaDocumentId = json(javaDocument).path("id").asText();
+        HttpResponse<String> javaSource = request("teacher-flow-key", "POST", "/api/education/sources",
+                sourceRequest(javaDocumentId, "编程", "大一", "课程版", "递归", "对象", "JAVA"));
+        assertEquals(201, javaSource.statusCode(), javaSource.body());
+
+        HttpResponse<String> graph = request("teacher-flow-key", "GET",
+                "/api/education/dependency-graph?subject=%E7%BC%96%E7%A8%8B&gradeLevel=%E5%A4%A7%E4%B8%80"
+                        + "&curriculumVersion=%E8%AF%BE%E7%A8%8B%E7%89%88&conceptKey=%E9%80%92%E5%BD%92"
+                        + "&programmingLanguage=PYTHON", null);
+        assertEquals(200, graph.statusCode(), graph.body());
+        JsonNode prerequisites = json(graph).path("prerequisites");
+        assertEquals(1, prerequisites.size(), graph.body());
+        assertEquals("栈", prerequisites.get(0).path("conceptKey").asText(), graph.body());
+    }
+
+    @Test
     void shouldCompleteTeacherStudentCourseBusinessLoopOverHttp() throws Exception {
         // 学生只消费课程，不能创建课程或维护课程资料。
         HttpResponse<String> studentCourseDenied = request("student-flow-key", "POST",
@@ -419,11 +449,21 @@ class EducationRoleWebFlowTests {
     }
 
     private String sourceRequest(String documentId) {
-        return "{\"documentId\":\"" + documentId + "\",\"subject\":\"数学\","
-                + "\"gradeLevel\":\"高中一年级\",\"curriculumVersion\":\"人教A版\","
-                + "\"chapter\":\"函数\",\"learningObjectives\":\"掌握定义域判定\","
-                + "\"conceptTags\":\"函数定义域\",\"prerequisiteConcepts\":\"函数概念\","
-                + "\"difficultyLevel\":3,\"sourceType\":\"TEXTBOOK\"}";
+        return sourceRequest(documentId, "数学", "高中一年级", "人教A版",
+                "函数定义域", "函数概念", null);
+    }
+
+    private String sourceRequest(String documentId, String subject, String gradeLevel,
+                                 String curriculumVersion, String conceptTags,
+                                 String prerequisiteConcepts, String programmingLanguage) {
+        return "{\"documentId\":\"" + documentId + "\",\"subject\":\"" + subject + "\","
+                + "\"gradeLevel\":\"" + gradeLevel + "\",\"curriculumVersion\":\""
+                + curriculumVersion + "\",\"chapter\":\"函数\","
+                + "\"learningObjectives\":\"掌握定义域判定\",\"conceptTags\":\""
+                + conceptTags + "\",\"prerequisiteConcepts\":\"" + prerequisiteConcepts + "\","
+                + "\"difficultyLevel\":3,\"sourceType\":\"TEXTBOOK\""
+                + (programmingLanguage == null ? "" : ",\"programmingLanguage\":\""
+                + programmingLanguage + "\"") + "}";
     }
 
     private HttpResponse<String> request(String key, String method, String path, String body) throws Exception {
