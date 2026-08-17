@@ -16,8 +16,16 @@ public record LearningAssignmentTestCaseRequest(
         boolean hidden,
         @DecimalMin(value = "0.01", message = "测试权重必须大于 0")
         @DecimalMax(value = "100", message = "测试权重不能超过 100") Double weight,
-        Integer sequence
+        Integer sequence,
+        @Size(max = 255, message = "知识点长度不能超过 255 个字符") String conceptKey
 ) {
+    /** 兼容尚未标注知识点的旧接口调用方。 */
+    public LearningAssignmentTestCaseRequest(String caseKey, String name, String input,
+                                             String expectedOutput, boolean hidden,
+                                             Double weight, Integer sequence) {
+        this(caseKey, name, input, expectedOutput, hidden, weight, sequence, null);
+    }
+
     public double effectiveWeight() {
         return weight == null ? 1.0 : weight;
     }

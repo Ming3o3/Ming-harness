@@ -5,12 +5,19 @@ public record EducationProgrammingTestCase(
         String caseKey,
         String input,
         String expectedOutput,
-        double weight
+        double weight,
+        String conceptKey
 ) {
+    public EducationProgrammingTestCase(String caseKey, String input, String expectedOutput,
+                                        double weight) {
+        this(caseKey, input, expectedOutput, weight, null);
+    }
+
     public EducationProgrammingTestCase {
         caseKey = caseKey == null ? "" : caseKey.trim();
         input = input == null ? "" : input;
         expectedOutput = expectedOutput == null ? "" : expectedOutput;
         weight = !Double.isFinite(weight) || weight <= 0.0 ? 1.0 : Math.min(100.0, weight);
+        conceptKey = conceptKey == null || conceptKey.isBlank() ? null : conceptKey.trim();
     }
 }

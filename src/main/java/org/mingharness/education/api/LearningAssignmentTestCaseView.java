@@ -9,6 +9,7 @@ public record LearningAssignmentTestCaseView(
         String id,
         String learningAssignmentId,
         String caseKey,
+        String conceptKey,
         String name,
         String input,
         String expectedOutput,
@@ -30,7 +31,7 @@ public record LearningAssignmentTestCaseView(
     private static LearningAssignmentTestCaseView from(LearningAssignmentTestCase item,
                                                        String expectedOutput) {
         return new LearningAssignmentTestCaseView(item.getId(), item.getLearningAssignmentId(),
-                item.getCaseKey(), item.getName(), item.getInputData(), expectedOutput,
+                item.getCaseKey(), item.getConceptKey(), item.getName(), item.getInputData(), expectedOutput,
                 item.isHidden(), item.getWeight(), item.getSequence(), item.isEnabled(),
                 item.getCreatedAt(), item.getUpdatedAt());
     }

@@ -24,6 +24,9 @@ public class LearningAssignmentTestCase {
     private String learningAssignmentId;
     @Column(name = "case_key", nullable = false, length = 64)
     private String caseKey;
+    /** 可选的知识点标注；为空时行为证据回退到作业目标知识点。 */
+    @Column(name = "concept_key", length = 255)
+    private String conceptKey;
     @Column(length = 255)
     private String name;
     @Column(name = "input_data", nullable = false, columnDefinition = "text")
@@ -50,11 +53,20 @@ public class LearningAssignmentTestCase {
                                       String caseKey, String name, String inputData,
                                       String expectedOutput, boolean hidden, double weight,
                                       int sequence) {
+        this(tenantId, learningAssignmentId, caseKey, null, name, inputData, expectedOutput,
+                hidden, weight, sequence);
+    }
+
+    public LearningAssignmentTestCase(String tenantId, String learningAssignmentId,
+                                      String caseKey, String conceptKey, String name,
+                                      String inputData, String expectedOutput, boolean hidden,
+                                      double weight, int sequence) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = required(tenantId, "tenantId");
         this.learningAssignmentId = required(learningAssignmentId, "learningAssignmentId");
         this.caseKey = required(caseKey, "caseKey");
         if (this.caseKey.length() > 64) throw new IllegalArgumentException("caseKey 不能超过 64 个字符");
+        this.conceptKey = optional(conceptKey);
         this.name = optional(name);
         this.inputData = inputData == null ? "" : inputData;
         this.expectedOutput = requiredText(expectedOutput, "expectedOutput");
@@ -96,6 +108,7 @@ public class LearningAssignmentTestCase {
     public String getTenantId() { return tenantId; }
     public String getLearningAssignmentId() { return learningAssignmentId; }
     public String getCaseKey() { return caseKey; }
+    public String getConceptKey() { return conceptKey; }
     public String getName() { return name; }
     public String getInputData() { return inputData; }
     public String getExpectedOutput() { return expectedOutput; }

@@ -20,7 +20,7 @@ public final class EducationProgrammingTestCaseSnapshotCodec {
         List<EducationProgrammingTestCase> cases = source == null ? List.of() : source.stream()
                 .filter(item -> item != null && item.isEnabled())
                 .map(item -> new EducationProgrammingTestCase(item.getCaseKey(), item.getInputData(),
-                        item.getExpectedOutput(), item.getWeight()))
+                        item.getExpectedOutput(), item.getWeight(), item.getConceptKey()))
                 .toList();
         try {
             return OBJECT_MAPPER.writeValueAsString(new EducationProgrammingTestCaseSnapshot(
@@ -47,7 +47,7 @@ public final class EducationProgrammingTestCaseSnapshotCodec {
                     String expectedOutput = text(item, "expectedOutput");
                     if (caseKey.isBlank() || expectedOutput.isBlank()) continue;
                     cases.add(new EducationProgrammingTestCase(caseKey, text(item, "input"),
-                            expectedOutput, number(item, "weight", 1.0)));
+                            expectedOutput, number(item, "weight", 1.0), textOrNull(item, "conceptKey")));
                 }
             }
             return new EducationProgrammingTestCaseSnapshot(version, cases);
@@ -64,5 +64,10 @@ public final class EducationProgrammingTestCaseSnapshotCodec {
     private static double number(JsonNode node, String field, double fallback) {
         JsonNode value = node.get(field);
         return value != null && value.isNumber() ? value.asDouble(fallback) : fallback;
+    }
+
+    private static String textOrNull(JsonNode node, String field) {
+        String value = text(node, field).trim();
+        return value.isBlank() ? null : value;
     }
 }

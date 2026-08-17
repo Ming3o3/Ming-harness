@@ -51,6 +51,7 @@ public class LearningAssignmentTestCaseService {
         String expectedOutput = rawTestData(request == null ? null : request.expectedOutput(), "期望输出");
         LearningAssignmentTestCase saved = repository.save(new LearningAssignmentTestCase(
                 tenantId, assignmentId, caseKey,
+                cleanNullable(request == null ? null : request.conceptKey()),
                 cleanNullable(request == null ? null : request.name()), input, expectedOutput,
                 request != null && request.hidden(), request == null ? 1.0 : request.effectiveWeight(),
                 request == null ? 0 : request.effectiveSequence()));

@@ -31,9 +31,10 @@ class LearningAssignmentTestCaseServiceTests {
         var result = new LearningAssignmentTestCaseService(assignments, repository,
                 new SensitiveDataSanitizer()).create("tenant-a", "teacher-1", assignment.getId(),
                 new LearningAssignmentTestCaseRequest("normal", "普通样例", "2 3\n", "5\n",
-                        false, 2.0, 1));
+                        false, 2.0, 1, "循环"));
 
         assertEquals("normal", result.caseKey());
+        assertEquals("循环", result.conceptKey());
         assertEquals("5\n", result.expectedOutput());
         assertEquals(2.0, result.weight());
     }

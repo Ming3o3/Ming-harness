@@ -13,7 +13,7 @@ class EducationProgrammingTestCaseSnapshotCodecTests {
     @Test
     void freezesOnlyEnabledCasesAndPreservesExactInputOutput() {
         LearningAssignmentTestCase visible = new LearningAssignmentTestCase(
-                "tenant-a", "assignment-a", "normal", "普通样例", "2 3\n", "5\n",
+                "tenant-a", "assignment-a", "normal", "循环", "普通样例", "2 3\n", "5\n",
                 false, 2.0, 1);
         LearningAssignmentTestCase hidden = new LearningAssignmentTestCase(
                 "tenant-a", "assignment-a", "edge", "边界样例", "0 0\n", "0\n",
@@ -26,6 +26,7 @@ class EducationProgrammingTestCaseSnapshotCodecTests {
 
         assertEquals(1, decoded.cases().size());
         assertEquals("normal", decoded.cases().get(0).caseKey());
+        assertEquals("循环", decoded.cases().get(0).conceptKey());
         assertEquals("2 3\n", decoded.cases().get(0).input());
         assertEquals("5\n", decoded.cases().get(0).expectedOutput());
         assertEquals(2.0, decoded.cases().get(0).weight());
