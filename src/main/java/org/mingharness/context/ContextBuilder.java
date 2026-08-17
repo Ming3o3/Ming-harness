@@ -140,9 +140,10 @@ public class ContextBuilder {
             }
         }
         ContextResult vectorResult = new ContextResult("", List.of());
-        // 保持向量召回 API 的旧过滤器契约；图扩展首先作用于关键词候选和统一选择阶段。
-        // 生产向量实现可通过冻结快照自行扩展候选，旧的检索适配器仍能无感兼容。
-        EducationRetrievalFilter vectorFilter = educationFilter;
+        // 完整策略和图相关策略必须让图扩展后的知识点集合进入向量召回，
+        // 否则向量路径永远只能召回目标知识点，图驱动只能停留在关键词补充阶段。
+        // 不使用依赖图的消融策略中 effectiveEducationFilter 与原过滤器保持一致。
+        EducationRetrievalFilter vectorFilter = effectiveEducationFilter;
         if (strategy.usesVector()) {
             try {
                 vectorResult = vectorFilter == null

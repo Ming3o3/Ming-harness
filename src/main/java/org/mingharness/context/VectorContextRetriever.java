@@ -66,13 +66,20 @@ public class VectorContextRetriever {
                                AND (:educationCurriculumVersion IS NULL
                                     OR es.curriculum_version = :educationCurriculumVersion)
                                AND (:educationConceptKey IS NULL
-                                    OR LOWER(:educationConceptKey) = ANY(
-                                        string_to_array(LOWER(es.concept_tags), ','))
+                                    OR EXISTS (
+                                        SELECT 1
+                                          FROM regexp_split_to_table(
+                                              COALESCE(LOWER(es.concept_tags), ''), '[,，;；\n]+') AS split_tag(value)
+                                         WHERE TRIM(split_tag.value) = LOWER(:educationConceptKey))
                                     OR (:educationConceptKeys IS NOT NULL AND EXISTS (
                                         SELECT 1
-                                          FROM unnest(string_to_array(LOWER(:educationConceptKeys), ',')) requested_key
-                                         WHERE requested_key = ANY(
-                                            string_to_array(LOWER(es.concept_tags), ',')))))
+                                          FROM regexp_split_to_table(
+                                              LOWER(:educationConceptKeys), '[,，;；\n]+') AS requested(value)
+                                         WHERE EXISTS (
+                                             SELECT 1
+                                               FROM regexp_split_to_table(
+                                                   COALESCE(LOWER(es.concept_tags), ''), '[,，;；\n]+') AS split_tag(value)
+                                              WHERE TRIM(requested.value) = TRIM(split_tag.value)))))
                                AND (:educationMinDifficulty IS NULL
                                     OR es.difficulty_level >= :educationMinDifficulty)
                                AND (:educationMaxDifficulty IS NULL

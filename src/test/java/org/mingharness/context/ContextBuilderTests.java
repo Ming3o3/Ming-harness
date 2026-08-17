@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -27,8 +28,38 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import org.mockito.ArgumentCaptor;
 
 class ContextBuilderTests {
+
+    @Test
+    void shouldPassGraphExpandedConceptsToVectorRecall() {
+        KnowledgeDocumentRepository documentRepository = mock(KnowledgeDocumentRepository.class);
+        MemoryEntryRepository memoryRepository = mock(MemoryEntryRepository.class);
+        VectorContextRetriever vectorRetriever = mock(VectorContextRetriever.class);
+        EducationKnowledgeSourceRepository sourceRepository = mock(EducationKnowledgeSourceRepository.class);
+        EducationKnowledgeGraphService graphService = mock(EducationKnowledgeGraphService.class);
+        ContextBuilder builder = new ContextBuilder(documentRepository, memoryRepository, vectorRetriever,
+                new HarnessMetrics(new SimpleMeterRegistry()),
+                new ContextRetrievalProperties(20, 5, 1, 0.2), sourceRepository, graphService);
+        EducationRetrievalFilter filter = new EducationRetrievalFilter(
+                "编程", "大一", "课程版", "循环", null, null, Map.of("循环", 0.2, "变量", 0.1));
+        when(graphService.resolve("tenant-a", filter)).thenReturn(new EducationDependencyGraph(
+                "循环", List.of(new EducationDependencyPath("变量", 1, 0.1, 0.9)), false));
+        when(vectorRetriever.retrieve(eq("tenant-a"), eq("student"), eq("循环"), eq(2_000),
+                any(EducationRetrievalFilter.class))).thenReturn(new ContextResult("", List.of()));
+        when(sourceRepository.findByTenantIdAndDeletedAtIsNullOrderByUpdatedAtDesc("tenant-a"))
+                .thenReturn(List.of());
+
+        builder.build("tenant-a", "student", "循环", 2_000, filter, EducationRetrievalStrategy.FULL);
+
+        ArgumentCaptor<EducationRetrievalFilter> captured = ArgumentCaptor.forClass(EducationRetrievalFilter.class);
+        verify(vectorRetriever).retrieve(eq("tenant-a"), eq("student"), eq("循环"), eq(2_000), captured.capture());
+        assertEquals(Set.of("循环", "变量"), captured.getValue().retrievalConceptKeys());
+        assertEquals(Set.of("循环", "变量"), captured.getValue().masteryScores().keySet());
+    }
 
     @Test
     void shouldUseRrfToPromoteAParentFoundByBothRetrievers() {
@@ -121,7 +152,8 @@ class ContextBuilderTests {
                 "函数", "代数", 3, "TEXTBOOK");
         EducationRetrievalFilter filter = new EducationRetrievalFilter(
                 "数学", "高中一年级", "人教A版", "函数", null, null);
-        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 4_000, filter))
+        when(vectorRetriever.retrieve(eq("tenant-a"), eq("student"), eq("函数"), eq(4_000),
+                any(EducationRetrievalFilter.class)))
                 .thenReturn(new ContextResult("", List.of()));
         when(sourceRepository.findByTenantIdAndDeletedAtIsNullOrderByUpdatedAtDesc("tenant-a"))
                 .thenReturn(List.of(mathSource, physicsSource));
@@ -156,7 +188,8 @@ class ContextBuilderTests {
                 "理解函数定义域", "函数,定义域", "集合", 3, "TEXTBOOK");
         EducationRetrievalFilter filter = new EducationRetrievalFilter(
                 "数学", "高中一年级", "人教A版", "函数", null, null);
-        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 4_000, filter))
+        when(vectorRetriever.retrieve(eq("tenant-a"), eq("student"), eq("函数"), eq(4_000),
+                any(EducationRetrievalFilter.class)))
                 .thenReturn(new ContextResult("", List.of()));
         when(sourceRepository.findByTenantIdAndDeletedAtIsNullOrderByUpdatedAtDesc("tenant-a"))
                 .thenReturn(List.of(courseSource));
@@ -222,7 +255,8 @@ class ContextBuilderTests {
         EducationRetrievalFilter filter = new EducationRetrievalFilter(
                 "数学", "高中一年级", "人教A版", "函数", null, null,
                 Map.of("函数", 0.20, "集合", 0.10, "定义域", 0.05));
-        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 4_000, filter))
+        when(vectorRetriever.retrieve(eq("tenant-a"), eq("student"), eq("函数"), eq(4_000),
+                any(EducationRetrievalFilter.class)))
                 .thenReturn(new ContextResult("vector-context", List.of(
                         new ContextEvidence(hard.getId(), "函数综合提升", "document:" + hard.getId(), "综合"),
                         new ContextEvidence(easy.getId(), "函数基础讲解", "document:" + easy.getId(), "基础"))));
@@ -318,7 +352,8 @@ class ContextBuilderTests {
                 new EducationDependencyPath("集合", 1, 0.0, 1.0)), false);
 
         when(graphService.resolve("tenant-a", filter)).thenReturn(graph);
-        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 4_000, filter))
+        when(vectorRetriever.retrieve(eq("tenant-a"), eq("student"), eq("函数"), eq(4_000),
+                any(EducationRetrievalFilter.class)))
                 .thenReturn(new ContextResult("vector-context", List.of(
                         new ContextEvidence(supplement.getId(), "集合前置补强",
                                 "document:" + supplement.getId(), "集合", 1.0, "", List.of()),
@@ -374,7 +409,8 @@ class ContextBuilderTests {
                 new EducationDependencyPath("高阶", 2, 0.0, 0.9)), false);
 
         when(graphService.resolve("tenant-a", filter)).thenReturn(graph);
-        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 26, filter))
+        when(vectorRetriever.retrieve(eq("tenant-a"), eq("student"), eq("函数"), eq(26),
+                any(EducationRetrievalFilter.class)))
                 .thenReturn(new ContextResult("vector-context", List.of(
                         new ContextEvidence(target.getId(), "目标", "document:" + target.getId(), "目标内容", 1.0, "", List.of()),
                         new ContextEvidence(deep.getId(), "深层前置", "document:" + deep.getId(), "高阶", 1.0, "", List.of()),
@@ -428,7 +464,8 @@ class ContextBuilderTests {
                 new EducationDependencyPath("集合", 2, 0.1, 0.9),
                 new EducationDependencyPath("定义域", 1, 0.1, 0.9)), false);
         when(graphService.resolve("tenant-a", filter)).thenReturn(graph);
-        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 4_000, filter))
+        when(vectorRetriever.retrieve(eq("tenant-a"), eq("student"), eq("函数"), eq(4_000),
+                any(EducationRetrievalFilter.class)))
                 .thenReturn(new ContextResult("vector-context", List.of(
                         new ContextEvidence(targetOnly.getId(), "目标讲解", "document:" + targetOnly.getId(), "目标"),
                         new ContextEvidence(prerequisite.getId(), "定义域补强", "document:" + prerequisite.getId(), "前置"))));
@@ -462,7 +499,8 @@ class ContextBuilderTests {
                 new ContextRetrievalProperties(20, 5, 1, 0.2), sourceRepository, graphService);
         EducationRetrievalFilter filter = new EducationRetrievalFilter(
                 "数学", "高中一年级", "人教A版", "函数", null, null, Map.of("函数", 0.1));
-        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 2_000, filter))
+        when(vectorRetriever.retrieve(eq("tenant-a"), eq("student"), eq("函数"), eq(2_000),
+                any(EducationRetrievalFilter.class)))
                 .thenReturn(new ContextResult("vector", List.of(new ContextEvidence(
                         "doc-1", "函数课件", "document:doc-1", "向量片段"))));
 
@@ -518,7 +556,8 @@ class ContextBuilderTests {
                 new ContextRetrievalProperties(20, 5, 1, 0.2), sourceRepository, graphService);
         EducationRetrievalFilter filter = new EducationRetrievalFilter(
                 "数学", "高中一年级", "人教A版", "函数", null, null, Map.of());
-        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 2_000, filter))
+        when(vectorRetriever.retrieve(eq("tenant-a"), eq("student"), eq("函数"), eq(2_000),
+                any(EducationRetrievalFilter.class)))
                 .thenReturn(new ContextResult("", List.of()));
         when(sourceRepository.findByTenantIdAndDeletedAtIsNullOrderByUpdatedAtDesc("tenant-a"))
                 .thenReturn(List.of());
@@ -545,7 +584,8 @@ class ContextBuilderTests {
         EducationRetrievalFilter filter = new EducationRetrievalFilter(
                 "数学", "高中一年级", "人教A版", "函数", null, null,
                 java.util.Map.of("函数", 0.1, "集合", 0.1));
-        when(vectorRetriever.retrieve("tenant-a", "student", "函数", 2_000, filter))
+        when(vectorRetriever.retrieve(eq("tenant-a"), eq("student"), eq("函数"), eq(2_000),
+                any(EducationRetrievalFilter.class)))
                 .thenReturn(new ContextResult("vector", List.of(new ContextEvidence(
                         "doc-1", "前置回顾", "document:doc-1", "集合"))));
         when(sourceRepository.findByTenantIdAndDocumentIdAndDeletedAtIsNull("tenant-a", "doc-1"))
