@@ -263,6 +263,10 @@ public class LearningRecommendationService {
             case TYPE -> "追踪每个表达式的类型，并解释类型转换是否成立";
             case DEPENDENCY -> "检查模块、包或导入关系，并说明运行环境需要什么依赖";
             case COMPILATION -> "逐条解释编译器诊断，并定位最小可修复位置";
+            case RUNTIME -> "分析运行时异常、输入处理和状态变化";
+            case OUTPUT_MISMATCH -> "逐项比较实际输出与题目要求，先定位行为差异再修改";
+            case EDGE_CASE -> "补充边界输入并解释为什么原实现没有覆盖它";
+            case COMPLEXITY -> "分析时间和空间复杂度，设计能暴露性能问题的测试";
             case TIMEOUT -> "检查循环终止条件和时间复杂度";
             case UNKNOWN -> "阅读评测诊断，提出可验证的错误原因";
             case NONE -> "复核代码思路";
@@ -283,6 +287,10 @@ public class LearningRecommendationService {
             case TYPE -> "类型错误";
             case DEPENDENCY -> "依赖/导入错误";
             case COMPILATION -> "编译错误";
+            case RUNTIME -> "运行时错误";
+            case OUTPUT_MISMATCH -> "输出不匹配";
+            case EDGE_CASE -> "边界情况";
+            case COMPLEXITY -> "复杂度风险";
             case TIMEOUT -> "超时风险";
             case UNKNOWN -> "未归类错误";
             case NONE -> "问题";

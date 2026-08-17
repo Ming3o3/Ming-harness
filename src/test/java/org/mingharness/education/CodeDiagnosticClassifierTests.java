@@ -36,6 +36,12 @@ class CodeDiagnosticClassifierTests {
         assertEquals(CodeDiagnosticCategory.NONE, classify(CodeEvaluationStatus.NOT_REQUESTED, ""));
     }
 
+    @Test
+    void classifiesOutputMismatchAsBehaviorEvidence() {
+        assertEquals(CodeDiagnosticCategory.OUTPUT_MISMATCH,
+                classify(CodeEvaluationStatus.FAILED, "行为测试：输出不匹配"));
+    }
+
     private CodeDiagnosticCategory classify(CodeEvaluationStatus status, String diagnostics) {
         return CodeDiagnosticClassifier.classify(new EducationCodeEvaluationResult(
                 status, diagnostics, "", 1, 4));

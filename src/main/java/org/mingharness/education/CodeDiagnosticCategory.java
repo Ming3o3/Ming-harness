@@ -9,6 +9,10 @@ public enum CodeDiagnosticCategory {
     TYPE,
     DEPENDENCY,
     COMPILATION,
+    RUNTIME,
+    OUTPUT_MISMATCH,
+    EDGE_CASE,
+    COMPLEXITY,
     TIMEOUT,
     UNKNOWN
 }

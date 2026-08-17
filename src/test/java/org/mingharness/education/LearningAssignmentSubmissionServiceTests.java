@@ -8,11 +8,13 @@ import org.mingharness.runtime.repository.RunRepository;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -153,6 +155,49 @@ class LearningAssignmentSubmissionServiceTests {
                                 LearningAssignmentSubmissionType.CODE)));
 
         assertEquals("ASSIGNMENT_SUBMISSION_LANGUAGE_MISMATCH", exception.getCode());
+    }
+
+    @Test
+    void shouldPersistBehaviorEvidenceFromFrozenRunTestCases() {
+        LearningAssignmentService assignments = mock(LearningAssignmentService.class);
+        LearningAssignmentSubmissionRepository submissions = mock(LearningAssignmentSubmissionRepository.class);
+        RunRepository runs = mock(RunRepository.class);
+        LearningAssignmentNotificationService notifications = mock(LearningAssignmentNotificationService.class);
+        EducationCodeEvaluator evaluator = mock(EducationCodeEvaluator.class);
+        LearningAssignment assignment = new LearningAssignment("tenant-a", "teacher-1", "student-1",
+                "Python 行为作业", "完成函数", "编程", "大一", "课程版", "函数", 0.8,
+                Instant.now().plusSeconds(3600), null, null, null, "python");
+        assignment.accept("profile-1", "goal-1", Instant.now());
+        Run run = successfulRun(assignment);
+        String snapshot = EducationProgrammingTestCaseSnapshotCodec.encode(List.of(
+                new LearningAssignmentTestCase("tenant-a", assignment.getId(), "normal", "普通样例",
+                        "2 3\n", "5\n", false, 1.0, 0)));
+        run.attachEducationConfiguration(run.educationConfiguration()
+                .withProgrammingTestCasesSnapshot(snapshot));
+        when(assignments.getForParticipant("tenant-a", "student-1", assignment.getId()))
+                .thenReturn(assignment);
+        when(runs.findTopByTenantIdAndUserIdAndEducationLearningAssignmentIdOrderByCreatedAtDesc(
+                "tenant-a", "student-1", assignment.getId())).thenReturn(Optional.of(run));
+        when(submissions.findByTenantIdAndLearningAssignmentIdAndRunId(
+                "tenant-a", assignment.getId(), run.getId())).thenReturn(Optional.empty());
+        when(evaluator.evaluate(eq("PYTHON"), eq("print('ok')"), any(EducationCodeEvaluationContext.class)))
+                .thenReturn(new EducationCodeEvaluationResult(CodeEvaluationStatus.PASSED,
+                        "行为测试快照通过", "normal: 5\n", 0, 42,
+                        List.of(new EducationCodeTestCaseResult("normal",
+                                CodeBehaviorEvaluationStatus.PASSED, "5\n", "5\n", "通过。", 40))));
+        when(submissions.save(any(LearningAssignmentSubmission.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        var result = new LearningAssignmentSubmissionService(assignments, submissions, runs,
+                notifications, new SensitiveDataSanitizer(), evaluator).submit(
+                "tenant-a", "student-1", assignment.getId(),
+                new LearningAssignmentSubmissionRequest(null, "print('ok')", "python",
+                        LearningAssignmentSubmissionType.CODE));
+
+        assertEquals("PASSED", result.codeBehaviorStatus());
+        assertEquals(1, result.codeTestCaseCount());
+        assertEquals(1, result.codePassedTestCaseCount());
+        assertEquals(1.0, result.codeTestPassRate());
     }
 
     private LearningAssignment assignment() {

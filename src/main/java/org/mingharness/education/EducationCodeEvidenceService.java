@@ -37,8 +37,8 @@ public class EducationCodeEvidenceService {
         if (assignment == null || run == null || evaluation == null
                 || evaluation.status() == CodeEvaluationStatus.UNAVAILABLE
                 || evaluation.status() == CodeEvaluationStatus.REJECTED
-                || evaluation.status() == CodeEvaluationStatus.ERROR
-                || evaluation.status() == CodeEvaluationStatus.TIMEOUT) {
+                || (evaluation.status() == CodeEvaluationStatus.ERROR
+                || (evaluation.status() == CodeEvaluationStatus.TIMEOUT && !evaluation.hasBehaviorEvidence()))) {
             return null;
         }
         if (!run.isEducationMode() || !learnerUserId.equals(run.getUserId())
@@ -51,8 +51,12 @@ public class EducationCodeEvidenceService {
         if (step == null) return null;
         String conceptKey = run.getEducationConceptKey();
         if (conceptKey == null || conceptKey.isBlank()) return null;
-        double observed = evaluation.status() == CodeEvaluationStatus.PASSED ? 0.8 : 0.2;
-        boolean correct = evaluation.status() == CodeEvaluationStatus.PASSED;
+        double observed = evaluation.hasBehaviorEvidence()
+                ? 0.2 + 0.6 * evaluation.testPassRate()
+                : (evaluation.status() == CodeEvaluationStatus.PASSED ? 0.8 : 0.2);
+        boolean correct = evaluation.hasBehaviorEvidence()
+                ? evaluation.testPassRate() >= 0.999999
+                : evaluation.status() == CodeEvaluationStatus.PASSED;
         double before = masteryRepository
                 .findByTenantIdAndLearnerProfileIdAndConceptKey(
                         tenantId, run.getEducationLearnerProfileId(), conceptKey)
@@ -61,7 +65,12 @@ public class EducationCodeEvidenceService {
                 tenantId, learnerUserId, run.getEducationLearnerProfileId(),
                 new MasteryUpdateRequest(conceptKey, observed, correct, null, null,
                         2, 0.5, false, false));
-        String evidenceText = "代码语法/编译检查：" + evaluation.status().name()
+        String evidenceText = evaluation.hasBehaviorEvidence()
+                ? "代码行为测试：" + evaluation.passedTestCaseCount() + "/"
+                + evaluation.testCaseCount() + "（通过率 "
+                + String.format(java.util.Locale.ROOT, "%.0f%%", evaluation.testPassRate() * 100.0)
+                + "）；" + evaluation.diagnostics()
+                : "代码语法/编译检查：" + evaluation.status().name()
                 + "；" + (evaluation.diagnostics() == null ? "" : evaluation.diagnostics());
         CodeDiagnosticCategory diagnosticCategory = CodeDiagnosticClassifier.classify(evaluation);
         AssessmentAttempt attempt = new AssessmentAttempt(tenantId, learnerUserId, run.getId(),

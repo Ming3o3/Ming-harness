@@ -16,6 +16,10 @@ public record LearningAssignmentSubmissionView(
         String codeEvaluationStatus,
         String codeDiagnostics,
         String codeDiagnosticCategory,
+        String codeBehaviorStatus,
+        int codeTestCaseCount,
+        int codePassedTestCaseCount,
+        double codeTestPassRate,
         long codeEvaluationDurationMs,
         Instant submittedAt
 ) {
@@ -25,7 +29,9 @@ public record LearningAssignmentSubmissionView(
                 submission.getRunId(), submission.getContent(),
                 submission.getSubmissionType().name(), submission.getProgrammingLanguage(),
                 submission.getCodeEvaluationStatus().name(), submission.getCodeDiagnostics(),
-                submission.getCodeDiagnosticCategory().name(),
+                submission.getCodeDiagnosticCategory().name(), submission.getCodeBehaviorStatus().name(),
+                submission.getCodeTestCaseCount(), submission.getCodePassedTestCaseCount(),
+                submission.getCodeTestPassRate(),
                 submission.getCodeEvaluationDurationMs(), submission.getSubmittedAt());
     }
 }

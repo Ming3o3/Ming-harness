@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,6 +28,9 @@ import java.util.concurrent.TimeUnit;
  */
 @Component
 public class DockerEducationCodeEvaluator implements EducationCodeEvaluator {
+
+    private static final int MAX_TEST_CASES = 50;
+    private static final int MAX_TEST_INPUT_BYTES = 20_000;
 
     private static final Map<String, String> SOURCE_FILES = Map.ofEntries(
             Map.entry("PYTHON", "main.py"), Map.entry("PY", "main.py"),
@@ -49,11 +53,17 @@ public class DockerEducationCodeEvaluator implements EducationCodeEvaluator {
 
     @Override
     public EducationCodeEvaluationResult evaluate(String programmingLanguage, String sourceCode) {
+        return evaluate(programmingLanguage, sourceCode, EducationCodeEvaluationContext.empty());
+    }
+
+    @Override
+    public EducationCodeEvaluationResult evaluate(String programmingLanguage, String sourceCode,
+                                                  EducationCodeEvaluationContext context) {
         String language = properties.normalizedLanguage(programmingLanguage);
         String fileName = SOURCE_FILES.get(language);
         if (fileName == null) {
             return new EducationCodeEvaluationResult(CodeEvaluationStatus.REJECTED,
-                    "当前仅支持 Python、JavaScript、Java、C、C++、Go 和 Rust 的语法/编译检查。",
+                    "当前仅支持 Python、JavaScript、Java、C、C++、Go 和 Rust 的语法/编译及行为检查。",
                     "", null, 0);
         }
         if (sourceCode == null || sourceCode.isBlank()) {
@@ -77,18 +87,74 @@ public class DockerEducationCodeEvaluator implements EducationCodeEvaluator {
             temporaryDirectory = Files.createTempDirectory(root, "education-code-");
             Files.writeString(temporaryDirectory.resolve(fileName), sourceCode,
                     StandardCharsets.UTF_8, StandardOpenOption.CREATE_NEW);
-            List<String> command = dockerCommand(language, temporaryDirectory, fileName);
-            ProcessResult result = run(command);
-            long durationMs = Duration.between(startedAt, Instant.now()).toMillis();
-            CodeEvaluationStatus status = result.timedOut()
-                    ? CodeEvaluationStatus.TIMEOUT
-                    : (result.exitCode() != null && result.exitCode() == 0
-                    ? CodeEvaluationStatus.PASSED : CodeEvaluationStatus.FAILED);
-            String output = sanitizer.sanitize(result.output());
-            String diagnostics = status == CodeEvaluationStatus.PASSED
-                    ? "语法/编译检查通过。" : trimDiagnostic(output);
-            return new EducationCodeEvaluationResult(status, diagnostics, output,
-                    result.exitCode(), durationMs);
+            EducationProgrammingTestCaseSnapshot snapshot = context == null
+                    ? EducationProgrammingTestCaseSnapshot.empty() : context.testCaseSnapshot();
+            if (snapshot.cases().isEmpty()) {
+                List<String> command = dockerCommand(language, temporaryDirectory, fileName, false);
+                ProcessResult result = run(command, "");
+                long durationMs = Duration.between(startedAt, Instant.now()).toMillis();
+                CodeEvaluationStatus status = result.timedOut()
+                        ? CodeEvaluationStatus.TIMEOUT
+                        : (result.exitCode() != null && result.exitCode() == 0
+                        ? CodeEvaluationStatus.PASSED : CodeEvaluationStatus.FAILED);
+                String output = sanitizer.sanitize(result.output());
+                String diagnostics = status == CodeEvaluationStatus.PASSED
+                        ? "语法/编译检查通过。" : trimDiagnostic(output);
+                return new EducationCodeEvaluationResult(status, diagnostics, output,
+                        result.exitCode(), durationMs);
+            }
+
+            List<EducationCodeTestCaseResult> testResults = new ArrayList<>();
+            StringBuilder diagnostics = new StringBuilder()
+                    .append("行为测试快照 ").append(snapshot.version()).append("：");
+            int executed = Math.min(MAX_TEST_CASES, snapshot.cases().size());
+            Integer lastExitCode = null;
+            for (int index = 0; index < executed; index++) {
+                EducationProgrammingTestCase testCase = snapshot.cases().get(index);
+                String input = testCase.input();
+                if (input.getBytes(StandardCharsets.UTF_8).length > MAX_TEST_INPUT_BYTES) {
+                    testResults.add(new EducationCodeTestCaseResult(testCase.caseKey(),
+                            CodeBehaviorEvaluationStatus.ERROR, "", testCase.expectedOutput(),
+                            "测试输入超过评测限制。", 0));
+                    continue;
+                }
+                Instant caseStartedAt = Instant.now();
+                ProcessResult result = run(dockerCommand(language, temporaryDirectory, fileName, true), input);
+                long caseDurationMs = Duration.between(caseStartedAt, Instant.now()).toMillis();
+                lastExitCode = result.exitCode();
+                String actualOutput = sanitizer.sanitize(result.output());
+                CodeBehaviorEvaluationStatus caseStatus;
+                String caseDiagnostics;
+                if (result.timedOut()) {
+                    caseStatus = CodeBehaviorEvaluationStatus.TIMEOUT;
+                    caseDiagnostics = "运行超时。";
+                } else if (result.exitCode() == null || result.exitCode() != 0) {
+                    caseStatus = CodeBehaviorEvaluationStatus.FAILED;
+                    caseDiagnostics = "运行或编译失败：" + trimDiagnostic(actualOutput);
+                } else if (!outputsEqual(actualOutput, testCase.expectedOutput())) {
+                    caseStatus = CodeBehaviorEvaluationStatus.FAILED;
+                    caseDiagnostics = "输出不匹配。";
+                } else {
+                    caseStatus = CodeBehaviorEvaluationStatus.PASSED;
+                    caseDiagnostics = "通过。";
+                }
+                testResults.add(new EducationCodeTestCaseResult(testCase.caseKey(), caseStatus,
+                        actualOutput, testCase.expectedOutput(), caseDiagnostics, caseDurationMs));
+                diagnostics.append(' ').append(testCase.caseKey()).append('=').append(caseStatus.name())
+                        .append('(').append(caseDiagnostics).append(" );");
+            }
+            if (snapshot.cases().size() > executed) {
+                diagnostics.append(" 已限制执行前 ").append(executed).append(" 个测试用例;");
+            }
+            boolean allPassed = !testResults.isEmpty()
+                    && testResults.stream().allMatch(EducationCodeTestCaseResult::passed)
+                    && executed == snapshot.cases().size();
+            CodeEvaluationStatus status = allPassed ? CodeEvaluationStatus.PASSED : CodeEvaluationStatus.FAILED;
+            String output = sanitizer.sanitize(testResults.stream()
+                    .map(item -> item.caseKey() + ": " + item.actualOutput())
+                    .reduce((left, right) -> left + "\n" + right).orElse(""));
+            return new EducationCodeEvaluationResult(status, trimDiagnostic(diagnostics.toString()),
+                    output, lastExitCode, Duration.between(startedAt, Instant.now()).toMillis(), testResults);
         } catch (IOException exception) {
             return new EducationCodeEvaluationResult(CodeEvaluationStatus.UNAVAILABLE,
                     "无法启动代码评测沙箱，请检查 Docker 服务和对应运行镜像。", "", null,
@@ -103,7 +169,7 @@ public class DockerEducationCodeEvaluator implements EducationCodeEvaluator {
         }
     }
 
-    private List<String> dockerCommand(String language, Path directory, String fileName) {
+    private List<String> dockerCommand(String language, Path directory, String fileName, boolean behavior) {
         String image = properties.imageFor(language);
         List<String> command = new ArrayList<>(List.of(
                 properties.dockerExecutable(), "run", "--rm", "--pull=never",
@@ -114,9 +180,28 @@ public class DockerEducationCodeEvaluator implements EducationCodeEvaluator {
                 "--cap-drop=ALL",
                 "--security-opt=no-new-privileges",
                 "--read-only",
-                "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
+                "--tmpfs", behavior ? "/tmp:rw,nosuid,size=64m" : "/tmp:rw,noexec,nosuid,size=64m",
                 "--mount", "type=bind,src=" + directory + ",dst=/workspace,readonly",
                 image));
+        if (behavior) {
+            switch (properties.normalizedLanguage(language)) {
+                case "PYTHON", "PY" -> command.addAll(List.of("python", "/workspace/" + fileName));
+                case "JAVASCRIPT", "JS", "NODE" -> command.addAll(List.of("node", "/workspace/" + fileName));
+                case "JAVA" -> command.addAll(List.of("sh", "-c",
+                        "mkdir -p /tmp/classes && javac -d /tmp/classes /workspace/" + fileName
+                                + " && java -cp /tmp/classes Main"));
+                case "C" -> command.addAll(List.of("sh", "-c",
+                        "gcc /workspace/" + fileName + " -o /tmp/program && /tmp/program"));
+                case "CPP", "C++", "CXX" -> command.addAll(List.of("sh", "-c",
+                        "g++ /workspace/" + fileName + " -o /tmp/program && /tmp/program"));
+                case "GO", "GOLANG" -> command.addAll(List.of("sh", "-c",
+                        "go build -o /tmp/program /workspace/" + fileName + " && /tmp/program"));
+                case "RUST", "RS" -> command.addAll(List.of("sh", "-c",
+                        "rustc /workspace/" + fileName + " -o /tmp/program && /tmp/program"));
+                default -> throw new IllegalArgumentException("unsupported language");
+            }
+            return List.copyOf(command);
+        }
         switch (properties.normalizedLanguage(language)) {
             case "PYTHON", "PY" -> command.addAll(List.of("python", "-m", "py_compile",
                     "/workspace/" + fileName));
@@ -135,7 +220,7 @@ public class DockerEducationCodeEvaluator implements EducationCodeEvaluator {
         return List.copyOf(command);
     }
 
-    private ProcessResult run(List<String> command) throws IOException, InterruptedException {
+    private ProcessResult run(List<String> command, String input) throws IOException, InterruptedException {
         ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true);
         Map<String, String> environment = builder.environment();
         environment.clear();
@@ -143,6 +228,11 @@ public class DockerEducationCodeEvaluator implements EducationCodeEvaluator {
         if (path != null && !path.isBlank()) environment.put("PATH", path);
         environment.put("LANG", "C.UTF-8");
         Process process = builder.start();
+        try (OutputStream stdin = process.getOutputStream()) {
+            if (input != null && !input.isEmpty()) {
+                stdin.write(input.getBytes(StandardCharsets.UTF_8));
+            }
+        }
         BoundedOutput output = new BoundedOutput(process, properties.maxOutputBytes());
         Thread reader = new Thread(output, "harness-code-evaluation-output");
         reader.setDaemon(true);
@@ -157,6 +247,22 @@ public class DockerEducationCodeEvaluator implements EducationCodeEvaluator {
         if (!finished) process.waitFor(1, TimeUnit.SECONDS);
         Integer exitCode = finished && !process.isAlive() ? process.exitValue() : null;
         return new ProcessResult(exitCode, !finished, output.output());
+    }
+
+    private boolean outputsEqual(String actual, String expected) {
+        return normalizeOutput(actual).equals(normalizeOutput(expected));
+    }
+
+    /** 只忽略平台换行和每行尾部空格，不改变代码输出的有效内容。 */
+    private String normalizeOutput(String value) {
+        String normalized = value == null ? "" : value.replace("\r\n", "\n").replace('\r', '\n');
+        String[] lines = normalized.split("\n", -1);
+        for (int index = 0; index < lines.length; index++) {
+            lines[index] = lines[index].replaceFirst("[ \\t]+$", "");
+        }
+        String result = String.join("\n", lines);
+        while (result.endsWith("\n")) result = result.substring(0, result.length() - 1);
+        return result;
     }
 
     private String trimDiagnostic(String value) {

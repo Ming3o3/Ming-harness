@@ -25,6 +25,18 @@ public final class CodeDiagnosticClassifier {
         if (evaluation.status() == CodeEvaluationStatus.TIMEOUT) return CodeDiagnosticCategory.TIMEOUT;
         String text = (evaluation.diagnostics() + "\n" + evaluation.output())
                 .toLowerCase(Locale.ROOT);
+        if (contains(text, "输出不匹配", "output mismatch", "wrong answer")) {
+            return CodeDiagnosticCategory.OUTPUT_MISMATCH;
+        }
+        if (contains(text, "边界", "edge case", "edge-case")) {
+            return CodeDiagnosticCategory.EDGE_CASE;
+        }
+        if (contains(text, "复杂度", "complexity", "time limit")) {
+            return CodeDiagnosticCategory.COMPLEXITY;
+        }
+        if (contains(text, "运行时", "runtime error", "traceback", "exception")) {
+            return CodeDiagnosticCategory.RUNTIME;
+        }
         if (contains(text, "indentationerror", "indentation error", "unexpected indent",
                 "missing }", "expected }", "unmatched", "unclosed")) {
             return CodeDiagnosticCategory.STRUCTURE;

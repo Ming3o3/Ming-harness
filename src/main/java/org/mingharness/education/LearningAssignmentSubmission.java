@@ -43,6 +43,15 @@ public class LearningAssignmentSubmission {
     @Enumerated(EnumType.STRING)
     @Column(name = "code_diagnostic_category", nullable = false, length = 32)
     private CodeDiagnosticCategory codeDiagnosticCategory;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "code_behavior_status", nullable = false, length = 32)
+    private CodeBehaviorEvaluationStatus codeBehaviorStatus;
+    @Column(name = "code_test_case_count", nullable = false)
+    private int codeTestCaseCount;
+    @Column(name = "code_passed_test_case_count", nullable = false)
+    private int codePassedTestCaseCount;
+    @Column(name = "code_test_pass_rate", nullable = false)
+    private double codeTestPassRate;
     @Column(name = "code_evaluation_duration_ms", nullable = false)
     private long codeEvaluationDurationMs;
     @Column(nullable = false)
@@ -56,7 +65,8 @@ public class LearningAssignmentSubmission {
                                         Instant submittedAt) {
         this(tenantId, learningAssignmentId, learnerUserId, runId, content,
                 LearningAssignmentSubmissionType.TEXT, null,
-                CodeEvaluationStatus.NOT_REQUESTED, null, CodeDiagnosticCategory.NONE, 0, submittedAt);
+                CodeEvaluationStatus.NOT_REQUESTED, null, CodeDiagnosticCategory.NONE,
+                CodeBehaviorEvaluationStatus.NOT_CONFIGURED, 0, 0, 0.0, 0, submittedAt);
     }
 
     public LearningAssignmentSubmission(String tenantId, String learningAssignmentId,
@@ -68,6 +78,7 @@ public class LearningAssignmentSubmission {
                                         Instant submittedAt) {
         this(tenantId, learningAssignmentId, learnerUserId, runId, content, submissionType,
                 programmingLanguage, codeEvaluationStatus, codeDiagnostics, CodeDiagnosticCategory.NONE,
+                CodeBehaviorEvaluationStatus.NOT_CONFIGURED, 0, 0, 0.0,
                 codeEvaluationDurationMs, submittedAt);
     }
 
@@ -78,6 +89,25 @@ public class LearningAssignmentSubmission {
                                         CodeEvaluationStatus codeEvaluationStatus,
                                         String codeDiagnostics,
                                         CodeDiagnosticCategory codeDiagnosticCategory,
+                                        long codeEvaluationDurationMs,
+                                        Instant submittedAt) {
+        this(tenantId, learningAssignmentId, learnerUserId, runId, content, submissionType,
+                programmingLanguage, codeEvaluationStatus, codeDiagnostics, codeDiagnosticCategory,
+                CodeBehaviorEvaluationStatus.NOT_CONFIGURED, 0, 0, 0.0,
+                codeEvaluationDurationMs, submittedAt);
+    }
+
+    public LearningAssignmentSubmission(String tenantId, String learningAssignmentId,
+                                        String learnerUserId, String runId, String content,
+                                        LearningAssignmentSubmissionType submissionType,
+                                        String programmingLanguage,
+                                        CodeEvaluationStatus codeEvaluationStatus,
+                                        String codeDiagnostics,
+                                        CodeDiagnosticCategory codeDiagnosticCategory,
+                                        CodeBehaviorEvaluationStatus codeBehaviorStatus,
+                                        int codeTestCaseCount,
+                                        int codePassedTestCaseCount,
+                                        double codeTestPassRate,
                                         long codeEvaluationDurationMs,
                                         Instant submittedAt) {
         this.id = UUID.randomUUID().toString();
@@ -93,6 +123,13 @@ public class LearningAssignmentSubmission {
         this.codeDiagnostics = optional(codeDiagnostics);
         this.codeDiagnosticCategory = codeDiagnosticCategory == null
                 ? CodeDiagnosticCategory.NONE : codeDiagnosticCategory;
+        this.codeBehaviorStatus = codeBehaviorStatus == null
+                ? CodeBehaviorEvaluationStatus.NOT_CONFIGURED : codeBehaviorStatus;
+        this.codeTestCaseCount = Math.max(0, codeTestCaseCount);
+        this.codePassedTestCaseCount = Math.max(0,
+                Math.min(this.codeTestCaseCount, codePassedTestCaseCount));
+        this.codeTestPassRate = this.codeTestCaseCount == 0
+                ? 0.0 : Math.max(0.0, Math.min(1.0, codeTestPassRate));
         this.codeEvaluationDurationMs = Math.max(0, codeEvaluationDurationMs);
         this.submittedAt = submittedAt == null ? Instant.now() : submittedAt;
     }
@@ -119,6 +156,10 @@ public class LearningAssignmentSubmission {
     public CodeEvaluationStatus getCodeEvaluationStatus() { return codeEvaluationStatus; }
     public String getCodeDiagnostics() { return codeDiagnostics; }
     public CodeDiagnosticCategory getCodeDiagnosticCategory() { return codeDiagnosticCategory; }
+    public CodeBehaviorEvaluationStatus getCodeBehaviorStatus() { return codeBehaviorStatus; }
+    public int getCodeTestCaseCount() { return codeTestCaseCount; }
+    public int getCodePassedTestCaseCount() { return codePassedTestCaseCount; }
+    public double getCodeTestPassRate() { return codeTestPassRate; }
     public long getCodeEvaluationDurationMs() { return codeEvaluationDurationMs; }
     public Instant getSubmittedAt() { return submittedAt; }
 }

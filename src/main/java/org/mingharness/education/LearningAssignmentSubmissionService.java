@@ -113,8 +113,11 @@ public class LearningAssignmentSubmissionService {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "ASSIGNMENT_SUBMISSION_REQUIRED",
                     "作业提交内容不能为空");
         }
+        EducationCodeEvaluationContext evaluationContext = submissionType == LearningAssignmentSubmissionType.CODE
+                ? new EducationCodeEvaluationContext(run.educationConfiguration().programmingTestCases())
+                : EducationCodeEvaluationContext.empty();
         EducationCodeEvaluationResult evaluation = submissionType == LearningAssignmentSubmissionType.CODE
-                ? evaluateCodeSafely(effectiveLanguage, content)
+                ? evaluateCodeSafely(effectiveLanguage, content, evaluationContext)
                 : new EducationCodeEvaluationResult(CodeEvaluationStatus.NOT_REQUESTED, null, null, null, 0);
         CodeDiagnosticCategory diagnosticCategory = submissionType == LearningAssignmentSubmissionType.CODE
                 ? CodeDiagnosticClassifier.classify(evaluation) : CodeDiagnosticCategory.NONE;
@@ -122,6 +125,8 @@ public class LearningAssignmentSubmissionService {
                 new LearningAssignmentSubmission(tenantId, assignment.getId(), learnerUserId,
                         run.getId(), content, submissionType, effectiveLanguage,
                         evaluation.status(), evaluation.diagnostics(), diagnosticCategory,
+                        evaluation.behaviorStatus(), evaluation.testCaseCount(),
+                        evaluation.passedTestCaseCount(), evaluation.testPassRate(),
                         evaluation.durationMs(), Instant.now()));
         if (submissionType == LearningAssignmentSubmissionType.CODE && codeEvidenceService != null) {
             try {
@@ -193,12 +198,16 @@ public class LearningAssignmentSubmissionService {
         return normalized;
     }
 
-    private EducationCodeEvaluationResult evaluateCodeSafely(String language, String content) {
+    private EducationCodeEvaluationResult evaluateCodeSafely(String language, String content,
+                                                             EducationCodeEvaluationContext context) {
         if (codeEvaluator == null) {
             return EducationCodeEvaluationResult.unavailable("当前运行环境未配置代码评测沙箱。");
         }
         try {
-            return codeEvaluator.evaluate(language, content);
+            return context != null && context.testCaseSnapshot() != null
+                    && !context.testCaseSnapshot().cases().isEmpty()
+                    ? codeEvaluator.evaluate(language, content, context)
+                    : codeEvaluator.evaluate(language, content);
         } catch (RuntimeException exception) {
             log.warn("Code evaluation adapter failed for language {}", language, exception);
             return new EducationCodeEvaluationResult(CodeEvaluationStatus.ERROR,
