@@ -89,6 +89,7 @@ const learningAssignmentProgressMap = ref({})
 const learningAssignmentEvidenceMap = ref({})
 const learningAssignmentFeedbackMap = ref({})
 const learningAssignmentSubmissionMap = ref({})
+const learningAssignmentTestCaseMap = ref({})
 const learningAssignmentEvaluationMap = ref({})
 const educationChatRefreshes = new Map()
 // 课程作业首屏只加载少量详情；筛选或聚焦大班作业时按需补齐证据链，避免
@@ -124,6 +125,7 @@ const learningIndependentEvaluationSavingId = ref('')
 const learningAssignmentFeedbackSavingId = ref('')
 const learningAssignmentFeedbackAcknowledgingId = ref('')
 const learningAssignmentSubmissionSavingId = ref('')
+const learningAssignmentTestCaseSavingId = ref('')
 const learningAssignmentFeedbackForm = reactive({
   assignmentId: '',
   action: 'COMMENT',
@@ -136,6 +138,16 @@ const learningAssignmentSubmissionForm = reactive({
   content: '',
   submissionType: 'TEXT',
   programmingLanguage: '',
+})
+const learningAssignmentTestCaseForm = reactive({
+  assignmentId: '',
+  caseKey: '',
+  name: '',
+  input: '',
+  expectedOutput: '',
+  hidden: false,
+  weight: '1',
+  sequence: '0',
 })
 const learningAssignmentForm = reactive({
   courseId: '',
@@ -2166,6 +2178,7 @@ function learningAssignmentDetailsLoaded(assignmentId) {
     learningAssignmentProgressMap.value,
     learningAssignmentEvidenceMap.value,
     learningAssignmentSubmissionMap.value,
+    learningAssignmentTestCaseMap.value,
     learningAssignmentFeedbackMap.value,
     learningAssignmentEvaluationMap.value,
   ].every((map) => Object.prototype.hasOwnProperty.call(map, assignmentId))
@@ -5897,16 +5910,18 @@ async function ensureLearningAssignmentDetails(assignmentId) {
   const request = (async () => {
     const assignment = learningAssignments.value.find((item) => item.id === assignmentId)
     if (!assignment) return
-    const [progress, evidence, submissions, feedback, evaluations] = await Promise.all([
+    const [progress, evidence, submissions, testCases, feedback, evaluations] = await Promise.all([
       api.getLearningAssignmentProgress(assignmentId).catch(() => null),
       api.getLearningAssignmentEvidence(assignmentId).catch(() => null),
       api.listLearningAssignmentSubmissions(assignmentId).catch(() => null),
+      api.listLearningAssignmentTestCases(assignmentId).catch(() => null),
       api.listLearningAssignmentFeedback(assignmentId).catch(() => null),
       api.listLearningAssignmentEvaluations(assignmentId).catch(() => null),
     ])
     if (progress) learningAssignmentProgressMap.value = { ...learningAssignmentProgressMap.value, [assignmentId]: progress }
     if (evidence) learningAssignmentEvidenceMap.value = { ...learningAssignmentEvidenceMap.value, [assignmentId]: evidence }
     if (submissions) learningAssignmentSubmissionMap.value = { ...learningAssignmentSubmissionMap.value, [assignmentId]: submissions }
+    if (testCases) learningAssignmentTestCaseMap.value = { ...learningAssignmentTestCaseMap.value, [assignmentId]: testCases }
     if (feedback) learningAssignmentFeedbackMap.value = { ...learningAssignmentFeedbackMap.value, [assignmentId]: feedback }
     if (evaluations) learningAssignmentEvaluationMap.value = { ...learningAssignmentEvaluationMap.value, [assignmentId]: evaluations }
   })()
@@ -5917,11 +5932,12 @@ async function ensureLearningAssignmentDetails(assignmentId) {
 /** 通知是跨角色写入后的入口，点击时必须绕过“已加载”缓存读取权威证据。 */
 async function refreshLearningAssignmentDetails(assignmentId) {
   if (!assignmentId) return null
-  const [assignment, progress, evidence, submissions, feedback, evaluations] = await Promise.all([
+  const [assignment, progress, evidence, submissions, testCases, feedback, evaluations] = await Promise.all([
     api.getLearningAssignment(assignmentId).catch(() => null),
     api.getLearningAssignmentProgress(assignmentId).catch(() => null),
     api.getLearningAssignmentEvidence(assignmentId).catch(() => null),
     api.listLearningAssignmentSubmissions(assignmentId).catch(() => null),
+    api.listLearningAssignmentTestCases(assignmentId).catch(() => null),
     api.listLearningAssignmentFeedback(assignmentId).catch(() => null),
     api.listLearningAssignmentEvaluations(assignmentId).catch(() => null),
   ])
@@ -5937,6 +5953,9 @@ async function refreshLearningAssignmentDetails(assignmentId) {
   }
   if (submissions) learningAssignmentSubmissionMap.value = {
     ...learningAssignmentSubmissionMap.value, [assignmentId]: submissions,
+  }
+  if (testCases) learningAssignmentTestCaseMap.value = {
+    ...learningAssignmentTestCaseMap.value, [assignmentId]: testCases,
   }
   if (feedback) learningAssignmentFeedbackMap.value = {
     ...learningAssignmentFeedbackMap.value, [assignmentId]: feedback,
@@ -6014,6 +6033,15 @@ async function loadEducationData() {
     }))
     learningAssignmentSubmissionMap.value = Object.fromEntries(
       submissionEntries.filter(([, value]) => value))
+    const testCaseEntries = await Promise.all(assignments.slice(0, 20).map(async (assignment) => {
+      try {
+        return [assignment.id, await api.listLearningAssignmentTestCases(assignment.id)]
+      } catch {
+        return [assignment.id, null]
+      }
+    }))
+    learningAssignmentTestCaseMap.value = Object.fromEntries(
+      testCaseEntries.filter(([, value]) => value))
     const feedbackEntries = await Promise.all(assignments.slice(0, 20).map(async (assignment) => {
       try {
         return [assignment.id, await api.listLearningAssignmentFeedback(assignment.id)]
@@ -6773,6 +6801,10 @@ function codeDiagnosticCategoryLabel(category) {
     TYPE: '类型错误',
     DEPENDENCY: '依赖/导入错误',
     COMPILATION: '编译错误',
+    RUNTIME: '运行时错误',
+    OUTPUT_MISMATCH: '输出不匹配',
+    EDGE_CASE: '边界情况',
+    COMPLEXITY: '复杂度风险',
     TIMEOUT: '评测超时',
     UNKNOWN: '未归类诊断',
   }[category] || category || '未记录'
@@ -7019,6 +7051,60 @@ async function submitLearningAssignmentSubmission() {
     errorMessage.value = errorText(error)
   } finally {
     learningAssignmentSubmissionSavingId.value = ''
+  }
+}
+
+function startLearningAssignmentTestCase(assignment) {
+  if (!assignment?.id || assignment.status !== 'ASSIGNED' || assignment.teacherUserId !== form.userId) return
+  learningAssignmentTestCaseForm.assignmentId = assignment.id
+  learningAssignmentTestCaseForm.caseKey = ''
+  learningAssignmentTestCaseForm.name = ''
+  learningAssignmentTestCaseForm.input = ''
+  learningAssignmentTestCaseForm.expectedOutput = ''
+  learningAssignmentTestCaseForm.hidden = false
+  learningAssignmentTestCaseForm.weight = '1'
+  learningAssignmentTestCaseForm.sequence = String((learningAssignmentTestCaseMap.value[assignment.id] || []).length)
+}
+
+function closeLearningAssignmentTestCase() {
+  learningAssignmentTestCaseForm.assignmentId = ''
+  learningAssignmentTestCaseForm.caseKey = ''
+  learningAssignmentTestCaseForm.name = ''
+  learningAssignmentTestCaseForm.input = ''
+  learningAssignmentTestCaseForm.expectedOutput = ''
+  learningAssignmentTestCaseForm.hidden = false
+  learningAssignmentTestCaseForm.weight = '1'
+  learningAssignmentTestCaseForm.sequence = '0'
+}
+
+async function createLearningAssignmentTestCase() {
+  const assignmentId = learningAssignmentTestCaseForm.assignmentId
+  const caseKey = learningAssignmentTestCaseForm.caseKey.trim()
+  const expectedOutput = learningAssignmentTestCaseForm.expectedOutput
+  if (!assignmentId || !caseKey || !expectedOutput || learningAssignmentTestCaseSavingId.value) return
+  learningAssignmentTestCaseSavingId.value = assignmentId
+  clearMessages()
+  try {
+    const testCase = await api.createLearningAssignmentTestCase(assignmentId, {
+      caseKey,
+      name: learningAssignmentTestCaseForm.name.trim() || null,
+      input: learningAssignmentTestCaseForm.input,
+      expectedOutput,
+      hidden: learningAssignmentTestCaseForm.hidden,
+      weight: Number(learningAssignmentTestCaseForm.weight) || 1,
+      sequence: Number(learningAssignmentTestCaseForm.sequence) || 0,
+    })
+    learningAssignmentTestCaseMap.value = {
+      ...learningAssignmentTestCaseMap.value,
+      [assignmentId]: [...(learningAssignmentTestCaseMap.value[assignmentId] || []), testCase]
+        .sort((left, right) => (left.sequence - right.sequence) || left.caseKey.localeCompare(right.caseKey)),
+    }
+    closeLearningAssignmentTestCase()
+    noticeMessage.value = '行为测试用例已保存；学生接受作业后，系统会将启用用例冻结到下一次教育 Run。'
+  } catch (error) {
+    errorMessage.value = errorText(error)
+  } finally {
+    learningAssignmentTestCaseSavingId.value = ''
   }
 }
 
@@ -9769,7 +9855,7 @@ onBeforeUnmount(() => {
               <div><strong>提交作业内容</strong><small>提交物会绑定本次课程作业与最近一次学习记录，供教师结合学习记录审核。</small></div>
               <label class="field"><span>提交类型</span><select v-model="learningAssignmentSubmissionForm.submissionType"><option value="TEXT">文字作答</option><option value="CODE">代码提交</option></select></label>
               <label v-if="learningAssignmentSubmissionForm.submissionType === 'CODE'" class="field"><span>编程语言</span><input v-model="learningAssignmentSubmissionForm.programmingLanguage" maxlength="64" :readonly="Boolean(chatCourseAssignment.programmingLanguage)" placeholder="例如：Python" /></label>
-              <textarea ref="chatAssignmentSubmissionInputRef" v-model="learningAssignmentSubmissionForm.content" required maxlength="100000" rows="6" :placeholder="learningAssignmentSubmissionForm.submissionType === 'CODE' ? '粘贴你的代码；系统会在隔离沙箱中进行语法/编译检查并保存诊断证据。' : '填写解题过程、答案、实验结果或反思；尽量说明你的判断依据。'"></textarea>
+              <textarea ref="chatAssignmentSubmissionInputRef" v-model="learningAssignmentSubmissionForm.content" required maxlength="100000" rows="6" :placeholder="learningAssignmentSubmissionForm.submissionType === 'CODE' ? '粘贴你的代码；系统会在隔离沙箱中执行语法/编译检查和已冻结的行为测试，并保存形成性证据。' : '填写解题过程、答案、实验结果或反思；尽量说明你的判断依据。'"></textarea>
               <div><button class="text-button" type="button" @click="closeLearningAssignmentSubmission">稍后再写</button><button class="primary-button" type="submit" :disabled="learningAssignmentSubmissionSavingId === chatCourseAssignment.id">{{ learningAssignmentSubmissionSavingId === chatCourseAssignment.id ? '提交中…' : '保存提交物并通知教师' }}</button></div>
             </form>
             <footer class="chat-course-assignment-evidence">
@@ -11658,13 +11744,15 @@ onBeforeUnmount(() => {
                     <small v-if="learningAssignmentProgressMap[assignment.id]" class="learning-assignment-progress">{{ isLearnerOnlyRole ? `当前学习进度 ${formatRate(learningAssignmentProgressMap[assignment.id].currentMastery)} · 目标完成度 ${formatRate(learningAssignmentProgressMap[assignment.id].masteryProgress)} · 已完成 ${learningAssignmentProgressMap[assignment.id].taskCompleted} 次练习` : `当前掌握度 ${formatRate(learningAssignmentProgressMap[assignment.id].currentMastery)} / 目标 ${formatRate(learningAssignmentProgressMap[assignment.id].targetMastery)} · 提升 ${learningAssignmentProgressMap[assignment.id].masteryGain >= 0 ? '+' : ''}${formatRate(learningAssignmentProgressMap[assignment.id].masteryGain)} · 目标进度 ${formatRate(learningAssignmentProgressMap[assignment.id].masteryProgress)} · 测评 ${learningAssignmentProgressMap[assignment.id].assessmentTotal} 次 · 任务 ${learningAssignmentProgressMap[assignment.id].taskCompleted} / ${learningAssignmentProgressMap[assignment.id].taskTotal}` }}</small>
                     <small v-if="learningAssignmentProgressMap[assignment.id] && !isLearnerOnlyRole" class="learning-assignment-progress">学习记录覆盖 {{ formatRate(learningAssignmentProgressMap[assignment.id].runEvidenceCoverageRate) }}（{{ learningAssignmentProgressMap[assignment.id].runWithAssessmentEvidence }} / {{ learningAssignmentProgressMap[assignment.id].runTotal }}） · 反馈确认 {{ formatRate(learningAssignmentProgressMap[assignment.id].feedbackAcknowledgementRate) }}（{{ learningAssignmentProgressMap[assignment.id].feedbackAcknowledged }} / {{ learningAssignmentProgressMap[assignment.id].feedbackTotal }}）</small>
                     <details v-if="learningAssignmentEvidenceMap[assignment.id]?.length" class="learning-assessment-history"><summary>{{ isLearnerOnlyRole ? '查看练习记录' : '查看测评记录' }}（{{ learningAssignmentEvidenceMap[assignment.id].length }}）</summary><div v-for="attempt in learningAssignmentEvidenceMap[assignment.id].slice().reverse().slice(0, 5)" :key="attempt.id"><span :class="attempt.correct ? 'assessment-correct' : 'assessment-wrong'">{{ attempt.correct ? '正确' : '错误' }}</span><span><b v-if="attempt.learnerEvidenceQuote">学习者原话：{{ attempt.learnerEvidenceQuote }} · </b>{{ attempt.evidenceText || '未填写证据文本' }}<small v-if="attempt.feedback"> · {{ attempt.feedback }}</small></span><small>{{ attempt.evidenceSource === 'MANUAL_REVIEW' ? '人工复核' : (attempt.assessmentType === 'REVIEW' ? (isLearnerOnlyRole ? '复习练习' : '保持度复习') : '系统记录') }} · {{ formatDate(attempt.createdAt) }}</small><small v-if="assessmentRetrievalEvidenceLabel(attempt)">知识源：{{ assessmentRetrievalEvidenceLabel(attempt) }}</small></div></details>
-                    <details v-if="learningAssignmentSubmissionMap[assignment.id]?.length" class="learning-assessment-history"><summary>{{ isLearnerOnlyRole ? '我的提交记录' : '学生提交内容' }}（{{ learningAssignmentSubmissionMap[assignment.id].length }}）</summary><div v-for="submission in learningAssignmentSubmissionMap[assignment.id].slice(0, 5)" :key="submission.id"><span>{{ submission.submissionType === 'CODE' ? `代码提交${submission.programmingLanguage ? ` · ${submission.programmingLanguage}` : ''}` : '原始作答' }}</span><span>{{ submission.content }}</span><small>记录 {{ submission.runId.slice(0, 8) }} · {{ formatDate(submission.submittedAt) }}<template v-if="submission.submissionType === 'CODE'"> · 评测：{{ submission.codeEvaluationStatus }} · 诊断类别：{{ codeDiagnosticCategoryLabel(submission.codeDiagnosticCategory) }}<template v-if="submission.codeDiagnostics"> · {{ submission.codeDiagnostics }}</template><em>（形成性证据，不是教师评分）</em></template></small></div></details>
+                    <details v-if="learningAssignmentTestCaseMap[assignment.id]?.length" class="learning-assessment-history"><summary>{{ isLearnerOnlyRole ? '可见行为测试范围' : '行为测试用例' }}（{{ learningAssignmentTestCaseMap[assignment.id].length }}）</summary><div v-for="testCase in learningAssignmentTestCaseMap[assignment.id]" :key="testCase.id"><span>{{ testCase.caseKey }}<template v-if="testCase.name"> · {{ testCase.name }}</template></span><span>输入：{{ testCase.input || '（空输入）' }}</span><small><template v-if="testCase.expectedOutput !== null && testCase.expectedOutput !== undefined">期望输出：{{ testCase.expectedOutput }}</template><template v-else>期望输出由系统隐藏</template><template v-if="testCase.hidden"> · 隐藏用例</template> · 权重 {{ testCase.weight }}</small></div></details>
+                    <details v-if="learningAssignmentSubmissionMap[assignment.id]?.length" class="learning-assessment-history"><summary>{{ isLearnerOnlyRole ? '我的提交记录' : '学生提交内容' }}（{{ learningAssignmentSubmissionMap[assignment.id].length }}）</summary><div v-for="submission in learningAssignmentSubmissionMap[assignment.id].slice(0, 5)" :key="submission.id"><span>{{ submission.submissionType === 'CODE' ? `代码提交${submission.programmingLanguage ? ` · ${submission.programmingLanguage}` : ''}` : '原始作答' }}</span><span>{{ submission.content }}</span><small>记录 {{ submission.runId.slice(0, 8) }} · {{ formatDate(submission.submittedAt) }}<template v-if="submission.submissionType === 'CODE'"> · 评测：{{ submission.codeEvaluationStatus }}<template v-if="submission.codeTestCaseCount"> · 行为测试 {{ submission.codePassedTestCaseCount }} / {{ submission.codeTestCaseCount }}（{{ formatRate(submission.codeTestPassRate) }}） · {{ submission.codeBehaviorStatus }}</template> · 诊断类别：{{ codeDiagnosticCategoryLabel(submission.codeDiagnosticCategory) }}<template v-if="submission.codeDiagnostics"> · {{ submission.codeDiagnostics }}</template><em>（形成性证据，不是教师评分）</em></template></small></div></details>
                     <details v-if="learningAssignmentFeedbackMap[assignment.id]?.length" class="learning-assessment-history"><summary>教师反馈（{{ learningAssignmentFeedbackMap[assignment.id].length }}）</summary><div v-for="feedback in learningAssignmentFeedbackMap[assignment.id].slice(0, 5)" :key="feedback.id"><span>{{ learningAssignmentFeedbackActionLabel(feedback.action) }}</span><span>{{ feedback.message }}<small v-if="feedback.suggestedDueAt"> · 截止 {{ formatDate(feedback.suggestedDueAt) }}</small></span><small>{{ learningAssignmentFeedbackStatusLabel(feedback) }} · {{ formatDate(feedback.createdAt) }}<button v-if="assignment.learnerUserId === form.userId && ['OPEN', 'ACKNOWLEDGED'].includes(feedback.status)" class="text-button" type="button" :disabled="learningAssignmentFeedbackAcknowledgingId === feedback.id || learningAssignmentAcceptingId === assignment.id" @click="acknowledgeLearningAssignmentFeedback(assignment, feedback)">{{ learningAssignmentFeedbackContinueLabel(feedback) }}</button></small></div></details>
                     <details v-if="learningAssignmentEvaluationMap[assignment.id]?.length" class="learning-assessment-history"><summary>{{ isLearnerOnlyRole ? '教师评分细节' : '教师量规评价' }}（{{ learningAssignmentEvaluationMap[assignment.id].length }}）</summary><div v-for="evaluation in learningAssignmentEvaluationMap[assignment.id].slice(0, 5)" :key="evaluation.id"><span>{{ evaluation.decision === 'VERIFY' ? '确认' : '退回' }} · {{ evaluation.rubricVersion }}</span><span>内容 {{ evaluation.contentCorrectnessScore }} / 5 · 证据 {{ evaluation.evidenceQualityScore }} / 5 · 迁移 {{ evaluation.transferReadinessScore }} / 5</span><small>{{ evaluation.evaluatorUserId }} · {{ formatDate(evaluation.createdAt) }}<span v-if="evaluation.note"> · {{ evaluation.note }}</span></small></div></details>
                   </div>
                   <div class="learning-assignment-actions">
                     <button :class="learningAssignmentUsesOverviewPrimaryAction(assignment) ? 'text-button' : (learningAssignmentPrimaryAction(assignment).kind === 'view' || learningAssignmentPrimaryAction(assignment).kind === 'setup' ? 'secondary-button' : 'primary-button')" type="button" :title="learningAssignmentUsesOverviewPrimaryAction(assignment) ? '使用上方“下一步行动”继续这份作业' : learningAssignmentPrimaryAction(assignment).detail" :disabled="learningAssignmentPrimaryActionBusy(assignment)" @click="learningAssignmentUsesOverviewPrimaryAction(assignment) ? focusEducationOverviewPrimaryAction() : runLearningAssignmentPrimaryAction(assignment)">{{ learningAssignmentUsesOverviewPrimaryAction(assignment) ? '回到上方继续' : learningAssignmentPrimaryActionLabel(assignment) }}</button>
                     <button v-if="educationWorkspaceMode === 'teacher' && assignment.teacherUserId === form.userId && assignment.status === 'COMPLETED' && assignment.reviewStatus === 'PENDING'" class="text-button" type="button" :disabled="learningAssignmentReviewSavingId === assignment.id" @click="returnLearningAssignmentForRevision(assignment)">{{ learningAssignmentReviewSavingId === assignment.id ? '处理中…' : '退回返工' }}</button>
+                    <button v-if="educationWorkspaceMode === 'teacher' && assignment.teacherUserId === form.userId && assignment.status === 'ASSIGNED' && assignment.programmingLanguage" class="text-button" type="button" @click="startLearningAssignmentTestCase(assignment)">配置行为测试</button>
                     <button v-if="educationWorkspaceMode === 'teacher' && assignment.teacherUserId === form.userId && assignment.status !== 'CANCELLED'" class="text-button" type="button" @click="startLearningAssignmentFeedback(assignment)">写教师反馈</button>
                     <button v-if="educationWorkspaceMode === 'teacher' && assignment.teacherUserId === form.userId && ['ASSIGNED', 'ACCEPTED', 'RETRY_REQUIRED', 'OVERDUE'].includes(assignment.status)" class="text-button" type="button" @click="cancelLearningAssignment(assignment)">取消作业</button>
                   </div>
@@ -11683,8 +11771,18 @@ onBeforeUnmount(() => {
                 <p class="learning-task-help">提交物会绑定最近一次成功的教育 Run，教师确认时可以同时查看原始作答和测评证据。</p>
                 <label class="field"><span>提交类型</span><select v-model="learningAssignmentSubmissionForm.submissionType"><option value="TEXT">文字作答</option><option value="CODE">代码提交</option></select></label>
                 <label v-if="learningAssignmentSubmissionForm.submissionType === 'CODE'" class="field"><span>编程语言</span><input v-model="learningAssignmentSubmissionForm.programmingLanguage" maxlength="64" :readonly="Boolean(learningAssignments.find((item) => item.id === learningAssignmentSubmissionForm.assignmentId)?.programmingLanguage)" placeholder="例如：Python" /></label>
-                <label class="field learning-assignment-wide"><span>{{ learningAssignmentSubmissionForm.submissionType === 'CODE' ? '代码内容' : '作答内容' }}</span><textarea v-model="learningAssignmentSubmissionForm.content" required maxlength="100000" rows="6" :placeholder="learningAssignmentSubmissionForm.submissionType === 'CODE' ? '粘贴你的代码；系统会在隔离沙箱中进行语法/编译检查并保存诊断证据。' : '填写你的解题过程、答案或实践结果'"></textarea></label>
+                <label class="field learning-assignment-wide"><span>{{ learningAssignmentSubmissionForm.submissionType === 'CODE' ? '代码内容' : '作答内容' }}</span><textarea v-model="learningAssignmentSubmissionForm.content" required maxlength="100000" rows="6" :placeholder="learningAssignmentSubmissionForm.submissionType === 'CODE' ? '粘贴你的代码；系统会在隔离沙箱中执行语法/编译检查和已冻结的行为测试，并保存形成性证据。' : '填写你的解题过程、答案或实践结果'"></textarea></label>
                 <button class="secondary-button" type="submit" :disabled="learningAssignmentSubmissionSavingId === learningAssignmentSubmissionForm.assignmentId">{{ learningAssignmentSubmissionSavingId ? '提交中…' : '保存提交物' }}</button>
+              </form>
+              <form v-if="learningAssignmentTestCaseForm.assignmentId" class="learning-assignment-feedback-form learning-assignment-test-case-form" @submit.prevent="createLearningAssignmentTestCase">
+                <div class="subsection-title"><h4>新增行为测试用例</h4><button class="text-button" type="button" @click="closeLearningAssignmentTestCase">关闭</button></div>
+                <p class="learning-task-help">测试用例会在学生接受作业后冻结到教育 Run；它提供形成性行为证据，不自动替代教师评分。</p>
+                <label class="field"><span>用例标识</span><input v-model="learningAssignmentTestCaseForm.caseKey" required maxlength="64" placeholder="例如：normal-1" /></label>
+                <label class="field"><span>名称（可选）</span><input v-model="learningAssignmentTestCaseForm.name" maxlength="255" placeholder="普通输入" /></label>
+                <label class="field learning-assignment-wide"><span>输入</span><textarea v-model="learningAssignmentTestCaseForm.input" maxlength="20000" rows="3" placeholder="传给程序标准输入的内容"></textarea></label>
+                <label class="field learning-assignment-wide"><span>期望输出</span><textarea v-model="learningAssignmentTestCaseForm.expectedOutput" required maxlength="20000" rows="3" placeholder="逐字比较前会忽略平台换行和行尾空格"></textarea></label>
+                <div class="learning-assignment-context-fields learning-assignment-wide"><label class="field"><span>权重</span><input v-model="learningAssignmentTestCaseForm.weight" type="number" min="0.01" max="100" step="0.1" /></label><label class="field"><span>顺序</span><input v-model="learningAssignmentTestCaseForm.sequence" type="number" min="0" max="1000" step="1" /></label><label class="field"><span>测试可见性</span><select v-model="learningAssignmentTestCaseForm.hidden"><option :value="false">学生可见输入</option><option :value="true">隐藏用例</option></select></label></div>
+                <button class="secondary-button" type="submit" :disabled="learningAssignmentTestCaseSavingId === learningAssignmentTestCaseForm.assignmentId">{{ learningAssignmentTestCaseSavingId ? '保存中…' : '保存测试用例' }}</button>
               </form>
             </section>
             <div v-if="isLearnerOnlyRole && activeLearnerProfile" class="learning-goal-workbench">
