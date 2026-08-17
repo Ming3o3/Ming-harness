@@ -64,7 +64,8 @@ public class EducationKnowledgeGraphService {
                 if (!seen.add(key)) continue;
                 edges.add(new EducationConceptDependency(
                         source.getTenantId(), source.getSubject(), source.getGradeLevel(),
-                        source.getCurriculumVersion(), concept, prerequisite,
+                        source.getCurriculumVersion(), source.getProgrammingLanguage(),
+                        concept, prerequisite,
                         source.getDocumentId(), "PREREQUISITE", 1.0));
             }
         }
@@ -72,7 +73,10 @@ public class EducationKnowledgeGraphService {
         List<EducationConceptDependency> existingEdges = dependencyRepository
                 .findByTenantIdAndSubjectAndGradeLevelAndCurriculumVersionOrderByConceptKeyAscPrerequisiteConceptAsc(
                         source.getTenantId(), source.getSubject(), source.getGradeLevel(),
-                        source.getCurriculumVersion());
+                        source.getCurriculumVersion()).stream()
+                .filter(edge -> languageMatches(edge.getProgrammingLanguage(),
+                        source.getProgrammingLanguage()))
+                .toList();
         if (containsCycle(existingEdges, edges)) {
             throw new BusinessException(HttpStatus.BAD_REQUEST, "EDUCATION_DEPENDENCY_CYCLE",
                     "知识依赖图存在循环依赖，请调整知识点或前置知识后重试");
@@ -102,8 +106,17 @@ public class EducationKnowledgeGraphService {
                         filter.curriculumVersionOrNull());
         if (edges.isEmpty()) return EducationDependencyGraph.empty(target);
 
+        // 编程知识图谱允许通用边和语言专属边共存：请求指定语言时优先保留
+        // 通用边与同语言边，避免 Python/Java 等同名概念的依赖关系互相污染。
+        // 未指定语言时只使用通用边，保证课程级资料不会偶然借用某种语言的图。
+        String requestedLanguage = filter.programmingLanguageOrNull();
+        List<EducationConceptDependency> scopedEdges = edges.stream()
+                .filter(edge -> languageMatches(edge.getProgrammingLanguage(), requestedLanguage))
+                .toList();
+        if (scopedEdges.isEmpty()) return EducationDependencyGraph.empty(target);
+
         Map<String, List<EducationConceptDependency>> incoming = new LinkedHashMap<>();
-        for (EducationConceptDependency edge : edges) {
+        for (EducationConceptDependency edge : scopedEdges) {
             incoming.computeIfAbsent(normalizeConcept(edge.getConceptKey()), ignored -> new ArrayList<>()).add(edge);
         }
         String normalizedTarget = normalizeConcept(target);
@@ -135,7 +148,7 @@ public class EducationKnowledgeGraphService {
 
         List<EducationDependencyPath> paths = depths.entrySet().stream()
                 .map(entry -> new EducationDependencyPath(
-                        displayName(entry.getKey(), edges), entry.getValue(),
+                        displayName(entry.getKey(), scopedEdges), entry.getValue(),
                         filter.rankingMasteryFor(entry.getKey()),
                         1.0 - filter.rankingMasteryFor(entry.getKey()),
                         filter.rankingUncertaintyFor(entry.getKey()),
@@ -153,6 +166,13 @@ public class EducationKnowledgeGraphService {
                 .map(EducationConceptDependency::getPrerequisiteConcept)
                 .filter(value -> normalizeConcept(value).equals(normalized))
                 .findFirst().orElse(normalized);
+    }
+
+    private boolean languageMatches(String edgeLanguage, String requestedLanguage) {
+        String edge = normalizeProgrammingLanguage(edgeLanguage);
+        String requested = normalizeProgrammingLanguage(requestedLanguage);
+        if (requested == null) return edge == null;
+        return edge == null || edge.equals(requested);
     }
 
     /** 依赖边语义为 prerequisite -> concept；跨资料合并后仍必须保持 DAG。 */
@@ -208,6 +228,11 @@ public class EducationKnowledgeGraphService {
     private String normalizeConcept(String value) {
         if (value == null || value.isBlank()) return null;
         return sanitizer.sanitize(value.trim()).toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeProgrammingLanguage(String value) {
+        if (value == null || value.isBlank()) return null;
+        return sanitizer.sanitize(value.trim()).toUpperCase(Locale.ROOT);
     }
 
     private record NodeDepth(String concept, int depth) {

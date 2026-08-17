@@ -109,6 +109,46 @@ class EducationKnowledgeGraphServiceTests {
     }
 
     @Test
+    void shouldKeepGenericAndRequestedLanguageEdgesButIgnoreForeignLanguageEdges() {
+        EducationConceptDependencyRepository repository = mock(EducationConceptDependencyRepository.class);
+        EducationKnowledgeGraphService service = new EducationKnowledgeGraphService(repository,
+                new SensitiveDataSanitizer());
+        when(repository
+                .findByTenantIdAndSubjectAndGradeLevelAndCurriculumVersionOrderByConceptKeyAscPrerequisiteConceptAsc(
+                        "tenant-a", "编程", "大一", "课程版"))
+                .thenReturn(List.of(
+                        edge("递归", "栈", "doc-generic"),
+                        edge("递归", "列表", "doc-python", "PYTHON"),
+                        edge("递归", "对象", "doc-java", "JAVA")));
+
+        EducationDependencyGraph graph = service.resolve("tenant-a", new EducationRetrievalFilter(
+                "编程", "大一", "课程版", "递归", "python", null, null));
+
+        assertEquals(2, graph.prerequisites().size());
+        assertTrue(graph.prerequisites().stream().anyMatch(path -> path.conceptKey().equals("栈")));
+        assertTrue(graph.prerequisites().stream().anyMatch(path -> path.conceptKey().equals("列表")));
+        assertTrue(graph.prerequisites().stream().noneMatch(path -> path.conceptKey().equals("对象")));
+    }
+
+    @Test
+    void shouldAllowOppositeEdgesWhenTheyBelongToDifferentLanguages() {
+        EducationConceptDependencyRepository repository = mock(EducationConceptDependencyRepository.class);
+        EducationKnowledgeGraphService service = new EducationKnowledgeGraphService(repository,
+                new SensitiveDataSanitizer());
+        when(repository
+                .findByTenantIdAndSubjectAndGradeLevelAndCurriculumVersionOrderByConceptKeyAscPrerequisiteConceptAsc(
+                        "tenant-a", "编程", "大一", "课程版"))
+                .thenReturn(List.of(edge("B", "A", "doc-java", "JAVA")));
+        EducationKnowledgeSource pythonSource = new EducationKnowledgeSource(
+                "tenant-a", "doc-python", "编程", "大一", "课程版", "图", "",
+                "A", "B", 3, "TEXTBOOK", "PYTHON");
+
+        service.replaceDerivedEdges(pythonSource);
+
+        org.mockito.Mockito.verify(repository).saveAll(any());
+    }
+
+    @Test
     void shouldRejectCycleAcrossKnowledgeSourcesBeforePersistingEdges() {
         EducationConceptDependencyRepository repository = mock(EducationConceptDependencyRepository.class);
         EducationKnowledgeGraphService service = new EducationKnowledgeGraphService(repository,
@@ -131,5 +171,11 @@ class EducationKnowledgeGraphServiceTests {
     private EducationConceptDependency edge(String concept, String prerequisite, String documentId) {
         return new EducationConceptDependency("tenant-a", "数学", "高中一年级", "人教A版",
                 concept, prerequisite, documentId, "PREREQUISITE", 1.0);
+    }
+
+    private EducationConceptDependency edge(String concept, String prerequisite, String documentId,
+                                            String programmingLanguage) {
+        return new EducationConceptDependency("tenant-a", "编程", "大一", "课程版",
+                programmingLanguage, concept, prerequisite, documentId, "PREREQUISITE", 1.0);
     }
 }

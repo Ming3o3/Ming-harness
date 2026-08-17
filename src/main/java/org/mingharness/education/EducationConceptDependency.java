@@ -18,7 +18,8 @@ import java.util.UUID;
 @Entity
 @Table(name = "harness_education_concept_dependencies", uniqueConstraints = @UniqueConstraint(
         name = "uk_harness_education_dependency_source_edge",
-        columnNames = {"tenant_id", "source_document_id", "concept_key", "prerequisite_concept"}
+        columnNames = {"tenant_id", "source_document_id", "programming_language",
+                "concept_key", "prerequisite_concept"}
 ))
 public class EducationConceptDependency {
 
@@ -32,6 +33,9 @@ public class EducationConceptDependency {
     private String gradeLevel;
     @Column(nullable = false, length = 128)
     private String curriculumVersion;
+    /** 为空表示语言无关的通用依赖；有值时只适用于对应编程语言。 */
+    @Column(name = "programming_language", length = 64)
+    private String programmingLanguage;
     @Column(nullable = false, length = 255)
     private String conceptKey;
     @Column(nullable = false, length = 255)
@@ -54,11 +58,22 @@ public class EducationConceptDependency {
                                       String curriculumVersion, String conceptKey,
                                       String prerequisiteConcept, String sourceDocumentId,
                                       String relationType, double confidence) {
+        this(tenantId, subject, gradeLevel, curriculumVersion, null, conceptKey,
+                prerequisiteConcept, sourceDocumentId, relationType, confidence);
+    }
+
+    /** 创建带语言范围的依赖边；null 表示该边可用于所有编程语言。 */
+    public EducationConceptDependency(String tenantId, String subject, String gradeLevel,
+                                      String curriculumVersion, String programmingLanguage,
+                                      String conceptKey, String prerequisiteConcept,
+                                      String sourceDocumentId, String relationType,
+                                      double confidence) {
         this.id = UUID.randomUUID().toString();
         this.tenantId = required(tenantId, "tenantId");
         this.subject = required(subject, "subject");
         this.gradeLevel = required(gradeLevel, "gradeLevel");
         this.curriculumVersion = required(curriculumVersion, "curriculumVersion");
+        this.programmingLanguage = normalizeProgrammingLanguage(programmingLanguage);
         this.conceptKey = required(conceptKey, "conceptKey");
         this.prerequisiteConcept = required(prerequisiteConcept, "prerequisiteConcept");
         this.sourceDocumentId = required(sourceDocumentId, "sourceDocumentId");
@@ -78,6 +93,11 @@ public class EducationConceptDependency {
         return value == null ? "" : value.trim();
     }
 
+    private static String normalizeProgrammingLanguage(String value) {
+        String normalized = normalize(value);
+        return normalized.isBlank() ? null : normalized.toUpperCase(java.util.Locale.ROOT);
+    }
+
     private static double boundedConfidence(double value) {
         return Double.isFinite(value) ? Math.max(0.0, Math.min(1.0, value)) : 0.5;
     }
@@ -87,6 +107,7 @@ public class EducationConceptDependency {
     public String getSubject() { return subject; }
     public String getGradeLevel() { return gradeLevel; }
     public String getCurriculumVersion() { return curriculumVersion; }
+    public String getProgrammingLanguage() { return programmingLanguage; }
     public String getConceptKey() { return conceptKey; }
     public String getPrerequisiteConcept() { return prerequisiteConcept; }
     public String getSourceDocumentId() { return sourceDocumentId; }
