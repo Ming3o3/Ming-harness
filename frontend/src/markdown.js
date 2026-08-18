@@ -112,6 +112,103 @@ const markdown = new MarkdownIt({
   },
 })
 
+// 教育 Agent 的分层提示先以普通 Markdown 保存，历史消息也可能已经使用了这种格式。
+// 在进入通用 Markdown 渲染前把它拆成结构化片段，交给 Vue 使用原生 <details> 展示，
+// 这样既不需要信任模型生成 HTML，也能让旧消息和新消息拥有一致的折叠行为。
+const LEARNING_HINT_SECTION_PATTERN = /^\s*(?:#{1,6}\s*)?(?:💡\s*)?(?:\*\*)?分层提示(?:\*\*)?\s*(?:[（(]([^）)]*)[）)])?\s*[：:]?\s*$/
+const LEARNING_HINT_PATTERN = /^\s*(?:[-*+]\s+)?(?:\*\*)?\s*提示\s*(\d+)\s*(?:[（(]([^）)]*)[）)])?\s*(?:\*\*)?\s*(?:[：:]\s*)?(.*)$/
+
+function learningHintSectionHeader(line) {
+  return String(line || '').match(LEARNING_HINT_SECTION_PATTERN)
+}
+
+function learningHintLine(line) {
+  return String(line || '').match(LEARNING_HINT_PATTERN)
+}
+
+function isMarkdownContinuationLine(line) {
+  return /^\s{2,}|^\s*(?:[-*+]\s+|\d+[.)]\s+)/.test(String(line || ''))
+}
+
+function parseLearningHintsAfterHeader(lines, startIndex) {
+  let cursor = startIndex
+  while (cursor < lines.length && !String(lines[cursor] || '').trim()) cursor += 1
+  if (cursor >= lines.length || !learningHintLine(lines[cursor])) return null
+
+  const hints = []
+  let current = null
+  let separatedByBlank = false
+  for (; cursor < lines.length; cursor += 1) {
+    const line = String(lines[cursor] || '')
+    const match = learningHintLine(line)
+    if (match) {
+      if (current) hints.push(current)
+      current = {
+        title: `提示 ${match[1]}${match[2] ? ` · ${match[2].trim()}` : ''}`,
+        content: [match[3] || ''],
+      }
+      separatedByBlank = false
+      continue
+    }
+    if (!current) break
+    if (/^\s*(?:---+|___+|\*\*\*+)\s*$/.test(line)
+      || /^\s*#{1,6}\s+/.test(line)) {
+      break
+    }
+    if (!line.trim()) {
+      current.content.push('')
+      separatedByBlank = true
+      continue
+    }
+    // 每层提示通常是一个独立段落。连续的普通文本属于提示正文；空行后出现的
+    // 普通段落则表示提示区结束，避免把后续“下一步行动”吞进最后一层提示。
+    if (separatedByBlank && !isMarkdownContinuationLine(line)) break
+    current.content.push(line)
+    separatedByBlank = false
+  }
+  if (current) hints.push(current)
+  if (!hints.length) return null
+  return { hints, endIndex: cursor - 1 }
+}
+
+export function splitLearningHintSections(value) {
+  const source = String(value || '')
+  if (!source.trim()) return []
+  const lines = source.split(/\r?\n/)
+  const segments = []
+  let markdownLines = []
+  const flushMarkdown = () => {
+    const content = markdownLines.join('\n')
+    if (content.trim()) segments.push({ type: 'markdown', content })
+    markdownLines = []
+  }
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const section = learningHintSectionHeader(lines[index])
+    if (!section) {
+      markdownLines.push(lines[index])
+      continue
+    }
+    const parsed = parseLearningHintsAfterHeader(lines, index + 1)
+    if (!parsed) {
+      markdownLines.push(lines[index])
+      continue
+    }
+    flushMarkdown()
+    segments.push({
+      type: 'learning-hints',
+      note: section[1]?.trim() || '先尝试，卡住再展开',
+      hints: parsed.hints.map((hint) => ({
+        title: hint.title,
+        content: hint.content.join('\n').trim(),
+      })),
+    })
+    index = parsed.endIndex
+  }
+  flushMarkdown()
+  return segments
+}
+
 export function renderMarkdown(value) {
   if (value == null || value === '') return ''
   return markdown.render(String(value))

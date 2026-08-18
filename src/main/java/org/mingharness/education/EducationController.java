@@ -771,8 +771,7 @@ public class EducationController {
             HttpServletRequest httpRequest) {
         HarnessIdentity identity = identity();
         requireEducationOperator(identity);
-        String permissions = identity.usesTrustedPermissions()
-                ? identity.permissionsCsv() : httpRequest.getHeader("X-Permissions");
+        String permissions = identity.permissionsCsv();
         return assignmentStartService.start(identity.tenantId(), identity.userId(), assignmentId,
                 request, permissions, httpRequest.getHeader("Idempotency-Key"));
     }
@@ -857,8 +856,7 @@ public class EducationController {
                                            HttpServletRequest httpRequest) {
         HarnessIdentity identity = identity();
         requireEducationOperator(identity);
-        String permissions = identity.usesTrustedPermissions()
-                ? identity.permissionsCsv() : httpRequest.getHeader("X-Permissions");
+        String permissions = identity.permissionsCsv();
         return taskService.start(identity.tenantId(), identity.userId(), taskId, request,
                 permissions, httpRequest.getHeader("Idempotency-Key"));
     }
@@ -902,8 +900,7 @@ public class EducationController {
                                                  HttpServletRequest httpRequest) {
         HarnessIdentity identity = identity();
         requireEducationOperator(identity);
-        String permissions = identity.usesTrustedPermissions()
-                ? identity.permissionsCsv() : httpRequest.getHeader("X-Permissions");
+        String permissions = identity.permissionsCsv();
         LearningGoal goal = learningGoalService.get(identity.tenantId(), identity.userId(), goalId);
         if (goal.getStatus() == LearningGoalStatus.COMPLETED) {
             LearningTask task = taskService.findStartableForGoal(identity.tenantId(), identity.userId(), goalId);

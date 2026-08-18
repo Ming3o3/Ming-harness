@@ -34,7 +34,7 @@ const demoRolePermissions = {
     'context.read', 'context.write', 'context.configure', 'context.reindex', 'tool.read',
     'workspace.read', 'workspace.write', 'workspace.exec', 'workspace.manage', 'ops.read',
     'model.configure', 'tenant.policy.read', 'tenant.policy.write', 'auth.key.read',
-    'auth.key.manage', 'education.read', 'education.write', 'education.assign',
+    'auth.key.manage', 'auth.user.read', 'auth.user.manage', 'education.read', 'education.write', 'education.assign',
     'education.evaluate',
   ],
   TEACHER: [
@@ -700,4 +700,15 @@ export const api = {
   }),
   revokeApiKey: (keyId) => request(`/admin/api-keys/${encodeURIComponent(keyId)}`, { method: 'DELETE' }),
   listApiKeyAudits: (tenantId) => request(`/admin/api-keys/audits${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ''}`),
+  listUserPermissions: (tenantId) => request(`/admin/user-permissions${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ''}`),
+  listUsers: (tenantId) => request(`/admin/users${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ''}`),
+  getUserPermissions: (tenantId, userId) => request(
+    `/admin/user-permissions/${encodeURIComponent(userId)}?tenantId=${encodeURIComponent(tenantId)}`),
+  assignUserPermissions: (payload) => request('/admin/user-permissions', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  }),
+  clearUserPermissions: (tenantId, userId) => request(
+    `/admin/user-permissions?tenantId=${encodeURIComponent(tenantId)}&userId=${encodeURIComponent(userId)}`,
+    { method: 'DELETE' }),
 }

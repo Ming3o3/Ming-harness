@@ -25,6 +25,8 @@ public class HarnessRoleResolver {
         Set<HarnessUserRole> roles = new LinkedHashSet<>();
         if (identity.hasPermission("auth.key.read")
                 || identity.hasPermission("auth.key.manage")
+                || identity.hasPermission("auth.user.read")
+                || identity.hasPermission("auth.user.manage")
                 || identity.hasPermission("tenant.policy.read")
                 || identity.hasPermission("tenant.policy.write")
                 || identity.hasPermission("ops.read")

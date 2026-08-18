@@ -25,16 +25,26 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
     private static final Pattern SAFE_VALUE = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}");
     private final HarnessAuthProperties properties;
     private final ApiKeyCredentialService apiKeyCredentialService;
+    private final HarnessUserPermissionService userPermissionService;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public HarnessIdentityInterceptor(HarnessAuthProperties properties,
-                                      ApiKeyCredentialService apiKeyCredentialService) {
+                                      ApiKeyCredentialService apiKeyCredentialService,
+                                      HarnessUserPermissionService userPermissionService) {
         this.properties = properties;
         this.apiKeyCredentialService = apiKeyCredentialService;
+        this.userPermissionService = userPermissionService;
         if (!"local".equalsIgnoreCase(properties.getMode())
                 && !"api-key".equalsIgnoreCase(properties.getMode())
                 && !"oidc".equalsIgnoreCase(properties.getMode())) {
             throw new IllegalArgumentException("harness.auth.mode 只支持 local、api-key 或 oidc");
         }
+    }
+
+    /** 保留轻量单元测试和本地扩展的旧构造方式。 */
+    public HarnessIdentityInterceptor(HarnessAuthProperties properties,
+                                      ApiKeyCredentialService apiKeyCredentialService) {
+        this(properties, apiKeyCredentialService, null);
     }
 
     @Override
@@ -48,7 +58,7 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
         String requestPath = request.getRequestURI();
         String requiredPermission = requiredPermission(request.getMethod(), requestPath);
         if (protectedAuthenticationMode() && requiredPermission != null
-                && !identity.hasPermission(requiredPermission)) {
+                && !hasRequiredPermission(identity, requiredPermission)) {
             throw new BusinessException(HttpStatus.FORBIDDEN, "PERMISSION_DENIED",
                     "当前身份缺少接口权限: " + requiredPermission);
         }
@@ -73,35 +83,57 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
     }
 
     private HarnessIdentity resolveIdentity(HttpServletRequest request) {
+        HarnessIdentity identity;
         if ("oidc".equalsIgnoreCase(properties.getMode())) {
-            return resolveOidcIdentity();
-        }
-        if ("api-key".equalsIgnoreCase(properties.getMode())) {
+            identity = resolveOidcIdentity();
+        } else if ("api-key".equalsIgnoreCase(properties.getMode())) {
             String token = apiKey(request);
             if (token == null) {
                 throw new BusinessException(HttpStatus.UNAUTHORIZED, "AUTHENTICATION_REQUIRED",
                         "缺少 Authorization Bearer Token 或 X-Api-Key");
             }
-            return authenticateApiKeyToken(token);
+            identity = apiKeyCredentialService.authenticate(token);
+        } else {
+            identity = new HarnessIdentity(
+                    safeHeader(request.getHeader("X-Tenant-Id"), "tenant-demo"),
+                    safeHeader(request.getHeader("X-User-Id"), "operator"),
+                    parsePermissions(request.getHeader("X-Permissions")),
+                    "local"
+            );
         }
-
-        return new HarnessIdentity(
-                safeHeader(request.getHeader("X-Tenant-Id"), "tenant-demo"),
-                safeHeader(request.getHeader("X-User-Id"), "operator"),
-                parsePermissions(request.getHeader("X-Permissions")),
-                "local"
-        );
+        return withDirectPermissions(identity);
     }
 
     /** 供管理端点 Security Filter 复用同一套 API Key 校验规则。 */
     HarnessIdentity authenticateApiKeyToken(String token) {
-        return apiKeyCredentialService.authenticate(token);
+        return withDirectPermissions(apiKeyCredentialService.authenticate(token));
+    }
+
+    private HarnessIdentity withDirectPermissions(HarnessIdentity identity) {
+        if (userPermissionService == null || identity == null) return identity;
+        return new HarnessIdentity(identity.tenantId(), identity.userId(),
+                userPermissionService.merge(identity.tenantId(), identity.userId(), identity.permissions()),
+                identity.authenticationMode());
     }
 
     /** API Key 和 OIDC 都需要执行接口级 RBAC；local 保留请求头演示兼容性。 */
     private boolean protectedAuthenticationMode() {
         return "api-key".equalsIgnoreCase(properties.getMode())
                 || "oidc".equalsIgnoreCase(properties.getMode());
+    }
+
+    /** 兼容已发放的管理员 API Key：旧的 auth.key.manage 仍可管理用户授权。 */
+    private boolean hasRequiredPermission(HarnessIdentity identity, String requiredPermission) {
+        if (identity.hasPermission(requiredPermission)) return true;
+        if ("auth.user.read".equals(requiredPermission)) {
+            return identity.hasPermission("auth.user.manage")
+                    || identity.hasPermission("auth.key.read")
+                    || identity.hasPermission("auth.key.manage");
+        }
+        if ("auth.user.manage".equals(requiredPermission)) {
+            return identity.hasPermission("auth.key.manage");
+        }
+        return false;
     }
 
     private HarnessIdentity resolveOidcIdentity() {
@@ -191,6 +223,12 @@ public class HarnessIdentityInterceptor implements HandlerInterceptor {
         }
         if (path.matches("/api/admin/api-keys/[^/]+/rotate")) {
             return "auth.key.manage";
+        }
+        if (path.matches("/api/admin/user-permissions(?:/[^/]+)?")) {
+            return "GET".equalsIgnoreCase(method) ? "auth.user.read" : "auth.user.manage";
+        }
+        if (path.equals("/api/admin/users")) {
+            return "auth.user.read";
         }
         if (path.matches("/api/admin/tenants/[^/]+/policy(?:/audits)?")) {
             return "GET".equalsIgnoreCase(method) ? "tenant.policy.read" : "tenant.policy.write";

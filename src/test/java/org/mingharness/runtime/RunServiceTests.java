@@ -143,6 +143,7 @@ class RunServiceTests {
 
         assertTrue(prompt.contains("课程约束与学习者状态的教育知识库 Agent"));
         assertTrue(prompt.contains("education.record_assessment"));
+        assertTrue(prompt.contains("完整的 canonical conceptKey"));
         assertTrue(prompt.contains("evidenceText"));
         assertTrue(prompt.contains("学科=数学"));
         assertFalse(prompt.contains("受控代码 Agent"));

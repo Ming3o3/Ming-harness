@@ -448,6 +448,19 @@ public class EducationAssessmentService {
         String normalizedGoal = normalizeConcept(goal == null ? null : goal.getConceptKey());
         if (normalizedCandidate == null || normalizedGoal == null) return false;
         if (normalizedGoal.equals(normalizedCandidate)) return true;
+        // 复合学习目标会把多个可独立测评的知识点写在同一个 canonical key 中，
+        // 例如“类与对象、封装、继承、多态”。测评工具可以只提交其中一个子知识点；
+        // 这里先按中文/英文分隔符拆分，再对每个子项做精确或具体词组匹配。
+        // 不能直接把整体字符串交给 conceptsMatch：两字知识点（如“多态”“继承”）
+        // 会被通用模糊匹配的最小长度保护挡住。
+        List<String> goalConcepts = splitConcepts(normalizedGoal);
+        List<String> candidateConcepts = splitConcepts(normalizedCandidate);
+        if (!goalConcepts.isEmpty() && !candidateConcepts.isEmpty()
+                && candidateConcepts.stream().allMatch(candidateConcept -> goalConcepts.stream()
+                .anyMatch(goalConcept -> goalConcept.equals(candidateConcept)
+                        || EducationRetrievalFilter.conceptsMatch(goalConcept, candidateConcept)))) {
+            return true;
+        }
         // 课程标签可能是“二次函数”，学习目标知识点可能带教学语义，例如
         // “理解二次函数的概念及一般形式”。只允许足够具体的词组互相包含。
         if (EducationRetrievalFilter.conceptsMatch(normalizedGoal, normalizedCandidate)) return true;
@@ -461,6 +474,15 @@ public class EducationAssessmentService {
         String normalized = clean(value).toLowerCase(java.util.Locale.ROOT);
         if (normalized.isBlank()) return null;
         return normalized.replaceAll("\\s+", "");
+    }
+
+    private List<String> splitConcepts(String value) {
+        if (value == null || value.isBlank()) return List.of();
+        return java.util.Arrays.stream(value.split("[,，;；、\\n]+"))
+                .map(this::normalizeConcept)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
     }
 
     private String cleanFeedback(String value) {

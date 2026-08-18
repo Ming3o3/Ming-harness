@@ -67,10 +67,7 @@ public class RunController {
         HarnessIdentity identity = identity();
         String tenantId = identity.tenantId();
         String idempotencyKey = httpRequest.getHeader("Idempotency-Key");
-        String permissions = httpRequest.getHeader("X-Permissions");
-        if (identity.usesTrustedPermissions()) {
-            permissions = identity.permissionsCsv();
-        }
+        String permissions = identity.permissionsCsv();
         if (!tenantId.equals(request.tenantId())) {
             throw new BusinessException(HttpStatus.FORBIDDEN, "TENANT_ACCESS_DENIED", "请求组织与当前组织不一致");
         }
@@ -79,9 +76,8 @@ public class RunController {
         }
         String effectiveKey = idempotencyKey == null || idempotencyKey.isBlank()
                 ? request.idempotencyKey() : idempotencyKey;
-        String effectivePermissions = identity.usesTrustedPermissions()
-                ? identity.permissionsCsv()
-                : permissions == null || permissions.isBlank() ? request.permissions() : permissions;
+        String effectivePermissions = permissions == null || permissions.isBlank()
+                ? request.permissions() : permissions;
         return runService.create(request.withIdempotencyKey(effectiveKey).withPermissions(effectivePermissions));
     }
 

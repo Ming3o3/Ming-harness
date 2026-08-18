@@ -35,7 +35,7 @@ import {
   X,
 } from '@lucide/vue'
 import { api, clearSessionApiKey, setSessionApiKey } from './api'
-import { highlightCode, languageFromPath, languageLabel, renderMarkdown } from './markdown'
+import { highlightCode, languageFromPath, languageLabel, renderMarkdown, splitLearningHintSections } from './markdown'
 
 // Monaco 只在打开项目文件或 Diff 审阅时加载，避免普通聊天首屏承担 3 MB+ 的编辑器包。
 const MonacoEditor = defineAsyncComponent(() => import('./components/MonacoEditor.vue'))
@@ -228,6 +228,9 @@ const apiKeys = ref([])
 const apiKeyAudits = ref([])
 const apiKeyError = ref('')
 const createdApiKeySecret = ref('')
+const userDirectory = ref([])
+const userPermissions = ref([])
+const userPermissionError = ref('')
 const loading = ref(false)
 const documentDeletingId = ref('')
 const learnerProfileDeletingId = ref('')
@@ -314,6 +317,9 @@ const apiKeyPermissionOptions = [
   { value: 'auth.key.read', label: '查看 API Key' },
   { value: 'auth.key.manage', label: '创建 / 撤销 API Key' },
   { value: 'auth.key.cross-tenant', label: '跨组织管理 API Key' },
+  { value: 'auth.user.read', label: '查看用户权限' },
+  { value: 'auth.user.manage', label: '分配用户权限' },
+  { value: 'auth.user.cross-tenant', label: '跨组织分配用户权限' },
   { value: 'network.external', label: '访问外部网络工具' },
   { value: 'education.read', label: '读取教育知识与画像' },
   { value: 'education.write', label: '记录形成性评价' },
@@ -325,7 +331,7 @@ const defaultApiKeyPermissions = [
   'audit.read', 'context.read', 'context.write', 'context.configure',
   'tool.read', 'workspace.read', 'workspace.manage', 'ops.read',
   'model.configure', 'tenant.policy.read', 'tenant.policy.write',
-  'auth.key.read', 'auth.key.manage',
+  'auth.key.read', 'auth.key.manage', 'auth.user.read', 'auth.user.manage',
   'education.read', 'education.write',
   'education.assign', 'education.evaluate',
 ]
@@ -379,7 +385,7 @@ function applyApiKeyRoleTemplate(role) {
 
 function apiKeyRoleFromPermissions(permissions) {
   const values = permissions || []
-  if (values.some((permission) => ['auth.key.manage', 'tenant.policy.write', 'model.configure', 'context.configure', 'ops.read'].includes(permission))) {
+  if (values.some((permission) => ['auth.key.manage', 'auth.user.manage', 'tenant.policy.write', 'model.configure', 'context.configure', 'ops.read'].includes(permission))) {
     return '管理员'
   }
   if (values.includes('education.assign') || values.includes('education.evaluate')) return '教师'
@@ -915,6 +921,7 @@ async function initializeAuthenticatedWorkspace() {
       loadWorkspace(),
       loadTenantPolicy(),
       loadApiKeys(),
+      loadUserPermissions(),
       loadLocalWorkspaces(),
     ])
   } else {
@@ -2304,6 +2311,13 @@ const apiKeyForm = reactive({
   expiresAt: '',
 })
 
+// 用户直接授权独立于 API Key，保存后新请求会立即继承，无需重新发放密钥。
+const userPermissionForm = reactive({
+  tenantId: form.tenantId,
+  userId: '',
+  permissions: [],
+})
+
 const stats = computed(() => ({
   total: summary.value?.total ?? runs.value.length,
   queued: summary.value?.queued ?? runs.value.filter((run) => run.status === 'QUEUED').length,
@@ -3592,6 +3606,14 @@ const chatMessagePresentations = computed(() => new Map(chatMessages.value.map((
     ? presentChatCitations(message.content, runtimeEvidenceForRun(message.runId))
     : { content: message.content || '', sources: [] },
 ])))
+function chatMessageContent(message) {
+  return chatMessagePresentations.value.get(message.id)?.content || message.content || ''
+}
+function chatMessageSegments(message) {
+  const content = chatMessageContent(message)
+  if (message?.role !== 'ASSISTANT' || !content) return [{ type: 'markdown', content }]
+  return splitLearningHintSections(content)
+}
 const activeConversationId = computed(() => activeConversation.value?.conversation?.id || '')
 // 学习入口只展示教育会话和当前尚未开始的空学习会话。通用工作区历史仍保留在
 // 运行控制台中，避免页面标题是教育 Agent、首条内容却变成普通问答。
@@ -8346,6 +8368,174 @@ async function loadApiKeys() {
   }
 }
 
+/**
+ * 用户选择器候选项来自后端用户目录，并兼容本地演示账号、API Key 和历史直接授权。
+ * 这些来源只用于选择用户，不会把凭证或业务数据暴露给前端。
+ */
+const userPermissionOptions = computed(() => {
+  const tenantId = userPermissionForm.tenantId.trim() || form.tenantId
+  const options = new Map()
+  const addOption = (entry, label = '') => {
+    const entryTenantId = entry?.tenantId || tenantId
+    const userId = String(entry?.userId || '').trim()
+    if (!userId || entryTenantId !== tenantId) return
+    const existing = options.get(userId)
+    options.set(userId, {
+      tenantId,
+      userId,
+      permissions: [...new Set(existing?.permissions || entry?.permissions || [])],
+      label: existing?.label || label || userId,
+    })
+  }
+  userDirectory.value.forEach((entry) => addOption(entry))
+  userPermissions.value.forEach((entry) => addOption(entry))
+  apiKeys.value.forEach((entry) => addOption(entry))
+  localDemoUsers.forEach((entry) => addOption({
+    tenantId: entry.tenantId || 'tenant-demo',
+    userId: entry.userId,
+  }, `${entry.name}（${entry.userId}）`))
+  addOption({ tenantId: currentUser.value?.tenantId, userId: currentUser.value?.userId })
+  return [...options.values()].sort((left, right) => left.label.localeCompare(right.label, 'zh-CN'))
+})
+
+let userPermissionSelectionToken = 0
+
+/** 读取管理员可选择的租户用户和已配置直接权限。 */
+async function loadUserPermissions() {
+  userPermissionError.value = ''
+  const tenantId = userPermissionForm.tenantId.trim() || form.tenantId
+  try {
+    const [permissions, directory] = await Promise.all([
+      api.listUserPermissions(tenantId),
+      api.listUsers(tenantId),
+    ])
+    userPermissions.value = permissions || []
+    userDirectory.value = directory || []
+    const selected = userPermissionOptions.value.find((entry) => entry.userId === userPermissionForm.userId)
+      || userPermissionOptions.value.find((entry) => entry.userId === currentUser.value?.userId)
+      || userPermissionOptions.value[0]
+    if (!selected) {
+      userPermissionForm.userId = ''
+      userPermissionForm.permissions = []
+      return
+    }
+    userPermissionForm.userId = selected.userId
+    await loadSelectedUserPermissions(selected.userId)
+  } catch (error) {
+    userPermissions.value = []
+    userDirectory.value = []
+    userPermissionError.value = error.code === 'PERMISSION_DENIED'
+      ? '当前身份缺少 auth.user.read 或 auth.user.manage 权限'
+      : errorText(error)
+    const fallback = userPermissionOptions.value[0]
+    if (fallback) {
+      userPermissionForm.userId = fallback.userId
+      userPermissionForm.permissions = [...(fallback.permissions || [])]
+    }
+  }
+}
+
+/** 下拉框切换用户后立即读取该用户当前的直接权限。 */
+async function loadSelectedUserPermissions(userId) {
+  const normalizedUserId = String(userId || '').trim()
+  if (!normalizedUserId) {
+    userPermissionForm.permissions = []
+    return
+  }
+  const token = ++userPermissionSelectionToken
+  try {
+    const selected = await api.getUserPermissions(
+      userPermissionForm.tenantId.trim() || form.tenantId,
+      normalizedUserId,
+    )
+    if (token === userPermissionSelectionToken) {
+      userPermissionForm.permissions = [...(selected?.permissions || [])]
+    }
+  } catch (error) {
+    if (token === userPermissionSelectionToken) {
+      userPermissionForm.permissions = []
+      userPermissionError.value = errorText(error)
+    }
+  }
+}
+
+function selectUserForPermissions(userId) {
+  userPermissionForm.userId = String(userId || '').trim()
+  userPermissionForm.permissions = []
+  userPermissionError.value = ''
+  void loadSelectedUserPermissions(userPermissionForm.userId)
+}
+
+async function changeUserPermissionTenant() {
+  userPermissionForm.userId = ''
+  userPermissionForm.permissions = []
+  await loadUserPermissions()
+}
+
+function editUserPermissions(entry) {
+  if (!entry) return
+  userPermissionForm.tenantId = entry.tenantId || form.tenantId
+  userPermissionForm.userId = entry.userId || ''
+  userPermissionForm.permissions = [...(entry.permissions || [])]
+  void loadSelectedUserPermissions(userPermissionForm.userId)
+}
+
+const userPermissionCount = computed(() => (userPermissionForm.permissions || []).length)
+const allUserPermissionsSelected = computed(() => apiKeyPermissionOptions.every(({ value }) =>
+  (userPermissionForm.permissions || []).includes(value)))
+
+function toggleAllUserPermissions() {
+  userPermissionForm.permissions = allUserPermissionsSelected.value
+    ? []
+    : apiKeyPermissionOptions.map(({ value }) => value)
+}
+
+async function saveUserPermissions() {
+  const tenantId = userPermissionForm.tenantId.trim()
+  const userId = userPermissionForm.userId.trim()
+  if (!tenantId || !userId) {
+    userPermissionError.value = '请选择组织和用户'
+    return
+  }
+  clearMessages()
+  loading.value = true
+  userPermissionError.value = ''
+  try {
+    const saved = await api.assignUserPermissions({
+      tenantId,
+      userId,
+      permissions: [...new Set(userPermissionForm.permissions || [])],
+    })
+    editUserPermissions(saved)
+    noticeMessage.value = `已为 ${userId} 保存直接权限；下一次请求立即生效`
+    await loadUserPermissions()
+  } catch (error) {
+    userPermissionError.value = errorText(error)
+  } finally {
+    loading.value = false
+  }
+}
+
+async function clearSelectedUserPermissions() {
+  const tenantId = userPermissionForm.tenantId.trim()
+  const userId = userPermissionForm.userId.trim()
+  if (!tenantId || !userId) return
+  if (typeof window !== 'undefined' && !window.confirm(`确认清空 ${userId} 的直接权限吗？API Key 自带权限不会受影响。`)) return
+  clearMessages()
+  loading.value = true
+  userPermissionError.value = ''
+  try {
+    await api.clearUserPermissions(tenantId, userId)
+    userPermissionForm.permissions = []
+    noticeMessage.value = `已清空 ${userId} 的直接权限`
+    await loadUserPermissions()
+  } catch (error) {
+    userPermissionError.value = errorText(error)
+  } finally {
+    loading.value = false
+  }
+}
+
 function parseApiKeyPermissions() {
   const values = Array.isArray(apiKeyForm.permissions)
     ? apiKeyForm.permissions
@@ -10018,7 +10208,23 @@ onBeforeUnmount(() => {
                     <span class="chat-thinking"><i></i><i></i><i></i>{{ chatRunActivity || messageStatusLabel(message.status) }}</span>
                   </template>
                   <template v-else>
-                    <div v-if="message.content" class="chat-markdown" v-html="renderMarkdown(chatMessagePresentations.get(message.id)?.content || message.content)" @click="handleChatMarkdownClick"></div>
+                    <div v-if="message.content && message.role === 'ASSISTANT' && message.status === 'PENDING'" class="chat-markdown chat-markdown-streaming">{{ chatMessageContent(message) }}</div>
+                    <template v-else-if="message.content">
+                      <template v-for="(segment, segmentIndex) in chatMessageSegments(message)" :key="`${message.id}-segment-${segmentIndex}`">
+                        <div v-if="segment.type === 'markdown'" class="chat-markdown" v-html="renderMarkdown(segment.content)" @click="handleChatMarkdownClick"></div>
+                        <details v-else class="chat-learning-hints" open>
+                          <summary><span>💡 分层提示</span><small>{{ segment.note }}</small></summary>
+                          <div class="chat-learning-hints-list">
+                            <details v-for="(hint, hintIndex) in segment.hints" :key="`${message.id}-hint-${segmentIndex}-${hintIndex}`" class="chat-learning-hint">
+                              <summary><span>{{ hint.title }}</span><small>展开提示</small></summary>
+                              <div class="chat-learning-hint-content">
+                                <div class="chat-markdown" v-html="renderMarkdown(hint.content)" @click="handleChatMarkdownClick"></div>
+                              </div>
+                            </details>
+                          </div>
+                        </details>
+                      </template>
+                    </template>
                     <section v-if="message.role === 'ASSISTANT' && chatMessagePresentations.get(message.id)?.sources?.length" class="chat-source-section" aria-label="课程资料来源">
                       <div class="chat-source-heading"><span>课程资料来源</span><small>{{ chatMessagePresentations.get(message.id).sources.length }} 个</small></div>
                       <div class="chat-source-list">
@@ -12062,6 +12268,55 @@ onBeforeUnmount(() => {
             <div class="policy-actions"><button class="secondary-button" type="button" :disabled="loading" @click="loadTenantPolicy">读取策略</button><button class="secondary-button" type="submit" :disabled="loading">保存策略</button><button class="danger-button" type="button" :disabled="loading" @click="resetTenantPolicy">恢复默认</button></div>
             <small class="form-hint">策略只能收紧平台硬上限；最近 {{ tenantPolicyAudits.length }} 条变更已留痕。</small>
           </form>
+          <section v-if="isAdminRole" class="governance-card api-key-card user-permission-card">
+            <div class="subsection-title">
+              <div><h3>用户权限分配</h3><span>租户内直接授权</span></div>
+              <button class="refresh-button" type="button" :disabled="loading" aria-label="刷新用户权限" @click="loadUserPermissions">⟳</button>
+            </div>
+            <p class="api-key-card-intro">按组织和用户直接授予权限。该授权会合并到本地演示身份、API Key 和后续新 Run，不需要轮换登录凭证。</p>
+            <p v-if="userPermissionError" class="policy-error">{{ userPermissionError }}</p>
+            <form class="api-key-create-grid" @submit.prevent="saveUserPermissions">
+              <label class="field"><span>组织 ID</span><input v-model="userPermissionForm.tenantId" required maxlength="128" @change="changeUserPermissionTenant" /></label>
+              <label class="field"><span>选择用户</span>
+                <select v-model="userPermissionForm.userId" required :disabled="!userPermissionOptions.length" @change="selectUserForPermissions($event.target.value)">
+                  <option value="" disabled>{{ userPermissionOptions.length ? '请选择用户' : '当前组织暂无可选用户' }}</option>
+                  <option v-for="user in userPermissionOptions" :key="`${user.tenantId}:${user.userId}`" :value="user.userId">{{ user.label }}</option>
+                </select>
+                <small class="form-hint">已选择 {{ userPermissionOptions.length }} 个租户用户；切换后会自动读取该用户当前权限。</small>
+              </label>
+              <div class="field api-key-permissions-field">
+                <span>直接权限</span>
+                <details class="api-key-permission-picker">
+                  <summary><span>{{ userPermissionCount ? `已选择 ${userPermissionCount} 项` : '请选择权限' }}</span><small>展开选择</small></summary>
+                  <div class="api-key-permission-menu">
+                    <div class="api-key-permission-menu-actions">
+                      <span>这里的权限会即时追加到该用户</span>
+                      <button class="text-button" type="button" @click="toggleAllUserPermissions">{{ allUserPermissionsSelected ? '清空' : '全选' }}</button>
+                    </div>
+                    <label v-for="permission in apiKeyPermissionOptions" :key="permission.value" class="api-key-permission-option">
+                      <input v-model="userPermissionForm.permissions" type="checkbox" :value="permission.value" />
+                      <span>{{ permission.label }}</span>
+                      <code>{{ permission.value }}</code>
+                    </label>
+                  </div>
+                </details>
+                <small class="form-hint">{{ userPermissionCount ? userPermissionForm.permissions.join('、') : '保存空集合表示清空直接授权' }}</small>
+              </div>
+              <div class="policy-actions">
+                <button class="secondary-button" type="submit" :disabled="loading">{{ loading ? '保存中…' : '保存用户权限' }}</button>
+                <button class="danger-button" type="button" :disabled="loading || !userPermissionForm.userId.trim()" @click="clearSelectedUserPermissions">清空直接授权</button>
+              </div>
+            </form>
+            <div class="api-key-list">
+              <div class="subsection-title"><h3>已配置用户</h3><span>{{ userPermissions.length }} users</span></div>
+              <div v-if="!userPermissions.length" class="muted-line">当前组织还没有直接授权记录。</div>
+              <div v-for="entry in userPermissions" :key="`${entry.tenantId}:${entry.userId}`" class="api-key-row">
+                <div class="api-key-row-main"><strong>{{ entry.userId }}</strong><small>{{ entry.tenantId }} · 更新于 {{ formatDate(entry.updatedAt) }}</small></div>
+                <div class="api-key-row-permissions">{{ entry.permissions?.length ? entry.permissions.join('、') : '未授予直接权限' }}</div>
+                <div class="api-key-row-actions"><button class="secondary-button" type="button" :disabled="loading" @click="editUserPermissions(entry)">编辑</button></div>
+              </div>
+            </div>
+          </section>
           <form v-if="isAdminRole" class="governance-card api-key-card" @submit.prevent="createManagedApiKey">
             <div class="subsection-title">
               <div><h3>登录凭证管理</h3><span>API Key 生命周期</span></div>

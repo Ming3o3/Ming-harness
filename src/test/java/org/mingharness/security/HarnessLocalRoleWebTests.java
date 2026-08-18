@@ -39,6 +39,47 @@ class HarnessLocalRoleWebTests {
         assertRole("STUDENT", "student-demo", "学生");
     }
 
+    @Test
+    void shouldApplyDirectPermissionToExistingLocalUser() throws Exception {
+        HttpResponse<String> assigned = httpClient.send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/admin/user-permissions"))
+                        .header("Content-Type", "application/json")
+                        .header("X-Tenant-Id", "tenant-demo")
+                        .header("X-User-Id", "admin-demo")
+                        .header("X-Harness-Role", "ADMIN")
+                        .PUT(HttpRequest.BodyPublishers.ofString(
+                                "{\"tenantId\":\"tenant-demo\",\"userId\":\"student-demo\","
+                                        + "\"permissions\":[\"workspace.read\"]}"))
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, assigned.statusCode(), assigned.body());
+
+        HttpResponse<String> current = httpClient.send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/me"))
+                        .header("X-Tenant-Id", "tenant-demo")
+                        .header("X-User-Id", "student-demo")
+                        .header("X-Harness-Role", "STUDENT")
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, current.statusCode(), current.body());
+        assertTrue(current.body().contains("workspace.read"), current.body());
+    }
+
+    @Test
+    void shouldListSelectableUsersForCurrentTenant() throws Exception {
+        HttpResponse<String> response = httpClient.send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/admin/users"))
+                        .header("X-Tenant-Id", "tenant-demo")
+                        .header("X-User-Id", "admin-demo")
+                        .header("X-Harness-Role", "ADMIN")
+                        .GET()
+                        .build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, response.statusCode(), response.body());
+        assertTrue(response.body().contains("\"userId\":\"admin-demo\""), response.body());
+    }
+
     private void assertRole(String role, String userId, String ignoredLabel) throws Exception {
         HttpResponse<String> response = httpClient.send(
                 HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/me"))

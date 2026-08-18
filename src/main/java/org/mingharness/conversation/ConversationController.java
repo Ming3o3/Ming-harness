@@ -70,8 +70,7 @@ public class ConversationController {
                                    @Valid @RequestBody SendConversationMessageRequest request,
                                    HttpServletRequest httpRequest) {
         HarnessIdentity identity = identity();
-        String permissions = identity.usesTrustedPermissions()
-                ? identity.permissionsCsv() : httpRequest.getHeader("X-Permissions");
+        String permissions = identity.permissionsCsv();
         return conversationService.send(conversationId, identity.tenantId(), identity.userId(), request,
                 httpRequest.getHeader("Idempotency-Key"), permissions);
     }

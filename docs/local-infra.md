@@ -196,6 +196,8 @@ curl -X POST http://localhost:8080/api/admin/api-keys \
 
 保存响应中的 `secret` 后，可用 `GET /api/admin/api-keys` 查看前缀、状态和过期时间；使用 `POST /api/admin/api-keys/{keyId}/rotate` 会原子创建同权限新 Key 并立即使旧 Key 失效，`DELETE /api/admin/api-keys/{keyId}` 也可以直接撤销。创建或轮换响应之外，API、数据库、日志和审计均不会返回完整 Key 或摘要。查询需要 `auth.key.read`，创建/轮换/撤销需要 `auth.key.manage`，跨组织操作另需 `auth.key.cross-tenant`。
 
+管理员也可以直接按租户和用户分配权限，无需轮换已有 API Key：`PUT /api/admin/user-permissions` 的请求体为 `{"tenantId":"tenant-demo","userId":"student-demo","permissions":["workspace.read"]}`；`GET /api/admin/user-permissions` 查看当前组织授权，`DELETE /api/admin/user-permissions?tenantId=...&userId=...` 清空直接授权。直接授权会与 API Key、OIDC 或本地演示身份权限合并，并在下一次请求生效。正式认证需要 `auth.user.read`/`auth.user.manage`，已有 `auth.key.read`/`auth.key.manage` 的管理员凭证保持兼容；跨组织分配另需 `auth.user.cross-tenant`。
+
 ### 组织级资源治理
 
 平台环境变量定义所有组织都不能突破的硬上限。拥有 `tenant.policy.read`/`tenant.policy.write` 权限的身份可以通过管理接口为自己的组织设置更严格的活动 Run 数、步骤数、输入长度、单次预算、创建速率和工具白名单；跨组织运维还需要额外的 `tenant.policy.cross-tenant` 权限。未配置覆盖策略的组织自动使用平台默认值。工具白名单为空表示允许所有已注册工具，非空时 Run 创建阶段会在任何执行前拒绝未列出的工具。

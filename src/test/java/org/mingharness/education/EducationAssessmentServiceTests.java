@@ -163,6 +163,43 @@ class EducationAssessmentServiceTests {
     }
 
     @Test
+    void shouldMatchAssessmentToAChildConceptOfACompositeGoal() {
+        AssessmentAttemptRepository attempts = mock(AssessmentAttemptRepository.class);
+        RunRepository runs = mock(RunRepository.class);
+        LearningGoalRepository goals = mock(LearningGoalRepository.class);
+        LearnerMasteryRepository mastery = mock(LearnerMasteryRepository.class);
+        EducationLearnerService learnerService = mock(EducationLearnerService.class);
+
+        Run run = new Run("tenant-a", "student-1", "面向对象练习",
+                "学生回答：子类可以继承父类并重写方法。",
+                BigDecimal.ONE, "demo-model", "prompt-v1", "policy-v1", null,
+                "education.read,education.write", true, 4);
+        LearningGoal goal = new LearningGoal("tenant-a", "student-1", "profile-1",
+                "类与对象、封装、继承、多态练习", "类与对象、封装、继承、多态", 0.2, 0.9);
+        run.attachEducationConfiguration(new EducationRunConfiguration(true, "profile-1", goal.getId(),
+                goal.getTitle(), 0.2, 0.9, "Java", "大一", "黑马版", goal.getConceptKey(),
+                null, null, "PRACTICE", "类与对象、封装、继承、多态=0.20"));
+        LearnerMastery updated = new LearnerMastery("tenant-a", "profile-1",
+                goal.getConceptKey(), 0.55, 2, 1);
+
+        when(runs.findById(run.getId())).thenReturn(Optional.of(run));
+        when(goals.findByIdAndTenantIdAndUserId(goal.getId(), "tenant-a", "student-1"))
+                .thenReturn(Optional.of(goal));
+        when(mastery.findByTenantIdAndLearnerProfileIdAndConceptKey(
+                "tenant-a", "profile-1", goal.getConceptKey())).thenReturn(Optional.empty());
+        when(learnerService.recordObservedMastery(any(), any(), any(), any())).thenReturn(updated);
+        when(attempts.save(any(AssessmentAttempt.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        EducationAssessmentService service = new EducationAssessmentService(attempts, runs, goals, mastery,
+                learnerService, new SensitiveDataSanitizer());
+        AssessmentAttempt result = service.record("tenant-a", "student-1", run.getId(), "step-1",
+                "profile-1", "多态", true, 0.8, "MODEL_TOOL",
+                "学生正确解释了多态和动态绑定", "子类可以继承父类并重写方法。", "答题正确");
+
+        assertEquals(goal.getConceptKey(), result.getConceptKey());
+    }
+
+    @Test
     void shouldRejectModelAssessmentWithoutLearnerEvidence() {
         AssessmentAttemptRepository attempts = mock(AssessmentAttemptRepository.class);
         RunRepository runs = mock(RunRepository.class);

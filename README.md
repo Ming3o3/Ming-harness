@@ -269,6 +269,8 @@ Embedding 配置按组织保存（知识库向量是组织共享索引），从�
 
 通过具有 `auth.key.manage` 权限的引导 Key 或 OIDC 服务账号，可调用 `POST /api/admin/api-keys` 创建数据库 API Key；明文 `secret` 仅在创建响应中出现一次，数据库只保存 SHA-256 摘要。`GET /api/admin/api-keys` 只返回前缀和元数据，`POST /api/admin/api-keys/{keyId}/rotate` 会在同一事务中创建同权限新 Key 并立即撤销旧 Key，`DELETE /api/admin/api-keys/{keyId}` 可即时撤销，`GET /api/admin/api-keys/audits` 可查看生命周期审计。读取接口需要 `auth.key.read`，跨组织管理还需 `auth.key.cross-tenant`。环境变量 `HARNESS_API_KEYS` 保留为紧急引导兼容方案，变更或撤销需要重启；正式环境应逐步迁移至数据库生命周期 Key。
 
+管理员还可以在高级治理设置中按租户和用户直接分配权限。该授权持久化在用户维度，与 API Key/OIDC/本地演示身份的权限合并，下一次请求立即生效，不需要轮换已有 API Key；对应接口为 `GET/PUT/DELETE /api/admin/user-permissions`。正式认证使用 `auth.user.read`/`auth.user.manage`，已有 `auth.key.read`/`auth.key.manage` 的管理员凭证仍可兼容管理；跨组织分配需要 `auth.user.cross-tenant`。
+
 企业环境接入 OIDC/JWT 时使用 `SPRING_PROFILES_ACTIVE=local-infra,oidc`，并设置 `OIDC_ISSUER_URI` 与 `OIDC_AUDIENCE`。Spring Security Resource Server 负责验签和明确校验 issuer/audience，Harness 从 JWT 的 `sub`、`tenant_id`（兼容 `tenant`）以及 `permissions`/`scope`/`scp` 声明映射用户、组织和 RBAC 权限。
 
 ### 审计完整性

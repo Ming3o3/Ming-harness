@@ -392,8 +392,10 @@ class ConversationServiceTests {
         var userMessage = detail.messages().get(0);
         assertEquals(1, userMessage.attachments().size());
         assertEquals(uploaded.get(0).workspacePath(), userMessage.attachments().get(0).workspacePath());
-        assertTrue(runRepository.findById(userMessage.runId()).orElseThrow().getInput()
-                .contains(uploaded.get(0).workspacePath()));
+        String runInput = runRepository.findById(userMessage.runId()).orElseThrow().getInput();
+        assertTrue(runInput.contains(uploaded.get(0).workspacePath()));
+        assertTrue(runInput.contains("class Example { }"));
+        assertTrue(runInput.contains("本轮用户上传的学习附件内容"));
     }
 
     @Test
@@ -420,6 +422,8 @@ class ConversationServiceTests {
         String runInput = runRepository.findById(detail.messages().get(0).runId()).orElseThrow().getInput();
         assertTrue(runInput.contains(uploaded.get(0).workspacePath()));
         assertTrue(runInput.contains("workspace.list"));
+        assertTrue(runInput.contains("class App { }"));
+        assertTrue(runInput.contains("# Demo"));
     }
 
     @Test

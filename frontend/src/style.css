@@ -420,7 +420,9 @@ h3 { margin: 0; font-size: 13px; }
 .tenant-policy-tool-empty { padding: 8px 5px; color: var(--muted); font-size: 10px; line-height: 1.45; }
 .api-key-card { grid-column: 1 / -1; }
 .api-key-card-intro { max-width: 840px; margin: -4px 0 3px; color: var(--muted); font-size: 10px; line-height: 1.6; }
-.api-key-create-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; }
+.api-key-create-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; align-items: start; }
+.api-key-create-grid > .field { align-content: start; min-width: 0; }
+.api-key-create-grid > .policy-actions { align-self: start; }
 .api-key-role-field { grid-column: span 2; }
 .api-key-role-field select { min-width: 0; width: 100%; }
 .api-key-role-field .form-hint { display: block; margin-top: 5px; line-height: 1.45; }
@@ -1274,7 +1276,31 @@ h3 { margin: 0; font-size: 13px; }
 .chat-markdown a { color: var(--accent-light); text-decoration: underline; text-underline-offset: 2px; }
 .chat-markdown strong { color: var(--heading); font-weight: 700; }
 .chat-markdown em { color: var(--soft); }
-.chat-markdown code { border: 1px solid rgba(141,124,255,.2); border-radius: 4px; background: rgba(141,124,255,.1); color: var(--accent-light); padding: 2px 5px; font: 10px/1.4 "DM Mono", monospace; }
+/* Inline code should remain distinguishable without shrinking English text into pills.
+   Fenced code blocks keep their dedicated panel styling below. */
+.chat-markdown :not(pre) > code { border: 0; border-radius: 0; background: transparent; color: inherit; padding: 0; font: inherit; }
+.chat-markdown-streaming { white-space: pre-wrap; }
+.chat-learning-hints { margin: 13px 0; overflow: hidden; border: 1px solid color-mix(in srgb, var(--orange) 32%, var(--line)); border-radius: 9px; background: color-mix(in srgb, var(--orange) 4%, var(--panel)); }
+.chat-learning-hints > summary,
+.chat-learning-hint > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; }
+.chat-learning-hints > summary::-webkit-details-marker,
+.chat-learning-hint > summary::-webkit-details-marker { display: none; }
+.chat-learning-hints > summary::before,
+.chat-learning-hint > summary::before { flex: 0 0 auto; color: var(--orange); content: '▸'; font-size: 12px; transition: transform .16s ease; }
+.chat-learning-hints[open] > summary::before,
+.chat-learning-hint[open] > summary::before { transform: rotate(90deg); }
+.chat-learning-hints > summary { padding: 9px 11px; }
+.chat-learning-hints > summary > span { color: var(--heading); font-size: 12px; font-weight: 700; }
+.chat-learning-hints > summary > small,
+.chat-learning-hint > summary > small { overflow: hidden; margin-left: auto; color: var(--muted); font: 9px "DM Mono", monospace; text-overflow: ellipsis; white-space: nowrap; }
+.chat-learning-hints-list { display: grid; border-top: 1px solid color-mix(in srgb, var(--orange) 20%, var(--line)); padding: 0 11px; }
+.chat-learning-hint { border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent); }
+.chat-learning-hint:last-child { border-bottom: 0; }
+.chat-learning-hint > summary { padding: 9px 1px; color: var(--soft); }
+.chat-learning-hint > summary > span { min-width: 0; overflow: hidden; font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.chat-learning-hint > summary::before { color: var(--muted); font-size: 10px; }
+.chat-learning-hint-content { padding: 0 1px 9px 21px; }
+.chat-learning-hint-content > .chat-markdown { font-size: 12px; }
 .chat-markdown .markdown-code-block { position: relative; overflow: auto; max-height: 420px; margin: 13px 0; border: 1px solid rgba(153,174,218,.14); border-radius: 8px; background: var(--input-bg); padding: 12px 13px; white-space: pre; font: 10px/1.65 "DM Mono", monospace; scrollbar-gutter: stable; }
 .chat-markdown .markdown-code-block::before { display: block; margin: -3px -1px 9px; border-bottom: 1px solid rgba(153,174,218,.12); padding: 0 0 8px; color: var(--muted); content: attr(data-language); font: 8px "DM Mono", monospace; letter-spacing: .08em; text-transform: uppercase; }
 .chat-markdown .markdown-code-copy { position: absolute; top: 6px; right: 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); color: var(--muted); padding: 3px 6px; font: 8px "DM Mono", monospace; opacity: .86; transition: border-color .16s ease, color .16s ease, background .16s ease; }
