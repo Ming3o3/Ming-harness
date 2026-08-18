@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - package/garnet
+      - paper
 
 permissions:
   contents: read
