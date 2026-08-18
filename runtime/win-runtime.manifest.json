@@ -32,7 +32,7 @@
     "version": "4.3.4",
     "source": "https://github.com/rabbitmq/rabbitmq-server/releases/tag/v4.3.4",
     "artifact": "rabbitmq-server-windows-4.3.4.zip",
-    "sha256": "e311199de7b7e621eb43563ae9bb96962fa55e2f8129928b7f8d0b0c95691295"
+    "sha256": "45f0076637fb2d5920c5d12638946222d9352259643a128073815aa9159878c9"
   },
   "erlang": {
     "version": "28.5.0.5",

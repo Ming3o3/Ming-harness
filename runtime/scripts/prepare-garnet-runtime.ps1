@@ -122,7 +122,7 @@ $archives = @(
   [pscustomobject]@{
     Name = 'RabbitMQ 4.3.4'
     Url = 'https://github.com/rabbitmq/rabbitmq-server/releases/download/v4.3.4/rabbitmq-server-windows-4.3.4.zip'
-    Sha256 = 'e311199de7b7e621eb43563ae9bb96962fa55e2f8129928b7f8d0b0c95691295'
+    Sha256 = '45f0076637fb2d5920c5d12638946222d9352259643a128073815aa9159878c9'
     File = 'rabbitmq-server-windows-4.3.4.zip'
     Destination = (Join-Path $runtimeRoot 'rabbitmq')
   }
